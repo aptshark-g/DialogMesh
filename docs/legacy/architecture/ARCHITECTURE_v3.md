@@ -2457,8 +2457,8 @@ Phase 6: COMPLETED
 | `disasm/zydis_engine.py` | ~300 | Zydis 反汇编封装 |
 | `mg_engine/` | - | C++ 引擎源码 |
 | `docs/ARCHITECTURE.md` | 339 | 旧架构文档（V1） |
-| `../project/design_v2_complete.md` | 1992 | V2 设计文档 |
-| `../frontend-agent/CONTEXT_COMPRESSION_DESIGN.md` | 461 | 上下文压缩设计 |
+| `../../project/design_v2_complete.md` | 1992 | V2 设计文档 |
+| `../../frontend-agent/CONTEXT_COMPRESSION_DESIGN.md` | 461 | 上下文压缩设计 |
 | `ARCHITECTURE_v3.md` | - | 本文档（V3） |
 
 ---

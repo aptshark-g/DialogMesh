@@ -60,4 +60,4 @@
 | Layer 1: Intent Parser | ✅ 完成 | ✅ 实现 (10 Stage) | ✅ 通过 |
 | Layer 2-5: 规划/执行/反思 | ⚠️ 设计 | ⚠️ 未实现 | — |
 
-> 注：Layer 2-5 的设计文档位于 `../project/design_v2_complete.md`（逆向工程完整系统），与本前置 Agent 独立。
+> 注：Layer 2-5 的设计文档位于 `../../legacy/project/design_v2_complete.md`（逆向工程完整系统），与本前置 Agent 独立。
