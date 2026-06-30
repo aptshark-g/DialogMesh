@@ -15,7 +15,7 @@ Purpose:
   1. rule_confidence     – raw rule-matching confidence [0,1]
   2. history_consistency – Jaccard similarity with previous turn expectations
   3. query_length_norm   – normalised token count of the query
-  4. terminology_density – ratio of domain-specific terms (from ExpertiseProbe)
+  4. terminology_density – ratio of domain-specific terms (statistical density)
   5. noise_level         – PCR noise estimator output [0,1]
   6. clarification_rounds – how many clarifications have occurred
   7. time_decay          – elapsed seconds since last user turn (exponential)

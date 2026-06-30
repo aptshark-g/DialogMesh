@@ -16,6 +16,5 @@ __all__ = [
 
 # Optional exports for new architecture-gap fixes (lazy-import to avoid
 # increasing cold-start time for users who don't use these features):
-#   expertise_probe     – cold-start expertise probe (Gap #8)
 #   adaptive_threshold  – Bayesian PCR threshold (Gap #9)
 #   intent_rule_registry – conflict detection engine (Gap #3)
