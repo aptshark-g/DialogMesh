@@ -1,0 +1,217 @@
+# MemoryGraph 用户配置指南
+# ──────────────────────────────────────────────────────
+# 复制此文件为 config/user_config.yaml 并修改其中值
+# 系统会优先读取 user_config.yaml，覆盖项目默认值
+# ──────────────────────────────────────────────────────
+
+version: "2.0.0"
+
+# ══════════════════════════════════════════════════════
+# 第一部分：LLM 连接配置（必须填写）
+# ══════════════════════════════════════════════════════
+
+# ── Tier 1：快速/低成本层（本地模型或廉价 API）──────
+tier1:
+  # 名称：仅用于日志显示
+  name: "本地小模型"
+  
+  # 模型服务地址
+  # 可选值：
+  #   "http://localhost:1234/v1"    ← LMStudio 本地（推荐）
+  #   "http://localhost:11434/v1"   ← Ollama 本地
+  #   "https://api.openai.com/v1"   ← OpenAI 官方
+  #   "https://api.groq.com/openai/v1" ← Groq（免费高速）
+  base_url: "http://localhost:1234/v1"
+  
+  # API 密钥
+  # 本地模型（LMStudio/Ollama）无需密钥，填任意字符串即可
+  # 云端 API 必须填写真实密钥
+  api_key: "lmstudio"
+  
+  # 模型名称
+  # "auto" = 自动检测可用模型（推荐）
+  # 或指定具体模型："qwen/qwen3.5-9b", "gemma-2-9b", 等
+  model: "auto"
+  
+  # 超时时间（秒）
+  # 本地 CPU 模型较慢，建议 10-30 秒
+  timeout: 10.0
+  
+  # 最大输出 token 数
+  # 简单任务 512 足够，复杂任务可增大
+  max_tokens: 512
+  
+  # 温度（0.0 = 最确定，1.0 = 最随机）
+  # 路由决策等确定性任务建议 0.0-0.1
+  # 创意生成任务建议 0.7-1.0
+  temperature: 0.1
+  
+  # 可选：模型优先级白名单（按顺序尝试）
+  # 当 model: "auto" 时生效，优先选择列表中的模型
+  model_priority:
+    - "nvidia/nemotron-3-nano-4b"   # 4B 极小，最快
+    - "qwen/qwen3.5-9b"              # 9B 平衡，中文好
+    - "google/gemma-4-12b"           # 12B 较强
+
+# ── Tier 2：高端/强能力层（DeepSeek / GPT-4 / Claude）─
+tier2:
+  name: "DeepSeek V4"
+  
+  # 模型服务地址
+  # 可选值：
+  #   "https://api.deepseek.com/v1"              ← DeepSeek 官方（推荐）
+  #   "https://api.openai.com/v1"                ← OpenAI
+  #   "https://api.moonshot.cn/v1"               ← Moonshot (Kimi)
+  #   "https://generativelanguage.googleapis.com/v1beta" ← Google Gemini
+  base_url: "https://api.deepseek.com/v1"
+  
+  # API 密钥（必须填写！）
+  # 从 https://platform.deepseek.com/api_keys 获取
+  # 支持两种方式：
+  #   1. 直接填写：api_key: "sk-xxxxxxxx"
+  #   2. 环境变量：api_key: "${DEEPSEEK_API_KEY}"（推荐，更安全）
+  api_key: "${DEEPSEEK_API_KEY}"
+  
+  # 模型名称
+  # DeepSeek 可选：deepseek-v4, deepseek-reasoner, deepseek-chat
+  # OpenAI 可选：gpt-4o, gpt-4o-mini, o3-mini
+  # Moonshot 可选：kimi-k2-0714-preview
+  model: "deepseek-v4"
+  
+  # 超时时间（秒）
+  # 网络模型建议 30-60 秒
+  timeout: 30.0
+  
+  # 最大输出 token 数
+  # 语义摘要、话题审查等复杂任务建议 1024-2048
+  max_tokens: 2048
+  
+  temperature: 0.7
+  
+  # 是否支持 reasoning 模式（思考链）
+  # DeepSeek V4 / R1 支持，设为 true 可在需要时启用深度推理
+  reasoning_mode: true
+
+# ══════════════════════════════════════════════════════
+# 第二部分：任务路由（按需调整）
+# ══════════════════════════════════════════════════════
+# 每个任务类型分配给哪个 Tier（1 = 快速层, 2 = 高端层）
+# 简单任务用 Tier 1（省钱、快），复杂任务用 Tier 2（准、强）
+
+task_routing:
+  # ── 简单任务 → Tier 1（推荐保持默认）─────────────
+  intent_classification: 1    # 意图分类：输入短、判断简单
+  simple_reply: 1             # 简单回复：日常对话、问候
+  routing_decision: 1          # 路由决策：选择处理模式
+  topic_overlap: 1             # 话题重叠：算法为主，LLM 辅助
+  
+  # ── 复杂任务 → Tier 2（推荐保持默认）─────────────
+  semantic_summary: 2         # 语义摘要：需要理解对话脉络
+  topic_arbitration: 2         # 话题仲裁：判断话题切换/回溯
+  topic_audit: 2              # 话题审查：检测错误聚合、拆分话题
+  complex_analysis: 2         # 复杂分析：多轮对话综合分析
+  code_generation: 2            # 代码生成：需要强代码能力
+  long_context: 2             # 长上下文：总结长对话历史
+  reasoning: 2                # 推理任务：逻辑推理、数学计算
+  
+  # 默认任务类型（未指定时）
+  default: 1
+
+# ══════════════════════════════════════════════════════
+# 第三部分：话题树参数（可选调整）
+# ══════════════════════════════════════════════════════
+
+topic_tree:
+  # 话题继续阈值：cohesion >= 此值 → 继续同一话题
+  # 范围：0.0-1.0，越大越严格（不容易继续）
+  # 推荐：0.5-0.6（平衡），0.4（宽松），0.7（严格）
+  cohesion_continue: 0.55
+  
+  # 话题分叉阈值：cohesion < 此值 → 新建/分叉话题
+  # 必须 < cohesion_continue
+  cohesion_fork: 0.25
+  
+  # 历史回溯阈值：与历史话题相似度 > 此值 → 回溯到旧话题
+  # 推荐：0.50（明确关联才回溯），0.40（更宽松）
+  backtrack_threshold: 0.50
+  
+  # 延迟激活轮数：新话题节点在此轮数内不激活（避免过早聚合）
+  # 推荐：3-10（测试中可设为 5），越小越敏感
+  activation_threshold: 5
+
+# ══════════════════════════════════════════════════════
+# 第四部分：上下文窗口（热/温/冷分层）
+# ══════════════════════════════════════════════════════
+
+# ── 对话历史分层策略 ──
+# Hot 层（最近 N 轮）：完整文本保留，最详细
+# Warm 层（N+1 到 M 轮）：v2 摘要，中等详细
+# Cold 层（M+1 轮以上）：v3 极简摘要，仅保留核心信息
+
+context_window:
+  # Hot 层：最近多少轮保留完整文本（推荐 5）
+  hot_max: 5
+  
+  # Warm 层：到多少轮为止（推荐 20，即第 6-20 轮）
+  # Warm 结束轮次 = 此值，不是 Warm 层长度！
+  warm_max: 20
+  
+  # Cold 层：从第 21 轮开始，直到此轮数（推荐 80）
+  # 超过此轮数的历史完全丢弃（或只保留话题聚合摘要）
+  cold_max: 80
+
+# ══════════════════════════════════════════════════════
+# 第五部分：性能与观测（可选调整）
+# ══════════════════════════════════════════════════════
+
+performance:
+  # 小模型超时阈值（毫秒）：超过此值视为慢响应，降低使用频率
+  alert_latency_ms: 200
+  
+  # 澄清率告警阈值：当系统频繁要求用户澄清时告警
+  # 0.3 = 30% 的轮次触发澄清
+  alert_clarification_rate: 0.3
+  
+  # 未知意图率告警阈值：系统无法识别意图的比例
+  alert_unknown_rate: 0.5
+
+# ══════════════════════════════════════════════════════
+# 第六部分：系统提示词（高级，一般不需要修改）
+# ══════════════════════════════════════════════════════
+
+# 各角色的系统提示词，影响 LLM 的行为风格
+# 通常不需要修改，保持默认即可
+system_prompts:
+  conversation_handler:
+    # 对话回退模块：当规则无法识别时，LLM 接管回复
+    index_card: |
+      你是对话回退模块。当规则引擎无法识别意图时，你负责回复。
+      分析用户意图，输出自然语言回复（80字以内）。
+
+# ══════════════════════════════════════════════════════
+# 使用示例
+# ══════════════════════════════════════════════════════
+# 
+# 场景 1：纯本地运行（无网络 API）
+#   tier2 的 base_url 也指向 localhost（同一模型）
+#   或 tier2 不可用，系统会自动回退到 tier1
+#
+# 场景 2：本地 + DeepSeek 混合
+#   tier1: localhost（快速响应、省钱）
+#   tier2: DeepSeek（复杂任务、高质量）
+#   ← 当前推荐配置
+#
+# 场景 3：纯云端（无本地 GPU）
+#   tier1: Groq / Gemini Flash（免费/极便宜）
+#   tier2: DeepSeek / GPT-4o（按需付费）
+#
+# 场景 4：双云端（追求速度）
+#   tier1: Groq（Llama 3 70B，免费，速度极快）
+#   tier2: DeepSeek V4（复杂任务）
+# 
+# 环境变量快速切换（不修改文件）：
+#   export LLM_TIER1_BASE_URL=http://localhost:1234/v1
+#   export LLM_TIER2_BASE_URL=https://api.deepseek.com/v1
+#   export LLM_TIER2_API_KEY=sk-xxxxxxxx
+#   export LLM_TIER2_MODEL=deepseek-v4
+#   这些会覆盖配置文件中的值

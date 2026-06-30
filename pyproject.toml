@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memorygraph-agent"
+version = "0.2.0"
+description = "工业级前置意图识别 Agent — 规则优先、LLM 兜底、多轮澄清、可插拔 Provider"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "MemoryGraph Contributors"}
+]
+keywords = ["intent-parser", "llm-router", "cognitive-router", "agent", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "modelscope>=1.9.0",
+    "jieba>=0.42.1",
+    "sentencepiece>=0.1.99",
+]
+
+[project.optional-dependencies]
+local = ["aiohttp>=3.8.0"]                    # LocalProvider async streaming
+chinese = ["jieba>=0.42.1"]                  # Chinese text segmentation (also in core deps)
+config = ["pyyaml>=6.0"]                    # YAML config loading
+service = ["fastapi>=0.100.0", "uvicorn>=0.23.0", "aiosqlite>=0.19.0"]
+mcp = ["mcp>=1.28.0"]
+gui = ["gradio>=4.0.0"]                     # Web GUI
+metrics = ["prometheus-client>=0.17.0"]   # Prometheus metrics
+dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "pytest-cov>=4.0.0", "ruff>=0.1.0", "mypy>=1.5.0"]
+all = ["memorygraph-agent[local,chinese,config,service,mcp,gui,metrics,dev]"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/memorygraph-agent"
+Documentation = "https://github.com/yourusername/memorygraph-agent/blob/main/docs/QUICKSTART.md"
+Issues = "https://github.com/yourusername/memorygraph-agent/issues"
+
+[tool.setuptools.packages.find]
+where = ["core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+show_error_codes = true
+

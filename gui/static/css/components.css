@@ -1,0 +1,332 @@
+/* ============================================
+   Components — Buttons, Inputs, Tables, Tabs, Toast
+   ============================================ */
+@import url("variables.css");
+
+/* ── Base Form Elements ── */
+input,
+select,
+button {
+  padding: 6px 10px;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-sm);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+
+input:focus,
+select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+input::placeholder {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+select {
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%23a0a0a0'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* ── Buttons ── */
+button {
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: var(--text-inverse);
+  border: none;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+
+button:hover {
+  background: linear-gradient(135deg, #5a237a, #7b3996);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px) scale(1.01);
+}
+
+button:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: var(--shadow-sm);
+}
+
+button:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+  border: var(--border-width) solid var(--border-color);
+}
+
+button:disabled:hover {
+  background: var(--bg-tertiary);
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Tab Buttons ── */
+.tab {
+  padding: 10px 20px;
+  background: var(--bg-tertiary);
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: 600;
+  border-bottom-color: var(--accent-secondary);
+  box-shadow: 0 -2px 8px var(--accent-glow);
+}
+
+/* ── Tables ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+thead {
+  background: var(--bg-tertiary);
+}
+
+tbody tr {
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+tbody tr:hover {
+  background: rgba(107, 44, 145, 0.08);
+}
+
+th, td {
+  border: var(--border-width) solid var(--border-color);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+
+th:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+th.sorted-asc::after {
+  content: " ▲";
+  font-size: 10px;
+  color: var(--accent-primary);
+  margin-left: 4px;
+}
+
+th.sorted-desc::after {
+  content: " ▼";
+  font-size: 10px;
+  color: var(--accent-primary);
+  margin-left: 4px;
+}
+
+/* ── Toast Notifications ── */
+.toast-container {
+  position: fixed;
+  top: var(--space-lg);
+  right: var(--space-lg);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.toast {
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 240px;
+  max-width: 400px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  animation: toastIn var(--duration-normal) var(--ease-out);
+  transition: opacity var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out);
+}
+
+.toast.toast-exit {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+.toast--success { border-left: 3px solid var(--status-success); }
+.toast--error   { border-left: 3px solid var(--status-error); }
+.toast--warning { border-left: 3px solid var(--status-warning); }
+.toast--info    { border-left: 3px solid var(--status-info); }
+
+.toast-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.toast--success .toast-icon { color: var(--status-success); }
+.toast--error   .toast-icon { color: var(--status-error); }
+.toast--warning .toast-icon { color: var(--status-warning); }
+.toast--info    .toast-icon { color: var(--status-info); }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Badges / Tags ── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.badge--primary { background: var(--accent-primary); color: var(--text-inverse); }
+.badge--success { background: var(--status-success); color: var(--text-inverse); }
+.badge--warning { background: var(--status-warning); color: #000; }
+.badge--error   { background: var(--status-error);   color: var(--text-inverse); }
+
+/* ── Divider ── */
+hr.divider {
+  border: none;
+  border-top: var(--border-width) solid var(--border-color);
+  margin: var(--space-md) 0;
+}
+/* ── Process List (icon + name + pid) ── */
+.process-list-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.process-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  border-left: 3px solid transparent;
+}
+
+.process-list-item:hover {
+  background: var(--bg-hover);
+  border-left-color: var(--accent-secondary);
+}
+
+.process-list-item.selected {
+  background: rgba(107, 44, 145, 0.15);
+  border-left-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.process-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  image-rendering: pixelated;
+}
+
+.process-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.process-pid {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+/* ── Base Address Button (fills process base addr into inputs) ── */
+.base-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-left: 4px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.base-btn:hover {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+}

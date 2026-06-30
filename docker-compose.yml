@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  memorygraph:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: memorygraph:latest
+    container_name: memorygraph
+    environment:
+      - MEMORYGRAPH_LOGGING__LEVEL=INFO
+      - MEMORYGRAPH_LOGGING__JSON=false
+      - PYTHONIOENCODING=utf-8
+    volumes:
+      # 挂载本地模型目录（避免重复下载）
+      - ./models:/app/models
+      # 挂载配置文件（可选）
+      - ./config:/root/.config/memorygraph
+    healthcheck:
+      test: ["CMD", "python", "core/agent/health_check.py"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    # 如需暴露端口，取消注释
+    # ports:
+    #   - "8000:8000"

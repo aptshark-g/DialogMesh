@@ -1,0 +1,626 @@
+/* ============================================
+   Layout — Global Grid, Sidebar, Main Content
+   ============================================ */
+@import url("variables.css");
+
+/* ── Reset & Box-Sizing ── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Body ── */
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── App Container ── */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-right: var(--border-width) solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-lg) 0;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+.sidebar-logo {
+  padding: 0 var(--space-lg) var(--space-lg);
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--accent-primary);
+  border-bottom: var(--border-width) solid var(--border-color);
+  margin-bottom: var(--space-md);
+}
+
+.sidebar-nav {
+  list-style: none;
+  flex: 1;
+}
+
+.sidebar-nav li a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 12px var(--space-lg);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  transition: all var(--duration-fast) var(--ease-out);
+  border-left: 3px solid transparent;
+}
+
+.sidebar-nav li a:hover,
+.sidebar-nav li a.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-left-color: var(--accent-primary);
+}
+
+.sidebar-nav li a .icon {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* ── Sidebar Buttons (JS-generated) ── */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 12px var(--space-lg);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  width: 100%;
+  text-align: left;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-item:hover,
+.sidebar-item.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-left-color: var(--accent-primary);
+}
+
+.sidebar-item .icon {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 100vh;
+}
+
+/* ── Section Cards ── */
+.section {
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out);
+}
+
+.section:hover {
+  box-shadow: var(--shadow-md);
+  border-color: #4a4a4a;
+}
+
+.section h3 {
+  margin: 0 0 var(--space-sm) 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ── Row Flex Layout ── */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-sm);
+}
+
+label {
+  font-weight: bold;
+  min-width: 60px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ── Tab Layout ── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--space-sm);
+  border-bottom: var(--border-width) solid var(--border-color);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+  animation: fadeIn var(--duration-normal) var(--ease-out);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Specific Containers ── */
+.proc-list {
+  width: 100%;
+  height: 150px;
+  max-width: 500px;
+  background: var(--bg-primary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: var(--space-sm);
+  overflow-y: auto;
+  resize: vertical;
+}
+
+.chart {
+  width: 100%;
+  height: 400px;
+  margin: var(--space-sm) 0;
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.app-container.intent-open .main-content {
+  margin-right: var(--intent-panel-width, 380px);
+}
+.app-container.intent-closed .main-content {
+  margin-right: 40px;
+}
+
+/* ── Intent Panel (Right Sidebar) ── */
+.intent-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--intent-panel-width, 380px);
+  background: var(--bg-secondary);
+  border-left: var(--border-width) solid var(--border-color);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.intent-panel.collapsed {
+  width: 40px;
+}
+
+.intent-panel.collapsed .intent-body {
+  display: none;
+}
+
+.intent-toggle {
+  position: absolute;
+  left: -28px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 60px;
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 91;
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.intent-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Resizer (draggable width handle) ── */
+.intent-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 92;
+  background: var(--border-color);
+  transition: background var(--duration-fast) var(--ease-out),
+              width var(--duration-fast) var(--ease-out);
+}
+
+.intent-resizer:hover {
+  background: var(--accent-primary);
+  width: 6px;
+}
+
+.intent-resizer.dragging {
+  background: var(--accent-secondary);
+  width: 6px;
+  opacity: 0.8;
+}
+
+.intent-resizer:hover,
+.intent-resizer.dragging {
+  background: var(--accent-primary);
+  opacity: 0.4;
+}
+
+.intent-resizer.dragging {
+  opacity: 0.6;
+  cursor: col-resize;
+}
+
+/* ── hide resizer when collapsed ── */
+.intent-panel.collapsed .intent-resizer {
+  display: none;
+}
+
+.intent-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.intent-header {
+  padding: var(--space-md) var(--space-md) var(--space-sm);
+  border-bottom: var(--border-width) solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-secondary);
+  flex-shrink: 0;
+}
+
+.intent-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: normal;
+  font-family: var(--font-mono);
+}
+
+.intent-status.running {
+  color: var(--status-running);
+}
+
+.intent-status.waiting {
+  color: var(--status-warning);
+}
+
+.intent-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.intent-input-area {
+  border-top: var(--border-width) solid var(--border-color);
+  padding: var(--space-sm) var(--space-md);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.intent-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.intent-option-btn {
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  text-align: left;
+}
+
+.intent-option-btn:hover {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+}
+
+.intent-option-btn.selected {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border-color: var(--accent-primary);
+}
+
+.intent-input-row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.intent-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.intent-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.intent-send-btn {
+  padding: 6px 14px;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.intent-send-btn:hover {
+  background: var(--accent-secondary);
+}
+
+.intent-send-btn:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* ── Chat Messages ── */
+.intent-msg {
+  max-width: 95%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.5;
+  animation: fadeIn 0.2s ease-out;
+  word-break: break-word;
+}
+
+.intent-msg.ai {
+  align-self: flex-start;
+  background: var(--bg-tertiary);
+  border: var(--border-width) solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.intent-msg.ai .msg-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent-secondary);
+  margin-bottom: 2px;
+}
+
+.intent-msg.ai .msg-content {
+  white-space: pre-wrap;
+}
+
+.intent-msg.ai .msg-content pre {
+  background: var(--bg-primary);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.intent-msg.ai .msg-content code {
+  background: var(--bg-primary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.intent-msg.user {
+  align-self: flex-end;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.intent-msg.system {
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  text-align: center;
+}
+
+.intent-msg.error {
+  align-self: flex-start;
+  background: rgba(255, 82, 82, 0.15);
+  border: var(--border-width) solid var(--status-error);
+  color: var(--status-error);
+}
+
+.intent-msg.finding {
+  align-self: flex-start;
+  background: rgba(76, 175, 80, 0.15);
+  border: var(--border-width) solid var(--status-success);
+  color: var(--status-success);
+}
+
+/* Start / Stop controls */
+.intent-controls {
+  display: flex;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md) var(--space-sm);
+  flex-shrink: 0;
+}
+
+.intent-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.intent-btn.start {
+  background: var(--status-success);
+  color: var(--text-inverse);
+}
+
+.intent-btn.start:hover {
+  background: #45a049;
+}
+
+.intent-btn.stop {
+  background: var(--status-error);
+  color: var(--text-inverse);
+}
+
+.intent-btn.stop:hover {
+  background: #e04646;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .intent-panel {
+    width: min(var(--intent-panel-width, 380px), 320px);
+  }
+  .app-container.intent-open .main-content {
+    margin-right: min(var(--intent-panel-width, 380px), 320px);
+  }
+}
+
+@media (max-width: 900px) {
+  .intent-panel {
+    width: min(var(--intent-panel-width, 380px), 280px);
+  }
+  .app-container.intent-open .main-content {
+    margin-right: min(var(--intent-panel-width, 380px), 280px);
+  }
+}
+
+@media (max-width: 768px) {
+  .intent-panel {
+    transform: translateX(100%);
+    transition: transform var(--duration-normal) var(--ease-out),
+                width var(--duration-normal) var(--ease-out);
+  }
+  .intent-panel.open {
+    transform: translateX(0);
+  }
+  .app-container.intent-open .main-content,
+  .app-container.intent-closed .main-content {
+    margin-right: 0;
+  }
+  .intent-toggle {
+    left: -28px;
+  }
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform var(--duration-normal) var(--ease-out);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0;
+  }
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tabs {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Header Bar ── */
+.header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-md);
+}
+.header-bar h1 {
+  font-size: 20px;
+  color: var(--text-primary);
+  margin: 0;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 4px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}

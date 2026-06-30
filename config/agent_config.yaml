@@ -1,0 +1,163 @@
+# Agent 配置示例
+# 放置路径：~/.memorygraph/config.yaml（用户级）或 项目根目录 config/agent_config.yaml（项目级）
+# 优先级：用户级 > 项目级 > 内置默认
+
+version: "1.0.0"
+
+# ── 阈值调参（决策层参数，非算法实现）───────────────────
+thresholds:
+  strategy_completer:
+    confidence_low: 0.3          # 意图置信度 < 0.3 触发 LLM 补全
+    noise_complexity_combo: 0.3  # noise > 0.3 且 complexity > 0.3 触发
+    advisor_confidence_low: 0.5  # ADVISOR 意图置信度 < 0.5 触发
+  topic_tree:
+    cohesion_continue: 0.6       # cohesion >= 0.6 → 继续同一话题
+    cohesion_fork: 0.3           # cohesion < 0.3 → 新建/分叉话题
+  context_window:
+    hot_max: 5                   # Hot 区保留最近 5 轮
+    warm_max: 15                 # Warm 区保留 6-20 轮
+    cold_max: 80                 # Cold 区保留 21-100 轮
+  cognitive_compiler:
+    fast_max_length: 20          # 输入 < 20 字符 → FAST 模式（纯规则）
+    hybrid_max_length: 100       # 输入 < 100 字符 → HYBRID 模式（轻量 LLM）
+
+# ── LLM Provider 连接配置（多层架构）─────────────────────────
+# 设计: Tier 1 (Fast/Cheap) 用于简单任务, Tier 2 (Premium) 用于复杂任务
+
+llm_providers:
+  # Tier 1: 快速/低成本层（本地小模型、Gemini Flash 等）
+  tier1:
+    name: "fast"
+    description: "本地小模型或低成本 API（意图分类、路由、简单回复）"
+    base_url: "http://localhost:1234/v1"   # LMStudio 本地
+    api_key: "lmstudio"
+    model: "auto"                          # 自动选择最小模型
+    timeout: 10.0
+    max_tokens: 512
+    temperature: 0.1
+    # 可选：模型优先级（白名单）
+    model_priority:
+      - "nvidia/nemotron-3-nano-4b"        # 4B 小模型，极快
+      - "qwen/qwen3.5-9b"                  # 9B 中等，平衡
+      - "google/gemma-4-12b"               # 12B 较大，但能力强
+
+    # 备选：如果本地不可用，切换到 Gemini Flash
+    # base_url: "https://generativelanguage.googleapis.com/v1beta"
+    # api_key: "${GOOGLE_API_KEY}"
+    # model: "gemini-2.5-flash"
+
+  # Tier 2: 高端层（DeepSeek V4、GPT-4o、Claude 等）
+  tier2:
+    name: "premium"
+    description: "DeepSeek V4 高端模型（语义摘要、话题仲裁、复杂分析）"
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "${DEEPSEEK_API_KEY}"         # 从环境变量读取
+    model: "deepseek-v4"
+    timeout: 60.0
+    max_tokens: 2048
+    temperature: 0.7
+    reasoning_mode: true                    # 支持推理模式
+
+# ── 任务路由映射（任务类型 → tier 编号）───────────────────────
+task_routing:
+  intent_classification: 1      # 意图分类 → Tier 1（简单）
+  simple_reply: 1             # 简单回复 → Tier 1
+  routing_decision: 1         # 路由决策 → Tier 1
+  topic_overlap: 1            # 话题重叠计算 → Tier 1（算法为主）
+  
+  semantic_summary: 2         # 语义摘要 → Tier 2（需要理解能力）
+  topic_arbitration: 2         # 话题仲裁 → Tier 2（复杂判断）
+  topic_audit: 2              # 话题审查 → Tier 2
+  complex_analysis: 2          # 复杂分析 → Tier 2
+  code_generation: 2            # 代码生成 → Tier 2
+  long_context: 2             # 长上下文 → Tier 2
+  reasoning: 2                # 推理任务 → Tier 2
+
+  default: 1                   # 默认 → Tier 1
+
+  # 默认：云端模型（GPT-4、Kimi、Claude）
+  default:
+    max_tokens: 512
+    temperature: 0.7
+    timeout_ms: 30000
+    reasoning_mode: false
+    response_format_support: true
+    context_window: 16000
+
+  # 本地 thinking model（Qwen 3.5、DeepSeek-R1）
+  local_thinking:
+    max_tokens: 2048              # thinking model 需要更多输出 token
+    temperature: 0.7
+    timeout_ms: 120000           # 本地模型慢，timeout 更长
+    reasoning_mode: true
+    response_format_support: false
+    context_window: 16000
+
+  # 极速模式（意图分类、路由决策）
+  fast:
+    max_tokens: 128
+    temperature: 0.0
+    timeout_ms: 10000
+    reasoning_mode: false
+    response_format_support: true
+    context_window: 16000
+
+# ── 系统提示词（按角色）─────────────────────────────────
+system_prompts:
+  conversation_handler:
+    index_card: |
+      你是对话回退模块。当规则引擎无法识别意图时，你负责回复。
+
+      格式：
+      分析：用户意图是...，回复策略是...
+      Final Output: [自然语言回复，80字以内]
+
+      规则：
+      1. 问候→友好回应
+      2. 问能力→列举扫描/分析/教程/对话
+      3. 技术未识别→推测并建议
+      4. 模糊输入→礼貌澄清，不提系统状态
+      5. 用户困惑→安抚，用大白话解释
+    parameter_glossary:
+      expectation: "系统期望意图。tool=技术操作, advisor=咨询, companion=对话, unknown=未识别（触发你）"
+      confidence: "意图置信度（0~1）。低置信时触发你"
+      cohesion_score: "上下文关联度（0~1）。高值继续话题，低值切换话题"
+      topic_action: "话题树决策。continue=继续, fork=分叉, attach=回溯, new=全新"
+      noise_level: "输入噪声（0~1）。高值表示输入模糊"
+      complexity_level: "输入复杂度（0~1）。高值表示需要分步处理"
+
+  strategy_completer:
+    index_card: |
+      你是一个策略决策助手。你的输出必须且只能是合法的 JSON 对象。
+
+      允许的 action 值："ask_user", "direct_reply", "execute"
+
+      示例输出：
+      {"action": "ask_user", "question": "您想扫描哪个数值？"}
+      {"action": "direct_reply", "text": "学习内存扫描可以参考以下步骤..."}
+      {"action": "execute", "blueprint_id": "RULE_FAST_PATH"}
+
+      CRITICAL: 只输出 JSON 对象。不要添加任何解释、思考过程、markdown 标记。
+
+  intent_analyzer:
+    index_card: |
+      你是一个意图分析助手。你的输出必须且只能是合法的 JSON 对象，禁止输出任何解释、思考过程、Markdown 代码块标记。直接输出纯 JSON 文本。
+
+  router:
+    index_card: |
+      你是一个路由决策助手。根据用户意图选择最合适的蓝图，只输出蓝图 ID 字符串，禁止输出任何解释。
+
+# ── 提示词预算（基于 16K context_window）───────────────
+prompt_budget:
+  system_prompt_max_ratio: 0.05   # 5% = 800 tokens（系统提示词）
+  history_max_ratio: 0.10       # 10% = 1600 tokens（历史摘要）
+  glossary_max_ratio: 0.05      # 5% = 800 tokens（参数速查）
+  output_max_ratio: 0.30        # 30% = 4800 tokens（LLM 输出）
+  reserve_ratio: 0.10           # 10% = 1600 tokens（reasoning + 安全余量）
+
+# ── 观测性告警阈值─────────────────────────────────────
+observability:
+  alert_latency_ms: 200          # 单轮延迟 > 200ms 告警
+  alert_clarification_rate: 0.3   # 澄清率 > 30% 告警
+  alert_unknown_rate: 0.5        # UNKNOWN 率 > 50% 告警
+  alert_confidence_low: 0.5      # 平均置信度 < 0.5 告警

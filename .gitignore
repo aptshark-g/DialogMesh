@@ -1,0 +1,77 @@
+# MemoryGraph .gitignore
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# ── 虚拟环境 ──
+.venv/
+venv/
+env/
+ENV/
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── 数据文件（不纳入版本控制）──
+data/
+!data/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.graphml
+
+# ── 模型文件（大文件）──
+models/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# ── 日志 ──
+*.log
+logs/
+
+# ── 测试输出 ──
+.pytest_cache/
+.coverage
+htmlcov/
+test_reports/
+
+# ── 环境配置（含密钥）──
+config/user_config.yaml
+.env
+*.env
+
+# ── 缓存 ──
+.cache/
+*.cache
+
+# ── 运行时 ──
+*.pid
+*.sock
+
+# ── 备份文件 ──
+*.bak
+*.bak.*
+*.old
+*.orig
+
+# ── 其他 ──
+tmp/
+temp/

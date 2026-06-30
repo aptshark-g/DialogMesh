@@ -1,0 +1,46 @@
+# MemoryGraph — Core Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Core: 语义向量 ──
+numpy>=1.24.0
+torch>=2.0.0
+transformers>=4.30.0
+modelscope>=1.9.0
+
+# ── Core: 文本处理 ──
+jieba>=0.42.1
+sentencepiece>=0.1.99
+
+# ── Core: LLM API ──
+openai>=1.0.0
+requests>=2.31.0
+
+# ── Core: 配置 ──
+pyyaml>=6.0
+
+# ── Core: GUI ──
+nicegui>=3.13.0
+pywebview>=6.2.1
+
+# ── Core: 图数据库 ──
+networkx>=3.0
+
+# ── Core: Token 计数 ──
+tiktoken>=0.13.0
+
+# ── Optional: 本地模型 ──
+# aiohttp>=3.8.0        # LMStudio async streaming
+# llama-cpp-python>=0.2.0
+
+# ── Optional: 异步 SQLite ──
+# aiosqlite>=0.19.0
+
+# ── Optional: 监控 ──
+# prometheus-client>=0.17.0
+
+# ── Dev / Test ──
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+ruff>=0.1.0
+mypy>=1.5.0
