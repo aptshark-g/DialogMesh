@@ -30,7 +30,7 @@
 ### 安装依赖
 
 ```bash
-pip install -r requirements.txt
+pip install -r deploy/requirements.txt
 ```
 
 ### 下载 BGE 模型
@@ -67,6 +67,11 @@ python -m core.infrastructure.test_runner
 
 ```
 memorygraph/
+├── deploy/                  # 构建与部署配置
+│   ├── requirements.txt   # Python 依赖
+│   ├── pyproject.toml     # 项目配置（Poetry / setuptools）
+│   ├── Dockerfile           # Docker 构建
+│   └── docker-compose.yml # Docker Compose 配置
 ├── config/                  # 配置文件
 │   ├── agent_config.yaml    # 默认配置
 │   ├── user_config.yaml     # 用户配置（含 API Key，不提交 git）
@@ -94,9 +99,8 @@ memorygraph/
 │   └── streaming.py        # 流式响应组件
 ├── data/                   # 运行时数据（SQLite DB、GraphML，不提交 git）
 ├── docs/                   # 设计文档
-├── requirements.txt
-├── pyproject.toml
-└── README.md
+├── README.md
+└── MANIFEST.md
 ```
 
 ---

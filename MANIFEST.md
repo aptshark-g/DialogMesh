@@ -161,10 +161,10 @@ P0-P2 落地的核心基础设施模块。
 
 | 文件 | 说明 |
 |------|------|
-| `requirements.txt` | Python 依赖列表 |
-| `pyproject.toml` | 项目配置（ Poetry / setuptools） |
-| `Dockerfile` | Docker 构建 |
-| `docker-compose.yml` | Docker Compose 配置 |
+| `deploy/requirements.txt` | Python 依赖列表 |
+| `deploy/pyproject.toml`   | 项目配置（ Poetry / setuptools） |
+| `deploy/Dockerfile`       | Docker 构建 |
+| `deploy/docker-compose.yml`| Docker Compose 配置 |
 
 ---
 
