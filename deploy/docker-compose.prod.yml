@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh — Docker Compose (Production)
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Usage (from project root):
+#    docker-compose -f deploy/docker-compose.prod.yml up -d
+#
+#  Differences from dev:
+#    • restart: always
+#    • JSON logging with rotation (10 MB × 3 files)
+#    • Memory 1 GB / CPU 1.0 limit per container
+#    • No Nginx (assume external LB / ingress)
+#    • Prometheus monitoring (optional)
+# ───────────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  # ── FastAPI Application ───────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dialogmesh:latest
+    container_name: dialogmesh-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - dialogmesh-data:/app/data
+      - ./config:/app/config:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - DIALOGMESH_API_HOST=${DIALOGMESH_API_HOST:-0.0.0.0}
+      - DIALOGMESH_API_PORT=${DIALOGMESH_API_PORT:-8000}
+      - DIALOGMESH_WORKERS=${DIALOGMESH_WORKERS:-4}
+      - DIALOGMESH_LOG_LEVEL=${DIALOGMESH_LOG_LEVEL:-INFO}
+      - DIALOGMESH_DB_PATH=${DIALOGMESH_DB_PATH:-/app/data/sessions.db}
+      - DIALOGMESH_TTL_DAYS=${DIALOGMESH_TTL_DAYS:-7}
+      - DIALOGMESH_API_KEY=${DIALOGMESH_API_KEY:-}
+      - DIALOGMESH_JWT_SECRET=${DIALOGMESH_JWT_SECRET:-}
+      - DIALOGMESH_LLM_PROVIDER=${DIALOGMESH_LLM_PROVIDER:-openai}
+      - DIALOGMESH_OPENAI_API_KEY=${DIALOGMESH_OPENAI_API_KEY:-}
+      - DIALOGMESH_LMSTUDIO_URL=${DIALOGMESH_LMSTUDIO_URL:-http://localhost:1234}
+      - DIALOGMESH_RATE_LIMIT_RPS=${DIALOGMESH_RATE_LIMIT_RPS:-10}
+      - DIALOGMESH_RATE_LIMIT_BURST=${DIALOGMESH_RATE_LIMIT_BURST:-5}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service"
+        env: "OS_ENVIRONMENT"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+          cpus: "0.5"
+    networks:
+      - dialogmesh-network
+
+  # ── Prometheus (optional monitoring) ────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dialogmesh-prometheus
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - dialogmesh-network
+
+networks:
+  dialogmesh-network:
+    driver: bridge
+
+volumes:
+  dialogmesh-data:
+    driver: local
+  prometheus-data:
+    driver: local

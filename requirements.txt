@@ -1,0 +1,43 @@
+# MemoryGraph Agent — Core & Optional Dependencies
+# Generated from pyproject.toml
+# Install core:  pip install -r requirements.txt
+# Install all:   pip install -r requirements.txt[all]
+# Install dev:   pip install -r requirements.txt[dev]
+
+# ── Core Dependencies (required) ────────────────────────────────────
+numpy>=1.24.0
+openai>=1.0.0
+torch>=2.0.0
+transformers>=4.30.0
+modelscope>=1.9.0
+jieba>=0.42.1
+sentencepiece>=0.1.99
+
+# ── Service (FastAPI server) ───────────────────────────────────────
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+aiosqlite>=0.19.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# ── Optional: YAML config loading ─────────────────────────────────
+pyyaml>=6.0
+
+# ── Optional: MCP protocol ─────────────────────────────────────────
+mcp>=1.28.0
+
+# ── Optional: Web GUI ───────────────────────────────────────────────
+gradio>=4.0.0
+
+# ── Optional: Prometheus metrics ────────────────────────────────────
+prometheus-client>=0.17.0
+
+# ── Dev / Test / Lint ───────────────────────────────────────────────
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+httpx>=0.24.0
+ruff>=0.1.0
+mypy>=1.5.0

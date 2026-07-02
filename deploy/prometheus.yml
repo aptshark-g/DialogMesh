@@ -1,0 +1,30 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh — Prometheus Scraping Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Scrape targets:
+#    • prometheus:9090  — Prometheus self-metrics
+#    • app:8000/metrics — DialogMesh application metrics
+# ───────────────────────────────────────────────────────────────────────────────
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: dialogmesh
+    replica: '{{.ExternalURL}}'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # DialogMesh FastAPI application
+  - job_name: 'dialogmesh'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['app:8000']
+    # Relabel to attach instance label
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance

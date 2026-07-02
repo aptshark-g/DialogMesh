@@ -7,7 +7,14 @@ Agent package exports.
 
 from __future__ import annotations
 
-from core.agent.integration_bridge import AgentPipeline
+try:
+    from core.agent.integration_bridge import AgentPipeline
+except Exception as _integration_err:
+    import logging
+    logging.getLogger(__name__).warning(
+        "AgentPipeline lazy import failed: %s", _integration_err
+    )
+    AgentPipeline = None  # type: ignore
 
 # v2.4 架构修复：新增模块导出（按需导入，默认不自动加载以保持启动速度）
 __all__ = [

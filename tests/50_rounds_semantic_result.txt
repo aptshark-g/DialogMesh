@@ -1,0 +1,491 @@
+Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\APTShark\AppData\Local\Temp\jieba.cache
+Loading model cost 0.720 seconds.
+Prefix dict has been built successfully.
+======================================================================
+  DiscourseBlock Tree 50 轮对话测试
+======================================================================
+
+[Turn 00] 帮我写一个 Python 脚本
+  Latency: 721.15ms | Blocks: 1 (H:1 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+[v1] (CMD) Python 写 Python...
+
+[Turn 01] 我想用 Python 做数据分析
+  Latency: 1.00ms | Blocks: 1 (H:1 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python...
+
+[Turn 02] Python 的 pandas 库怎么导入
+  Latency: 1.00ms | Blocks: 2 (H:2 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python
+[Hot] block:T2:0
+Pyth...
+
+[Turn 03] 这个库很强大，帮我scan一下内存
+  Latency: 1.00ms | Blocks: 3 (H:3 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python
+[Hot] block:T2:0
+Pyth...
+
+[Turn 04] 数据分析需要用到 numpy 和 matplotlib
+  Latency: 1.00ms | Blocks: 3 (H:3 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python
+[Hot] block:T2:0
+Pyth...
+
+[Turn 05] 我喜欢喝汽水
+  Latency: 0.00ms | Blocks: 4 (H:4 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python
+[Hot] block:T2:0
+Pyth...
+
+[Turn 06] 这个很甜，那个很呛
+  Latency: 1.00ms | Blocks: 5 (H:5 W:0 C:0)
+  Context: [Hot] block:T0:0
+帮我写一个 Python 脚本
+我想用 Python 做数据分析数据
+[v1] (CMD) Python 写 Python
+[Hot] block:T2:0
+Pyth...
+
+[Turn 07] 汽水含有很多糖分
+  Latency: 1.00ms | Blocks: 6 (H:5 W:1 C:0)
+  Context: [Warm] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Hot] block:T2:0
+Python 的 pandas 库怎么导入
+[...
+
+[Turn 08] 碳酸饮料对健康不太好
+  Latency: 1.00ms | Blocks: 7 (H:5 W:2 C:0)
+  Context: [Warm] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Warm] block:T2:0 [statement] entities=P...
+
+[Turn 09] 我想喝矿泉水
+  Latency: 0.00ms | Blocks: 8 (H:6 W:2 C:0)
+  Context: [Warm] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Warm] block:T2:0 [statement] entities=P...
+
+[Turn 10] Java 和 Python 有什么区别
+  Latency: 1.00ms | Blocks: 9 (H:6 W:3 C:0)
+  Context: [Warm] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Warm] block:T2:0 [statement] entities=P...
+
+[Turn 11] Java 的语法更严格
+  Latency: 1.00ms | Blocks: 10 (H:6 W:4 C:0)
+  Context: [Warm] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Warm] block:T2:0 [statement] entities=P...
+
+[Turn 12] 帮我写一个 Java 类
+  Latency: 1.00ms | Blocks: 11 (H:6 W:4 C:1)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Warm] block:T2:0 [statement] entities=P...
+
+[Turn 13] 这个类需要继承父类
+  Latency: 1.00ms | Blocks: 11 (H:5 W:4 C:2)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 14] Java 的内存管理是自动的
+  Latency: 1.00ms | Blocks: 11 (H:4 W:5 C:2)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 15] Python 也有类继承
+  Latency: 0.00ms | Blocks: 12 (H:4 W:5 C:3)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 16] 帮我scan Python 的内存地址
+  Latency: 1.00ms | Blocks: 12 (H:3 W:5 C:4)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 17] Python 的 dict 和 Java 的 HashMap 类似
+  Latency: 1.00ms | Blocks: 13 (H:3 W:5 C:5)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 18] 我想用 Python 做机器学习
+  Latency: 1.00ms | Blocks: 14 (H:4 W:4 C:6)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 19] TensorFlow 和 PyTorch 哪个好
+  Latency: 1.00ms | Blocks: 15 (H:5 W:3 C:7)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 20] 我喜欢 Python。但是 Java 也很强大。帮我分析一下。
+  Latency: 2.58ms | Blocks: 16 (H:5 W:3 C:8)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 21] 数据分析需要 pandas，机器学习需要 PyTorch，帮我做推荐。
+  Latency: 1.00ms | Blocks: 16 (H:5 W:2 C:9)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 22] 这个框架很强大，那个框架很灵活，我该怎么选？
+  Latency: 1.00ms | Blocks: 16 (H:4 W:2 C:10)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 23] 我不喜欢 Java 的语法，因为它太冗长了。
+  Latency: 1.00ms | Blocks: 17 (H:4 W:3 C:10)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 24] Python 简单，Java 复杂，C++ 更难。
+  Latency: 1.00ms | Blocks: 18 (H:4 W:4 C:10)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 25] Python 是什么？
+  Latency: 1.00ms | Blocks: 19 (H:4 W:4 C:11)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 26] 帮我查一下 Python 的文档。
+  Latency: 1.00ms | Blocks: 19 (H:4 W:4 C:11)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 27] 为什么 Python 这么流行？
+  Latency: 1.00ms | Blocks: 20 (H:5 W:3 C:12)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 28] 给我推荐一个 Python 教程。
+  Latency: 1.00ms | Blocks: 21 (H:5 W:3 C:13)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 29] Python 的 GIL 是什么？
+  Latency: 0.00ms | Blocks: 22 (H:5 W:3 C:14)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 30] 我想吃辣椒
+  Latency: 1.00ms | Blocks: 23 (H:5 W:3 C:15)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 31] 这个很辣，那个很苦
+  Latency: 1.00ms | Blocks: 24 (H:6 W:3 C:15)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 32] 辣椒和咖啡一起喝怎么样
+  Latency: 1.00ms | Blocks: 24 (H:5 W:4 C:15)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 33] 我不喜欢苦味
+  Latency: 0.00ms | Blocks: 25 (H:5 W:4 C:16)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 34] 帮我推荐一种饮料
+  Latency: 1.00ms | Blocks: 26 (H:5 W:4 C:17)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 35] C++ 和 Python 哪个性能好
+  Latency: 1.00ms | Blocks: 27 (H:5 W:4 C:18)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 36] C++ 的指针很难理解
+  Latency: 1.00ms | Blocks: 27 (H:4 W:5 C:18)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 37] 帮我scan C++ 的内存地址
+  Latency: 1.00ms | Blocks: 28 (H:5 W:4 C:19)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 38] Python 的 list 和 C++ 的 vector 区别
+  Latency: 0.00ms | Blocks: 29 (H:5 W:4 C:20)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 39] 我想学 C++ 编程
+  Latency: 1.00ms | Blocks: 30 (H:5 W:4 C:21)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 40] 神经网络怎么训练
+  Latency: 1.00ms | Blocks: 31 (H:5 W:4 C:22)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 41] CNN 和 LSTM 有什么区别
+  Latency: 1.00ms | Blocks: 32 (H:6 W:3 C:23)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 42] 帮我写一个 CNN 模型
+  Latency: 1.00ms | Blocks: 32 (H:5 W:4 C:23)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 43] 这个模型需要很多数据
+  Latency: 0.00ms | Blocks: 32 (H:4 W:4 C:24)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 44] PyTorch 的 DataLoader 怎么用
+  Latency: 1.00ms | Blocks: 33 (H:4 W:4 C:25)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 45] Python、Java、C++ 三选一
+  Latency: 1.00ms | Blocks: 34 (H:4 W:4 C:26)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 46] 数据分析用 Python，后端用 Java
+  Latency: 1.00ms | Blocks: 35 (H:4 W:5 C:26)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 47] 机器学习需要 Python 和数学
+  Latency: 1.00ms | Blocks: 36 (H:5 W:4 C:27)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 48] 帮我总结一下这些编程语言
+  Latency: 1.00ms | Blocks: 37 (H:6 W:3 C:28)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+[Turn 49] 我想深入学习 Python 和机器学习
+  Latency: 1.00ms | Blocks: 38 (H:6 W:3 C:29)
+  Context: [Cold] block:T0:0 [analyze] [CMD] entities=Python actions=写
+[Cold] block:T2:0 [statement] entities=P...
+
+======================================================================
+  最终统计
+======================================================================
+
+  总轮次: 50
+  总耗时: 764.73ms
+  平均延迟: 15.29ms
+  最终 Block 数: 38
+  Hot/Warm/Cold: 6/3/29
+
+  --- Block 详情 ---
+
+  [block:T0:0] State=cold Turns=0-1 EDUs=2
+    v1: (CMD) Python 写 Python
+    v2: [analyze] [CMD] entities=Python actions=写
+    Entities: Python
+
+  [block:T2:0] State=cold Turns=2-2 EDUs=1
+    v1: (Q) Python ?
+    v2: [statement] entities=Python actions=none
+    Entities: Python
+
+  [block:T3:0] State=cold Turns=3-4 EDUs=2
+    v1: (CMD) ? scan 一下内存
+    v2: [analyze] [CMD] entities=none actions=scan
+    Entities: 
+
+  [block:T5:0] State=cold Turns=5-5 EDUs=1
+    v1: ? 喜欢 喝汽水
+    v2: [analyze] entities=none actions=喜欢
+    Entities: 
+
+  [block:T6:0] State=cold Turns=6-6 EDUs=1
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T7:0] State=cold Turns=7-7 EDUs=1
+    v1: ? 有 很多糖分
+    v2: [analyze] entities=none actions=有
+    Entities: 
+
+  [block:T8:0] State=cold Turns=8-8 EDUs=1
+    v1: (NOT) ? ?
+    v2: [statement] [NEG] entities=none actions=none
+    Entities: 
+
+  [block:T9:0] State=cold Turns=9-9 EDUs=1
+    v1: ? 想 喝矿泉水
+    v2: [analyze] entities=none actions=想
+    Entities: 
+
+  [block:T10:0] State=cold Turns=10-10 EDUs=1
+    v1: (NOT Q) Python 有 什么区别
+    v2: [analyze] [NEG] entities=Python, Java actions=有
+    Entities: Python Java
+
+  [block:T11:0] State=cold Turns=11-11 EDUs=1
+    v1: Java ?
+    v2: [statement] entities=Java actions=none
+    Entities: Java
+
+  [block:T12:0] State=cold Turns=12-14 EDUs=3
+    v1: (CMD) Java 写 Java
+    v2: [analyze] [CMD] entities=Java actions=写
+    Entities: Java
+
+  [block:T15:0] State=cold Turns=15-16 EDUs=2
+    v1: Python 有 类继承
+    v2: [analyze] entities=Python actions=有
+    Entities: Python
+
+  [block:T17:0] State=cold Turns=17-17 EDUs=1
+    v1: Python ?
+    v2: [statement] entities=Python, Java actions=none
+    Entities: Python Java
+
+  [block:T18:0] State=cold Turns=18-18 EDUs=1
+    v1: Python 做 机器学习
+    v2: [analyze] entities=Python actions=做
+    Entities: Python
+
+  [block:T19:0] State=cold Turns=19-19 EDUs=1
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T20:0] State=cold Turns=20-22 EDUs=3
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T23:0] State=cold Turns=23-23 EDUs=1
+    v1: (NOT) [NEG]Java 喜欢 [NEG]Java
+    v2: [analyze] [NEG] entities=Java actions=喜欢
+    Entities: Java
+
+  [block:T24:0] State=cold Turns=24-24 EDUs=1
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T25:0] State=cold Turns=25-26 EDUs=2
+    v1: (Q) Python 是 什么
+    v2: [analyze] entities=Python actions=是
+    Entities: Python
+
+  [block:T27:0] State=cold Turns=27-27 EDUs=1
+    v1: (Q) Python ?
+    v2: [statement] entities=Python actions=none
+    Entities: Python
+
+  [block:T28:0] State=cold Turns=28-28 EDUs=1
+    v1: (CMD) Python 推荐 Python
+    v2: [analyze] [CMD] entities=Python actions=推荐
+    Entities: Python
+
+  [block:T29:0] State=cold Turns=29-29 EDUs=1
+    v1: (Q) Python 是 什么
+    v2: [analyze] entities=Python actions=是
+    Entities: Python
+
+  [block:T30:0] State=cold Turns=30-30 EDUs=1
+    v1: ? 想 吃辣椒
+    v2: [analyze] entities=none actions=想
+    Entities: 
+
+  [block:T31:0] State=cold Turns=31-32 EDUs=2
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T33:0] State=cold Turns=33-33 EDUs=1
+    v1: (NOT) ? 喜欢 [NEG]苦味
+    v2: [analyze] [NEG] entities=none actions=喜欢
+    Entities: 
+
+  [block:T34:0] State=cold Turns=34-34 EDUs=1
+    v1: (CMD) ? 推荐 一种饮料
+    v2: [analyze] [CMD] entities=none actions=推荐
+    Entities: 
+
+  [block:T35:0] State=cold Turns=35-36 EDUs=2
+    v1: (Q) Python ?
+    v2: [statement] entities=Python, C++ actions=none
+    Entities: Python C++
+
+  [block:T37:0] State=cold Turns=37-37 EDUs=1
+    v1: (CMD) C++ scan C++
+    v2: [analyze] [CMD] entities=C++ actions=scan
+    Entities: C++
+
+  [block:T38:0] State=cold Turns=38-38 EDUs=1
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T39:0] State=cooling Turns=39-39 EDUs=1
+    v1: C++ 想 C++
+    v2: [analyze] entities=C++ actions=想
+    Entities: C++
+
+  [block:T40:0] State=cooling Turns=40-40 EDUs=1
+    v1: (Q) ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T41:0] State=cooling Turns=41-43 EDUs=3
+    v1: (NOT Q) ? 有 什么区别
+    v2: [analyze] [NEG] entities=none actions=有
+    Entities: 
+
+  [block:T44:0] State=active Turns=44-44 EDUs=1
+    v1: (Q) PyTorch 用
+    v2: [analyze] entities=PyTorch actions=用
+    Entities: PyTorch
+
+  [block:T45:0] State=active Turns=45-45 EDUs=1
+    v1: ? ?
+    v2: [statement] entities=none actions=none
+    Entities: 
+
+  [block:T46:0] State=active Turns=46-46 EDUs=1
+    v1: (CMD) Python 分析 Python
+    v2: [analyze] [CMD] entities=Python, Java actions=分析
+    Entities: Python Java
+
+  [block:T47:0] State=active Turns=47-47 EDUs=1
+    v1: Python 学习 Python
+    v2: [analyze] entities=Python actions=学习
+    Entities: Python
+
+  [block:T48:0] State=active Turns=48-48 EDUs=1
+    v1: (CMD) ? ?
+    v2: [statement] [CMD] entities=none actions=none
+    Entities: 
+
+  [block:T49:0] State=active Turns=49-49 EDUs=1
+    v1: Python 想 Python
+    v2: [analyze] entities=Python actions=想
+    Entities: Python
+
+  --- 索引统计 ---
+  提取实体总数: 4
+  实体列表: ['C++', 'Java', 'PyTorch', 'Python']...
+
+  --- 性能评估 ---
+  [WARN] 平均延迟 15.29ms > 10ms (需优化)

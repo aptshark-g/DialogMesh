@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh — .dockerignore
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Keep build context small; exclude build artifacts, secrets, and large files.
+# ───────────────────────────────────────────────────────────────────────────────
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# IDE / editors
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Python build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+*.egg
+dist
+build
+pip-wheel-metadata
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+.pytest_cache
+.coverage
+htmlcov
+.tox
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# Documentation (keep README.md)
+*.md
+!README.md
+
+docs/
+
+# OS / script files
+*.bat
+*.ps1
+*.sh
+.DS_Store
+Thumbs.db
+
+# MemoryGraph / legacy engine artifacts
+mg_engine*
+*.dll
+*.exe
+*.so
+
+# Large / optional directories (excluded to keep build context < 500 MB)
+models/
+analysis/
+bin/
+cache/
+lib/
+logs/
+memory/
+recycle/
+reports/
+
+# CI / GitHub
+.github/
+
+# Node / frontend (if any)
+node_modules/

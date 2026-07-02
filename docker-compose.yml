@@ -1,0 +1,75 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh — Docker Compose (Development)
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Usage:
+#    docker-compose up -d        # Start services
+#    docker-compose down         # Stop services
+#    docker-compose logs -f app  # Tail app logs
+# ───────────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  # ── FastAPI Application ───────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dialogmesh:latest
+    container_name: dialogmesh-app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent data & session DB
+      - dialogmesh-data:/app/data
+      # Live config reloading (read-only recommended for prod)
+      - ./config:/app/config:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      # Override defaults via .env or shell
+      - DIALOGMESH_API_HOST=${DIALOGMESH_API_HOST:-0.0.0.0}
+      - DIALOGMESH_API_PORT=${DIALOGMESH_API_PORT:-8000}
+      - DIALOGMESH_WORKERS=${DIALOGMESH_WORKERS:-4}
+      - DIALOGMESH_LOG_LEVEL=${DIALOGMESH_LOG_LEVEL:-INFO}
+      - DIALOGMESH_DB_PATH=${DIALOGMESH_DB_PATH:-/app/data/sessions.db}
+      - DIALOGMESH_TTL_DAYS=${DIALOGMESH_TTL_DAYS:-7}
+      - DIALOGMESH_API_KEY=${DIALOGMESH_API_KEY:-}
+      - DIALOGMESH_JWT_SECRET=${DIALOGMESH_JWT_SECRET:-}
+      - DIALOGMESH_LLM_PROVIDER=${DIALOGMESH_LLM_PROVIDER:-openai}
+      - DIALOGMESH_OPENAI_API_KEY=${DIALOGMESH_OPENAI_API_KEY:-}
+      - DIALOGMESH_LMSTUDIO_URL=${DIALOGMESH_LMSTUDIO_URL:-http://localhost:1234}
+      - DIALOGMESH_RATE_LIMIT_RPS=${DIALOGMESH_RATE_LIMIT_RPS:-10}
+      - DIALOGMESH_RATE_LIMIT_BURST=${DIALOGMESH_RATE_LIMIT_BURST:-5}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - dialogmesh-network
+
+  # ── Nginx Reverse Proxy (optional) ────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: dialogmesh-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - dialogmesh-network
+
+networks:
+  dialogmesh-network:
+    driver: bridge
+
+volumes:
+  dialogmesh-data:
+    driver: local

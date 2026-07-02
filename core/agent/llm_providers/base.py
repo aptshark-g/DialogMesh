@@ -147,3 +147,45 @@ class LLMProvider(ABC):
             except json.JSONDecodeError:
                 pass
         return None
+
+    # ── v3.0 兼容方法 ───────────────────────────────────────────────────
+
+    def to_v3_request(self, v2_request) -> Any:
+        """从 v2.x GenerateRequest 转换为 v3 GenerateRequest_v3。"""
+        try:
+            from core.agent.v3_0.llm_providers.base import GenerateRequest_v3
+        except ImportError:
+            raise ImportError("v3.0 llm_providers not available")
+        return GenerateRequest_v3(
+            prompt=v2_request.prompt,
+            system_prompt=v2_request.system_prompt,
+            messages=v2_request.messages,
+            max_tokens=v2_request.max_tokens,
+            temperature=v2_request.temperature,
+            timeout_ms=v2_request.timeout_ms,
+            response_format=v2_request.response_format,
+            json_schema=v2_request.json_schema,
+            metadata=v2_request.metadata,
+        )
+
+    def from_v3_result(self, v3_result) -> "GenerateResult":
+        """从 v3 GenerateResult_v3 转换为 v2.x GenerateResult。"""
+        from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
+        metrics = LLMCallMetrics(
+            provider_name=v3_result.provider_name or self.name,
+            latency_ms=v3_result.latency_ms,
+            input_tokens=v3_result.input_tokens,
+            output_tokens=v3_result.output_tokens,
+            success=v3_result.success,
+            error_type=v3_result.error_type,
+            status_code=v3_result.status_code,
+            model_id=v3_result.model_id,
+        )
+        return GenerateResult(
+            text=v3_result.text,
+            metrics=metrics,
+            raw_response=v3_result.raw_response,
+            structured=v3_result.structured,
+        )
+
+    # ────────────────────────────────────────────────────────────────────

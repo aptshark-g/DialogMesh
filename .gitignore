@@ -75,3 +75,19 @@ config/user_config.yaml
 # ── 其他 ──
 tmp/
 temp/
+
+# ── 临时测试脚本（开发用，不提交）──
+test_*.py
+!tests/
+!core/**/tests/
+complex_test.py
+interactive_test.py
+stress_test.py
+verify_tool_registry.py
+diagnose.py
+tree_panel_new.py
+test_dashboard_api.py
+test_dashboard_fix.py
+test_final_dashboard.py
+test_fixes.py
+test_ui_fixes.py
