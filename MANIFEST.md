@@ -1,182 +1,271 @@
-# MemoryGraph 项目清单
+# DialogMesh 项目清单（v3.0）
 
-> 本文档记录 `memorygraph/` 目录下所有核心文件及其职责。
-> 生成时间：2025-06-30
+> 本文档记录 `DialogMesh/` 目录下 v3.0 版本所有核心文件及其职责。
+> 生成时间：2026-07-03
 
 ---
 
 ## 目录总览
 
 ```
-memorygraph/
-├── config/              # 配置文件
-├── core/                # 核心代码
-│   ├── agent/           # 对话管理引擎
-│   └── infrastructure/  # 基础设施（P0-P2）
-├── gui/                 # NiceGUI 可视化面板
-├── data/                # 运行时数据（SQLite, GraphML）
-├── docs/                # 设计文档
-├── requirements.txt     # Python 依赖
-├── pyproject.toml       # 项目配置
-├── README.md            # 项目说明
-└── MANIFEST.md          # 本文件
+DialogMesh/
+├── main_v3.py                          # 服务入口点
+├── core/
+│   ├── agent/v3_0/                     # 认知层核心
+│   └── service/v3_0/                   # 服务层
+├── config/                             # 配置文件
+├── docs/v3.0/                          # 设计文档（v3.0）
+├── tests/                              # 集成测试
+├── requirements.txt                    # Python 依赖
+├── pyproject.toml                      # 项目配置
+├── README.md                           # 项目说明（中文）
+├── README_EN.md                        # 项目说明（英文）
+├── MANIFEST.md                         # 本文件
+├── CONTRIBUTING.md                     # 贡献指南
+└── CHANGELOG.md                        # 变更日志
 ```
 
 ---
 
-## 配置文件（config/）
+## 服务入口
 
-| 文件 | 职责 | 是否纳入版本控制 |
-|------|------|------------------|
-| `agent_config.yaml` | 默认配置（阈值、窗口大小、模型路径） | ✅ |
-| `user_config.yaml` | 用户配置（API Key、模型名、偏好） | ❌（含密钥） |
-| `user_config.yaml.example` | 用户配置示例（带注释） | ✅ |
+| 文件 | 职责 |
+|------|------|
+| `main_v3.py` | 系统启动入口：加载配置、初始化服务、启动 FastAPI + WebSocket 服务器 |
 
 ---
 
-## 基础设施（core/infrastructure/）
+## 认知层（core/agent/v3_0/）
 
-P0-P2 落地的核心基础设施模块。
+### 认知树（cognitive_tree/）
 
-| 文件 | 职责 | 状态 |
-|------|------|------|
-| `model_service.py` | BGE 单例常驻 + 批量编码 + 缓存 | ✅ P0-1 |
-| `sqlite_store.py` | SQLite 持久化（会话/轮次/话题/用户/向量） | ✅ P0-2 |
-| `token_manager.py` | Token 计数（tiktoken/字符近似）+ 智能截断 | ✅ P0-3 |
-| `cache_layer.py` | LLM 响应缓存（L1 内存 + L2 SQLite） | ✅ P0-5 |
-| `graph_store.py` | NetworkX 有向图（话题/轮次/实体/关系） | ✅ P2 |
-| `test_runner.py` | 自动化测试套件（5 项测试） | ✅ P2 |
+> 认知树（Cognitive Tree）与主题树（Topic Tree）的双树结构实现，支持节点/边生命周期、访问控制、事务性写入。
 
----
+| 文件 | 职责 |
+|------|------|
+| `cognitive_tree/manager.py` | 树管理器：节点创建、边连接、生命周期状态转换、事务管理 |
+| `cognitive_tree/models.py` | 数据模型：CognitiveNode、CognitiveEdge、TopicNode、TopicEdge、访问控制令牌 |
+| `cognitive_tree/cross_ref.py` | 跨引用导航：节点间语义关联、反向引用、引用链追踪 |
+| `cognitive_tree/tests/test_cognitive_tree.py` | 单元测试：生命周期、事务写入、RBAC、跨引用 |
 
-## 对话管理核心（core/agent/）
+### 认知编译器（cognitive_compiler/）
+
+> 认知编译器将用户输入编译为认知图结构，驱动六层 LLM 协同激活。
+
+| 文件 | 职责 |
+|------|------|
+| `cognitive_compiler/compiler.py` | 编译主入口：输入 → 认知图 → 执行计划 |
+| `cognitive_compiler/edge_manager.py` | 边生命周期管理：创建、激活、冷却、归档、垃圾回收 |
+| `cognitive_compiler/access_control.py` | 访问控制：基于角色的节点读写权限验证 |
+| `cognitive_compiler/lifecycle.py` | 节点生命周期状态机：ACTIVE → COOLING → COLD → ARCHIVED |
+| `cognitive_compiler/event_bus.py` | 认知事件总线：发布-订阅模式的事件分发 |
+| `cognitive_compiler/querier.py` | 认知查询引擎：节点查询、路径搜索、关联分析 |
+
+### LLM 提供商适配层（llm_providers/）
+
+> 统一 LLM 适配层，支持多模型并发、故障转移、熔断、流式响应。
+
+| 文件 | 职责 |
+|------|------|
+| `llm_providers/provider_manager.py` | ProviderManager：统一入口，模型注册与调度 |
+| `llm_providers/base.py` | 抽象基类：BaseProvider、BaseStreamingProvider |
+| `llm_providers/openai_provider.py` | OpenAI / DeepSeek 兼容 API 适配 |
+| `llm_providers/local_provider.py` | 本地模型适配：LMStudio、Ollama |
+| `llm_providers/failover_provider.py` | 故障转移：主模型失败时自动切换备用 |
+| `llm_providers/hybrid_router.py` | 混合路由：根据查询复杂度选择最优模型 |
+| `llm_providers/mock_provider.py` | Mock Provider：测试用确定性响应 |
+| `llm_providers/circuit_breaker.py` | 熔断器：连续失败时快速失败、自动恢复 |
+| `llm_providers/streaming.py` | 流式响应处理：SSE 格式、令牌计数、断点续传 |
+| `llm_providers/models.py` | LLM 请求/响应数据模型 |
+| `llm_providers/tests/test_base.py` | 单元测试：Provider 基类、熔断、流式 |
 
 ### 上下文管理（context_manager/）
 
-| 文件 | 职责 |
-|------|------|
-| `discourse_manager.py` | 统一入口：话题检测 + 上下文组装 + 持久化 + 恢复 |
-| `semantic_index.py` | BGE 向量索引 + 语义搜索 + 批量编码 |
-| `turn.py` | Turn 数据模型（原始查询 + 话语块 + 元数据） |
-| `context_layer.py` | 上下文注入层（用户画像 → ContextBlock） |
-
-### 多级 LLM 客户端（coordinator/）
+> 多轮对话上下文管理：窗口管理、优先级组装、存储与恢复。
 
 | 文件 | 职责 |
 |------|------|
-| `multi_tier_llm_client.py` | Tier 1/2 路由 + 自动回退 + 缓存集成 |
-| `mode_router.py` | 复杂度评估 + 模式选择（rule/small/remote） |
-| `small_model_client.py` | LMStudio 本地模型连接 |
-| `adaptive_threshold.py` | 自适应阈值 + 贝叶斯反馈 |
-| `bayesian_engine.py` | 贝叶斯后验推断（模式偏好/满意度） |
-| `complexity_evaluator.py` | 查询复杂度评分（长度/领域/意图） |
+| `context_manager/manager.py` | 上下文管理器：热/温/冷三级缓存组装 |
+| `context_manager/window.py` | 上下文窗口：Token 计数、滑动窗口、优先级截断 |
+| `context_manager/store.py` | 上下文存储：SQLite 持久化、序列化/反序列化 |
+| `context_manager/models.py` | 上下文数据模型：ContextBlock、TurnContext、SessionContext |
+| `context_manager/tests/test_context_manager.py` | 单元测试：窗口管理、存储、组装 |
 
-### 话题树（topic_tree/）
+### 规划 Skill 层（planning/）
 
-| 文件 | 职责 |
-|------|------|
-| `manager_v2.py` | TopicTreeManagerV2：Embedding + 实体 + 意图三维 cohesion |
-| `manager.py` | 旧版话题树（兼容） |
-| `models.py` | 话题节点/边数据模型 |
-
-### 用户引擎（user_engine/）
+> 5 核心规划原语、SkillLevel 三级详细度、模式回退链。
 
 | 文件 | 职责 |
 |------|------|
-| `user_profile.py` | 用户画像数据模型（技术等级/领域/风格） |
-| `user_extractor.py` | 单轮特征提取（技术词/领域/意图） |
-| `user_manager.py` | 画像持久化 + 统计更新 |
-| `consistency_checker.py` | 跨轮一致性校验（行为 vs 声明） |
+| `planning/planner.py` | 规划器主入口：任务 → 规划图 → 执行计划 |
+| `planning/skill_engine.py` | Skill 执行引擎：原语调度、状态跟踪、结果收集 |
+| `planning/skill_registry.py` | Skill 注册表：5 核心原语注册与元数据管理 |
+| `planning/skill_matcher.py` | Skill 匹配器：任务 → 最佳 Skill 映射 |
+| `planning/decomposition.py` | 任务分解：递归分解、粒度控制、边界检测 |
+| `planning/dependency_resolver.py` | 依赖解析：任务间依赖图、拓扑排序、并行检测 |
+| `planning/scheduler.py` | 执行调度器：优先级队列、时间片、并发控制 |
+| `planning/optimizer.py` | 规划优化：执行计划剪枝、合并、重排序 |
+| `planning/fallback.py` | 模式回退链：ToT → DivideConquer → 单步执行 |
+| `planning/strategy_selector.py` | 策略选择器：基于任务特征选择最优规划策略 |
+| `planning/agent_allocator.py` | Agent 分配：六层 LLM 实例的任务分配与负载均衡 |
+| `planning/models.py` | 规划数据模型：PlanNode、SkillInvocation、ExecutionTrace |
+| `planning/__init__.py` | 规划层公共接口导出 |
+| `planning/tests/test_planning.py` | 单元测试：规划器、Skill 执行、分解、回退 |
 
-### 任务引擎（task_engine/）
+### 工具注册与绑定（tool_registry/）
+
+> SchemaGuard + ToolBindingEngine 参数兼容性检查与工具生命周期管理。
 
 | 文件 | 职责 |
 |------|------|
-| `task_manager.py` | 任务生命周期管理（检测/创建/更新/完成） |
-| `task_detector.py` | 任务类型检测（code/analyze/learn/compare） |
-| `task.py` | 任务数据模型 |
+| `tool_registry/registry.py` | 工具注册表：Schema 注册、版本管理、命名空间 |
+| `tool_registry/binding.py` | ToolBindingEngine：参数绑定、类型转换、默认值填充 |
+| `tool_registry/executor.py` | 工具执行器：异步执行、超时控制、结果封装 |
+| `tool_registry/permission.py` | 权限控制：工具级别 RBAC、调用权限验证 |
+| `tool_registry/discovery.py` | 工具发现：自动扫描、元数据提取、注册 |
+| `tool_registry/shortlister.py` | 工具短列表：基于意图的工具相关性排序 |
+| `tool_registry/models.py` | 工具数据模型：ToolSchema、ToolBinding、ToolResult |
+| `tool_registry/tests/test_tool_registry.py` | 单元测试：注册、绑定、执行、权限 |
 
-### 话语块管道（discourse_block_tree/）
+### 可观测性（observability/）
+
+> 六维可观测性：指标、日志、追踪、告警、面板、遥测。
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 话语块管理（创建/索引/查询） |
-| `segmenter.py` | 话语分割（标点/语义/长度） |
-| `summary_engine.py` | 三级摘要（V1 原文 → V2 压缩 → V3 标签） |
-| `models.py` | 话语块/锚点/意图数据模型 |
+| `observability/metrics.py` | 指标采集：Prometheus 兼容格式、Counter/Gauge/Histogram |
+| `observability/logger.py` | 结构化日志：JSON 格式、多级过滤、上下文注入 |
+| `observability/tracer.py` | 分布式追踪：Span、Trace、调用链可视化 |
+| `observability/alert.py` | 告警系统：阈值规则、告警级别、通知通道 |
+| `observability/dashboard.py` | 诊断面板：实时指标可视化、系统状态总览 |
+| `observability/telemetry.py` | 遥测聚合：数据聚合、批量导出、采样策略 |
+| `observability/store.py` | 可观测数据存储：时序数据、日志索引、追踪归档 |
+| `observability/models.py` | 可观测性数据模型：Metric、LogEntry、Span、Alert |
+| `observability/tests/test_observability.py` | 单元测试：指标、日志、追踪、告警 |
 
-### 其他模块
+### 编排器（orchestrator/）
 
-| 文件/目录 | 职责 |
-|-----------|------|
-| `discourse_integration.py` | 话语块管道整合入口 |
-| `intent_parser.py` | 意图解析（query → intent_label） |
-| `intent_rule_registry.py` | 意图规则注册表 |
-| `expertise_probe.py` | 技术水平探测 |
-| `cognitive_compiler/` | 认知编译器（语义编码/分解/注入） |
-| `compiler/` | 编译器层（header_injector, semantic_encoder, macro_micro_quantizer） |
-| `config/` | 配置加载（discourse_config, logging_setup, prompt_config） |
-| `context_window/` | 上下文窗口管理（compressor, window_manager） |
-| `frontend/` | 前端组件（澄清 FSM, 多模态, WebSocket, 任务图可视化） |
-| `llm_providers/` | LLM 提供商抽象（base, local, openai, mock, failover, hybrid） |
-| `mcp/` | MCP 协议客户端/服务器 |
-| `observability/` | 可观测性（日志/指标/追踪/告警） |
-| `onboarding/` | 引导系统 |
-| `orchestrator.py` | 编排器 |
-| `pcr/` | 协议兼容层（PCR） |
-| `persistence/` | 持久化层（旧版，与 infrastructure 并存） |
-| `prompts/` | 提示词模板（意图/任务/边界/摘要/用户画像） |
-| `security/` | 输入消毒 |
-| `service/` | 服务层（API, 会话管理, 限流, 分布式锁） |
-| `tools/` | 认知工具 |
-| `window/` | 窗口管理（旧版） |
-| `tests/` | 单元测试（adaptive_threshold, expertise_probe, integration） |
+> 六层 LLM 认知协同的中央编排器。
+
+| 文件 | 职责 |
+|------|------|
+| `orchestrator/orchestrator.py` | 主编排器：6 LLM 实例级联激活、认知双工调度、Fusion Engine 融合 |
+| `orchestrator/bootstrap.py` | 运行时启动：LLM 实例初始化、认知树加载、状态恢复 |
+| `orchestrator/models.py` | 编排数据模型：CognitiveState、OrchestrationResult、LLMInvocation |
+| `orchestrator/tests/test_orchestrator.py` | 单元测试：级联激活、融合决策、错误恢复 |
+
+### 系统启动与全局模块
+
+| 文件 | 职责 |
+|------|------|
+| `system_bootstrap.py` | 系统启动入口：配置加载、依赖注入、健康检查 |
+| `orchestrator.py` | 编排器兼容入口（向后兼容） |
+| `data_models.py` | 全局数据模型：跨模块共享的 Pydantic 模型 |
+| `__init__.py` | v3.0 包公共接口导出 |
 
 ---
 
-## 可视化面板（gui/）
+## 服务层（core/service/v3_0/）
 
-| 文件 | 职责 | 状态 |
-|------|------|------|
-| `dashboard.py` | 主面板：仪表盘/对话树/任务看板/贝叶斯监控/实时对话 | ✅ |
-| `streaming.py` | 流式响应组件（thinking → 完成） | ✅ P0-4 |
-| `server.py` | 服务器启动 |
-| `mcp_routes.py` | MCP 路由 |
-| `static/` | CSS/JS 静态资源 |
-| `templates/` | HTML 模板 |
+> FastAPI + WebSocket 异步服务层，支持 4 种响应格式。
+
+| 文件 | 职责 |
+|------|------|
+| `service/v3_0/api.py` | FastAPI 路由：HTTP API 端点定义、请求验证、响应序列化 |
+| `service/v3_0/agent_service.py` | Agent 业务逻辑：对话处理、状态管理、结果封装 |
+| `service/v3_0/session_manager.py` | 会话管理：多会话并发、状态隔离、超时清理、持久化恢复 |
+| `service/v3_0/websocket_manager.py` | WebSocket 连接管理：连接池、心跳、消息广播、断线重连 |
+| `service/v3_0/response_composer.py` | 响应合成器：BRIEF/BALANCED/EXPLANATORY/TUTORIAL 格式生成 |
+| `service/v3_0/app_factory.py` | 应用工厂：FastAPI 应用创建、中间件注册、依赖注入 |
+| `service/v3_0/middleware.py` | 中间件：请求日志、超时控制、限流、CORS、错误处理 |
+| `service/v3_0/data_models.py` | 服务数据模型：API 请求/响应、会话、WebSocket 消息 |
+| `service/v3_0/tests/test_service.py` | 单元测试：API、WebSocket、会话、响应格式 |
+| `service/v3_0/__init__.py` | 服务层公共接口导出 |
 
 ---
 
-## 运行时数据（data/）
+## 配置（config/）
 
-| 路径 | 说明 | 是否纳入版本控制 |
+| 文件 | 职责 | 是否纳入版本控制 |
 |------|------|------------------|
-| `data/memorygraph.db` | 主 SQLite 数据库 | ❌ |
-| `data/graphs/` | GraphML 话题图 | ❌ |
-| `data/test_*.db` | 测试数据库 | ❌ |
+| `config/agent_config.yaml` | 默认配置：阈值、窗口大小、模型参数、Skill 默认行为 | ✅ |
+| `config/user_config.yaml` | 用户配置：API Key、模型偏好、个性化设置 | ❌（含密钥） |
+| `config/user_config.yaml.example` | 用户配置示例（带注释） | ✅ |
+| `config/expertise_lexicon.yaml` | 领域词汇表：技术术语、领域关键词 | ✅ |
 
 ---
 
-## 依赖文件
+## 设计文档（docs/v3.0/）
+
+### 架构设计文档（DESIGN_*.md）
 
 | 文件 | 说明 |
 |------|------|
-| `deploy/requirements.txt` | Python 依赖列表 |
-| `deploy/pyproject.toml`   | 项目配置（ Poetry / setuptools） |
-| `deploy/Dockerfile`       | Docker 构建 |
-| `deploy/docker-compose.yml`| Docker Compose 配置 |
+| `docs/v3.0/DESIGN_FULL_CONCEPT.md` | 总体架构设计：系统目标、设计哲学、模块划分 |
+| `docs/v3.0/DESIGN_MULTILAYER_LLM_COGNITIVE.md` | 多层 LLM 认知设计：6 LLM 实例分工、级联协议、认知双工 |
+| `docs/v3.0/DESIGN_PLANNING_SKILL_LAYER.md` | 规划 Skill 层设计：5 原语、SkillLevel、回退链、分解算法 |
+| `docs/v3.0/DESIGN_TASK_PLANNING_DYNAMIC.md` | 动态任务规划设计：运行时规划调整、自适应重规划 |
+
+### 工程实现文档（ENGINEERING_*.md）
+
+| 文件 | 说明 |
+|------|------|
+| `docs/v3.0/ENGINEERING_COGNITIVE_COMPILER.md` | 认知编译器工程实现 |
+| `docs/v3.0/ENGINEERING_COGNITIVE_PROFILE_V2.md` | 认知画像 V2 工程实现 |
+| `docs/v3.0/ENGINEERING_CONTEXT_MANAGER.md` | 上下文管理器工程实现 |
+| `docs/v3.0/ENGINEERING_DATA_MODEL.md` | 数据模型工程实现 |
+| `docs/v3.0/ENGINEERING_INTEGRATION.md` | 系统集成工程实现 |
+| `docs/v3.0/ENGINEERING_INTENT_PARSER.md` | 意图解析器工程实现 |
+| `docs/v3.0/ENGINEERING_LLM_PROVIDERS.md` | LLM 提供商工程实现 |
+| `docs/v3.0/ENGINEERING_MULTILAYER_LLM.md` | 多层 LLM 工程实现 |
+| `docs/v3.0/ENGINEERING_OBSERVABILITY.md` | 可观测性工程实现 |
+| `docs/v3.0/ENGINEERING_PCR.md` | PCR 协议兼容层工程实现 |
+| `docs/v3.0/ENGINEERING_PERSISTENCE.md` | 持久化层工程实现 |
+| `docs/v3.0/ENGINEERING_PLANNING_SKILL.md` | 规划 Skill 工程实现 |
+| `docs/v3.0/ENGINEERING_SERVICE_LAYER.md` | 服务层工程实现 |
+| `docs/v3.0/ENGINEERING_API_DOC_PREPROCESSOR.md` | API 文档预处理器工程实现 |
+| `docs/v3.0/ENGINEERING_TOOL_REGISTRY.md` | 工具注册工程实现 |
+| `docs/v3.0/ENGINEERING_TOPIC_TREE.md` | 主题树工程实现 |
+
+### 设计审查文档（REVIEW_*.md）
+
+| 文件 | 说明 |
+|------|------|
+| `docs/v3.0/REVIEW_FULL_CONCEPT_ENGINEERING.md` | 总体架构设计审查 |
+| `docs/v3.0/REVIEW_MULTILAYER_LLM_CHECK.md` | 多层 LLM 设计审查 |
+| `docs/v3.0/REVIEW_PLANNING_DESIGN_ENGINEERING.md` | 规划层设计审查 |
+
+### 其他研究文档
+
+| 文件 | 说明 |
+|------|------|
+| `docs/v3.0/LITERATURE_REVIEW_COGNITIVE_PROFILE_V2.md` | 认知画像文献综述 |
+| `docs/v3.0/LITERATURE_REF_DISCOURSE_BLOCK_TREE.md` | 话语块树文献参考 |
+| `docs/v3.0/CONTEXT_COMPRESSION_RESEARCH.md` | 上下文压缩研究 |
+| `docs/v3.0/CONTEXT_COMPRESSION_DESIGN.md` | 上下文压缩设计 |
+| `docs/v3.0/ARCHITECTURE_AUDIT_9_ISSUES.md` | 架构审计 9 项问题 |
+| `docs/v3.0/EVALUATION_as_frontend_agent.md` | 前端代理评估 |
+| `docs/v3.0/mcp_industrial_assessment.md` | MCP 工业评估 |
+| `docs/v3.0/Context-Agent_vs_MemoryGraph_TopicTree_Deep_Dive.md` | Context-Agent vs TopicTree 深度分析 |
+| `docs/v3.0/README.md` | docs/v3.0 目录说明 |
 
 ---
 
 ## 测试状态
 
-| 测试 | 文件 | 结果 |
-|------|------|------|
-| model_service | `core/infrastructure/test_runner.py` | ✅ pass |
-| persistence | `core/infrastructure/test_runner.py` | ✅ pass |
-| graph_store | `core/infrastructure/test_runner.py` | ✅ pass |
-| topic_detection | `core/infrastructure/test_runner.py` | ✅ 80% accuracy |
-| semantic_search | `core/infrastructure/test_runner.py` | ✅ 100% top-3 recall |
+| 测试模块 | 文件 | 说明 |
+|----------|------|------|
+| 认知树 | `core/agent/v3_0/cognitive_tree/tests/` | 节点/边生命周期、事务、RBAC |
+| 认知编译器 | `core/agent/v3_0/cognitive_compiler/` | 编译、边管理、事件总线 |
+| LLM 提供商 | `core/agent/v3_0/llm_providers/tests/` | Provider、熔断、流式 |
+| 上下文管理 | `core/agent/v3_0/context_manager/tests/` | 窗口、存储、组装 |
+| 规划 Skill | `core/agent/v3_0/planning/tests/` | 规划器、Skill、分解、回退 |
+| 工具注册 | `core/agent/v3_0/tool_registry/tests/` | 注册、绑定、执行、权限 |
+| 可观测性 | `core/agent/v3_0/observability/tests/` | 指标、日志、追踪、告警 |
+| 编排器 | `core/agent/v3_0/orchestrator/tests/` | 级联激活、融合、恢复 |
+| 服务层 | `core/service/v3_0/tests/` | API、WebSocket、会话、响应 |
+
+**总计：327 个测试用例，全部通过。**
 
 ---
 
@@ -184,11 +273,15 @@ P0-P2 落地的核心基础设施模块。
 
 | 日期 | 变更 |
 |------|------|
-| 2025-06-30 | 项目独立化：创建 `memorygraph/` 子目录，整理核心文件 |
-| 2025-06-30 | P0-1: ModelService 单例常驻 |
-| 2025-06-30 | P0-2: SQLiteStore 持久化 |
-| 2025-06-30 | P0-3: TokenManager 计数与截断 |
-| 2025-06-30 | P0-4: StreamingResponse 流式输出 |
-| 2025-06-30 | P0-5: ResponseCache 缓存层 |
-| 2025-06-30 | P1: 自动持久化 + 启动恢复 |
-| 2025-06-30 | P2: GraphStore + 自动化测试 |
+| 2026-07-02 | **v3.0.0 发布**：多层 LLM 认知架构、认知双工、双树结构、规划 Skill 层、327 测试 |
+| 2026-06-28 | v0.2.0：工业级重构，编译器三阶段管道，9 维 cohesion 量化 |
+| 2026-06-15 | v0.1.0：MVP，端到端意图解析器，基础对话管理 |
+
+---
+
+## 相关文档
+
+- [README.md](README.md) — 项目说明（中文）
+- [README_EN.md](README_EN.md) — 项目说明（英文）
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献指南
+- [CHANGELOG.md](CHANGELOG.md) — 变更日志

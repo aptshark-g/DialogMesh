@@ -23,6 +23,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `DiscoursePipeline.__init__` now accepts an optional `strategy` dict for custom component resolution through `PluginRegistry`.
 - `process_turn` now records per-request latency, EDU counts, block counts, and v3 trigger events into the lightweight metrics collector.
 
+## [3.0.0] — 2026-07-02
+
+### Added
+- **多层 LLM 认知架构**：6 个 LLM 实例协同（PCR-LLM → Intent-LLM → Planning-LLM → Meta-Cognitive-LLM → Reflective-LLM → Answer-LLM），支持级联激活与短路优化。
+- **认知双工融合引擎（Cognitive Duplex）**：算法引擎 ∥ LLM 引擎并行运行，Fusion Engine 根据置信度、延迟、成本多维评分进行动态加权融合。
+- **认知树（Cognitive Tree）**：节点/边/生命周期/访问控制/事务性写入，ACTIVE → COOLING → COLD → ARCHIVED 状态机。
+- **主题树（Topic Tree）**：用户话题追踪，与认知树形成正交双树结构，支持话题延续、切换、回溯、子话题嵌套。
+- **认知编译器（Cognitive Compiler）**：输入 → 认知图 → 执行计划的编译器管道，驱动六层 LLM 协同激活。
+- **规划 Skill 层（Planning Skill Layer）**：
+  - 5 核心原语：DivideConquer、ConditionalBranch、LoopUntil、SearchVerifyExecute、TreeOfThought
+  - SkillLevel 三级详细度：HIGH / MEDIUM / DETAIL
+  - 模式回退链：ToT → DivideConquer → 单步执行
+- **SchemaGuard + ToolBindingEngine**：工具参数 Schema 校验与运行时绑定兼容性检查。
+- **异步服务层**：FastAPI + WebSocket 双通道，4 种响应格式（BRIEF / BALANCED / EXPLANATORY / TUTORIAL）。
+- **LLM 提供商适配层**：ProviderManager 统一入口，支持 OpenAI、DeepSeek、LMStudio、Ollama，含故障转移、熔断、混合路由。
+- **可观测性全链路**：指标（Prometheus）、结构化日志、分布式追踪、阈值告警、诊断面板、遥测聚合六维覆盖。
+- **327 个测试用例**，覆盖认知树、编译器、LLM 适配、上下文管理、规划 Skill、工具注册、可观测性、编排器、服务层，全部通过。
+- **16 份工程文档**（ENGINEERING_*.md）与 **4 份设计文档**（DESIGN_*.md）。
+- **系统启动器**：`main_v3.py` 统一入口，`system_bootstrap.py` 配置加载与依赖注入。
+
+### Changed
+- 项目名正式统一为 **DialogMesh**（原 MemoryGraph）。
+- 模块路径全面迁移至 `core/agent/v3_0/` 与 `core/service/v3_0/`。
+- 测试命令更新为 `pytest core/agent/v3_0/ core/service/v3_0/ -v`。
+- 配置系统升级：三级配置合并（环境变量 → user_config.yaml → agent_config.yaml）。
+
+### Deprecated
+- `core/agent/` 旧版模块（context_manager、discourse_block_tree、compiler 等）标记为废弃，将在 v3.1 中移除。
+- `gui/` 目录下的 NiceGUI 面板将在 v3.2 中替换为新的认知树可视化面板。
+
 ## [0.2.0] — 2026-06-28
 
 ### Added
@@ -68,6 +98,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Initial CI pipeline with `pytest` and `ruff` linting.
 - Project skeleton: `core/`, `tests/`, `docs/`, `scripts/` directory layout.
 
-[Unreleased]: https://github.com/yourusername/memorygraph/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/yourusername/memorygraph/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/yourusername/memorygraph/releases/tag/v0.1.0
+[Unreleased]: https://github.com/yourusername/DialogMesh/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/yourusername/DialogMesh/compare/v0.2.0...v3.0.0
+[0.2.0]: https://github.com/yourusername/DialogMesh/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/yourusername/DialogMesh/releases/tag/v0.1.0
