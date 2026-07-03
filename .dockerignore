@@ -2,6 +2,8 @@
 # DialogMesh v3.0 — .dockerignore
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Keep build context small; exclude build artifacts, secrets, and large files.
+#  NOTE: data/ is NOT excluded because Dockerfile creates it via mkdir.
+#        Runtime data should be mounted via volume, not baked into image.
 # ───────────────────────────────────────────────────────────────────────────────
 
 # Version control
@@ -60,7 +62,7 @@ mg_engine*
 *.exe
 *.so
 
-# Large / optional directories (excluded to keep build context < 500 MB)
+# Large / optional directories (excluded to keep build context small)
 models/
 analysis/
 bin/
@@ -84,9 +86,6 @@ gui_discourse/
 
 # Uploads (runtime data)
 uploads/
-
-# Local data (runtime data, mounted via volume)
-data/
 
 # Deploy configs (mounted at runtime, not baked into image)
 deploy/
