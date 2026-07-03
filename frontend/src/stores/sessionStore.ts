@@ -1,6 +1,7 @@
 // FILE: src/stores/sessionStore.ts
-
 import { create } from 'zustand';
+
+import { getApiConfig } from '../lib/config';
 import type {
   SessionBaseState,
   SessionActions,
@@ -14,14 +15,12 @@ import type {
   SessionState,
 } from '../types/api';
 
-const DEFAULT_REST_BASE_URL = 'http://localhost:8000';
-
 const initialState: Omit<SessionBaseState, keyof SessionActions> = {
   sessionId: null,
   wsConnected: false,
   wsConnecting: false,
   wsUrl: null,
-  restBaseUrl: DEFAULT_REST_BASE_URL,
+  restBaseUrl: getApiConfig().restBaseUrl,
   sessionState: null,
   pendingClarification: false,
   currentTurn: 0,

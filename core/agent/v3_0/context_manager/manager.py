@@ -181,6 +181,7 @@ class ContextManager:
         process_name: Optional[str] = None,
         pid: Optional[int] = None,
         window_config: Optional[WindowConfig] = None,
+        session_id: Optional[str] = None,
     ) -> SessionState_v3:
         """异步创建新会话。
 
@@ -189,7 +190,7 @@ class ContextManager:
         """
         try:
             await asyncio.sleep(0)
-            session_id = str(uuid.uuid4())
+            session_id = session_id or str(uuid.uuid4())
             config = window_config or self.default_window_config
 
             window = ContextWindow(config=config)

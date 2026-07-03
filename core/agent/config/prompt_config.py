@@ -388,7 +388,7 @@ class ConfigManager:
                 **raw.get("prompt_budget", {})
             ),
             observability=ObservabilityConfig(
-                **raw.get("observability", {})
+                **{k: v for k, v in raw.get("observability", {}).items() if k in ObservabilityConfig.__dataclass_fields__}
             ),
             _raw=raw,
         )

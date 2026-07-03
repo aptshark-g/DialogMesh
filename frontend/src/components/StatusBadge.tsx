@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { SessionState } from '../types/api';
+import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import {
   Circle,
@@ -77,7 +78,11 @@ const STATE_CONFIG: Record<
 export function StatusBadge({ state, className, showLabel = true }: StatusBadgeProps) {
   const config = STATE_CONFIG[state] || STATE_CONFIG.idle;
   return (
-    <span
+    <motion.span
+      key={state}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
         config.color,
@@ -86,6 +91,6 @@ export function StatusBadge({ state, className, showLabel = true }: StatusBadgeP
     >
       {config.icon}
       {showLabel && config.label}
-    </span>
+    </motion.span>
   );
 }

@@ -1,6 +1,10 @@
 import { Plus, Clock, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 
 export function SessionsPage() {
+  const navigate = useNavigate();
+
   return (
     <div className="h-full flex flex-col max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -12,6 +16,10 @@ export function SessionsPage() {
         </div>
         <button
           type="button"
+          onClick={() => {
+            console.log('新建 Session');
+            navigate('/chat');
+          }}
           className={[
             'px-4 py-2 rounded-lg bg-primary text-white',
             'text-sm font-medium hover:bg-primary-dark',
@@ -26,8 +34,11 @@ export function SessionsPage() {
       <div className="bg-surface-card rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="divide-y divide-gray-100">
           {[1, 2, 3].map((i) => (
-            <div
+            <motion.div
               key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: i * 0.1 }}
               className={[
                 'flex items-center justify-between px-6 py-4',
                 'hover:bg-surface-main transition-colors cursor-pointer group',
@@ -47,7 +58,7 @@ export function SessionsPage() {
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
-            </div>
+            </motion.div>
           ))}
         </div>
       </div>

@@ -422,7 +422,7 @@ class SystemBootstrap:
             ctx_cfg = self._config.get("context_manager", {})
             window_config = WindowConfig(
                 max_tokens=ctx_cfg.get("max_context_tokens", 8000),
-                compression_threshold=ctx_cfg.get("compression_threshold", 0.8),
+                compression_threshold=ctx_cfg.get("compression_threshold", 2048),
                 pruning_strategy=ctx_cfg.get("pruning_strategy", "oldest_first"),
             )
             # 若配置了 SQLite 持久化，使用 SQLiteContextStore；否则用内存
@@ -453,8 +453,8 @@ class SystemBootstrap:
             tree_store = CognitiveTreeStore()
             access_control = AccessControlMatrix()
             event_bus = EventBus()
-            lifecycle_manager = NodeLifecycleManager()
-            edge_manager = EdgeManager()
+            lifecycle_manager = NodeLifecycleManager(store=tree_store)
+            edge_manager = EdgeManager(store=tree_store)
 
             cognitive_compiler = CognitiveCompiler(
                 cognitive_tree_store=tree_store,
@@ -511,14 +511,12 @@ class SystemBootstrap:
 
         # 4.5 Orchestrator
         orchestrator = await self._init_orchestrator(
-            pcr_engine=pcr_engine,
-            intent_parser=intent_parser,
             planning_skill=planning_skill,
             cognitive_compiler=cognitive_compiler,
             context_manager=context_manager,
-            topic_tree=topic_tree,
             observability=observability,
-            llm_providers=llm_providers,
+            llm_provider=llm_providers,
+            tool_registry=tool_registry,
         )
 
         latency_ms = (time.time() - phase_start) * 1000.0
@@ -642,28 +640,23 @@ class SystemBootstrap:
 
     async def _init_orchestrator(
         self,
-        pcr_engine: Any,
-        intent_parser: Any,
+        llm_provider: Any,
         planning_skill: Any,
         cognitive_compiler: Any,
         context_manager: Any,
-        topic_tree: Any,
         observability: Any,
-        llm_providers: Any,
+        tool_registry: Any,
     ) -> Any:
         """初始化 Orchestrator — 整合 6 个 LLM 实例的核心编排器。"""
         from core.agent.v3_0.orchestrator import Orchestrator
 
         orch = Orchestrator(
-            pcr_engine=pcr_engine,
-            intent_parser=intent_parser,
+            llm_provider=llm_provider,
             planning_skill=planning_skill,
             cognitive_compiler=cognitive_compiler,
             context_manager=context_manager,
-            topic_tree=topic_tree,
             observability=observability,
-            llm_providers=llm_providers,
-            config=self._config.get("llm_instances", {}),
+            tool_registry=tool_registry,
         )
         logger.info("[Orchestrator] Initialized")
         return orch

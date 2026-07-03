@@ -284,7 +284,7 @@ class FusionEngine:
             )
 
         # 情况 3: 两者都高或都中等 → 加权融合
-        if c_a > self._low_threshold and c_b > self._low_threshold:
+        if c_a >= self._low_threshold and c_b >= self._low_threshold:
             # 检测冲突（简化：仅检查 intent category 是否一致）
             cat_a = out_a.get("intent_category") if isinstance(out_a, dict) else None
             cat_b = out_b.get("intent_category") if isinstance(out_b, dict) else None
@@ -662,6 +662,12 @@ Cognitive Tree 统计：{tree_stats}
         # 记录用户消息到 ContextManager
         if self.context_manager:
             try:
+                # 确保 session 已创建
+                existing = await self.context_manager.get_session(session_id)
+                if existing is None:
+                    await self.context_manager.create_session(
+                        user_id=session_id, session_id=session_id
+                    )
                 user_msg = UserMessage_v3(session_id=session_id, content=user_input)
                 await self.context_manager.add_user_message(session_id, user_msg)
             except Exception as exc:

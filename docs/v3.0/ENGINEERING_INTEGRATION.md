@@ -372,7 +372,7 @@ topic_tree:
 # ── 上下文管理配置 ──
 context_manager:
   max_context_tokens: 8000
-  compression_threshold: 0.8
+  compression_threshold: 6400
   pruning_strategy: "oldest_first"
   embedding_model: "text-embedding-3-small"
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import ChatPanel from '../components/ChatPanel';
 import { useSession } from '../hooks/useSession';
 import { useChat } from '../hooks/useChat';
@@ -8,7 +9,12 @@ import type { WebSocketServerEvent } from '../types/api';
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
 
 export function ChatPage() {
+  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
   const { session, initSession } = useSession();
+  const [reconnectCounter, setReconnectCounter] = useState(0);
+
+  const effectiveSessionId = urlSessionId ?? session?.session_id ?? null;
+
   const {
     messages,
     isThinking,
@@ -19,7 +25,8 @@ export function ChatPage() {
     handleClarificationSubmit,
     handleWebSocketEvent,
     clearError,
-  } = useChat(session?.session_id ?? null);
+  } = useChat(effectiveSessionId);
+
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'closed',
     latencyMs: null,
@@ -27,8 +34,8 @@ export function ChatPage() {
   });
 
   const connectWs = useCallback(() => {
-    if (!session?.session_id) return;
-    const wsUrl = `${WS_BASE_URL}/v3/ws/${session.session_id}`;
+    if (!effectiveSessionId) return;
+    const wsUrl = `${WS_BASE_URL}/v3/ws/${effectiveSessionId}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -58,8 +65,10 @@ export function ChatPage() {
       }
     };
 
-    return () => ws.close();
-  }, [session?.session_id, handleWebSocketEvent]);
+    return () => {
+      ws.close();
+    };
+  }, [effectiveSessionId, handleWebSocketEvent, reconnectCounter]);
 
   useEffect(() => {
     const cleanup = connectWs();
@@ -67,14 +76,15 @@ export function ChatPage() {
   }, [connectWs]);
 
   useEffect(() => {
-    if (!session) {
+    if (!urlSessionId && !session) {
       initSession().catch(() => {});
     }
-  }, [session, initSession]);
+  }, [urlSessionId, session, initSession]);
 
   const handleReconnect = useCallback(() => {
-    initSession().catch(() => {});
-  }, [initSession]);
+    setConnectionState({ status: 'connecting', latencyMs: null, lastError: null });
+    setReconnectCounter((c) => c + 1);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">

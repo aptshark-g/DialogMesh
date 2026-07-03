@@ -1,5 +1,6 @@
 // FILE: frontend/src/components/ThinkingBlock.tsx
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, ChevronDown, ChevronRight, Loader, CheckCircle, Zap } from 'lucide-react';
 
 export interface ThinkingStep {
@@ -60,13 +61,23 @@ const StepItem: React.FC<{ step: ThinkingStep; depth?: number }> = ({ step, dept
           <p className="text-sm text-text-secondary mt-0.5">{step.description}</p>
         </div>
       </button>
-      {expanded && hasSubSteps && (
-        <div className="mt-1">
-          {step.sub_steps!.map((sub) => (
-            <StepItem key={sub.step_number} step={sub} depth={depth + 1} />
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {expanded && hasSubSteps && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1">
+              {step.sub_steps!.map((sub) => (
+                <StepItem key={sub.step_number} step={sub} depth={depth + 1} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -111,23 +122,33 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
         )}
       </button>
 
-      {!collapsed && (
-        <div className="px-2 pb-3">
-          <div className="h-px bg-amber-200 mx-2 mb-2" />
-          {steps.length === 0 ? (
-            <div className="flex items-center gap-2 px-4 py-4 text-text-muted text-sm">
-              <Loader className="w-4 h-4 animate-spin" />
-              等待思考步骤...
+      <AnimatePresence>
+        {!collapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-2 pb-3">
+              <div className="h-px bg-amber-200 mx-2 mb-2" />
+              {steps.length === 0 ? (
+                <div className="flex items-center gap-2 px-4 py-4 text-text-muted text-sm">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  等待思考步骤...
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {steps.map((step) => (
+                    <StepItem key={step.step_number} step={step} />
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-1">
-              {steps.map((step) => (
-                <StepItem key={step.step_number} step={step} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

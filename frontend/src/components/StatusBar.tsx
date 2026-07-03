@@ -1,5 +1,6 @@
 // FILE: frontend/src/components/StatusBar.tsx
 import React, { useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity,
   Clock,
@@ -135,10 +136,19 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <div className="w-px h-4 bg-gray-200" />
 
           {/* 状态指示器 */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg}`}>
-            <span className={config.color}>{config.icon}</span>
-            <span className={`text-xs font-medium ${config.color}`}>{config.label}</span>
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={state}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg}`}
+            >
+              <span className={config.color}>{config.icon}</span>
+              <span className={`text-xs font-medium ${config.color}`}>{config.label}</span>
+            </motion.div>
+          </AnimatePresence>
 
           {/* 回合数 */}
           <div className="flex items-center gap-1.5">
@@ -147,12 +157,20 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           </div>
 
           {/* 待澄清标记 */}
-          {pendingClarification && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-50 border border-yellow-200">
-              <AlertTriangle className="w-3.5 h-3.5 text-status-warning" />
-              <span className="text-xs font-medium text-status-warning">待澄清</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {pendingClarification && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-50 border border-yellow-200"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-status-warning" />
+                <span className="text-xs font-medium text-status-warning">待澄清</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* 已解析实体 */}
           {resolvedEntities.length > 0 && (
@@ -238,12 +256,20 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           </div>
 
           {/* 过期倒计时 */}
-          {timeUntilExpiry && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-100">
-              <Clock className="w-3 h-3 text-text-muted" />
-              <span className="text-xs text-text-muted">{timeUntilExpiry}</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {timeUntilExpiry && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-100"
+              >
+                <Clock className="w-3 h-3 text-text-muted" />
+                <span className="text-xs text-text-muted">{timeUntilExpiry}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

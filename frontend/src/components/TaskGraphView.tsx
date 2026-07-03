@@ -1,6 +1,7 @@
 // FILE: frontend/src/components/TaskGraphView.tsx
 
 import type { ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import type { TaskGraphNode } from '../types/api';
 import {
@@ -38,13 +39,13 @@ export function TaskGraphView({ nodes, className }: TaskGraphViewProps) {
 
   return (
     <div className={cn('rounded-xl bg-surface-card border border-gray-200 overflow-hidden', className)}>
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
-          <GitBranch className="h-4 w-4 text-primary" />
-          <span>Task Graph</span>
-          <span className="text-xs text-text-muted">({nodes.length} 节点)</span>
+      <div className="px-3 py-2 md:px-4 md:py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium text-text-primary min-w-0">
+          <GitBranch className="h-4 w-4 text-primary shrink-0" />
+          <span className="truncate">Task Graph</span>
+          <span className="text-xs text-text-muted shrink-0">({nodes.length} 节点)</span>
         </div>
-        <span className="text-xs font-medium text-primary">{progress}%</span>
+        <span className="text-xs font-medium text-primary shrink-0">{progress}%</span>
       </div>
 
       <div className="h-1.5 bg-gray-100">
@@ -54,10 +55,13 @@ export function TaskGraphView({ nodes, className }: TaskGraphViewProps) {
         />
       </div>
 
-      <div className="px-4 py-3 space-y-2 max-h-48 overflow-y-auto">
-        {nodes.map((node) => (
-          <div
+      <div className="px-3 py-2 md:px-4 md:py-3 space-y-2 max-h-48 overflow-y-auto">
+        {nodes.map((node, idx) => (
+          <motion.div
             key={node.id}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.2, delay: idx * 0.04 }}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm',
               node.status === 'running' && 'bg-status-info/5',
@@ -77,7 +81,7 @@ export function TaskGraphView({ nodes, className }: TaskGraphViewProps) {
               )}
             </div>
             <span className="text-xs text-text-muted whitespace-nowrap">{STATUS_LABEL[node.status]}</span>
-          </div>
+          </motion.div>
         ))}
       </div>
     </div>

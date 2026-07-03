@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Wifi, WifiOff, Activity, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { ConnectionState } from '../types/ui';
 
 interface ConnectionStatusProps {
@@ -19,13 +20,28 @@ const ConnectionStatus = memo(function ConnectionStatus({ state }: ConnectionSta
   const Icon = cfg.icon;
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${cfg.bg} border border-gray-200`}>
-      <Icon size={14} className={cfg.color} />
-      <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
-      {state.latencyMs !== null && state.status === 'open' && (
-        <span className="text-xs text-text-muted">{state.latencyMs}ms</span>
-      )}
-    </div>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={state.status}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${cfg.bg} border border-gray-200`}
+      >
+        <Icon size={14} className={cfg.color} />
+        <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+        {state.latencyMs !== null && state.status === 'open' && (
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-xs text-text-muted"
+          >
+            {state.latencyMs}ms
+          </motion.span>
+        )}
+      </motion.div>
+    </AnimatePresence>
   );
 });
 

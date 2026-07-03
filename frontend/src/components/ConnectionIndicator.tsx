@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { cn, formatRelativeTime } from '../lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { ConnectionStatus } from '../types/api';
 import { Wifi, WifiOff, Loader2, AlertCircle } from 'lucide-react';
 
@@ -33,15 +34,26 @@ export function ConnectionIndicator({ status, className }: ConnectionIndicatorPr
     color = 'text-text-muted';
   }
 
+  const statusKey = status.connecting ? 'connecting' : status.connected ? 'connected' : status.error ? 'error' : 'offline';
+
   return (
-    <div className={cn('inline-flex items-center gap-2 text-xs', color, className)}>
-      {icon}
-      <span>{text}</span>
-      {status.lastPingAt && status.connected && (
-        <span className="text-text-muted">
-          心跳 {formatRelativeTime(status.lastPingAt)}
-        </span>
-      )}
-    </div>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={statusKey}
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 4 }}
+        transition={{ duration: 0.2 }}
+        className={cn('inline-flex items-center gap-2 text-xs', color, className)}
+      >
+        {icon}
+        <span>{text}</span>
+        {status.lastPingAt && status.connected && (
+          <span className="text-text-muted">
+            心跳 {formatRelativeTime(status.lastPingAt)}
+          </span>
+        )}
+      </motion.div>
+    </AnimatePresence>
   );
 }

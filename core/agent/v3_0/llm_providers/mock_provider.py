@@ -91,9 +91,89 @@ class MockProvider_v3(LLMProvider_v3):
                 model_id="mock",
             )
 
-        text = self.response_text
+        # 智能 Mock：根据 prompt 关键词返回合理的结构化响应
+        prompt = request.prompt.lower()
         if self.response_json is not None:
-            text = json.dumps(self.response_json)
+            response = self.response_json
+        else:
+            # 默认：根据 prompt 内容推断响应类型
+            if "intent" in prompt or "意图" in prompt:
+                if "scan" in prompt or "memory" in prompt:
+                    response = {
+                        "intent_inference": {
+                            "primary_intent": "SCAN_MEMORY",
+                            "confidence": 0.8,
+                            "implied_entities": [],
+                            "ambiguity_assessment": "low"
+                        },
+                        "confidence": 0.8
+                    }
+                elif "read" in prompt:
+                    response = {
+                        "intent_inference": {
+                            "primary_intent": "READ_MEMORY",
+                            "confidence": 0.8,
+                            "implied_entities": [],
+                            "ambiguity_assessment": "low"
+                        },
+                        "confidence": 0.8
+                    }
+                elif "hack" in prompt or "health" in prompt:
+                    response = {
+                        "intent_inference": {
+                            "primary_intent": "HACK_VALUE",
+                            "confidence": 0.75,
+                            "implied_entities": [],
+                            "ambiguity_assessment": "low"
+                        },
+                        "confidence": 0.75
+                    }
+                else:
+                    response = {
+                        "intent_inference": {
+                            "primary_intent": "UNKNOWN",
+                            "confidence": 0.4,
+                            "implied_entities": [],
+                            "ambiguity_assessment": "high"
+                        },
+                        "confidence": 0.4
+                    }
+            elif "noise" in prompt or "pcr" in prompt or "认知" in prompt:
+                response = {
+                    "noise_analysis": {
+                        "semantic_noise": 0.2,
+                        "structural_noise": 0.3,
+                        "referential_noise": 0.2
+                    },
+                    "expectation_inference": {
+                        "primary": "tool",
+                        "confidence": 0.8,
+                        "reasoning": "rule-based heuristic"
+                    },
+                    "cognitive_snapshot": {
+                        "metacognition": 0.6,
+                        "divergence": 0.2,
+                        "stability": 0.8
+                    },
+                    "confidence": 0.8
+                }
+            elif "plan" in prompt or "规划" in prompt:
+                response = {
+                    "plan": [{"step": 1, "action": "scan_memory", "params": {"value": 100}}],
+                    "confidence": 0.8
+                }
+            elif "response" in prompt or "answer" in prompt or "回复" in prompt:
+                response = {
+                    "response": f"已处理你的请求：{request.prompt[:50]}...",
+                    "confidence": 0.8,
+                    "honesty_declared": False,
+                    "cited_nodes": [],
+                    "fallback_reason": ""
+                }
+            else:
+                response = {"raw_text": self.response_text, "confidence": 0.5}
+
+        text = json.dumps(response, ensure_ascii=False) if isinstance(response, dict) else response
 
         latency = (time.time() * 1000) - start_ms
         self.record_success(latency, 0, 0, 0.0)

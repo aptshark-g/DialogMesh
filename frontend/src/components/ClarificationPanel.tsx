@@ -1,6 +1,7 @@
 // FILE: frontend/src/components/ClarificationPanel.tsx
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import type { ClarificationItem } from '../types/api';
 import { HelpCircle, Send } from 'lucide-react';
@@ -36,7 +37,12 @@ export function ClarificationPanel({ items, onSubmit, className }: Clarification
   };
 
   return (
-    <div className={cn('rounded-xl bg-status-warning/5 border border-status-warning/20 overflow-hidden', className)}>
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className={cn('rounded-xl bg-status-warning/5 border border-status-warning/20 overflow-hidden', className)}
+    >
       <div className="px-4 py-3 border-b border-status-warning/10 flex items-center gap-2">
         <HelpCircle className="h-4 w-4 text-status-warning" />
         <span className="text-sm font-medium text-text-primary">需要澄清</span>
@@ -99,6 +105,6 @@ export function ClarificationPanel({ items, onSubmit, className }: Clarification
           提交澄清
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }

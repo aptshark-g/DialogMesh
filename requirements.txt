@@ -25,7 +25,7 @@ passlib[bcrypt]>=1.7.4
 # ── Optional: YAML config loading ─────────────────────────────────
 pyyaml>=6.0
 
-# ── Optional: MCP protocol ─────────────────────────────────────────
+# ── Optional: MCP protocol ──────────────────────────────────────────────
 mcp>=1.28.0
 
 # ── Optional: Web GUI ───────────────────────────────────────────────

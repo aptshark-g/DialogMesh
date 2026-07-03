@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { cn, formatRelativeTime } from '../lib/utils';
 import { createSession, getHealth, getSessionStatus } from '../lib/api';
 import type { SessionStatusResponse } from '../types/api';
@@ -15,7 +16,14 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
+  BarChart3,
 } from 'lucide-react';
+import {
+  TrendChart,
+  IntentDistribution,
+  WordCloud,
+} from '../components/analytics';
+import { useAnalyticsStore } from '../stores/analyticsStore';
 
 interface SessionMeta {
   sessionId: string;
@@ -29,6 +37,11 @@ export function DashboardPage() {
   const [health, setHealth] = useState<{ ok: boolean; info?: Record<string, unknown> } | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const computeAnalytics = useAnalyticsStore((s) => s.computeAnalytics);
+  const trendData = useAnalyticsStore((s) => s.trendData);
+  const intentDistribution = useAnalyticsStore((s) => s.intentDistribution);
+  const wordCloud = useAnalyticsStore((s) => s.wordCloud);
 
   // 从 localStorage 读取会话列表
   const loadStoredSessions = useCallback(() => {
@@ -76,6 +89,11 @@ export function DashboardPage() {
     loadStoredSessions();
     fetchHealth();
   }, [loadStoredSessions, fetchHealth]);
+
+  // Compute analytics whenever sessions change
+  useEffect(() => {
+    computeAnalytics();
+  }, [computeAnalytics, sessions.length]);
 
   const handleCreateSession = async () => {
     setCreating(true);
@@ -146,26 +164,78 @@ export function DashboardPage() {
       {/* Stats */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+          >
             <div className="flex items-center gap-2 text-text-muted mb-2">
               <MessageSquare className="h-4 w-4" />
               <span className="text-xs font-medium">总会话数</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{sessions.length}</p>
-          </div>
-          <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+          >
             <div className="flex items-center gap-2 text-text-muted mb-2">
               <Activity className="h-4 w-4" />
               <span className="text-xs font-medium">活跃会话</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{activeCount}</p>
-          </div>
-          <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+          >
             <div className="flex items-center gap-2 text-text-muted mb-2">
               <Server className="h-4 w-4" />
               <span className="text-xs font-medium">总对话轮次</span>
             </div>
             <p className="text-2xl font-bold text-text-primary">{totalTurns}</p>
+          </motion.div>
+        </div>
+
+        {/* Analytics Grid */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="h-4 w-4 text-text-muted" />
+            <h2 className="text-sm font-semibold text-text-primary">数据分析</h2>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Trend Chart - takes full width on mobile, 1 col on lg */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className="lg:col-span-2 bg-surface-card rounded-xl border border-gray-200 p-5"
+            >
+              <TrendChart data={trendData} className="h-full" />
+            </motion.div>
+            {/* Intent Distribution */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.25 }}
+              className="bg-surface-card rounded-xl border border-gray-200 p-5"
+            >
+              <IntentDistribution data={intentDistribution} className="h-full" />
+            </motion.div>
+            {/* Word Cloud - spans full width */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+              className="lg:col-span-3 bg-surface-card rounded-xl border border-gray-200 p-5"
+            >
+              <WordCloud data={wordCloud} className="h-full" />
+            </motion.div>
           </div>
         </div>
 
@@ -191,9 +261,12 @@ export function DashboardPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {sessions.map((session) => (
-                <div
+              {sessions.map((session, idx) => (
+                <motion.div
                   key={session.sessionId}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, delay: idx * 0.05 }}
                   className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50/50 transition-colors group"
                 >
                   <div className="h-9 w-9 rounded-lg bg-surface-sidebar flex items-center justify-center shrink-0">
@@ -233,7 +306,7 @@ export function DashboardPage() {
                       <ArrowRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                </div>
+                </motion.div>
               ))}
             </div>
           )}

@@ -148,6 +148,10 @@ class ProviderManager:
 
     # ── 统一入口 ───────────────────────────────────────────────────────
 
+    async def generate_async(self, request: GenerateRequest_v3, provider_name: Optional[str] = None) -> GenerateResult_v3:
+        """异步生成入口——代理到 generate 方法。"""
+        return await self.generate(request, provider_name)
+
     async def generate(self, request: GenerateRequest_v3, provider_name: Optional[str] = None) -> GenerateResult_v3:
         """统一生成入口。若指定 provider_name，则直接路由到该 Provider；否则使用策略路由。"""
         if self._closed:

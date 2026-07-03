@@ -10,6 +10,7 @@ from core.agent.config.prompt_config import (
     ThresholdConfig,
     get_config,
     reload_config,
+    config,
 )
 from core.agent.config.discourse_config import (
     DiscourseConfig,
@@ -55,6 +56,7 @@ __all__ = [
     "get_discourse_config",
     "reload_discourse_config",
     "create_default_config",
+    "config",
     # logging_setup exports
     "setup_logging",
     "get_logger",
