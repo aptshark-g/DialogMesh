@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# DialogMesh — .dockerignore
+# DialogMesh v3.0 — .dockerignore
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Keep build context small; exclude build artifacts, secrets, and large files.
 # ───────────────────────────────────────────────────────────────────────────────
@@ -47,8 +47,6 @@ coverage.xml
 *.md
 !README.md
 
-docs/
-
 # OS / script files
 *.bat
 *.ps1
@@ -76,5 +74,27 @@ reports/
 # CI / GitHub
 .github/
 
-# Node / frontend (if any)
-node_modules/
+# Node / frontend build artifacts (dist excluded from backend context)
+frontend/node_modules/
+frontend/.vite/
+
+# GUI legacy (not needed for v3.0 backend)
+gui/
+gui_discourse/
+
+# Uploads (runtime data)
+uploads/
+
+# Local data (runtime data, mounted via volume)
+data/
+
+# Deploy configs (mounted at runtime, not baked into image)
+deploy/
+
+# Tests (not needed for production image)
+tests/
+
+# Docker files themselves (not needed in context)
+Dockerfile
+docker-compose.yml
+.dockerignore

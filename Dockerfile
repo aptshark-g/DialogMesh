@@ -1,9 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# DialogMesh — Multi-stage Dockerfile (Phase 5)
+# DialogMesh v3.0 — Multi-stage Dockerfile
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Base: docker.mirrors.ustc.edu.cn/library/python:3.11-slim
-#  Target: ~700–900 MB (PyTorch is the main contributor; best-effort < 500 MB)
-#  Non-root user | Multi-stage | Health checks | BGE model cache
+#  Base: python:3.11-slim
+#  Target: ~800–1000 MB (PyTorch is the main contributor)
+#  Non-root user | Multi-stage | Health checks
 # ───────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Builder ───────────────────────────────────────────────────────────
@@ -23,30 +23,29 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy dependency manifests first (for layer caching)
-COPY requirements.txt pyproject.toml README.md ./
+COPY requirements.txt pyproject.toml ./
 
 # Install third-party dependencies (no project source needed)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy source code needed for editable install & model cache warm-up
+# Copy source code (not needed for pip install, only for runtime PYTHONPATH)
 COPY core/       ./core/
 COPY scripts/    ./scripts/
+COPY config/     ./config/
+COPY main_v3.py  ./
 
-# Install DialogMesh in editable mode (needs core/ for setuptools find)
-RUN pip install --no-cache-dir -e ".[service,metrics,config]"
-
-# Generate BGE embedding model cache (build-time download)
-# Falls back to huggingface transformers if ModelScope CLI fails
-RUN python scripts/download_models.py --bge-only || echo "Model cache step skipped (will download at runtime)"
+# NOTE: No `pip install -e .` needed — PYTHONPATH=/app in runtime lets Python
+# discover the `core` package directly. All third-party deps are already
+# installed via `requirements.txt`.
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
 LABEL maintainer="DialogMesh Contributors" \
       org.opencontainers.image.title="DialogMesh" \
-      org.opencontainers.image.description="Industrial-grade dialogue context management microservice" \
-      org.opencontainers.image.version="2.4.0"
+      org.opencontainers.image.description="DialogMesh v3.0 — Multi-layer LLM cognitive architecture" \
+      org.opencontainers.image.version="3.0.0"
 
 WORKDIR /app
 
@@ -66,19 +65,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy virtual environment from builder (all Python packages)
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy cached models from builder (if generated)
-COPY --from=builder /build/models ./models
-
 # Copy application code
-COPY requirements.txt pyproject.toml README.md ./
+COPY requirements.txt pyproject.toml main_v3.py ./
 COPY config/     ./config/
 COPY core/       ./core/
-COPY service/    ./service/
-COPY gui/        ./gui/
-COPY data/       ./data/
-COPY deploy/     ./deploy/
 COPY scripts/    ./scripts/
-COPY tests/      ./tests/
+COPY data/       ./data/
 
 # Ensure runtime directories exist and are writable
 RUN mkdir -p /app/data /app/logs /app/uploads && \
@@ -92,12 +84,12 @@ RUN groupadd -r dialogmesh && \
 # Switch to non-root user
 USER dialogmesh
 
-# Expose FastAPI (8000) and optional Nginx upstream (8080)
-EXPOSE 8000 8080
+# Expose FastAPI port
+EXPOSE 8000
 
-# Health check against root /health endpoint (no /v1/ prefix)
+# Health check against v3.0 /health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run FastAPI application via factory mode
-CMD ["uvicorn", "service.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Run DialogMesh v3.0 via main_v3.py
+CMD ["python", "main_v3.py", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--log-level", "info"]
