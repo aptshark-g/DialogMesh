@@ -46,7 +46,10 @@ jobs:
           docker inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} --format='{{.Size}}' | awk '{print "Image size:", $1/1024/1024, "MB"}'
 
   # ═─ Stage 2: Frontend Build + Full Compose Validation ─═════════════════════
+  # NOTE: Skipped by default — compose validation requires LLM provider config
+  #       and significant resources. Re-enable when environment is ready.
   validate-compose:
+    if: false
     runs-on: ubuntu-latest
     needs: build-backend
     steps:
