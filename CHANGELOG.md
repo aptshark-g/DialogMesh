@@ -7,6 +7,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- **AlgorithmEngine v3.0** — 规则引擎重写：三维噪声检测（语义/结构/指代）、期望推断、规则意图解析器（10组模式→IntentCategory映射）、认知快照生成器。替换原有 20 行桩为完整 280 行实现。
+- **FusionEngine v3.0** — 提取为独立模块：5种融合策略（CONFIDENCE_WEIGHTED / ALGORITHM_PREFERRED / LLM_PREFERRED / CONSERVATIVE / VOTE）、四维冲突检测、递归字典合并。
+- **HybridEngine** — 认知双工并行调度引擎：4种调度策略（高置信快速通道、低置信等待LLM、加权融合、保守降级）、ThreadPoolExecutor 真正并行、超时管理。
+- **6 个 LLM 实例子类**（PCR-LLM / Intent-LLM / Planning-LLM / Meta-Cognitive-LLM / Reflective-LLM / Answer-LLM）：各自独立 Prompt 模板、JSON 输出解析、Cognitive Tree 节点构建。
+- **中文 Prompt 模板** — 6 个子类替换英文占位符，源自 ENGINEERING_MULTILAYER_LLM.md 5.3 节。
+- **Planning HybridEngine 集成** — _phase_planning 重构，算法侧 generate_plan() + Planning-LLM 并行降级。
+- **Meta-Cognitive 资源调度** — Cognitive Tree > 10 节点时每 3 轮执行一次元认知验证。
+- **MetaCognitiveValidator** — 三层验证：FactualChecker（事实性）、ConsistencyChecker（一致性）、ReasonablenessChecker（合理性）+ HallucinationDetector（幻觉风险评估）。
+- **ReflectiveAnalyzer** — 跨会话复盘：BiasDetector（系统性偏见/置信度高估）、LearningStrategyGenerator（P0/P1 策略）。
+- **ProfileUpdater** — EMA 加权用户画像更新（F-02 公式），Track A 趋势跟踪 + Track B 冲突标记。
+- **TreeHealthAnalyzer** — Cognitive Tree 健康度分析：失效比例、跨 LLM 偏误检测。
+- **ColdStartProbe** — 通用冷启动专业度探测（非领域词表依赖）：5 维语言特征评分（技术词汇/参数精确度/查询复杂度/语言风格/历史行为），Max-based 子信号评分。
+- **PCRFeedbackLoop** — 简化 EMA 自适应阈值：滑动窗口噪声-成功率追踪，替换硬编码 fast_path 阈值。
+- **RuleConflictDetector** — 规则冲突检测：成对模式重叠分析 + fuzz 测试。
+- **SchemaGuard** — Layer 1 实时拦截：JSON 校验、参数范围约束、敏感内容过滤。
+- **HallucinationDetector** — Layer 2 跨轮检测：置信度尖峰、高置信失效模式、会话级累积风险。
+- **BiasDetector** — Layer 3 长期复盘：置信度膨胀、系统性失效。
+- **AnswerConstraintValidator** — 后处理约束验证：长度限制、危险模式过滤、空回答检测。
+- **FSM 外部状态映射** — 双向状态映射（ClarificationFSM / TurnPhase）、会话级转换日志。
+- **EventRegistry** — WebSocket 事件注册表：Schema 验证、核心事件保护、第三方扩展。
+- **DistributedLock** — 分布式锁接口：ThreadingLockAdapter + RedisLockAdapter（自动降级）。
+- **Service layer modules** — fsm_mapping.py、event_registry.py（core/service/v3_0/）。
+- **Infrastructure modules** — distributed_lock.py（core/infrastructure/）。
+
+### Changed
+- **Orchestrator 重构** — 移除内联 LLMInstance/FusionEngine/AlgorithmEngine 类，改用模块导入。_run_llm 优先使用新版 LLMEngine。
+- **_phase_pcr / _phase_intent** — 改为通过 HybridEngine 并行调度算法 + LLM（含向后兼容回退）。
+- **_phase_answer** — 集成 ColdStartProbe 专业度探测到认知快照。
+- **_phase_meta_cognitive** — 集成 MetaCognitiveValidator 规则验证前置。
+- **_phase_reflective** — 集成 ReflectiveAnalyzer 规则分析前置。
+- **LLM 实例子类 Prompt 模板** — 从英文占位符替换为中文工程模板。
+- **ColdStartProbe 重构** — 从领域关键词匹配改为通用语言特征分析（max-based 评分）。
+- **__init__.py 更新** — cognitive_compiler/orchestrator/llm_providers 导出新模块。
+
+### Performance
+- v3.0 核心测试：**0 → 65**（56 单元 + 9 集成，全部通过）。
+- 新增代码：**~75 KB**（22 个新文件 + 4 个修改文件）。
+- v3.0 文件总计：**~109 文件**（原 87 + 新增 22）。
+- v3.0 代码行数：**~34,516 行**（原 ~31,716 + 新增 ~2,800）。
+
+
+
+### Added
 - Plugin system (`core/agent/plugin_system.py`) allowing custom `Segmenter`, `SummaryEngine`, and `HeaderInjector` strategies to be registered and injected via `DiscoursePipeline(strategy={...})`.
 - Prometheus-compatible DiscourseBlockTree metrics in `core/agent/metrics.py`:
   - `discourse_pipeline_requests_total`

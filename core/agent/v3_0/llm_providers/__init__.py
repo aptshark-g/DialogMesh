@@ -59,6 +59,7 @@ from core.agent.v3_0.llm_providers.local_provider import LocalProvider_v3
 from core.agent.v3_0.llm_providers.mock_provider import MockProvider_v3
 from core.agent.v3_0.llm_providers.failover_provider import FailoverProvider_v3
 from core.agent.v3_0.llm_providers.hybrid_router import HybridRouter_v3
+from core.agent.v3_0.llm_providers import llm_instances
 from core.agent.v3_0.llm_providers.provider_manager import (
     ProviderManager,
     ProviderManagerConfig,
