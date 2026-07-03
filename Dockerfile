@@ -23,7 +23,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy dependency manifests first (for layer caching)
-COPY requirements.txt ./
+COPY requirements.txt pyproject.toml ./
 
 # Install third-party dependencies (no project source needed)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -64,7 +64,8 @@ COPY requirements.txt pyproject.toml main_v3.py ./
 COPY config/     ./config/
 COPY core/       ./core/
 COPY scripts/    ./scripts/
-COPY data/       ./data/
+# NOTE: data/ is runtime-mounted via compose volume; mkdir below creates empty dir
+# Do NOT COPY data/ here — local data/ may not exist and runtime uses volume mount
 
 # Ensure runtime directories exist and are writable
 RUN mkdir -p /app/data /app/logs /app/uploads && \

@@ -80,34 +80,62 @@ jobs:
       - name: Start services (docker-compose up)
         run: |
           docker compose up -d
-          sleep 15
+          echo "Waiting 60s for app to start (healthcheck start_period=60s)..."
+          sleep 60
 
       - name: Wait for backend health
         run: |
+          # Verify app container is running first
+          for i in {1..10}; do
+            if docker compose ps | grep -q "dialogmesh-app"; then
+              echo "App container is running"
+              break
+            fi
+            echo "Waiting for app container... ($i/10)"
+            sleep 3
+          done
+          # Check health via container exec (app only exposes port 8000 internally)
           for i in {1..30}; do
-            if curl -f http://localhost:8000/health; then
+            if docker compose exec -T app curl -f -s http://localhost:8000/health; then
               echo "Backend is healthy"
               break
             fi
-            echo "Waiting for backend... ($i/30)"
+            echo "Waiting for backend health... ($i/30)"
             sleep 2
           done
+          # Also verify via nginx proxy (nginx depends_on app:service_healthy)
+          curl -f -s http://localhost/health || echo "Nginx proxy not ready yet (may still be starting)"
 
       - name: Test API endpoints
         run: |
-          echo "=== Health Check ==="
-          curl -s http://localhost:8000/health | python -m json.tool
+          echo "=== Health Check (via nginx proxy) ==="
+          curl -s http://localhost/health | python -m json.tool
 
-          echo "=== API Status ==="
-          curl -s http://localhost:8000/api/v1/status | python -m json.tool || true
+          echo "=== API Status (via nginx proxy) ==="
+          curl -s http://localhost/api/v1/status | python -m json.tool || true
+
+          echo "=== Direct backend health (container internal) ==="
+          docker compose exec -T app curl -s http://localhost:8000/health | python -m json.tool || true
 
       - name: Test Nginx frontend proxy
         run: |
           echo "=== Nginx Root (should return index.html) ==="
-          curl -s -o /dev/null -w "%{http_code}" http://localhost/
+          curl -s -o /dev/null -w "%{http_code}\n" http://localhost/
 
-          echo "=== Nginx API proxy (should return 200) ==="
-          curl -s -o /dev/null -w "%{http_code}" http://localhost/health
+          echo "=== Nginx API proxy /health (should return 200) ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/health)
+          echo "HTTP code: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: /health did not return 200"
+            exit 1
+          fi
+
+          echo "=== Nginx API proxy /api/v1/status (should return 200) ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/v1/status)
+          echo "HTTP code: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: /api/v1/status returned $HTTP_CODE (may be expected if backend not fully initialized)"
+          fi
 
       - name: Test WebSocket endpoint
         run: |
