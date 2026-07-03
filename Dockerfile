@@ -23,17 +23,11 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy dependency manifests first (for layer caching)
-COPY requirements.txt pyproject.toml ./
+COPY requirements.txt ./
 
 # Install third-party dependencies (no project source needed)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
-
-# Copy source code (not needed for pip install, only for runtime PYTHONPATH)
-COPY core/       ./core/
-COPY scripts/    ./scripts/
-COPY config/     ./config/
-COPY main_v3.py  ./
 
 # NOTE: No `pip install -e .` needed — PYTHONPATH=/app in runtime lets Python
 # discover the `core` package directly. All third-party deps are already
