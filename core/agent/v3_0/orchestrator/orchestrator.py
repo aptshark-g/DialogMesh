@@ -41,6 +41,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.agent.models import IntentCategory, TaskStatus
 from core.agent.v3_0.cognitive_compiler.compiler import CognitiveCompiler
 from core.agent.v3_0.cognitive_compiler.event_bus import EventBus
+from core.agent.v3_0.cognitive_compiler.meta_cognitive import MetaCognitiveValidator
+from core.agent.v3_0.cognitive_compiler.reflective import ReflectiveAnalyzer
+from core.agent.v3_0.cognitive_compiler.profile_updater import ProfileUpdater
+from core.agent.v3_0.cognitive_compiler.expertise_probe_v3 import ColdStartProbe
 from core.agent.v3_0.cognitive_tree.models import (
     CognitiveTreeNode,
     CogEdgeType,
@@ -62,6 +66,18 @@ from core.agent.v3_0.observability.telemetry import Telemetry
 from core.agent.v3_0.planning.planner import PlanningSkill
 from core.agent.v3_0.planning.models import PlanResult
 from core.agent.v3_0.tool_registry.registry import ToolRegistry
+from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine
+from core.agent.v3_0.orchestrator.fusion_engine import FusionEngine, FusionStrategy
+from core.agent.v3_0.orchestrator.hybrid_engine import HybridEngine
+from core.agent.v3_0.llm_providers.llm_instances import (
+    PCRLLM,
+    IntentLLM,
+    PlanningLLM,
+    MetaCognitiveLLM,
+    ReflectiveLLM,
+    AnswerLLM,
+)
+
 
 from core.agent.v3_0.orchestrator.models import (
     FusionResult,
@@ -78,335 +94,6 @@ logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # LLM 实例封装
-# ═══════════════════════════════════════════════════════════════════════════
-
-class LLMInstance:
-    """单个 LLM 实例的封装——负责 Prompt 构建、Provider 调用、CT 写入。
-
-    对应工程文档: ENGINEERING_MULTILAYER_LLM.md §5.2
-    """
-
-    def __init__(
-        self,
-        name: str,
-        provider: Any,  # LLMProvider_v3 or ProviderManager
-        cognitive_compiler: CognitiveCompiler,
-        config: OrchestratorConfig,
-        cog_type: CogType,
-        prompt_template: str = "",
-    ) -> None:
-        self.name = name
-        self.provider = provider
-        self.compiler = cognitive_compiler
-        self.config = config
-        self.cog_type = cog_type
-        self.prompt_template = prompt_template
-
-    async def process(
-        self,
-        session_id: str,
-        context_data: Dict[str, Any],
-        parent_node_id: Optional[str] = None,
-        timeout_ms: int = 5000,
-    ) -> LLMInstanceResult:
-        """执行 LLM 调用并编译到 Cognitive Tree。
-
-        Args:
-            session_id: 会话 ID
-            context_data: 用于渲染 Prompt 模板的数据字典
-            parent_node_id: 可选的父节点 ID（创建 DERIVES 边）
-            timeout_ms: 调用超时
-
-        Returns:
-            LLMInstanceResult：包含解析后的结构化输出、置信度、CT 节点 ID
-        """
-        start_time = time.time()
-        result = LLMInstanceResult(llm_name=self.name)
-
-        try:
-            # 1. 构建 Prompt
-            prompt = self._build_prompt(context_data)
-
-            # 2. 调用 LLM Provider
-            request = GenerateRequest_v3(
-                prompt=prompt,
-                max_tokens=2000,
-                temperature=0.3 if "fast" in self.name.lower() else 0.5,
-                timeout_ms=timeout_ms,
-                response_format="json",
-            )
-
-            llm_result = await self._call_provider(request)
-            result.latency_ms = (time.time() - start_time) * 1000.0
-
-            if not llm_result.success or not llm_result.text:
-                raise RuntimeError(f"LLM call failed: {llm_result.error_type}")
-
-            # 3. 解析结构化输出
-            structured = self._parse_response(llm_result.text)
-            result.success = True
-            result.output = structured
-            result.confidence = structured.get("confidence", 0.5)
-
-            # 4. 编译到 Cognitive Tree
-            content = json.dumps(structured, ensure_ascii=False, indent=2)
-            node = self.compiler.compile(
-                session_id=session_id,
-                llm_name=self.name,
-                cog_type=self.cog_type,
-                content=content,
-                confidence=result.confidence,
-                parent_node_id=parent_node_id,
-                edge_type=CogEdgeType.DERIVES,
-            )
-            if node:
-                result.node_id = node.node_id
-
-            logger.debug("LLMInstance %s processed in %.1fms", self.name, result.latency_ms)
-            return result
-
-        except Exception as exc:
-            result.latency_ms = (time.time() - start_time) * 1000.0
-            result.success = False
-            result.error = str(exc)
-            logger.warning("LLMInstance %s failed: %s", self.name, exc)
-            return result
-
-    async def _call_provider(self, request: GenerateRequest_v3) -> GenerateResult_v3:
-        """调用底层 Provider，支持 ProviderManager 或直接 Provider。"""
-        # 如果 provider 有 generate 方法（ProviderManager），使用它
-        if hasattr(self.provider, "generate") and callable(self.provider.generate):
-            return await self.provider.generate(request)
-        # 否则假设是 LLMProvider_v3，直接调用 generate_async
-        if hasattr(self.provider, "generate_async"):
-            return await self.provider.generate_async(request)
-        raise TypeError(f"Provider {type(self.provider)} has no generate method")
-
-    def _build_prompt(self, context_data: Dict[str, Any]) -> str:
-        """使用模板渲染 Prompt。"""
-        if not self.prompt_template:
-            # 无模板时，直接拼接 context_data
-            return json.dumps(context_data, ensure_ascii=False, indent=2)
-        try:
-            return self.prompt_template.format(**context_data)
-        except KeyError as exc:
-            logger.warning("Prompt template key missing: %s, falling back to JSON", exc)
-            return json.dumps(context_data, ensure_ascii=False, indent=2)
-
-    def _parse_response(self, text: str) -> Dict[str, Any]:
-        """解析 LLM 的 JSON 输出。"""
-        # 去除 markdown 代码块
-        cleaned = text.strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        if cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
-
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            # 非 JSON 回退：包装为文本输出
-            return {"raw_text": cleaned, "confidence": 0.5}
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 融合引擎
-# ═══════════════════════════════════════════════════════════════════════════
-
-class FusionEngine:
-    """融合引擎 — 将算法结果和 LLM 结果加权融合。
-
-    对应工程文档: ENGINEERING_MULTILAYER_LLM.md §6
-    """
-
-    def __init__(self, config: OrchestratorConfig) -> None:
-        self._high_threshold = config.fusion_high_threshold
-        self._low_threshold = config.fusion_low_threshold
-        self._llm_weight = config.fusion_llm_weight
-
-    def fuse(
-        self,
-        algo_result: Optional[Dict[str, Any]],
-        llm_result: Optional[LLMInstanceResult],
-        context_data: Optional[Dict[str, Any]] = None,
-    ) -> FusionResult:
-        """融合算法结果与 LLM 结果。
-
-        策略：
-        1. LLM 完全失败 → 强制选择算法结果（MLLM-S-01 降级要求）
-        2. 算法高置信 + LLM 低置信 → 算法输出
-        3. 算法低置信 + LLM 高置信 → LLM 输出
-        4. 两者接近 → 加权融合
-        5. 两者都低 → 保守降级（请求澄清）
-        """
-        # MLLM-S-01: LLM 故障时返回空结果，FusionEngine 强制选择算法输出
-        if llm_result is None or not llm_result.success:
-            if algo_result:
-                confidence = algo_result.get("confidence", 0.5)
-                return FusionResult(
-                    output=algo_result,
-                    confidence=confidence,
-                    source=FusionSource.ALGORITHM,
-                    fallback_reason="llm_failed",
-                )
-            # 算法结果也不存在 → 保守降级
-            return FusionResult(
-                output=None,
-                confidence=0.0,
-                source=FusionSource.FALLBACK,
-                clarification_required=True,
-                fallback_reason="llm_failed_and_no_algorithm",
-            )
-
-        c_a = algo_result.get("confidence", 0.0) if algo_result else 0.0
-        c_b = llm_result.confidence if llm_result and llm_result.success else 0.0
-
-        out_a = algo_result if algo_result else {}
-        out_b = llm_result.output if llm_result and llm_result.success else {}
-
-        # 情况 1: 算法高置信，LLM 低置信
-        if c_a > self._high_threshold and c_b < self._low_threshold:
-            return FusionResult(
-                output=out_a,
-                confidence=c_a,
-                source=FusionSource.ALGORITHM,
-            )
-
-        # 情况 2: 算法低置信，LLM 高置信
-        if c_a < self._low_threshold and c_b > self._high_threshold:
-            return FusionResult(
-                output=out_b,
-                confidence=c_b,
-                source=FusionSource.LLM,
-            )
-
-        # 情况 3: 两者都高或都中等 → 加权融合
-        if c_a >= self._low_threshold and c_b >= self._low_threshold:
-            # 检测冲突（简化：仅检查 intent category 是否一致）
-            cat_a = out_a.get("intent_category") if isinstance(out_a, dict) else None
-            cat_b = out_b.get("intent_category") if isinstance(out_b, dict) else None
-            if cat_a and cat_b and cat_a != cat_b:
-                # 冲突：选择置信度较高者，但降低置信度
-                if c_a > c_b:
-                    return FusionResult(
-                        output=out_a,
-                        confidence=c_a * 0.8,
-                        source=FusionSource.ALGORITHM_CONFLICT_RESOLVED,
-                        conflict_detected=True,
-                    )
-                else:
-                    return FusionResult(
-                        output=out_b,
-                        confidence=c_b * 0.8,
-                        source=FusionSource.LLM_CONFLICT_RESOLVED,
-                        conflict_detected=True,
-                    )
-
-            # 无冲突，加权融合
-            weight_a = c_a * (1 - self._llm_weight)
-            weight_b = c_b * self._llm_weight
-            total_weight = weight_a + weight_b
-            if total_weight == 0:
-                fused_confidence = 0.0
-            else:
-                fused_confidence = (c_a * weight_a + c_b * weight_b) / total_weight
-
-            # 合并输出字典（LLM 输出优先覆盖）
-            fused_output = dict(out_a)
-            if isinstance(out_b, dict):
-                fused_output.update(out_b)
-
-            return FusionResult(
-                output=fused_output,
-                confidence=fused_confidence,
-                source=FusionSource.FUSED,
-            )
-
-        # 情况 4: 两者都低 → 保守降级
-        return FusionResult(
-            output=None,
-            confidence=0.0,
-            source=FusionSource.FALLBACK,
-            clarification_required=True,
-        )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 算法引擎占位（用于降级 fallback）
-# ═══════════════════════════════════════════════════════════════════════════
-
-class AlgorithmEngine:
-    """算法引擎占位——提供规则级 fallback 能力。
-
-    当 LLM 不可用时，使用基于规则的快速推断。
-    """
-
-    def __init__(self) -> None:
-        self._rule_patterns = {
-            "scan": {"intent_category": "SCAN_MEMORY", "confidence": 0.7},
-            "read": {"intent_category": "READ_MEMORY", "confidence": 0.8},
-            "write": {"intent_category": "WRITE_MEMORY", "confidence": 0.8},
-            "hack": {"intent_category": "HACK_VALUE", "confidence": 0.75},
-            "help": {"intent_category": "ASK_HELP", "confidence": 0.9},
-        }
-
-    def analyze_pcr(self, user_input: str) -> Dict[str, Any]:
-        """基于规则快速分析语义噪声和期望。"""
-        user_lower = user_input.lower()
-        # 简单启发式：输入越短，噪声越高
-        noise = min(1.0, max(0.0, 1.0 - len(user_input) / 50.0))
-        # 包含数字时，结构噪声较低
-        structural_noise = 0.3 if any(c.isdigit() for c in user_input) else 0.6
-
-        return {
-            "noise_analysis": {
-                "semantic_noise": noise,
-                "structural_noise": structural_noise,
-                "referential_noise": 0.3,
-            },
-            "expectation_inference": {
-                "primary": "tool",
-                "confidence": 0.7,
-                "reasoning": "rule-based heuristic",
-            },
-            "cognitive_snapshot": {
-                "metacognition": 0.5,
-                "divergence": 0.3,
-                "stability": 0.7,
-            },
-            "confidence": 0.6,
-        }
-
-    def parse_intent(self, user_input: str) -> Dict[str, Any]:
-        """基于关键词匹配快速推断意图。"""
-        user_lower = user_input.lower()
-        for keyword, result in self._rule_patterns.items():
-            if keyword in user_lower:
-                return {
-                    "intent_inference": {
-                        "primary_intent": result["intent_category"],
-                        "confidence": result["confidence"],
-                        "implied_entities": [],
-                        "ambiguity_assessment": "low",
-                    },
-                    "confidence": result["confidence"],
-                }
-        return {
-            "intent_inference": {
-                "primary_intent": "UNKNOWN",
-                "confidence": 0.4,
-                "implied_entities": [],
-                "ambiguity_assessment": "high",
-            },
-            "confidence": 0.4,
-        }
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 核心编排器
 # ═══════════════════════════════════════════════════════════════════════════
 
 class Orchestrator:
@@ -457,10 +144,30 @@ class Orchestrator:
 
         # 融合引擎
         self.fusion_engine = FusionEngine(self.config)
+        # 算法引擎（认知双工快思考层）
+        self.algorithm_engine = AlgorithmEngine()
+        # 认知双工引擎
+        self.meta_validator = MetaCognitiveValidator()
+        self.reflective_analyzer = ReflectiveAnalyzer()
+        self.profile_updater = ProfileUpdater()
+        self.cold_start_probe = ColdStartProbe()
+
+        self.hybrid_engine = HybridEngine(
+            algorithm_engine=self.algorithm_engine,
+            fusion_engine=self.fusion_engine,
+            high_confidence_threshold=self.config.fusion_high_threshold,
+            low_confidence_threshold=self.config.fusion_low_threshold,
+            llm_timeout_ms=self.config.pcr_timeout_ms,
+        )
+
 
         # LLM 实例缓存
         self._llm_instances: Dict[str, LLMInstance] = {}
         self._init_llm_instances()
+        # LLMEngine 实例（新版本子类）
+        self._llm_engines: Dict[str, Any] = {}
+        self._init_llm_engines()
+
 
         # 状态
         self._closed = False
@@ -743,20 +450,20 @@ Cognitive Tree 统计：{tree_stats}
         # 构建上下文
         context_data = {"user_input": turn_ctx.user_input, "context": "{}", "history": "[]"}
 
-        # 并行执行：算法引擎 + LLM 引擎
-        algo_future = asyncio.create_task(self._run_algorithm_pcr(turn_ctx.user_input))
-        llm_future = asyncio.create_task(self._run_llm("PCR-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.pcr_timeout_ms))
-
-        algo_result, llm_result = await asyncio.gather(algo_future, llm_future, return_exceptions=True)
-        if isinstance(algo_result, Exception):
-            logger.warning("Algorithm PCR failed: %s", algo_result)
-            algo_result = None
-        if isinstance(llm_result, Exception):
-            logger.warning("PCR-LLM failed: %s", llm_result)
-            llm_result = None
-
-        # 融合
-        fusion = self.fusion_engine.fuse(algo_result, llm_result)
+        # 使用 HybridEngine 并行执行
+        if hasattr(self, "hybrid_engine"):
+            llm_coro = lambda: self._run_llm("PCR-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.pcr_timeout_ms)
+            fusion = await self.hybrid_engine.process_pcr(turn_ctx.user_input, llm_coro)
+        else:
+            # 回退：原有并行路径
+            algo_future = asyncio.create_task(self._run_algorithm_pcr(turn_ctx.user_input))
+            llm_future = asyncio.create_task(self._run_llm("PCR-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.pcr_timeout_ms))
+            algo_result, llm_result = await asyncio.gather(algo_future, llm_future, return_exceptions=True)
+            if isinstance(algo_result, Exception):
+                algo_result = None
+            if isinstance(llm_result, Exception):
+                llm_result = None
+            fusion = self.fusion_engine.fuse(algo_result, llm_result)
         turn_ctx.pcr_result = fusion.output or {}
 
         # 构建 IntentContext_v3
@@ -776,6 +483,24 @@ Cognitive Tree 统计：{tree_stats}
             },
         )
 
+        # 冷启动专业度探测：调整认知快照
+        if hasattr(self, "cold_start_probe") and self.cold_start_probe:
+            try:
+                probe_result = self.cold_start_probe.probe(turn_ctx.user_input)
+                if probe_result.get("overall_expertise", 0) > 0.5:
+                    cs = probe_result.get("cognitive_snapshot", {})
+                    if cs:
+                        profile = turn_ctx.intent_context.cognitive_profile or {}
+                        profile["metacognition"] = cs.get("metacognition", profile.get("metacognition", 0.5))
+                        profile["divergence"] = cs.get("divergence", profile.get("divergence", 0.5))
+                        profile["stability"] = cs.get("stability", profile.get("stability", 0.5))
+                        profile["expertise_score"] = probe_result.get("expertise_score", 0.5)
+                        profile["technical_level"] = probe_result.get("technical_level", "low")
+                        turn_ctx.intent_context.cognitive_profile = profile
+                        turn_ctx.add_trace("ColdStartProbe expertise=" + str(probe_result.get("overall_expertise", 0)))
+            except Exception as exc:
+                logger.warning("ColdStartProbe failed: %s", exc)
+
         latency_ms = (time.time() - phase_start) * 1000.0
         turn_ctx.mark_phase(TurnPhase.PCR_ANALYSIS, latency_ms)
         turn_ctx.add_trace(f"Phase: PCR Analysis completed (fusion={fusion.source.value}, conf={fusion.confidence:.2f})")
@@ -790,18 +515,23 @@ Cognitive Tree 统计：{tree_stats}
             "user_input": turn_ctx.user_input,
             "entities": "[]",
             "history": "[]",
+            "pcr_result": str(turn_ctx.pcr_result) if turn_ctx.pcr_result else "{}",
         }
 
-        algo_future = asyncio.create_task(self._run_algorithm_intent(turn_ctx.user_input))
-        llm_future = asyncio.create_task(self._run_llm("Intent-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.intent_timeout_ms))
-
-        algo_result, llm_result = await asyncio.gather(algo_future, llm_future, return_exceptions=True)
-        if isinstance(algo_result, Exception):
-            algo_result = None
-        if isinstance(llm_result, Exception):
-            llm_result = None
-
-        fusion = self.fusion_engine.fuse(algo_result, llm_result)
+        # 使用 HybridEngine 并行执行
+        if hasattr(self, "hybrid_engine"):
+            llm_coro = lambda: self._run_llm("Intent-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.intent_timeout_ms)
+            fusion = await self.hybrid_engine.process_intent(turn_ctx.user_input, llm_coro)
+        else:
+            # 回退：原有并行路径
+            algo_future = asyncio.create_task(self._run_algorithm_intent(turn_ctx.user_input))
+            llm_future = asyncio.create_task(self._run_llm("Intent-LLM", turn_ctx.session_id, context_data, timeout_ms=self.config.intent_timeout_ms))
+            algo_result, llm_result = await asyncio.gather(algo_future, llm_future, return_exceptions=True)
+            if isinstance(algo_result, Exception):
+                algo_result = None
+            if isinstance(llm_result, Exception):
+                llm_result = None
+            fusion = self.fusion_engine.fuse(algo_result, llm_result)
 
         # 从融合结果构建 Intent_v3
         intent_inference = fusion.output.get("intent_inference", {}) if fusion.output else {}
@@ -822,47 +552,75 @@ Cognitive Tree 统计：{tree_stats}
         turn_ctx.add_trace(f"Phase: Intent Parsing completed (intent={category.value}, conf={fusion.confidence:.2f})")
 
     async def _phase_planning(self, turn_ctx: TurnContext) -> None:
-        """规划阶段——使用 PlanningSkill 生成任务图。"""
+        """规划阶段——使用 PlanningSkill 生成任务图（算法侧使用 HybridEngine 加速）。"""
         phase_start = time.time()
         turn_ctx.current_phase = TurnPhase.PLANNING
         turn_ctx.add_trace("Phase: Planning started")
 
-        if not self.planning_skill or not turn_ctx.intent_result:
-            turn_ctx.add_trace("Phase: Planning skipped (no planning_skill or intent)")
+        if not turn_ctx.intent_result:
+            turn_ctx.add_trace("Phase: Planning skipped (no intent)")
             turn_ctx.mark_phase(TurnPhase.PLANNING, (time.time() - phase_start) * 1000.0)
             return
 
-        try:
-            plan_result: PlanResult = await self.planning_skill.plan(
-                intent=turn_ctx.intent_result,
-                intent_context=turn_ctx.intent_context,
-            )
-            if plan_result.success and plan_result.task_graph:
-                turn_ctx.task_graph = plan_result.task_graph
-                turn_ctx.add_trace(f"Phase: Planning success (nodes={len(plan_result.task_graph.nodes)})")
-            else:
-                turn_ctx.add_trace(f"Phase: Planning failed ({plan_result.error})")
-                if self.config.fallback_to_single_task:
-                    # 降级到单任务
-                    turn_ctx.task_graph = TaskGraph_v3(intent_id=turn_ctx.intent_result.id)
-                    node = TaskNode_v3(
-                        name="fallback_execution",
-                        goal=f"Execute {turn_ctx.intent_result.category.value}",
-                        layer=2,
-                    )
-                    turn_ctx.task_graph.add_node(node)
-                    turn_ctx.add_trace("Phase: Planning fallback to single task")
-        except Exception as exc:
-            logger.error("Planning failed: %s", exc)
-            turn_ctx.add_error(f"Planning failed: {exc}")
-            if self.config.fallback_to_single_task:
-                turn_ctx.task_graph = TaskGraph_v3(intent_id=turn_ctx.intent_result.id if turn_ctx.intent_result else None)
-                node = TaskNode_v3(name="fallback_execution", goal="Execute intent", layer=2)
-                turn_ctx.task_graph.add_node(node)
+        # 使用 HybridEngine 并行执行算法规划 + Planning-LLM（如果可用）
+        if hasattr(self, "hybrid_engine") and self.hybrid_engine and self.planning_skill:
+            try:
+                # 算法侧：基于规则的快速规划
+                intent_cat = turn_ctx.intent_result.category.value if turn_ctx.intent_result else "UNKNOWN"
+                user_input = turn_ctx.user_input
+                algo_plan = self.algorithm_engine.generate_plan(intent_cat, user_input) if hasattr(self, "algorithm_engine") else {}
+                
+                # LLM侧：完整的 PlanningSkill
+                plan_result: PlanResult = await self.planning_skill.plan(
+                    intent=turn_ctx.intent_result,
+                    intent_context=turn_ctx.intent_context,
+                )
+                
+                if plan_result.success and plan_result.task_graph:
+                    turn_ctx.task_graph = plan_result.task_graph
+                    turn_ctx.add_trace(f"Phase: Planning success (nodes={len(plan_result.task_graph.nodes)})")
+                    step_count = len(algo_plan.get("steps", []))
+                    step_count = len(algo_plan.get("steps", []))
+                    turn_ctx.add_trace("Phase: Algorithm plan generated (" + str(step_count) + " steps)")
+                else:
+                    turn_ctx.add_trace(f"Phase: Planning failed, using algorithm fallback")
+                    self._fallback_task_graph(turn_ctx)
+            except Exception as exc:
+                logger.error(f"Planning with HybridEngine failed: {exc}")
+                turn_ctx.add_error(f"Planning failed: {exc}")
+                self._fallback_task_graph(turn_ctx)
+        elif self.planning_skill:
+            try:
+                plan_result: PlanResult = await self.planning_skill.plan(
+                    intent=turn_ctx.intent_result,
+                    intent_context=turn_ctx.intent_context,
+                )
+                if plan_result.success and plan_result.task_graph:
+                    turn_ctx.task_graph = plan_result.task_graph
+                    turn_ctx.add_trace(f"Phase: Planning success (nodes={len(plan_result.task_graph.nodes)})")
+                else:
+                    turn_ctx.add_trace(f"Phase: Planning failed ({plan_result.error})")
+                    self._fallback_task_graph(turn_ctx)
+            except Exception as exc:
+                logger.error(f"Planning failed: {exc}")
+                turn_ctx.add_error(f"Planning failed: {exc}")
+                self._fallback_task_graph(turn_ctx)
+        else:
+            turn_ctx.add_trace("Phase: Planning skipped (no planning_skill)")
+            self._fallback_task_graph(turn_ctx)
 
         latency_ms = (time.time() - phase_start) * 1000.0
         turn_ctx.mark_phase(TurnPhase.PLANNING, latency_ms)
 
+    def _fallback_task_graph(self, turn_ctx: TurnContext) -> None:
+        """规划失败的降级路径：生成单任务任务图。"""
+        from core.agent.v3_0.data_models import TaskGraph_v3, TaskNode_v3
+        intent_id = turn_ctx.intent_result.id if turn_ctx.intent_result else None
+        tg = TaskGraph_v3(intent_id=intent_id)
+        node = TaskNode_v3(name="fallback_execution", goal=f"Execute intent", layer=2)
+        tg.add_node(node)
+        turn_ctx.task_graph = tg
+        turn_ctx.add_trace("Phase: Planning fallback to single task")
     async def _phase_execution(self, turn_ctx: TurnContext) -> None:
         """执行阶段——遍历任务图并调用工具。"""
         phase_start = time.time()
@@ -940,7 +698,7 @@ Cognitive Tree 统计：{tree_stats}
             turn_ctx.session_id,
             {
                 "user_input": turn_ctx.user_input,
-                "user_profile": "{}",
+                "user_profile": json.dumps(self.profile_updater.get_profile(turn_ctx.session_id), ensure_ascii=False)[:500],
                 "algorithm_result": str(turn_ctx.pcr_result)[:200],
                 "llm_result": str(turn_ctx.intent_result)[:200],
                 "fusion_mode": "hybrid",
@@ -971,6 +729,15 @@ Cognitive Tree 统计：{tree_stats}
     async def _phase_meta_cognitive(self, turn_ctx: TurnContext) -> None:
         """元认知验证阶段——异步后台运行。"""
         try:
+            if self._turn_counter % 3 != 0:
+                try:
+                    if self.compiler:
+                        tree = self.compiler._store.get_tree(turn_ctx.session_id)
+                        if tree and len(tree.nodes) > 10:
+                            turn_ctx.add_trace("Meta-Cognitive skipped (scheduling)")
+                            return
+                except Exception:
+                    pass
             turn_ctx.add_trace("Phase: Meta-Cognitive (background) started")
             # 获取最近节点进行验证
             recent_node = None
@@ -978,6 +745,27 @@ Cognitive Tree 统计：{tree_stats}
                 tree = self.compiler._store.get_tree(turn_ctx.session_id)
                 if tree and tree.nodes:
                     recent_node = max(tree.nodes.values(), key=lambda n: n.timestamp)
+
+            if recent_node:
+                    all_nodes = []
+                    if self.compiler:
+                        tree = self.compiler._store.get_tree(turn_ctx.session_id)
+                        if tree and tree.nodes:
+                            all_nodes = list(tree.nodes.values())
+                    try:
+                        ev_nodes = [n for n in all_nodes if n.node_id in getattr(recent_node, "evidence", [])]
+                        hist_nodes = [n for n in all_nodes if n.node_id != recent_node.node_id]
+                        rule_result = self.meta_validator.validate(recent_node, hist_nodes, ev_nodes)
+                        turn_ctx.meta_cognitive_result = rule_result
+                        turn_ctx.add_trace("Meta-Cog rule: " + str(rule_result.get("overall_validation", "unknown")))
+                        if rule_result.get("hallucination_risk", 0) > 0.7:
+                            if self.compiler:
+                                t = self.compiler._store.get_tree(turn_ctx.session_id)
+                                if t and recent_node.node_id in t.nodes:
+                                    t.nodes[recent_node.node_id].status = CogNodeStatus.INVALIDATED
+                                    turn_ctx.add_trace("Rule invalidated node risk=" + str(rule_result["hallucination_risk"]))
+                    except Exception as exc:
+                        turn_ctx.add_trace("Meta-Cog rule failed: " + str(exc))
 
             if not recent_node:
                 turn_ctx.add_trace("Phase: Meta-Cognitive skipped (no recent node)")
@@ -1033,6 +821,17 @@ Cognitive Tree 统计：{tree_stats}
                         "invalidated": len([n for n in nodes if n.status == CogNodeStatus.INVALIDATED]),
                     }
 
+            # 规则复盘分析引擎（ReflectiveAnalyzer）
+            if hasattr(self, "reflective_analyzer"):
+                try:
+                    all_nodes = list(tree.nodes.values()) if self.compiler and tree else []
+                    if all_nodes:
+                        ref_result = self.reflective_analyzer.analyze(all_nodes)
+                        turn_ctx.reflective_result = ref_result
+                        turn_ctx.add_trace("Reflective rule: biases=" + str(len(ref_result.get("bias_analysis", {}).get("detected_biases", []))))
+                except Exception as exc:
+                    turn_ctx.add_trace("Reflective rule failed: " + str(exc))
+
             llm_result = await self._run_llm(
                 "Reflective-LLM",
                 turn_ctx.session_id,
@@ -1058,12 +857,16 @@ Cognitive Tree 统计：{tree_stats}
     async def _run_algorithm_pcr(self, user_input: str) -> Dict[str, Any]:
         """运行算法 PCR 引擎。"""
         await asyncio.sleep(0)  # 让出事件循环
-        return self.algorithm_engine.analyze_pcr(user_input)
+        if hasattr(self, "algorithm_engine"):
+            return self.algorithm_engine.analyze_pcr(user_input)
+        return {"confidence": 0.0}
 
     async def _run_algorithm_intent(self, user_input: str) -> Dict[str, Any]:
         """运行算法 Intent 引擎。"""
         await asyncio.sleep(0)
-        return self.algorithm_engine.parse_intent(user_input)
+        if hasattr(self, "algorithm_engine"):
+            return self.algorithm_engine.parse_intent(user_input)
+        return {"confidence": 0.0}
 
     async def _run_llm(
         self,
@@ -1074,6 +877,12 @@ Cognitive Tree 统计：{tree_stats}
         timeout_ms: int = 5000,
     ) -> Optional[LLMInstanceResult]:
         """运行指定 LLM 实例。"""
+        engine = self._llm_engines.get(llm_name)
+        if engine:
+            result = await engine.process(context_data, timeout_ms)
+            if result:
+                instance_result = LLMInstanceResult(llm_name=llm_name, success=result.success, output=result.output, confidence=result.confidence, latency_ms=result.latency_ms, error=result.error)
+                return instance_result
         instance = self._llm_instances.get(llm_name)
         if not instance:
             logger.debug("LLM instance %s not found or disabled", llm_name)
@@ -1119,6 +928,23 @@ Cognitive Tree 统计：{tree_stats}
         )
 
     # ── 生命周期 ────────────────────────────────────────────────────────────
+
+    def _init_llm_engines(self) -> None:
+        provider = self.provider
+        engine_map = {
+            "PCR-LLM": PCRLLM(provider),
+            "Intent-LLM": IntentLLM(provider),
+            "Planning-LLM": PlanningLLM(provider),
+            "Meta-Cognitive-LLM": MetaCognitiveLLM(provider),
+            "Reflective-LLM": ReflectiveLLM(provider),
+            "Answer-LLM": AnswerLLM(provider),
+        }
+        self._llm_engines = engine_map
+        for name, engine in engine_map.items():
+            attr = "enable_" + name.lower().replace("-", "_")
+            toggle = getattr(self.config, attr, True)
+            if not toggle:
+                self._llm_instances.pop(name, None)
 
     async def health_check(self) -> Dict[str, Any]:
         """编排器健康检查。"""

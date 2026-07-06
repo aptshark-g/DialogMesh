@@ -22,12 +22,19 @@ from core.agent.v3_0.orchestrator.models import (
     TurnPhase,
 )
 from core.agent.v3_0.orchestrator.orchestrator import Orchestrator
+from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine
+from core.agent.v3_0.orchestrator.fusion_engine import FusionEngine, FusionStrategy
+from core.agent.v3_0.orchestrator.hybrid_engine import HybridEngine
 from core.agent.v3_0.orchestrator.bootstrap import SystemBootstrap
 
 __version__ = "3.0.0"
 
 __all__ = [
     "Orchestrator",
+    "AlgorithmEngine",
+    "FusionEngine",
+    "FusionStrategy",
+    "HybridEngine",
     "SystemBootstrap",
     "DialogMeshSystem",
     "OrchestratorConfig",

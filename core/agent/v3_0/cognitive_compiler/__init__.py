@@ -35,6 +35,13 @@ from core.agent.v3_0.cognitive_compiler.event_bus import (
 )
 from core.agent.v3_0.cognitive_compiler.lifecycle import NodeLifecycleManager
 from core.agent.v3_0.cognitive_compiler.querier import Querier
+from core.agent.v3_0.cognitive_compiler.profile_updater import ProfileUpdater
+from core.agent.v3_0.cognitive_compiler.pcr_feedback import PcrFeedbackLoop
+from core.agent.v3_0.cognitive_compiler.rule_conflict import RuleConflictDetector
+from core.agent.v3_0.cognitive_compiler.expertise_probe_v3 import ColdStartProbe
+from core.agent.v3_0.cognitive_compiler.tree_health import TreeHealthAnalyzer
+from core.agent.v3_0.cognitive_compiler.meta_cognitive import MetaCognitiveValidator
+from core.agent.v3_0.cognitive_compiler.reflective import ReflectiveAnalyzer
 
 __all__ = [
     "CognitiveCompiler",
@@ -46,4 +53,11 @@ __all__ = [
     "Event",
     "Subscription",
     "Querier",
+    "ProfileUpdater",
+    "ColdStartProbe",
+    "PcrFeedbackLoop",
+    "RuleConflictDetector",
+    "TreeHealthAnalyzer",
+    "MetaCognitiveValidator",
+    "ReflectiveAnalyzer",
 ]

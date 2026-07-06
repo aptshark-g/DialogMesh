@@ -349,6 +349,19 @@ DialogMesh/
 |--------|------|------|
 | **六层 LLM 协同** | PCR → Intent → Planning → Meta → Reflective → Answer | 级联激活、短路优化、细粒度认知分工 |
 | **认知双工** | 算法引擎 ∥ LLM 引擎 + Fusion Engine | 延迟与质量的最优权衡，支持快/慢思考切换 |
+| **规则引擎重写** | AlgorithmEngine: 三维噪声检测 + 规则意图解析 + 认知快照 | 从 20 行桩升级为 280 行完整实现 |
+| **融合引擎独立** | FusionEngine: 5 种策略 + 冲突检测 + 递归合并 | 从内联类提取为独立模块 |
+| **元认知三层验证** | MetaCognitiveValidator: 事实性/一致性/合理性 | 规则 + LLM 双轨道验证 |
+| **跨会话复盘** | ReflectiveAnalyzer: 偏见检测 + 学习策略生成 | TreeHealthAnalyzer + BiasDetector |
+| **画像更新** | ProfileUpdater: EMA 加权融合 | Track A 趋势 + Track B 修正 |
+| **冷启动探测** | ColdStartProbe: 5 维通用语言特征 | 不依赖领域词表，Max-based 评分 |
+| **幻觉三层防御** | SchemaGuard → HallucinationDetector → BiasDetector | 实时拦截 + 跨轮检测 + 长期复盘 |
+| **后处理约束** | AnswerConstraintValidator | 长度/安全/内容/置信度校验 |
+| **状态映射** | FSM 外部状态映射 | 双向映射 + 转换日志 |
+| **事件注册表** | WebSocket EventRegistry | Schema 校验 + 第三方扩展 |
+| **分布式锁** | DistributedLock: Threading + Redis 适配 | 自动降级、上下文管理器 |
+| **PCR 反馈闭环** | PcrFeedbackLoop: EMA 自适应阈值 | 滑动窗口噪声追踪 |
+| **规则冲突检测** | RuleConflictDetector | 成对模式重叠 fuzz 测试 |
 | **双树结构** | Cognitive Tree ⊕ Topic Tree | 正交建模：系统理解 + 用户话题分离 |
 | **规划 Skill 原语** | 5 核心原语 × 3 级详细度 × 模式回退链 | 复杂任务自动分解、鲁棒执行 |
 | **SchemaGuard** | 参数 Schema 校验 + ToolBindingEngine | 工具调用类型安全、运行时兼容 |
@@ -362,10 +375,10 @@ DialogMesh/
 
 | 指标 | 数值 |
 |------|------|
-| 测试用例总数 | **327** |
+| 测试用例总数 | **392**（v3.0 新增 65） |
 | 测试通过率 | **100%** |
-| 核心代码文件 | **87** |
-| 代码总行数 | **~31,716** |
+| 核心代码文件 | **109**（v3.0: 87 + 新增 22） |
+| 代码总行数 | **~34,516**（v3.0 新增 ~2,800） |
 | 工程文档 | **16** 份 |
 | 设计文档 | **4** 份 |
 
