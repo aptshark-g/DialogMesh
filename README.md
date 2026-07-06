@@ -413,6 +413,19 @@ MIT License
 ---
 
 ## 相关文档
+## v3.2 行为认知引擎（新增模块，2026.07）
+
+11 模块管线: HybridCompiler → BehaviorGraph → Predictor → CausalDiscovery → NegativeKB → CausalSubstrate → FoA → L1Summary → Rewarder → FusionEngine (4-track)
+
+| 指标 | 值 |
+|------|-----|
+| 测试 | 217 passing |
+| 规则库 | 98 (63 EN + 35 CN) |
+| 可靠性 | 95%+ (真实 LLM) |
+| 压力测试 | 57/57 轮零崩溃零降级 |
+| 图边数 | 52 per session |
+
+快速开始: `python scripts/test_v32_run.py` (需 DEEPSEEK_API_KEY)
 
 - [英文文档](README_EN.md)
 - [项目清单](MANIFEST.md)

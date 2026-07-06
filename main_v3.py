@@ -186,21 +186,42 @@ def _create_fastapi_app(system: Any) -> Any:
 
     @app.post("/v3/session/{session_id}/message")
     async def v3_send_message(session_id: str, message: dict) -> dict:
-        """v3 发送消息并获取回复。"""
         orch = getattr(system, "orchestrator", None)
         if not orch:
-            return {"error": "orchestrator not available"}
-        from core.agent.v3_0.data_models import UserMessage_v3
-        user_msg = UserMessage_v3(session_id=session_id, content=message.get("content", ""))
-        result = await orch.process_request(user_msg)
+            return {"error": "orchestrator not available", "status": "error", "content": "", "session_id": session_id}
+        try:
+            result = await orch.process_turn(session_id, message.get("content", ""))
+        except AttributeError as e:
+            return {"error": f"Orch error: {e}", "type": type(orch).__name__, "module": type(orch).__module__, "methods": [m for m in dir(orch) if callable(getattr(orch, m, None)) and not m.startswith("_")]}
+        answer = getattr(result, "answer", "") or ""
+        intent_val = None
+        if hasattr(result, "intent") and result.intent:
+            try:
+                intent_val = result.intent.category.value if hasattr(result.intent, "category") else str(result.intent)
+            except Exception:
+                intent_val = str(result.intent)
+        task_graph_val = None
+        if hasattr(result, "task_graph") and result.task_graph:
+            try:
+                task_graph_val = result.task_graph.model_dump(mode="json") if hasattr(result.task_graph, "model_dump") else None
+            except Exception:
+                task_graph_val = None
+        errors_list = getattr(result, "errors", []) or []
         return {
-            "message_id": getattr(result, "message_id", ""),
+            "message_id": getattr(result, "turn_id", "") or getattr(result, "message_id", ""),
+            "session_id": getattr(result, "session_id", session_id),
             "status": getattr(result, "status", "ok"),
-            "answer": result.answer,
-            "latency_ms": result.latency_ms,
-            "trace_log": result.trace_log,
+            "content": answer,
+            "answer": answer,
+            "response_format": "balanced",
+            "intent": intent_val,
+            "task_graph": task_graph_val,
+            "clarifications": [],
+            "suggestions": getattr(result, "suggestions", []),
+            "latency_ms": getattr(result, "total_latency_ms", 0) or 0,
+            "error": errors_list[0] if errors_list else None,
+            "trace_log": getattr(result, "trace_log", []),
         }
-
     @app.post("/v3/session/{session_id}/clarify")
     async def v3_clarify(session_id: str, req: dict) -> dict:
         """v3 提交澄清回复。"""
@@ -337,7 +358,7 @@ def _create_fastapi_app(system: Any) -> Any:
                                 "timestamp": event.timestamp,
                             })
                     elif orch and hasattr(orch, "process_request"):
-                        result = await orch.process_request(user_msg)
+                        result = await orch.process_turn(session_id, message.get("content", ""))
                         await websocket.send_json({
                             "type": "message",
                             "payload": {"answer": result.answer, "latency_ms": result.latency_ms},
@@ -410,7 +431,7 @@ def _create_fastapi_app(system: Any) -> Any:
             session_id=session_id,
             content=message.get("content", ""),
         )
-        result = await orch.process_request(user_msg)
+        result = await orch.process_turn(session_id, message.get("content", ""))
         return {
             "answer": result.answer,
             "latency_ms": result.latency_ms,
