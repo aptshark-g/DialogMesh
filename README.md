@@ -100,7 +100,7 @@ After each turn, V32Pipeline.pull_v32_state() pushes:
 
 ## Test Status
 
-**217/217 tests passing, 0 failures. 8/8 edge cases passing.**
+**217/217 unit tests passing (100%). 8/8 edge cases passing. 13/13 LOCOMO-style integration tests passing (5 scenarios). DeepSeek 20/20 real LLM verification passing.**
 
 | Module | Tests | Status |
 |:-------|:-----:|:------:|
@@ -118,12 +118,27 @@ After each turn, V32Pipeline.pull_v32_state() pushes:
 | Pipeline | 6 | PASS |
 | Benchmarks | 4 | PASS |
 
+### LOCOMO-Style Memory Test (5 scenarios)
+| Scenario | Checks | Result | Key Metrics |
+|:---------|:------:|:------:|:------------|
+| Memory Retention | 5/5 | PASS | 10 turns, 10 blocks, 9 edges |
+| Behavior Learning | 2/2 | PASS | 10 actions, graph edges=9 |
+| Topic Switching | 2/2 | PASS | 10 blocks across 3 topics |
+| Correction Handling | 1/1 | PASS | 3+ edges on corrections |
+| Profile Convergence | 3/3 | PASS | meta range 0.07 (15 turns), last 5 variance 0.02 |
+
+### DeepSeek Real LLM Verification (20 queries)
+- 20/20 turns completed, 100% success rate
+- Compiler: 5 slots per query, stability 0.90-0.97
+- BehaviorGraph: 20 nodes, 19 edges, **16 distinct action types** (vs MockLLM "run" only)
+- CognitiveProfile: meta=0.600, conf=0.530, divergent=0.200 (converging)
+- Monitor: 207 events across 12 module categories
+- MetaCognition: self-assessed confidence aligns with system confidence (0.95 vs 0.96)
+
 ### Edge Cases Tested
 Empty string, 500-char input, special characters, Chinese text, mixed EN+CN, repeated spaces, numeric only, rapid 5 consecutive turns.
 
----
-
-## Benchmarks
+### Benchmarks
 
 | Benchmark | Latency | Description |
 |:----------|:-------:|:------------|
