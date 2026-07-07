@@ -16,6 +16,10 @@ def main():
     ap.add_argument('--mock', action='store_true', help='Use mock LLM (default if no DEEPSEEK_API_KEY)')
     ap.add_argument('--json', action='store_true', help='JSON output')
     ap.add_argument('--graph', action='store_true', help='Show graph stats')
+    ap.add_argument('--bridge', action='store_true', help='Show bridge/v3.0 Orchestrator status')
+    ap.add_argument('--profile', action='store_true', help='Show cognitive profile')
+    ap.add_argument('--blocks', action='store_true', help='Show block tree summary')
+    ap.add_argument('--demo', action='store_true', help='Auto-run 3 queries to demonstrate pipeline')
     ap.add_argument('--interactive', '-i', action='store_true', help='Interactive mode')
     ap.add_argument('--save-dir', default='', help='Persistence save directory')
     args = ap.parse_args()
@@ -55,6 +59,15 @@ def main():
         if f:
             dt = str(getattr(f.dominant_track, 'value', f.dominant_track))
             print(f'  Fusion: {f.confidence:.3f} (track: {dt}, clarify: {f.ask_clarification})')
+        if args.bridge:
+            bs = pipe.get_bridge_status()
+            print(f'  Bridge: enabled={bs.get(chr(34)+"enabled"+chr(34))}, v30_healthy={bs.get(chr(34)+"v30_healthy"+chr(34))}')
+        if args.profile and hasattr(pipe, '_profile_updater'):
+            p2 = pipe._profile_updater.profile
+            print(f'  Profile: meta={p2.metacognition:.2f}, conf={p2.confidence:.2f}, div={p2.divergence:.2f}')
+        if args.blocks:
+            bt = pipe.block_tree.get_tree_summary()
+            print(f'  Block Tree: {bt.get(chr(34)+"total_blocks"+chr(34),0)} blocks')
         if args.graph and hasattr(pipe, 'graph'):
             st = pipe.graph.get_statistics()
             print(f'  Graph: {st.node_count} nodes, {st.edge_count} edges')
@@ -75,6 +88,13 @@ def main():
                 print(json.dumps({k: str(v)[:200] for k, v in r.items()}, ensure_ascii=False))
             else:
                 show(r)
+    elif args.demo:
+        demo_queries = ['write a python function', 'scan memory 0x004000', 'configure firewall']
+        for i, q in enumerate(demo_queries):
+            import time
+            t0 = time.time()
+            r = asyncio.run(process_once(q))
+            print(f'  [{i+1}] \"{q}\" -> {time.time()-t0:.2f}s | stability={getattr(r.get(chr(34)+"parse"+chr(34)),"stability",0):.2f}')
     elif args.query:
         r = asyncio.run(process_once(args.query))
         show(r)
