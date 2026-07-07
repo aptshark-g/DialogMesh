@@ -114,3 +114,90 @@ class ComplexityScorer:
 | P1 | 高阶关联 (GroupReference) | ~55 行 |
 | P2 | 复杂度感知召回 | ~70 行 |
 | P2 | LLM 证据判断 | ~50 行 |
+
+## 4. Cross-Session Memory with Temporal Decay
+
+**Source**: TiMem temporal hierarchical memory + ProfileUpdater.merge_session()
+
+### Status: PARTIALLY IMPLEMENTED (P1)
+
+### Current State
+Single-session CognitiveProfile. merge_session() added to ProfileUpdater.
+Profile persists per session, but lacks:
+- Temporal decay (older sessions weighted less)
+- Importance-based cross-session consolidation
+- Cross-session graph edge persistence
+
+### Problem
+Session 1 teaches the system that the user is technically deep. Session 2 (purely casual chat) should not erase that trait. But a stale session-1 trait from 30 days ago should decay.
+
+### Proposed Design
+
+4-layer temporal hierarchy: SessionMemory dataclass + CrossSessionMemory manager.
+- merge_profile: weighted blend with decay_factor ** age_days
+- get_relevant_graph_edges: cross-session graph consolidation with temporal decay
+- Importance-weighted: sessions with higher importance get more weight
+
+See core/agent/v3_2/predictor/cognitive_profile.py: merge_session() for partial implementation.
+
+---
+
+## 5. Memory Update with Importance-Driven Consolidation
+
+**Source**: HY-Memory self-evolving + _fire_event()
+
+### Status: PARTIALLY IMPLEMENTED (P1)
+
+### Current State
+_fire_event() handles SUCCESS/CORRECTION/CONSOLIDATE events.
+Importance field on BehaviorEdge.
+But lacks:
+- Event batching (consolidation should happen in bulk, not per-turn)
+- Importance threshold for pruning (currently time-only)
+- Explicit consolidation cycle (background task)
+
+### Proposed Design
+
+ConsolidationCycle class with BATCH_SIZE=10 events.
+- push_event() buffers events and batch-consolidates
+- consolidate() processes buffered events, updates importance
+- should_prune() checks importance < 0.2 and sample_count > 3
+
+See core/agent/v3_2/integration.py: _fire_event() and
+core/agent/v3_2/behavior_graph/models.py: BehaviorEdge.importance for partial implementation.
+
+---
+
+## 6. Hypergraph Memory (Topic-Episode-Fact)
+
+**Source**: HyperMem (ACL 2026)
+
+### Status: DESIGNED, NOT IMPLEMENTED (P2)
+
+### Reference Architecture
+HyperMem three-level hypergraph:
+- L3 Topic: long-horizon theme (DialogMesh: DiscourseBlock)
+- L2 Episode: temporally contiguous segment (DialogMesh: BehaviorGraph edges)
+- L1 Fact: atomic knowledge (DialogMesh: CognitiveProfile evidence)
+
+Weighted hyperedges connect same-level nodes. Coarse-to-fine retrieval: Topic -> Episode -> Fact.
+Reciprocal Rank Fusion (RRF) for BM25 + dense embedding merge.
+
+### What Changes
+1. Hyperedge type in GroupReference (N-way connections)
+2. Coarse-to-fine retrieval path in waterwave_activate
+3. RRF fusion for BM25 + dense embedding
+
+---
+
+## Updated Priority
+
+| Priority | Improvement | Work | Status |
+|:--------:|:-----------|:----:|:------:|
+| P0 | System1/System2 mode | ~40 lines | DONE |
+| P1 | Cross-session memory | ~90 lines | Partial |
+| P1 | Importance-driven consolidation | ~110 lines | Partial |
+| P1 | GroupReference (high-order) | ~55 lines | DONE |
+| P2 | Complexity-aware retrieval | ~70 lines | Design |
+| P2 | Hypergraph memory | ~80 lines | Design |
+| P2 | LLM evidence judgment | ~50 lines | Design |
