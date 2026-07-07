@@ -104,5 +104,24 @@ class ColdIndexer:
             base += 0.1
         return min(1.0, base)
     
+    def save(self, path: str) -> None:
+        import json
+        data = {}
+        for k, r in self.records.items():
+            data[k] = {"edge_id": r.edge_id, "from_summary": r.from_summary, "to_summary": r.to_summary, "keywords": r.keywords, "profile_bias": r.profile_bias, "activation_history": r.activation_history}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+
+    def load(self, path: str) -> int:
+        import json
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for k, v in data.items():
+                self.records[k] = ColdEdgeRecord(**v)
+            return len(data)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return 0
+
     def get_stats(self) -> dict:
         return {'records': len(self.records), 'max': self.max_records}

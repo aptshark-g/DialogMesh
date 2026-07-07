@@ -124,7 +124,10 @@ def get_bge_model():
     global _bge_model
     if _bge_model is None:
         from sentence_transformers import SentenceTransformer
-        _bge_model = SentenceTransformer(BGE_MODEL_PATH, model_kwargs={"local_files_only": True})
+        try:
+            _bge_model = SentenceTransformer(BGE_MODEL_PATH, model_kwargs={"local_files_only": True})
+        except Exception:
+            _bge_model = SentenceTransformer(BGE_MODEL_PATH)
     return _bge_model
 
 # ?? Prototype Vector Store ??????????????????????????????????

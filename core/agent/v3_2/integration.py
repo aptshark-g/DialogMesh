@@ -94,7 +94,7 @@ class V32Pipeline:
         self._llm_cb = CircuitBreaker(name="llm", max_failures=3, cooldown=30)
         self._llm_fallback = '[LLM Fallback] Service unavailable'
         # Metacognition (off by default, enable via set_meta_cog)
-        self._meta_cog = MetaCognitionAdapter(self.llm, enabled=False)
+        self._meta_cog = MetaCognitionAdapter(self.llm, enabled=True)
         self._meta_scheduler = MetaCognitionScheduler(self._meta_cog)
         # Persistence (lazy init, call init_persistence() to start)
         self.persistence = None

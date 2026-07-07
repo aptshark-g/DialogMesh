@@ -1,1 +1,1 @@
-﻿from .behavior_embedding import PredicateMapper, weights
+from .behavior_embedding import PredicateMapper, weights
