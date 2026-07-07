@@ -5,6 +5,7 @@ class StageManager:
     STAGE1_TIMEOUT = 0.010
     STAGE2_TIMEOUT = 0.080
     STAGE3_TIMEOUT = 0.150
+    STAGE4_STRATEGIC_TIMEOUT = 0.200
 
     def __init__(self):
         self.stages = []
@@ -39,5 +40,19 @@ class StageManager:
         merged["intent"] = track1.output.get("intent", {})
         merged["semantics"] = track1.output.get("semantics", {})
         out = StageOutput(3, stage2.tracks + [track1], merged, is_final=True)
+        self.stages.append(out)
+        return out
+    async def run_stage_strategic(self, stage3, strategic):
+        """Stage4: integrate STRATEGIC planning from background orchestration."""
+        if not stage3 or not strategic or strategic.is_timeout:
+            if stage3:
+                stage3.is_final = True
+            return stage3
+        if not strategic.is_confident():
+            stage3.is_final = True
+            return stage3
+        merged = dict(stage3.merged)
+        merged["strategic"] = strategic.output
+        out = StageOutput(4, stage3.tracks + [strategic], merged, is_final=True)
         self.stages.append(out)
         return out

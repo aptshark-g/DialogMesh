@@ -10,7 +10,7 @@ class FusionEngine:
         self.resolver = resolver or ConflictResolver()
         self.workspace = workspace or GlobalWorkspace()
 
-    async def fuse(self, track0=None, track1=None, track_p=None, causal=None, profile_lite=False):
+    async def fuse(self, track0=None, track1=None, track_p=None, causal=None, strategic=None, profile_lite=False):
         start = time.monotonic()
         all_conflicts = []
 
@@ -34,13 +34,17 @@ class FusionEngine:
         all_conflicts.extend(c2)
 
         stage3 = await self.stage_mgr.run_stage3(stage2, track1)
-        if stage3 and stage3.is_final:
-            dom3, c3 = self.resolver.resolve(stage3)
+        # Stage4: STRATEGIC planning (slow-one-frame, from background orchestration)
+        stage4 = await self.stage_mgr.run_stage_strategic(stage3, strategic)
+        # Use stage4 result if stage4 ran, otherwise use original stage3
+        final_stage = stage4 if (strategic and strategic.is_confident() and stage4) else stage3
+        if final_stage and final_stage.is_final:
+            dom3, c3 = self.resolver.resolve(final_stage)
             all_conflicts.extend(c3)
-            all_tracks = stage3.tracks
+            all_tracks = final_stage.tracks
             gs_dom = self.workspace.select_dominant(all_tracks) or dom3
             out = self.resolver.apply(gs_dom, all_conflicts)
-            low = all(t.confidence < 0.5 for t in stage3.tracks)
+            low = all(t.confidence < 0.5 for t in final_stage.tracks)
             return FusionResult(out, gs_dom.confidence if gs_dom else 0, gs_dom.track if gs_dom else TrackType.TRACK_0, all_conflicts, self.stage_mgr.stages, ask_clarification=low, latency_ms=(time.monotonic()-start)*1000)
 
         return FusionResult({}, 0, TrackType.TRACK_0, all_conflicts, [], ask_clarification=True, latency_ms=(time.monotonic()-start)*1000)
