@@ -69,6 +69,8 @@ class CognitiveProfile:
 class ProfileUpdater:
     def __init__(self, profile: CognitiveProfile):
         self.profile = profile
+        self._evidence_buffer = []
+        self._judged_traits = set()
         self._buffer = {"action_types":[],"stabilities":[],"action_summaries":[],"corrections":0,"topic_switches":0,"total_turns":0}
 
     def record_action(self, action_type: str, action_summary: str, stability: float, uncertainty: bool = False, topic_switch: bool = False):
@@ -94,6 +96,8 @@ class ProfileUpdater:
             p.expertise[domain] = min(1.0, current + 0.05)
         p.preferences[action_type] = p.preferences.get(action_type, 0.0) + 0.02
         self._update_traits(action_type, action_summary, stability)
+        if hasattr(self, "_evidence_buffer"):
+            self._evidence_buffer.append({"action": action_type, "summary": action_summary, "stability": stability})
         self._acquire_tags(action_type, action_summary)
         p.updated_at = time.time()
 
@@ -133,7 +137,25 @@ class ProfileUpdater:
                     self._profile.traits[trait_name]['value'] = curr * 0.7 + other * 0.3
         return self._profile
 
+    def _judge_evidence(self, llm=None):
+        if not hasattr(self, '_evidence_buffer') or not self._evidence_buffer or not llm:
+            return
+        batch = self._evidence_buffer[-10:]
+        prompt = 'Judge if these actions reveal stable user personality traits. Reply ONLY trait names.'
+        for e in batch:
+            prompt += chr(92) + 'n- action ' + str(e.get('action','')) + ': ' + str(e.get('summary',''))[:30]
+        try:
+            import asyncio
+            result = asyncio.run(llm.generate(prompt, max_tokens=100))
+            if result and len(str(result)) > 5:
+                self._judged_traits.add(str(result)[:50])
+        except Exception:
+            pass
+        self._evidence_buffer = []
+
     async def record_session_end(self, llm=None):
+        self._judge_evidence(llm)
+
         self.profile.session_count += 1
         if llm:
             await self.infer_traits_from_session(llm)

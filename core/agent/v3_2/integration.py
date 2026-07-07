@@ -371,7 +371,11 @@ class V32Pipeline:
             if use_bge:
                 if ek not in self._edge_embs:
                     self._edge_embs[ek] = EMBEDDER.encode(etext)
-                sim = PROTOTYPES.cosine_sim(qvec, self._edge_embs[ek])
+                bge_sim = PROTOTYPES.cosine_sim(qvec, self._edge_embs[ek])
+                etoks = set(etext.lower().split())
+                olap = len(qtokens & etoks)
+                token_sim = olap / max(len(qtokens | etoks), 1)
+                sim = 0.7 * bge_sim + 0.3 * token_sim
             else:
                 etoks = set(etext.lower().split())
                 olap = len(qtokens & etoks)

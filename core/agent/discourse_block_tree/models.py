@@ -142,3 +142,5 @@ class CrossReference:
     strength: float = 0.5
     created_at_turn: int = 0
     source: str = "manual"       # "manual", "auto_entity", "auto_graph"
+    hyperedge_type: str = "pairwise"  # HyperMem: pairwise/groupwise/hierarchical
+    node_ids: list = None  # For groupwise: all connected block IDs
