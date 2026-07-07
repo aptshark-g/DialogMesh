@@ -1,4 +1,4 @@
-﻿from .integration import V32Pipeline
+from .integration import V32Pipeline
 from .persistence import PersistenceManager
 from .circuit_breaker import CircuitBreaker
 from .monitor import Monitor

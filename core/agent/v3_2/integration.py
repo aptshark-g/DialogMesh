@@ -33,7 +33,7 @@ from .embedding.behavior_embedding import EMBEDDER, PROTOTYPES
 import time
 from .persistence import PersistenceManager
 from .circuit_breaker import CircuitBreaker
-from .metacognition import MetaCognitionAdapter
+from .metacognition import MetaCognitionAdapter, MetaCognitionScheduler
 
 _PRED_MAPPER = PredicateMapper()
 CODE_RUN_CLASSES = set(_PRED_MAPPER.classes)  # 使用 PredicateMapper 全部分类
@@ -95,6 +95,7 @@ class V32Pipeline:
         self._llm_fallback = '[LLM Fallback] Service unavailable'
         # Metacognition (off by default, enable via set_meta_cog)
         self._meta_cog = MetaCognitionAdapter(self.llm, enabled=False)
+        self._meta_scheduler = MetaCognitionScheduler(self._meta_cog)
         # Persistence (lazy init, call init_persistence() to start)
         self.persistence = None
 
@@ -291,6 +292,10 @@ class V32Pipeline:
             self.monitor.record("l2", "heartbeat", {"turns": self.turn})
         ww = self._waterwave_activate()
         await self._bridge_v32_to_v30(parse, fusion, self.turn, sentence)
+        if self._meta_scheduler:
+            tokens = max(len(sentence) // 2, 1)
+            ctx = {"stability": getattr(parse, "stability", 0), "edges": len(self.graph.edges) if self.graph else 0}
+            self._meta_scheduler.record_turn(sentence, str(getattr(parse, "stability", 0)), ctx, tokens)
         return {"parse": parse, "fusion": fusion, "turn": self.turn, "track1": track1,
                 "track_p": track_p, "causal": causal, "kb_blocked": kb_blocked,
                 "block_tree": {"summary": bt_summary, "context": bt_context},
@@ -310,7 +315,7 @@ class V32Pipeline:
             import logging
             logging.info("[Pipeline] No save_dir, persistence disabled")
 
-    async def set_meta_cog(self, enabled=True):
+    def set_meta_cog(self, enabled=True):
         if hasattr(self, "_meta_cog"):
             self._meta_cog.enabled = enabled
 
