@@ -201,3 +201,110 @@ Reciprocal Rank Fusion (RRF) for BM25 + dense embedding merge.
 | P2 | Complexity-aware retrieval | ~70 lines | Design |
 | P2 | Hypergraph memory | ~80 lines | Design |
 | P2 | LLM evidence judgment | ~50 lines | Design |
+
+﻿
+## 4. Three-Level Memory Architecture (JVM-GC Inspired)
+
+**Source**: User design discussion + JVM garbage collection analogy
+
+### Architecture
+
+Three layers, each with a distinct role:
+
+Layer 1: Flat Memory (permanent, never deleted)
+  Role: Authoritative storage — all raw data lives here forever
+  Storage: DiscourseBlockTree (unchanged)
+  GC: NONE
+
+Layer 2: Active BehaviorGraph (hot zone)
+  Role: Frequently-used edges, directly queried
+  Storage: Existing BehaviorGraph (enhanced with activation_count)
+  GC: Activation-Count-Driven Pruning
+
+Layer 3: Cold Index (meta-space)
+  Role: Edge meta-data for edges that left Layer 2
+  Storage: ColdIndexer (keyword/summary/profile_bias)
+  GC: Summary retention only
+
+### Design Rules
+1. Layer 1 is ALWAYS source of truth. All layers derive from it.
+2. Layer 2 to 3: preserve edge_id + keywords + profile_bias + summary
+3. Layer 3 to 2: full reconstruction from Layer 1 flat data
+
+## 4a. Activation Count
+
+**Source**: Fixes TiMem temporal decay
+
+### Status: TO BE IMPLEMENTED
+
+### Change
+Add activation_count: int = 0 to BehaviorEdge.
+Incremented each time the edge is retrieved via waterwave_activate.
+Naturally reflects usage frequency without decay math.
+
+### Threshold
+
+| Parameter | Anchor | Range | Adaptive Signal |
+|:----------|:------:|:-----:|:----------------|
+| Pruning threshold (activation) | 3 | [2, 6] | If cold recall > 20% in last 100 turns, lower |
+| Pruning threshold (sample_count) | 10 | [5, 20] | If graph size > 500 edges, raise lower bound |
+
+## 4b. ColdIndexer (Layer 3)
+
+**Source**: JVM metaspace analogy
+
+### Status: TO BE IMPLEMENTED
+
+### Storage Schema
+ColdEdgeRecord: edge_id, from_summary, to_summary, keywords, profile_bias, activation_history, last_active
+ColdIndexer: dict of ColdEdgeRecord, keyword search, recall reconstruction
+
+### Threshold
+
+| Parameter | Anchor | Range | Adaptive |
+|:----------|:------:|:-----:|:---------|
+| Max records | 5000 | [2000, 10000] | If search > 10ms, reduce |
+| Recall top_k | 3 | [2, 5] | If re-warmed edges re-cool within 10 turns, reduce k |
+
+
+## 4c. Adaptive Batch Consolidation
+
+**Source**: User feedback — batch by data volume, not turn count
+
+### Status: TO BE IMPLEMENTED
+
+### Design
+Consolidate when pending edge changes reaches threshold (not turn count):
+- ConsolidationCycle.record_event() buffers by edge_id
+- consolidate() applies all pending weight deltas at once
+- EDGE_CHANGE_THRESHOLD anchor=15, range=[8, 30]
+
+### Threshold
+
+| Parameter | Anchor | Range | Adaptive |
+|:----------|:------:|:-----:|:---------|
+| Batch size | 15 edges | [8, 30] | If consolidation > 5ms, reduce |
+
+## 4d. Cold Re-warming (Layer 3 to 2)
+
+**Source**: JVM GC promotion analogy
+
+### Status: TO BE IMPLEMENTED
+
+### Design
+When waterwave gets less than top_k hits from active graph, search ColdIndexer:
+1. ColdIndexer.search(query_tokens)
+2. ColdIndexer.recall(record, flat_data_provider)
+3. graph.add_edge(reconstructed_edge)
+4. Return hits
+
+## Updated Priority
+
+| Priority | Improvement | Work | Status |
+|:--------:|:-----------|:----:|:-------|
+| P0 | Activation count | ~5 lines | TODO |
+| P0 | Adaptive batch consolidation | ~60 lines | TODO |
+| P0 | ColdIndexer | ~80 lines | TODO |
+| P0 | Cold re-warming path | ~30 lines | TODO |
+| P1 | User profile weighting | ~20 lines | DONE |
+| P2 | Hypergraph memory | ~80 lines | Design |

@@ -22,6 +22,8 @@ from .rewarder.rewarder import BehaviorRewarder
 from .rewarder.correction_detector import CorrectionDetector
 from .rewarder.reward_rules import RewardRuleTable
 from .behavior_graph.pruning import GraphPruner
+from .consolidation import ConsolidationCycle
+from .cold_indexer import ColdIndexer
 from .behavior_graph.fast_correction import FastCorrectionDetector
 from .behavior_graph.causal_discovery import LightweightCausalDiscovery
 from .embedding.behavior_embedding import PredicateMapper
@@ -49,6 +51,7 @@ class V32Pipeline:
         self.monitor = monitor
         self.session_recorder = session_recorder
         self.save_path = save_path
+        self._consolidation = ConsolidationCycle(self.graph, ColdIndexer()) if hasattr(self, "graph") and self.graph else None
         self.turn = 0
         self._prev_step = None
         self._context = ParseContext()
@@ -311,15 +314,17 @@ class V32Pipeline:
 
 
     def _fire_event(self, event_type, edge_key=None, data=None):
-        if edge_key and edge_key in self.graph.edges:
+        if self._consolidation and edge_key:
+            result = self._consolidation.record_event(edge_key, event_type)
+            if result:
+                import logging
+                logging.info('[Cons] cycle=' + str(result.get('cycle','?')) + ' c=' + str(result.get('consolidated','?')))
+        if edge_key and edge_key in self.graph.edges and not self._consolidation:
             e = self.graph.edges[edge_key]
             if event_type == "SUCCESS":
                 e.weight = min(1.0, e.weight + 0.05)
             elif event_type == "CORRECTION":
                 e.weight = max(0.0, e.weight - 0.10)
-            elif event_type == "CONSOLIDATE":
-                if hasattr(e, 'importance'):
-                    e.importance = min(1.0, e.importance + 0.08)
         if self.monitor:
             self.monitor.record("mem_events", event_type, {"edge": str(edge_key)[:20]})
 
