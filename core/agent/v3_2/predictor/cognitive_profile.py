@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 
 TIME_DECAY_HALF_LIFE = 86400 * 7  # 7 days
 EXPERTISE_DOMAINS = ["debugging", "system_admin", "networking", "security", "performance",
+
                      "deployment", "configuration", "monitoring", "analysis", "general"]
+
+STABLE_TRAIT_KEYS = ["openness","conscientiousness","extraversion","agreeableness","neuroticism","risk_tolerance","technical_depth","verbosity"]
 
 @dataclass
 class CognitiveProfile:
@@ -22,6 +25,7 @@ class CognitiveProfile:
     stability_delta: float = 0.0
     created_at: float = 0.0
     updated_at: float = 0.0
+    stable_traits: dict = field(default_factory=dict)
 
     @classmethod
     def create(cls, user_id="default"):
@@ -41,12 +45,11 @@ class CognitiveProfile:
                 "confidence": self.confidence,
                 "stability_delta": self.stability_delta,
                 "created_at": self.created_at,
-                "updated_at": self.updated_at}
-
-    @classmethod
+                "updated_at": self.updated_at,
+                "stable_traits": self.stable_traits}
     def from_dict(cls, d):
         return cls(**{k: d.get(k) for k in ["user_id","expertise","preferences","tags",
-                    "session_count","total_turns","avg_stability","metacognition","divergence","confidence","stability_delta","created_at","updated_at"]})
+                    "session_count","total_turns","avg_stability","metacognition","divergence","confidence","stability_delta","created_at","updated_at","stable_traits"]})
  
 
     def get_expertise(self, domain: str) -> float:
@@ -57,6 +60,10 @@ class CognitiveProfile:
 
     def get_preference(self, action_type: str) -> float:
         return self.preferences.get(action_type, 0.0)
+
+    def get_trait(self, key: str) -> float:
+        """Get stable trait value, returns 0.5 if not found"""
+        return self.stable_traits.get(key, 0.5)
 
 class ProfileUpdater:
     def __init__(self, profile: CognitiveProfile):
@@ -84,8 +91,22 @@ class ProfileUpdater:
             current = p.expertise.get(domain, 0.0)
             p.expertise[domain] = min(1.0, current + 0.05)
         p.preferences[action_type] = p.preferences.get(action_type, 0.0) + 0.02
+        self._update_traits(action_type, action_summary, stability)
         self._acquire_tags(action_type, action_summary)
         p.updated_at = time.time()
+
+    def _update_traits(self, action_type, action_summary, stability):
+        p = self.profile
+        if action_type in ("config","deploy","scan","debug","trace","compile"):
+            p.stable_traits["technical_depth"] = min(1.0, p.stable_traits.get("technical_depth",0.5)+0.005)
+        if action_type in ("delete","stop","disable","restart"):
+            p.stable_traits["risk_tolerance"] = min(1.0, p.stable_traits.get("risk_tolerance",0.5)+0.01)
+        if len(action_summary) > 40:
+            p.stable_traits["verbosity"] = min(1.0, p.stable_traits.get("verbosity",0.5)+0.003)
+        elif len(action_summary) < 10:
+            p.stable_traits["verbosity"] = max(0.0, p.stable_traits.get("verbosity",0.5)-0.003)
+        if stability < 0.3 and action_type != "UNKNOWN":
+            p.stable_traits["neuroticism"] = min(1.0, p.stable_traits.get("neuroticism",0.5)+0.005)
 
     def record_session_end(self):
         self.profile.session_count += 1
