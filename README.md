@@ -1,4 +1,4 @@
-# DialogMesh v3.0
+# DialogMesh v3.0 / v3.2
 
 > 多层 LLM 认知架构的对话代理系统 —— 6 个 LLM 实例协同，认知双工融合，双树结构驱动
 
@@ -220,6 +220,22 @@ pytest core/agent/v3_0/tool_registry/tests/ -v
 pytest core/agent/v3_0/ core/service/v3_0/ --cov=core --cov-report=term-missing
 ```
 
+
+### v3.2 行为认知管线 (2026.07)
+
+v3.2 新增 **11 模块行为认知管线**，在 v3.0 之上叠加。
+
+**Usage:**
+
+- CLI: `python scripts/cli_v32.py` (mock mode, no API key needed)
+- DeepSeek: `set DEEPSEEK_API_KEY=sk-...` + `python scripts/cli_v32.py "query"`
+- API: `python scripts/api_v32.py` (port 9100, 6 endpoints + SSE streaming)
+- Persistence: `--save-dir data` for graph/profile/blocktree auto-save
+
+**API Endpoints:** `/v3/health`, `/v3/process`, `/v3/status`, `/v3/sessions`, `/v3/stream`, `/v3/assess`
+
+**Key additions:** PersistenceManager, CircuitBreaker, MetaCognitionAdapter, structured logging
+
 ### 启动服务
 
 ```bash
@@ -400,7 +416,7 @@ DialogMesh/
 
 - [x] **v3.0** — 多层 LLM 认知架构（6 个 LLM 实例、认知双工、双树结构、规划 Skill、327 测试）
 - [ ] **v3.1** — 认知树可视化面板、主题树自动修剪优化
-- [ ] **v3.2** — 多模态输入支持（图像、语音、文档）
+- [x] **v3.2** — Behavior cognitive pipeline (11 modules)
 - [ ] **v3.3** — 分布式部署（多实例编排、负载均衡、状态共享）
 - [ ] **v4.0** — 自主学习与进化（在线 Skill 学习、认知树自优化）
 
@@ -412,20 +428,6 @@ MIT License
 
 ---
 
-## 相关文档
-## v3.2 行为认知引擎（新增模块，2026.07）
-
-11 模块管线: HybridCompiler → BehaviorGraph → Predictor → CausalDiscovery → NegativeKB → CausalSubstrate → FoA → L1Summary → Rewarder → FusionEngine (4-track)
-
-| 指标 | 值 |
-|------|-----|
-| 测试 | 217 passing |
-| 规则库 | 98 (63 EN + 35 CN) |
-| 可靠性 | 95%+ (真实 LLM) |
-| 压力测试 | 57/57 轮零崩溃零降级 |
-| 图边数 | 52 per session |
-
-快速开始: `python scripts/test_v32_run.py` (需 DEEPSEEK_API_KEY)
 
 - [英文文档](README_EN.md)
 - [项目清单](MANIFEST.md)
