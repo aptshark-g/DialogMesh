@@ -12,22 +12,35 @@ from .predictor.profile_matcher import ProfileMatcher
 from .behavior_graph.cold_start import ColdStartManager
 from .negative_kb.negative_kb import NegativeKB
 from .causal_substrate.causal_substrate import CausalSubstrate
+from ..discourse_block_tree import DiscourseBlockTreeManager
+from .predictor.cognitive_profile import ProfileUpdater, CognitiveProfile, EnhancedProfileMatcher
+from .predictor.training_loop import TrainingFeedbackLoop
 from .foa import FoA
 from .l1_summary.l1_summary import L1Summary
+from .l2_summary.l2_summary import L2Summary
 from .rewarder.rewarder import BehaviorRewarder
 from .rewarder.correction_detector import CorrectionDetector
 from .rewarder.reward_rules import RewardRuleTable
 from .behavior_graph.pruning import GraphPruner
 from .behavior_graph.fast_correction import FastCorrectionDetector
 from .behavior_graph.causal_discovery import LightweightCausalDiscovery
+from .embedding.behavior_embedding import PredicateMapper
 import time
+from .persistence import PersistenceManager
+from .circuit_breaker import CircuitBreaker
+from .metacognition import MetaCognitionAdapter
+
+_PRED_MAPPER = PredicateMapper()
+CODE_RUN_CLASSES = set(_PRED_MAPPER.classes)  # 使用 PredicateMapper 全部分类
 
 
 class V32Pipeline:
     """v3.2 pipeline - Compiler to BehaviorGraph to FusionEngine"""
 
-    def __init__(self, llm_provider, compiler=None, graph=None, fusion=None, enable_graph=True, monitor=None, session_recorder=None, save_path=None):
+    def __init__(self, llm_provider, compiler=None, graph=None, fusion=None, enable_graph=True, monitor=None, session_recorder=None, save_path=None, save_dir=""):
         self.llm = llm_provider
+        self.block_tree = DiscourseBlockTreeManager(llm_provider=self.llm)
+        self.save_dir = save_dir or ""
         self.compiler = compiler or HybridCompiler(llm_provider)
         self.graph = graph or BehaviorGraph()
         self.fusion = fusion or FusionEngine()
@@ -43,6 +56,9 @@ class V32Pipeline:
         self._candidate_gen = CandidateGenerator(self.llm)
         self._value_ranker = ValueRanker(self.graph)
         self._profile_matcher = ProfileMatcher()
+        self._profile = CognitiveProfile.create()
+        self._profile_updater = ProfileUpdater(self._profile)
+        self._profile_matcher = EnhancedProfileMatcher(self._profile)
         self._cold_start = ColdStartManager()
         self.predictor = BehaviorPredictor(self.graph, self._candidate_gen, self._value_ranker, self._profile_matcher, self._cold_start)
         self.pruner = GraphPruner(self.graph)
@@ -51,30 +67,86 @@ class V32Pipeline:
         self._causal_substrate = CausalSubstrate(self.graph)
         self._foa = FoA()
         self._l1 = L1Summary()
+        self._l2 = L2Summary()
+        # L2Summary - lazy import in process() to avoid relative import issue
         self._rew_rules = RewardRuleTable()
         self._rewarder = BehaviorRewarder(self.graph, rules=self._rew_rules)
+        self._training_loop = TrainingFeedbackLoop(rewarder=self._rewarder)
         self._corr_detector = CorrectionDetector()
+        # Circuit breaker for LLM calls
+        self._llm_cb = CircuitBreaker(name="llm", max_failures=3, cooldown=30)
+        self._llm_fallback = '[LLM Fallback] Service unavailable'
+        # Metacognition (off by default, enable via set_meta_cog)
+        self._meta_cog = MetaCognitionAdapter(self.llm, enabled=False)
+        # Persistence (lazy init, call init_persistence() to start)
+        self.persistence = None
 
     async def process(self, sentence, context=None, track1=None, track_p=None, causal=None, profile_lite=False):
         self.turn += 1
+        _ = self.block_tree.ingest_turn(self.turn, sentence)
+        if self.monitor:
+            bt = self.block_tree.get_tree_summary()
+            ts = getattr(self.block_tree, '_last_switch', None)
+            self._last_topic_switch = bool(ts and ts[0])
+            self.monitor.record("block_tree", "ingest",
+                {"blocks": bt.get("total_blocks", 0), "active": bt.get("active", 0),
+                 "topic_switch": str(self._last_topic_switch)},
+                status="ok")
+        else:
+            self._last_topic_switch = False
         parse = await self.compiler.process(sentence, self._context)
 
         # Causal structural prior
         self._causal_substrate.process_single(parse)
+        if self.monitor:
+            self.monitor.record("causal", "process_single",
+                {"stable": parse.stability > 0.6,
+                 "slots": len(parse.slots),
+                 "reliable": parse.is_reliable})
         # Negative KB check
         kb_res = self._negative_kb.check(sentence)
         kb_blocked = getattr(kb_res, 'hard_block', False)
+        if self.monitor:
+            self.monitor.record("negative_kb", "check", {"blocked": str(kb_blocked)})
 
+        _turn_has_action = False
         if self.enable_graph and parse.is_reliable and not parse.undefined:
             action = parse.slots.get("action")
             if action and action.value.strip():
-                atype = "CODE_RUN" if any(k in action.value for k in ["run","exec","start","create"]) else "EXPLORATION"
+                pred_class = _PRED_MAPPER.map_verb(action.value)
+                atype = pred_class if pred_class else "EXPLORATION"
                 step = BehaviorStep(f"v32_{self.turn}", action.value, atype)
                 self.graph.add_step(step)
                 if self._prev_step is not None:
                     ek = self.graph.record_edge(self._prev_step, step)
                     if ek:
-                        self._correction.record_observation(ek, False)
+                        # 矫正检测: 检测 text 是否包含纠正信号
+                        prev_actions_list = [self.graph.nodes[sid].action_summary for sid in self._chain[-3:] if sid in self.graph.nodes] if hasattr(self.graph, 'nodes') else []
+                        corr_check = self._corr_detector.detect(sentence, prev_actions_list, action.value)
+                        is_correction = corr_check.is_correction if hasattr(corr_check, 'is_correction') else False
+                        self._correction.record_observation(ek, is_correction)
+                        if is_correction and self.monitor:
+                            self.monitor.record("graph", "correction_signal",
+                                {"edge": str(ek)[:20], "type": getattr(corr_check, 'correction_type', 'unknown')})
+                        if self.monitor:
+                            self.monitor.record("graph", "edge",
+                            {"ek": str(ek)[:20],
+                             "w": round(self.graph.edges.get(ek).weight, 3) if ek in self.graph.edges else 0,
+                             "samples": self.graph.edges.get(ek).sample_count if ek in self.graph.edges else 0,
+                             "corrections": self.graph.edges.get(ek).correction_count if ek in self.graph.edges else 0})
+                if hasattr(self, "_profile_updater"):
+                    uncertainty = parse.stability < 0.6 or parse.undefined
+                    self._profile_updater.record_action(atype, action.value, parse.stability,
+                        uncertainty=uncertainty, topic_switch=self._last_topic_switch)
+                    if self.monitor:
+                        p = self._profile_updater.profile
+                        if uncertainty:
+                            self.monitor.record("profile", "uncertainty",
+                                {"stability": f"{parse.stability:.2f}", "meta": f"{p.metacognition:.2f}"})
+                        self.monitor.record("profile", "update",
+                            {"action": action.value[:30], "meta": f"{p.metacognition:.2f}",
+                             "div": f"{p.divergence:.2f}", "conf": f"{p.confidence:.2f}"})
+                _turn_has_action = True
                 self._prev_step = step
                 # Build behavior chain and update context
                 self._chain.append(step.step_id)
@@ -83,6 +155,19 @@ class V32Pipeline:
                         self._context.add_entity(name, sv.value)
                 self._context.turn_count = self.turn
                 self._context.prev_stability = parse.stability
+
+        # Always update profile, even for unreliable parses
+        if hasattr(self, "_profile_updater") and not _turn_has_action:
+            raw_action = getattr(parse, "utterance_type", "") or "unknown"
+            self._profile_updater.record_action("UNKNOWN", raw_action, parse.stability,
+            uncertainty=True, topic_switch=self._last_topic_switch)
+            if self.monitor:
+                p = self._profile_updater.profile
+                self.monitor.record("profile", "uncertainty",
+                    {"stability": f"{parse.stability:.2f}", "meta": f"{p.metacognition:.2f}"})
+                self.monitor.record("profile", "update",
+                    {"action": "UNKNOWN", "meta": f"{p.metacognition:.2f}",
+                     "div": f"{p.divergence:.2f}", "conf": f"{p.confidence:.2f}"})
 
         if self.turn > 0 and self.turn % 50 == 0:
             pruned, orphans = self.pruner.prune()
@@ -117,12 +202,25 @@ class V32Pipeline:
             for sid in self._chain[-5:]:
                 if hasattr(self.graph, 'nodes') and sid in self.graph.nodes:
                     chain_actions.append(self.graph.nodes[sid].action_summary)
-            chain_str = ", ".join(chain_actions) if chain_actions else ", ".join(str(s) for s in self._chain[-5:])
+                chain_str = ", ".join(chain_actions) if chain_actions else ", ".join(str(s) for s in self._chain[-5:])
             pred_result = await self.predictor.predict(chain_str, self._chain[-1] if self._chain else "last", {})
             if pred_result and pred_result.candidates:
-                pred_cands = [c.action_summary for c in pred_result.candidates[:3]]
+                pred_cands = [{"action": c.action_summary, "value": round(c.expected_value, 3)} for c in pred_result.candidates[:3]]
                 pred_conf = max(c.expected_value for c in pred_result.candidates)
                 pred_mode = pred_result.query_mode
+                if self.monitor:
+                    self.monitor.record("predictor", "result",
+                        {"candidates": len(pred_cands), "mode": pred_mode, "confidence": f"{pred_conf:.3f}"})
+                if hasattr(self, "_training_loop") and self._prev_step:
+                    # 使用真实矫正检测结果而非 kb_blocked
+                    corr_for_train = self._corr_detector.detect(sentence, chain_actions if chain_actions else prev_actions_list, self._chain[-1] if self._chain else "")
+                    is_corr = corr_for_train.is_correction if hasattr(corr_for_train, 'is_correction') else kb_blocked
+                    sig = self._training_loop.on_user_action(
+                        pred_result, getattr(self._prev_step, 'edge_key', '') if self._prev_step else "",
+                        actual_type=atype if 'atype' in dir() else "", is_correction=is_corr)
+                    if self.monitor:
+                        self.monitor.record("training", "signal",
+                            {"reward": getattr(sig, "reward", 0), "is_correction": is_corr})
         track_p = TrackResult(TrackType.TRACK_P, {"predicted_actions": pred_cands, "mode": pred_mode}, pred_conf, 0.0)
         # Track CAUSAL: Lightweight causal discovery
         causal_r = {}
@@ -144,7 +242,42 @@ class V32Pipeline:
                 self.graph.save(self.save_path)
             except Exception:
                 pass
-        return {"parse": parse, "fusion": fusion, "turn": self.turn, "track1": track1, "track_p": track_p, "causal": causal, "kb_blocked": kb_blocked}
+        bt_summary = self.block_tree.get_tree_summary()
+        bt_context = self.block_tree.build_context()
+        # Heartbeat: unmonitored modules
+        if self.monitor and self.turn % 5 == 0:
+            self.monitor.record("foa", "heartbeat", {"active": "1"})
+            self.monitor.record("l1", "heartbeat", {"active": "1"})
+        if self.monitor and hasattr(self, "_l2"):
+            self.monitor.record("l2", "heartbeat", {"turns": self.turn})
+        return {"parse": parse, "fusion": fusion, "turn": self.turn, "track1": track1,
+                "track_p": track_p, "causal": causal, "kb_blocked": kb_blocked,
+                "block_tree": {"summary": bt_summary, "context": bt_context}}
+
+
+    async def init_persistence(self, save_dir=""):
+        """Initialize persistence: restore profile, start auto-save"""
+        if self.save_dir or save_dir:
+            sd = save_dir or self.save_dir
+            self.persistence = PersistenceManager(self, save_dir=sd)
+            await self.persistence.restore()
+            self.persistence.start_auto_save()
+            import logging
+            logging.info(f"[Pipeline] Persistence started: {sd}")
+        else:
+            import logging
+            logging.info("[Pipeline] No save_dir, persistence disabled")
+
+    async def set_meta_cog(self, enabled=True):
+        if hasattr(self, "_meta_cog"):
+            self._meta_cog.enabled = enabled
+
+    async def close(self):
+        """Graceful shutdown - save all state"""
+        if self.persistence:
+            self.persistence.close()
+        if self.session_recorder:
+            self.session_recorder.close()
 
     def get_status(self):
         return {"turn": self.turn, "graph_nodes": len(self.graph.nodes) if self.enable_graph else 0}

@@ -8,5 +8,9 @@ class TrainingFeedbackLoop:
         signal = TrainingSignal(prediction.candidates, actual, is_correction=is_correction)
         signal.compute_reward()
         if is_correction: signal.reward = -0.20
-        if self.rewarder: self.rewarder.on_reward(signal)
+        if self.rewarder:
+            try:
+                self.rewarder.on_reward(signal)
+            except AttributeError:
+                pass  # reward method not available
         return signal

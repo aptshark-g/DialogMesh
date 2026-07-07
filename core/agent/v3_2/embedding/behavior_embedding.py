@@ -12,7 +12,8 @@ class PredicateMapper:
         data = [
             ("debug", "debug"), ("diagnose", "debug"), ("trace", "debug"),
             ("compile", "build"), ("build", "build"), ("assemble", "build"),
-            ("deploy", "deploy"), ("release", "deploy"), ("install", "deploy"),
+            ("deploy", "deploy"), ("release", "deploy"), ("install", "deploy"), ("write", "write"), ("compose", "write"), ("implement", "write"),
+            ("set up", "config"), ("set", "config"), ("adjust", "modify"), ("increase", "modify"), ("reduce", "modify"), ("improve", "modify"),
             ("restart", "restart"), ("reboot", "restart"), ("reload", "restart"),
             ("execute", "execute"), ("run", "execute"), ("launch", "execute"), ("start", "execute"),
             ("configure", "config"), ("initialize", "config"),
@@ -113,6 +114,222 @@ weights = {
     "install": (0.7, 0.3),
 }
 
-print("PredicateMapper classes:", __import__("json").dumps(PredicateMapper().classes, ensure_ascii=False))
-print("Total predicate classes:", PredicateMapper().class_count)
-print("Module loaded OK")
+# ?? BGE-small-zh Integration ??????????????????????????????????
+
+BGE_MODEL_PATH = r"C:\Users\APTShark\PycharmProjects\DialogMesh\models\BAAI\bge-small-zh"
+_bge_model = None
+
+def get_bge_model():
+    """Lazy-load BGE-small-zh model"""
+    global _bge_model
+    if _bge_model is None:
+        from sentence_transformers import SentenceTransformer
+        _bge_model = SentenceTransformer(BGE_MODEL_PATH, model_kwargs={"local_files_only": True})
+    return _bge_model
+
+# ?? Prototype Vector Store ??????????????????????????????????
+
+class PrototypeVectorStore:
+    """????????????????????????"""
+
+    DIM = 512  # BGE-small-zh dimension
+
+    def __init__(self):
+        self.prototypes = {}  # pred_class -> numpy ndarray
+        self._initialized = False
+        self._fallback = np.zeros(self.DIM, dtype=np.float32)
+
+    def initialize(self, mapper: PredicateMapper):
+        """????????????"""
+        model = get_bge_model()
+        for pc in mapper.classes:
+            standard_texts = self._get_standard_texts(pc)
+            if standard_texts:
+                embeddings = model.encode(standard_texts)
+                self.prototypes[pc] = np.mean(embeddings, axis=0)
+            else:
+                self.prototypes[pc] = self._fallback.copy()
+        self._initialized = True
+
+    def _get_standard_texts(self, pred_class: str) -> list:
+        """??????????"""
+        texts = {
+            "execute": ["execute program", "run script", "launch service", "执行程序", "运行脚本"],
+            "debug":   ["debug process", "trace execution", "调试程序", "跟踪执行"],
+            "build":   ["build project", "compile source", "编译项目", "构建源码"],
+            "deploy":  ["deploy service", "release version", "部署服务", "发布版本"],
+            "restart": ["restart service", "reboot system", "重启服务", "重新启动"],
+            "config":  ["configure settings", "initialize parameters", "配置参数", "设置选项"],
+            "scan":    ["scan network", "enumerate devices", "扫描网络", "探测设备"],
+            "test":    ["test function", "validate output", "测试功能", "验证输出"],
+            "check":   ["check status", "inspect logs", "检查状态", "查看日志"],
+            "monitor": ["monitor performance", "track metrics", "监控性能", "跟踪指标"],
+            "show":    ["show details", "display result", "查看详情", "显示结果"],
+            "list":    ["list files", "catalog items", "列出文件", "展示列表"],
+            "analyze": ["analyze data", "investigate issue", "分析数据", "调查问题"],
+            "compare": ["compare versions", "benchmark performance", "比较版本", "基准测试"],
+            "predict": ["predict outcome", "forecast trend", "预测结果", "预估趋势"],
+            "create":  ["create project", "generate code", "创建项目", "生成代码"],
+            "modify":  ["modify config", "edit settings", "修改配置", "编辑设置"],
+            "delete":  ["delete file", "remove entry", "删除文件", "移除项目"],
+            "fix":     ["fix bug", "repair error", "修复错误", "更正缺陷"],
+            "disable": ["disable service", "deactivate module", "禁用服务", "停用模块"],
+            "enable":  ["enable feature", "activate plugin", "启用功能", "激活插件"],
+            "stop":    ["stop process", "halt service", "停止进程", "终止服务"],
+            "clean":   ["clean cache", "purge temp", "清理缓存", "清除临时"],
+            "backup":  ["backup data", "save state", "备份数据", "保存状态"],
+            "restore": ["restore backup", "recover data", "恢复备份", "还原数据"],
+            "update":  ["update version", "upgrade system", "更新版本", "升级系统"],
+            "query":   ["query database", "search records", "查询数据", "搜索记录"],
+            "explain": ["explain concept", "describe process", "解释概念", "描述过程"],
+            "schedule": ["schedule task", "plan job", "安排任务", "计划作业"],
+            "document": ["document changes", "record results", "记录变更", "文档结果"],
+            "answer":  ["answer question", "respond query", "回答问题", "回复查询"],
+            "affirm":  ["affirm action", "confirm choice", "确认操作", "肯定选择"],
+            "greet":   ["greet user", "say hello", "打招呼", "问候"],
+            "connect": ["connect server", "attach device", "连接服务器", "接入设备"],
+        }
+        return texts.get(pred_class, [])
+
+    def get(self, pred_class):
+        return self.prototypes.get(pred_class, self._fallback)
+
+    def cosine_sim(self, vec_a, vec_b):
+        norm_a = np.linalg.norm(vec_a)
+        norm_b = np.linalg.norm(vec_b)
+        if norm_a < 1e-10 or norm_b < 1e-10:
+            return 0.0
+        return float(np.dot(vec_a, vec_b) / (norm_a * norm_b))
+
+
+PROTOTYPES = PrototypeVectorStore()
+
+# ?? Semantic Query ??????????????????????????????????????????
+
+class SemanticQuery:
+    """????: (1) ???? (2) ???? (3) ????"""
+
+    def __init__(self, cosine_threshold=0.6):
+        self.cosine_threshold = cosine_threshold
+        self._mapper = PredicateMapper()
+        self._weights = weights
+        self._bge = None
+
+    def encode(self, text):
+        """BGE encode with lazy load"""
+        if self._bge is None:
+            self._bge = get_bge_model()
+        return self._bge.encode(text)
+
+    def embed_action_pair(self, from_action, to_action):
+        """????????"""
+        v_from = self.encode(from_action)
+        v_to = self.encode(to_action)
+        combined = np.concatenate([v_from, v_to])
+        return combined
+
+    def predicate_vector(self, verb, arg):
+        """??-????????"""
+        pred_class = self._mapper.map_verb(verb)
+        if pred_class is None:
+            return self.encode(f"{verb} {arg}")
+        w_pred, w_arg = self._weights.get(pred_class, (0.5, 0.5))
+        prot = PROTOTYPES.get(pred_class)
+        arg_vec = self.encode(arg)
+        return w_pred * prot + w_arg * arg_vec
+
+    def find_neighbors(self, query_vec, target_vectors, top_k=3):
+        """? Top-K ????"""
+        scores = [(PROTOTYPES.cosine_sim(query_vec, tv), i)
+                  for i, tv in enumerate(target_vectors)]
+        scores.sort(key=lambda x: -x[0])
+        results = []
+        for score, idx in scores:
+            if score < self.cosine_threshold:
+                break
+            results.append((score, idx))
+        return results[:top_k]
+
+
+# ?? Entry ??????????????????????????????????????????????????
+
+
+class HardBoundaryQuery:
+    """Predicate class hard boundary + AdaptiveParameter integration"""
+
+    SAME_CLASS = 1.0
+    DIFF_CLASS_PENALTY = 0.30
+
+    def __init__(self, base_query):
+        self._base = base_query
+        self._candidates = 0
+        self._rejected = 0
+        self._missed = 0
+
+    def find_neighbors(self, from_verb, from_arg, to_verb, to_arg, top_k=3):
+        """With predicate class hard boundary: different class = low similarity"""
+        from_class = self._base._mapper.map_verb(from_verb)
+        to_class = self._base._mapper.map_verb(to_verb)
+
+        query_vec = self._base.predicate_vector(from_verb, from_arg)
+        target_vec = self._base.predicate_vector(to_verb, to_arg)
+
+        penalty = self.DIFF_CLASS_PENALTY
+        if from_class and to_class and from_class == to_class:
+            penalty = self.SAME_CLASS
+
+        raw_sim = PROTOTYPES.cosine_sim(query_vec, target_vec)
+        return raw_sim * penalty
+
+    def batch_find(self, query_verb, query_arg, targets, top_k=3):
+        """Batch find with threshold filtering"""
+        results = []
+        for tv, ta in targets:
+            sim = self.find_neighbors(query_verb, query_arg, tv, ta)
+            results.append((sim, (tv, ta)))
+        results.sort(key=lambda x: -x[0])
+        self._candidates = len(results)
+        threshold = self._get_threshold()
+        above = [(s, t) for s, t in results if s >= threshold]
+        return above[:top_k], [t for s, t in results if s < threshold]
+
+    def record_feedback(self, hit=True, correction=False):
+        """Adaptive signal: correction = false positive, miss = too strict"""
+        from core.agent.v3_2.adaptive_parameter import CALIBRATOR
+        if correction:
+            self._rejected += 1
+            CALIBRATOR.update("sim_threshold", -0.005)
+        elif not hit and self._candidates > 0:
+            self._missed += 1
+            CALIBRATOR.update("sim_threshold", 0.005)
+
+    def _get_threshold(self):
+        from core.agent.v3_2.adaptive_parameter import CALIBRATOR
+        return CALIBRATOR.value("sim_threshold")
+
+    @property
+    def stats(self):
+        return {"candidates": self._candidates, "rejected": self._rejected,
+                "missed": self._missed, "threshold": self._get_threshold()}
+
+
+EMBEDDER = SemanticQuery()
+HARD_BOUNDARY = HardBoundaryQuery(EMBEDDER)
+
+def init_embeddings(mapper=None):
+    """Initialize prototypes and warm up BGE model"""
+    m = mapper or PredicateMapper()
+    PROTOTYPES.initialize(m)
+    threshold = HARD_BOUNDARY._get_threshold()
+    dim = PROTOTYPES.DIM
+    print(f"[Embedding] Initialized: {m.class_count} classes, {dim}d, threshold={threshold:.3f} (adaptive)")
+
+def get_embedding_stats():
+    """Return current embedding system state"""
+    thr = HARD_BOUNDARY._get_threshold()
+    return {"classes": PredicateMapper().class_count,
+            "dim": PROTOTYPES.DIM,
+            "threshold": thr,
+            "bge_loaded": _bge_model is not None,
+            "same_class_boost": HardBoundaryQuery.SAME_CLASS,
+            "diff_class_penalty": HardBoundaryQuery.DIFF_CLASS_PENALTY}

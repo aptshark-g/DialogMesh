@@ -11,7 +11,7 @@ class StabilityScorer:
         if not slots:
             return 0.0
         # Only non-empty, non-zero-confidence slots contribute to stability
-        active = [s for s in slots.values() if s.value.strip() and s.confidence > 0.1]
+        active = [s for s in slots.values() if s.value is not None and s.value.strip() and s.confidence > 0.1]
         if not active:
             return 0.0
         confidences = [s.confidence for s in active]

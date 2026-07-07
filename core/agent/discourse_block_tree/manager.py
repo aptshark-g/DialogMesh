@@ -1,288 +1,149 @@
-# core/agent/discourse_block_tree/manager.py
-"""DiscourseBlockTreeManager — 话语块树管理器。
+"""DiscourseBlockTreeManager - core orchestrator"""
+import hashlib
+from typing import Dict, List, Optional
+from .models import DiscourseBlock, DiscourseEntity
+from .header_injector import HeaderInjector, EntityCache
+from .syntactic_decomposer import SyntacticDecomposer
+from .macro_micro_quantizer import QUANTIZER
+from .segmenter import SEGMENTER
+from .granularity_regulator import REGULATOR
+from .summary_engine import SUMMARY_ENGINE
+from .context_builder import CONTEXT_BUILDER
+from .indexer import Indexer, INDEXER
+from .topic_markers import DETECTOR as TOPIC_MARKER_DETECTOR
 
-职责:
-1. 接收编译器管道输出的 EDU 列表
-2. 调用 Segmenter 切分为 DiscourseBlock
-3. 管理块生命周期状态（ACTIVE → COOLING → COLD）
-4. 提供上下文查询接口（Hot/Warm/Cold 块筛选）
-5. 与 TopicTreeManagerV2 集成（将 Block 作为话题路由输入）
-
-设计原则:
-- 最小可寻址单元是 DiscourseBlock（而非轮次）
-- 块状态基于轮次距离自动更新
-- 支持回退开关（当 discourse_block_tree.enabled=False 时退化为轮级模式）
-"""
-
-from __future__ import annotations
-
-import logging
-import time
-from typing import Dict, List, Optional, Tuple
-
-try:
-    from core.agent.config.discourse_config import get_discourse_config
-except ImportError:
-    get_discourse_config = None  # type: ignore
-
-try:
-    from core.agent.discourse_block_tree.models import (
-        BlockState,
-        BoundaryType,
-        DiscourseBlock,
-        EDU,
-        ProgressiveSummary,
-    )
-    from core.agent.discourse_block_tree.segmenter import Segmenter
-except ImportError:
-    import importlib.util
-    import os
-    import sys
-    _models_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "discourse_block_tree", "models.py"
-    )
-    _spec = importlib.util.spec_from_file_location("discourse_models", _models_path)
-    _models_module = importlib.util.module_from_spec(_spec)
-    sys.modules["discourse_models"] = _models_module
-    _spec.loader.exec_module(_models_module)
-    BlockState = _models_module.BlockState
-    BoundaryType = _models_module.BoundaryType
-    DiscourseBlock = _models_module.DiscourseBlock
-    EDU = _models_module.EDU
-    ProgressiveSummary = _models_module.ProgressiveSummary
-
-    _segmenter_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "discourse_block_tree", "segmenter.py"
-    )
-    _seg_spec = importlib.util.spec_from_file_location("segmenter", _segmenter_path)
-    _seg_module = importlib.util.module_from_spec(_seg_spec)
-    sys.modules["segmenter"] = _seg_module
-    _seg_spec.loader.exec_module(_seg_module)
-    Segmenter = _seg_module.Segmenter
-
-logger = logging.getLogger(__name__)
 
 class DiscourseBlockTreeManager:
-    """话语块树管理器。"""
+    """DiscourseBlockTree core orchestrator"""
 
-    def __init__(
-        self,
-        segmenter: Optional[Segmenter] = None,
-        hot_turns: int = 5,
-        warm_turns: int = 10,
-        enabled: bool = True,
-    ):
-        # 从配置读取默认值
-        config = get_discourse_config() if get_discourse_config else None
-        mgr_cfg = config.manager if config else None
+    def __init__(self, llm_provider=None, max_tokens=4096,
+                 global_split_threshold=0.5):
+        self.llm = llm_provider
+        self.blocks = {}
+        self.current_block_id = None
+        self.turn_count = 0
+        self.entity_cache = EntityCache()
+        self.header_injector = HeaderInjector(self.entity_cache)
+        self.decomposer = SyntacticDecomposer(use_llm=llm_provider is not None)
+        self.segmenter = SEGMENTER
+        self.segmenter.global_split_threshold = global_split_threshold
+        self.regulator = REGULATOR
+        self.regulator.global_split_threshold = global_split_threshold
+        self.summary_engine = SUMMARY_ENGINE
+        self.summary_engine.llm = llm_provider
+        self.context_builder = CONTEXT_BUILDER
+        self.context_builder.max_tokens = max_tokens
+        self.indexer = Indexer()
 
-        self.hot_turns = hot_turns if (mgr_cfg is None) else mgr_cfg.hot_turns
-        self.warm_turns = warm_turns if (mgr_cfg is None) else (mgr_cfg.hot_turns + mgr_cfg.cooling_turns)
-        self.enabled = enabled if (mgr_cfg is None) else True  # 始终由上层控制
-        self.merge_threshold = mgr_cfg.merge_threshold if mgr_cfg else 0.55
+    def ingest_turn(self, turn_index, text):
+        self.turn_count = turn_index
+        injected = self.header_injector.inject(text)
+        entities = self.header_injector.extract_entities(text)
+        self.entity_cache.push(entities)
 
-        self.segmenter = segmenter or Segmenter()
+        # 话题切换检测
+        prev_blocks = list(self.blocks.values())
+        prev_ents = [e.text for b in prev_blocks[-3:] for e in getattr(b, 'entities', []) if hasattr(e, 'text')]
+        curr_ents = [e.text for e in entities if hasattr(e, 'text')] if entities else []
+        is_switch, switch_conf, switch_src = TOPIC_MARKER_DETECTOR.detect(text, curr_ents, prev_ents)
 
-        # 存储
-        self._blocks: List[DiscourseBlock] = []          # 所有块，按时间顺序
-        self._block_index: Dict[str, DiscourseBlock] = {}  # ID → Block 索引
-        self._current_turn: int = 0                      # 当前轮次索引
-
-        # 活跃块（最近 HOTA 轮内的块）
-        self._active_block: Optional[DiscourseBlock] = None
-
-        logger.debug(
-            f"DiscourseBlockTreeManager initialized (hot={self.hot_turns}, "
-            f"warm={self.warm_turns}, merge_threshold={self.merge_threshold})"
-        )
-
-    # ── 公共接口 ──────────────────────────────────────────────────
-
-    def ingest_turn(self, edus: List[EDU]) -> List[DiscourseBlock]:
-        """接收新轮次的 EDU 列表，切分并路由。
-
-        Args:
-            edus: 编译器管道输出的量化 EDU 列表
-
-        Returns:
-            新创建或更新的话语块列表
-        """
-        if not self.enabled or not edus:
-            # 退化为轮级模式：每个轮次作为一个整块
-            return self._fallback_ingest(edus)
-
-        # 更新当前轮次
-        self._current_turn = max(self._current_turn, max(e.turn_index for e in edus))
-
-        # 1. 调用 Segmenter 切分
-        new_blocks = self.segmenter.segment(edus)
-
-        # 2. 更新现有块状态
-        self._update_block_states()
-
-        # 3. 路由新块
-        routed_blocks = []
-        for block in new_blocks:
-            routed = self._route_block(block)
-            if routed:
-                routed_blocks.append(routed)
-
-        return routed_blocks
-
-    def get_blocks(self, state: Optional[BlockState] = None) -> List[DiscourseBlock]:
-        """获取话语块列表（可选按状态筛选）。"""
-        if state is None:
-            return list(self._blocks)
-        return [b for b in self._blocks if b.state == state]
-
-    def get_hot_blocks(self) -> List[DiscourseBlock]:
-        """获取 Hot 块（ACTIVE 状态）。"""
-        return self.get_blocks(BlockState.ACTIVE)
-
-    def get_warm_blocks(self) -> List[DiscourseBlock]:
-        """获取 Warm 块（COOLING 状态）。"""
-        return self.get_blocks(BlockState.COOLING)
-
-    def get_cold_blocks(self) -> List[DiscourseBlock]:
-        """获取 Cold 块（COLD 状态）。"""
-        return self.get_blocks(BlockState.COLD)
-
-    def get_block_by_id(self, block_id: str) -> Optional[DiscourseBlock]:
-        """通过 ID 获取块。"""
-        return self._block_index.get(block_id)
-
-    def get_latest_block(self) -> Optional[DiscourseBlock]:
-        """获取最新的话语块。"""
-        if not self._blocks:
-            return None
-        return self._blocks[-1]
-
-    def get_active_block(self) -> Optional[DiscourseBlock]:
-        """获取当前活跃块（最新创建的块）。"""
-        return self._active_block
-
-    @property
-    def current_turn(self) -> int:
-        """当前轮次索引。"""
-        return self._current_turn
-
-    @property
-    def block_count(self) -> int:
-        """总块数。"""
-        return len(self._blocks)
-
-    def reset(self):
-        """重置所有状态（新会话）。"""
-        self._blocks.clear()
-        self._block_index.clear()
-        self._current_turn = 0
-        self._active_block = None
-
-    # ── 内部路由 ────────────────────────────────────────────────────
-
-    def _route_block(self, block: DiscourseBlock) -> DiscourseBlock:
-        """将新块路由到树中。
-
-        策略:
-        1. 如果当前有活跃块，且新块与活跃块高粘合 → 合并到活跃块
-        2. 否则 → 作为新块追加
-        """
-        if not self._active_block:
-            # 第一个块
-            self._add_block(block)
-            self._active_block = block
-            return block
-
-        # 计算与活跃块的边界粘合度
-        cohesion = self.segmenter.compute_block_boundary_cohesion(
-            self._active_block, block
-        )
-
-        if cohesion >= self.merge_threshold:  # 高粘合度阈值（从配置读取）
-            # 合并到活跃块
-            self._merge_into_active(block)
-            return self._active_block
-        else:
-            # 新块
-            self._add_block(block)
-            self._active_block = block
-            return block
-
-    def _add_block(self, block: DiscourseBlock):
-        """将块加入存储。"""
-        self._blocks.append(block)
-        self._block_index[block.id] = block
-
-    def _merge_into_active(self, block: DiscourseBlock):
-        """将新块合并到当前活跃块。"""
-        if not self._active_block:
-            return
-        # 合并 EDU
-        self._active_block.edus.extend(block.edus)
-        self._active_block.end_turn = max(self._active_block.end_turn, block.end_turn)
-        # 更新实体签名
-        self._active_block._update_entity_signature()
-        # 更新 embedding（平均）
-        if self._active_block.macro_embedding and block.macro_embedding:
-            self._active_block.macro_embedding = self.segmenter._average_vectors(
-                [self._active_block.macro_embedding, block.macro_embedding]
-            )
-        elif block.macro_embedding:
-            self._active_block.macro_embedding = block.macro_embedding
-        # 更新意图（重新计算主导意图）
-        intent_counts = {}
-        for e in self._active_block.edus:
-            if e.intent_label:
-                intent_counts[e.intent_label] = intent_counts.get(e.intent_label, 0) + 1
-        if intent_counts:
-            self._active_block.intent_label = max(intent_counts, key=intent_counts.get)
-
-    # ── 状态管理 ──────────────────────────────────────────────────────
-
-    def _update_block_states(self):
-        """基于当前轮次更新所有块的生命周期状态。"""
-        for block in self._blocks:
-            turn_distance = self._current_turn - block.end_turn
-            if turn_distance <= self.hot_turns:
-                block.state = BlockState.ACTIVE
-            elif turn_distance <= self.warm_turns:
-                block.state = BlockState.COOLING
-            else:
-                block.state = BlockState.COLD
-
-    # ── 退化模式 ─────────────────────────────────────────────────────
-
-    def _fallback_ingest(self, edus: List[EDU]) -> List[DiscourseBlock]:
-        """退化模式：每个轮次作为一个整块（不启用 discourse block tree）。"""
-        if not edus:
+        edus = self.decomposer.decompose(text)
+        scores = QUANTIZER.score_all(edus) if len(edus) > 1 else []
+        new_blocks = self.segmenter.segment(edus, scores)
+        if not new_blocks:
             return []
-        turn_index = edus[0].turn_index
-        block_id = f"block:T{turn_index}:fallback"
+        block_ids = []
+        for i, block in enumerate(new_blocks):
+            block.created_at_turn = turn_index
+            block.last_active_turn = turn_index
+            block.entities = entities[:]
+            # 话题切换标记
+            if is_switch:
+                block.parent_id = self.current_block_id  # 链接回前一个块
+                block.topic_switch = True
+                block.topic_switch_confidence = switch_conf
+                # 查找被引用的块并建立双向链接
+                refs = self.find_reference(text) or []
+                for ref_bid in refs[:3]:
+                    ref_parent = self.blocks.get(ref_bid)
+                    if ref_parent:
+                        ref_parent.child_ids.append(block.block_id)
+                        break
+            if i < len(scores):
+                block.cohesion_boundary = scores[i].total_score
+            if i == 0 and self.current_block_id:
+                block.parent_id = self.current_block_id
+                parent = self.blocks.get(self.current_block_id)
+                if parent: parent.child_ids.append(block.block_id)
+            elif i > 0 and block_ids:
+                block.parent_id = block_ids[i-1]
+                parent = self.blocks.get(block_ids[i-1])
+                if parent: parent.child_ids.append(block.block_id)
+            self.blocks[block.block_id] = block
+            self.indexer.index_block(block)
+            block_ids.append(block.block_id)
+        self.current_block_id = block_ids[0] if block_ids else self.current_block_id
+        # 话题切换标记传递到 get_tree_summary
+        self._last_switch = (is_switch, switch_conf, switch_src) if is_switch else None
 
-        block = DiscourseBlock(
-            id=block_id,
-            edus=list(edus),
-            start_turn=turn_index,
-            end_turn=turn_index,
-            state=BlockState.ACTIVE,
-        )
-        block._update_entity_signature()
+        for bid in block_ids:
+            block = self.blocks.get(bid)
+            if block:
+                self.summary_engine.check_upgrade(block, turn_index)
+        if turn_index % 5 == 0:
+            modified = self.regulator.regulate(self.blocks, turn_index)
+            if modified:
+                self.segmenter.set_threshold(self.regulator.global_split_threshold)
+        self._update_temperature(turn_index)
+        return block_ids
 
-        self._add_block(block)
-        self._active_block = block
-        self._current_turn = max(self._current_turn, turn_index)
-        self._update_block_states()
-        return [block]
+    def build_context(self, block_id=None):
+        active = block_id or self.current_block_id
+        if not active:
+            return ""
+        return self.context_builder.build(self.blocks, active)
 
-    # ── 序列化 ───────────────────────────────────────────────────────
+    def find_reference(self, ref):
+        return self.context_builder.find_by_reference(self.blocks, ref)
 
-    def to_dict(self) -> Dict:
-        """序列化状态。"""
+    def search(self, query):
+        return self.indexer.find_by_reference(query)
+
+    def get_status(self, block_id=None):
+        target = block_id or self.current_block_id
+        if target and target in self.blocks:
+            return self.blocks[target].to_dict()
+        return {"error": "block not found"}
+
+    def get_tree_summary(self):
+        v = self.blocks.values()
+        ts = getattr(self, '_last_switch', None)
         return {
-            "current_turn": self._current_turn,
-            "block_count": len(self._blocks),
-            "blocks": [b.to_dict() for b in self._blocks],
-            "active_block_id": self._active_block.id if self._active_block else None,
+            "total_blocks": len(self.blocks),
+            "active": sum(1 for b in v if b.status == "active"),
+            "paused": sum(1 for b in v if b.status == "paused"),
+            "cold": sum(1 for b in v if b.status == "cold"),
+            "frozen": sum(1 for b in v if b.status == "frozen"),
+            "current_block": self.current_block_id,
+            "turn": self.turn_count,
+            "threshold": self.regulator.global_split_threshold,
+            "topic_switch": ts[0] if ts else False,
+            "switch_confidence": round(ts[1], 2) if ts else 0.0,
+            "switch_source": ts[2] if ts else "",
         }
+
+    def _update_temperature(self, current_turn):
+        for block in self.blocks.values():
+            if block.block_id == self.current_block_id:
+                block.status = "active"
+            elif current_turn - block.last_active_turn > 30:
+                if block.status != "frozen":
+                    block.status = "frozen"
+                    self.summary_engine.check_upgrade(block, current_turn)
+            elif current_turn - block.last_active_turn > 10:
+                if block.status != "cold":
+                    block.status = "cold"
+                    self.summary_engine.check_upgrade(block, current_turn)
+            elif current_turn - block.last_active_turn > 5:
+                if block.status == "active":
+                    block.status = "paused"

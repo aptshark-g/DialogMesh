@@ -38,7 +38,7 @@ class Monitor:
         print("=" * 60, file=__import__("sys").stderr)
 
     def to_json(self):
-        return [{k: v for k, v in e.items() if k != "data"} for e in self.events]
+        return self.events
 
     def write_log(self, path):
         """Write structured log to file"""

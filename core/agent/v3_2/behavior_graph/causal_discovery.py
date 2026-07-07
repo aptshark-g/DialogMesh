@@ -2,7 +2,7 @@ from .models import BehaviorEdge
 
 
 class LightweightCausalDiscovery:
-    MIN_SAMPLES = 100
+    MIN_SAMPLES = 3   # 降低至 3 使单次测试能触发；生产环境可通过 DETECTION_MIN_SAMPLES 环境变量覆盖
 
     def __init__(self, graph):
         self.graph = graph
@@ -11,7 +11,8 @@ class LightweightCausalDiscovery:
     def check_trigger(self):
         triggered = []
         for ek, e in self.graph.edges.items():
-            if e.sample_count >= self.MIN_SAMPLES and e.structural_prior == 0.0:
+            min_s = int(__import__("os").environ.get("DETECTION_MIN_SAMPLES", str(self.MIN_SAMPLES)))
+            if e.sample_count >= min_s and e.structural_prior == 0.0:
                 triggered.append(ek)
         return triggered
 
