@@ -253,7 +253,16 @@ class V32Pipeline:
         if self.session_recorder:
             turn_data = {"turn": self.turn, "query": sentence, "slots": parse.to_dict().get("slots", {}) if hasattr(parse, "to_dict") else {}, "stability": parse.stability, "degraded": parse.degraded, "prompt": llm_prompt[:300], "llm_raw": llm_raw[:300], "chain_step_id": self._chain[-1] if self._chain else None, "predicted": pred_cands, "causal_count": len(causal_r)}
             self.session_recorder.record_turn(turn_data)
-        fusion = await self.fusion.fuse(track0, track1, track_p, causal, profile_lite=profile_lite)
+        # Create strategic track from cached orchestrator planning result
+        strategic_track = None
+        orch_plan = self._bridge_cache.get("planning")
+        if orch_plan and isinstance(orch_plan, dict):
+            strategic_track = TrackResult(
+                track=TrackType.STRATEGIC,
+                output=orch_plan,
+                confidence=orch_plan.get("confidence", 0.5),
+            )
+        fusion = await self.fusion.fuse(track0, track1, track_p, causal, strategic=strategic_track, profile_lite=profile_lite)
         if self.monitor:
             dt = str(getattr(fusion.dominant_track, "value", fusion.dominant_track))
             self.monitor.record("fusion", "result", {"confidence": fusion.confidence, "track": dt, "conflicts": len(fusion.conflicts), "clarify": fusion.ask_clarification}, duration=getattr(fusion, "latency_ms", 0))
@@ -392,6 +401,11 @@ class V32Pipeline:
                     state["v30_healthy"] = h.get("healthy", False)
                 except Exception:
                     state["v30_healthy"] = False
+            try:
+                if hasattr(self._v30_orchestrator, "update_v32_state"):
+                    self._v30_orchestrator.update_v32_state(self.pull_v32_state())
+            except Exception:
+                pass
             if turn % 5 == 0 and sentence:
                 asyncio.create_task(self._run_orchestrator_background(sentence))
         except Exception:
@@ -431,6 +445,28 @@ class V32Pipeline:
             self.persistence.close()
         if self.session_recorder:
             self.session_recorder.close()
+    def pull_v32_state(self) -> dict:
+        """Extract compact v3.2 state for v3.0 orchestration injection."""
+        state = {"compiler": {}, "behavior_graph": [], "cognitive_profile": {}, "block_tree": {}}
+        if hasattr(self, "_profile_updater") and self._profile_updater:
+            p = self._profile_updater.profile
+            state["cognitive_profile"] = {
+                "metacognition": p.metacognition,
+                "confidence": p.confidence,
+                "divergence": p.divergence,
+                "total_turns": p.total_turns,
+            }
+        if self.graph and self.graph.edges:
+            succ = []
+            for ek, e in self.graph.edges.items():
+                if not e.is_deprecated and e.sample_count > 0:
+                    succ.append({"edge": str(ek)[:30], "weight": round(e.weight, 3), "samples": e.sample_count, "corrections": e.correction_count})
+            state["behavior_graph"] = sorted(succ, key=lambda x: -x["weight"])[:5]
+        state["block_tree"] = self.block_tree.get_tree_summary() if hasattr(self, "block_tree") else {}
+        if hasattr(self, "compiler") and self.compiler:
+            state["compiler"] = {"type": type(self.compiler).__name__}
+        return state
+
 
     def get_status(self):
         return {"turn": self.turn, "graph_nodes": len(self.graph.nodes) if self.enable_graph else 0, "bridge": self.get_bridge_status()}
