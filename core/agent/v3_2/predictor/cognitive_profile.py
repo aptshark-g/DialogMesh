@@ -47,6 +47,7 @@ class CognitiveProfile:
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
                 "stable_traits": self.stable_traits}
+    @classmethod
     def from_dict(cls, d):
         return cls(**{k: d.get(k) for k in ["user_id","expertise","preferences","tags",
                     "session_count","total_turns","avg_stability","metacognition","divergence","confidence","stability_delta","created_at","updated_at","stable_traits"]})
@@ -68,6 +69,7 @@ class CognitiveProfile:
 class ProfileUpdater:
     def __init__(self, profile: CognitiveProfile):
         self.profile = profile
+        self._buffer = {"action_types":[],"stabilities":[],"action_summaries":[],"corrections":0,"topic_switches":0,"total_turns":0}
 
     def record_action(self, action_type: str, action_summary: str, stability: float, uncertainty: bool = False, topic_switch: bool = False):
         p = self.profile
@@ -95,6 +97,15 @@ class ProfileUpdater:
         self._acquire_tags(action_type, action_summary)
         p.updated_at = time.time()
 
+    def record_turn_to_buffer(self, action_type, action_summary, stability, is_correction=False, is_topic_switch=False):
+        buf = self._buffer
+        buf["action_types"].append(action_type)
+        buf["action_summaries"].append(action_summary)
+        buf["stabilities"].append(stability)
+        if is_correction: buf["corrections"] += 1
+        if is_topic_switch: buf["topic_switches"] += 1
+        buf["total_turns"] += 1
+
     def _update_traits(self, action_type, action_summary, stability):
         p = self.profile
         if action_type in ("config","deploy","scan","debug","trace","compile"):
@@ -108,8 +119,51 @@ class ProfileUpdater:
         if stability < 0.3 and action_type != "UNKNOWN":
             p.stable_traits["neuroticism"] = min(1.0, p.stable_traits.get("neuroticism",0.5)+0.005)
 
-    def record_session_end(self):
+    async def record_session_end(self, llm=None):
         self.profile.session_count += 1
+        if llm:
+            await self.infer_traits_from_session(llm)
+
+    async def infer_traits_from_session(self, llm) -> None:
+        buf = self._buffer
+        if buf["total_turns"] < 3:
+            return
+        action_str = ", ".join(buf["action_types"][:20])
+        avg_s = sum(buf["stabilities"]) / max(len(buf["stabilities"]), 1)
+        prompt = (
+            "Analyze the user session below. Infer OCEAN personality and cognitive style.\n"
+            "Return ONLY valid JSON: {\"openness\":0.7,\"openness_evidence\":\"reason text\",\"conscientiousness\":0.6,...}\n"
+            f"Traits: openness,conscientiousness,extraversion,agreeableness,neuroticism,technical_depth,verbosity\n"
+            f"Turns: {buf['total_turns']}\nActions: {action_str}\n"
+            f"Avg Stability: {avg_s:.2f}\nCorrections: {buf['corrections']}\n"
+            f"Topic Switches: {buf['topic_switches']}")
+        try:
+            import json
+            raw = await llm.generate(prompt, max_tokens=300)
+            raw = raw.strip()
+            if "```json" in raw: raw = raw.split("```json")[1].split("```")[0]
+            elif "```" in raw: raw = raw.split("```")[1].split("```")[0]
+            data = json.loads(raw.strip())
+            evidence_map = {}
+            for k, v in data.items():
+                if k.endswith("_evidence") and isinstance(v, str):
+                    evidence_map[k.replace("_evidence", "")] = v
+            for key, val in data.items():
+                if isinstance(val, (int, float)):
+                    entry = self.profile.stable_traits.get(key, {"value": 0.5, "evidence": [], "samples": 0})
+                    if not isinstance(entry, dict):
+                        entry = {"value": entry, "evidence": [], "samples": 0}
+                    entry["value"] = round(entry["value"] * 0.8 + float(val) * 0.2, 3)
+                    entry["samples"] += 1
+                    if key in evidence_map:
+                        entry["evidence"].append({"text": evidence_map[key], "source": "llm", "turn": self.profile.total_turns})
+                        entry["evidence"] = entry["evidence"][-10:]
+                    self.profile.stable_traits[key] = entry
+        except Exception as e:
+            import logging
+            logging.debug(f"[Profile] LLM trait inference failed: {e}")
+        self._buffer = {"action_types": [], "stabilities": [], "action_summaries": [], "corrections": 0, "topic_switches": 0, "total_turns": 0}
+
 
     def _infer_domain(self, action_type: str, action_summary: str) -> Optional[str]:
         hints = {"debug":"debugging","check":"monitoring","monitor":"monitoring",

@@ -25,6 +25,7 @@ from .behavior_graph.pruning import GraphPruner
 from .behavior_graph.fast_correction import FastCorrectionDetector
 from .behavior_graph.causal_discovery import LightweightCausalDiscovery
 from .embedding.behavior_embedding import PredicateMapper
+from .embedding.behavior_embedding import EMBEDDER, PROTOTYPES
 import time
 from .persistence import PersistenceManager
 from .circuit_breaker import CircuitBreaker
@@ -66,6 +67,17 @@ class V32Pipeline:
         self._negative_kb = NegativeKB()
         self._causal_substrate = CausalSubstrate(self.graph)
         self._foa = FoA()
+        self._edge_embs = {}  # BGE embedding cache for graph edges
+        self._bridge_cache = {}
+        self._bridge_enabled = False
+        self._v30_orchestrator = None
+        try:
+            from core.agent.v3_0.orchestrator.orchestrator import Orchestrator
+            self._v30_orchestrator = Orchestrator(llm_provider=self.llm)
+            self._bridge_enabled = True
+            import logging; logging.info('[Bridge] v3.0 Orchestrator attached')
+        except Exception as e:
+            import logging; logging.warning(f'[Bridge] v3.0 Orchestrator unavailable: {e}')
         self._l1 = L1Summary()
         self._l2 = L2Summary()
         # L2Summary - lazy import in process() to avoid relative import issue
@@ -83,7 +95,7 @@ class V32Pipeline:
 
     async def process(self, sentence, context=None, track1=None, track_p=None, causal=None, profile_lite=False):
         self.turn += 1
-        _ = self.block_tree.ingest_turn(self.turn, sentence)
+        block_ids = self.block_tree.ingest_turn(self.turn, sentence)
         if self.monitor:
             bt = self.block_tree.get_tree_summary()
             ts = getattr(self.block_tree, '_last_switch', None)
@@ -125,6 +137,8 @@ class V32Pipeline:
                         corr_check = self._corr_detector.detect(sentence, prev_actions_list, action.value)
                         is_correction = corr_check.is_correction if hasattr(corr_check, 'is_correction') else False
                         self._correction.record_observation(ek, is_correction)
+                        if block_ids and ek:
+                            self.block_tree.add_cross_ref(block_ids[0], "graph:{ek}", "behavior_similar", 0.3, "auto_graph")
                         if is_correction and self.monitor:
                             self.monitor.record("graph", "correction_signal",
                                 {"edge": str(ek)[:20], "type": getattr(corr_check, 'correction_type', 'unknown')})
@@ -138,6 +152,9 @@ class V32Pipeline:
                     uncertainty = parse.stability < 0.6 or parse.undefined
                     self._profile_updater.record_action(atype, action.value, parse.stability,
                         uncertainty=uncertainty, topic_switch=self._last_topic_switch)
+                    self._profile_updater.record_turn_to_buffer(
+                        atype, action.value, parse.stability,
+                        kb_blocked, self._last_topic_switch)
                     if self.monitor:
                         p = self._profile_updater.profile
                         if uncertainty:
@@ -163,6 +180,9 @@ class V32Pipeline:
             uncertainty=True, topic_switch=self._last_topic_switch)
             if self.monitor:
                 p = self._profile_updater.profile
+                self._profile_updater.record_turn_to_buffer(
+                    "UNKNOWN", raw_action, parse.stability,
+                    kb_blocked, self._last_topic_switch)
                 self.monitor.record("profile", "uncertainty",
                     {"stability": f"{parse.stability:.2f}", "meta": f"{p.metacognition:.2f}"})
                 self.monitor.record("profile", "update",
@@ -250,9 +270,12 @@ class V32Pipeline:
             self.monitor.record("l1", "heartbeat", {"active": "1"})
         if self.monitor and hasattr(self, "_l2"):
             self.monitor.record("l2", "heartbeat", {"turns": self.turn})
+        ww = self._waterwave_activate()
+        await self._bridge_v32_to_v30(parse, fusion, self.turn, sentence)
         return {"parse": parse, "fusion": fusion, "turn": self.turn, "track1": track1,
                 "track_p": track_p, "causal": causal, "kb_blocked": kb_blocked,
-                "block_tree": {"summary": bt_summary, "context": bt_context}}
+                "block_tree": {"summary": bt_summary, "context": bt_context},
+                "waterwave": ww}
 
 
     async def init_persistence(self, save_dir=""):
@@ -272,12 +295,142 @@ class V32Pipeline:
         if hasattr(self, "_meta_cog"):
             self._meta_cog.enabled = enabled
 
+
+    def _waterwave_activate(self) -> dict:
+        """Content-aware semantic cascade: tree -> graph -> profile.
+        Uses BGE embeddings + cosine similarity. NOT BFS.
+        """
+        result = {"tree_blocks": 0, "graph_edges": [], "profile_traits": {}}
+        if not self.enable_graph or not self.graph:
+            return result
+        bt = self.block_tree
+        if not bt or not bt.current_block_id:
+            return result
+        current = bt.blocks.get(bt.current_block_id)
+        if not current:
+            return result
+        result["tree_blocks"] = len(bt.blocks)
+        # Build query context from current block
+        qparts = []
+        if current.primary_intent: qparts.append(current.primary_intent)
+        for e in getattr(current, "entities", [])[:10]:
+            if hasattr(e, "text"): qparts.append(e.text)
+            elif isinstance(e, str): qparts.append(e)
+        if not qparts: qparts.append(str(getattr(current, "name", "")))
+        query_text = " ".join(qparts).lower()
+        qtokens = set(query_text.split())
+        if not qtokens: return result
+        # Try BGE embeddings, fall back to token overlap
+        try:
+            qvec = EMBEDDER.encode(query_text)
+            use_bge = True
+        except Exception:
+            use_bge = False
+        # Layer 2: Semantic search in BehaviorGraph (cosine, not BFS)
+        for ek, e in self.graph.edges.items():
+            fn = self.graph.nodes.get(e.from_step_id)
+            tn = self.graph.nodes.get(e.to_step_id)
+            if not fn or not tn: continue
+            etext = f"{fn.action_summary} {tn.action_summary}"
+            if use_bge:
+                if ek not in self._edge_embs:
+                    self._edge_embs[ek] = EMBEDDER.encode(etext)
+                sim = PROTOTYPES.cosine_sim(qvec, self._edge_embs[ek])
+            else:
+                etoks = set(etext.lower().split())
+                olap = len(qtokens & etoks)
+                sim = olap / max(len(qtokens | etoks), 1)
+            sim = sim * (1 + min(e.sample_count / 10, 0.5))
+            if sim > 0.12:
+                result["graph_edges"].append({
+                    "key": ek, "weight": round(e.weight, 3),
+                    "samples": e.sample_count, "similarity": round(sim, 3),
+                    "from": fn.action_summary, "to": tn.action_summary})
+        result["graph_edges"].sort(key=lambda x: -x["similarity"])
+        result["graph_edges"] = result["graph_edges"][:10]
+        # Layer 3: Semantic match to profile traits
+        if hasattr(self, "_profile_updater") and self._profile_updater:
+            p = self._profile_updater.profile
+            for key in list(p.stable_traits.keys()):
+                entry = p.stable_traits[key]
+                if not isinstance(entry, dict): continue
+                matched = []
+                for ev in entry.get("evidence", []):
+                    et = ev.get("text", "") if isinstance(ev, dict) else str(ev)
+                    if len(set(et.lower().split()) & qtokens) > 0:
+                        matched.append(et[:120])
+                if matched:
+                    result["profile_traits"][key] = {"value": entry["value"], "evidence": matched[:3]}
+        result["waterwave_count"] = len(result["graph_edges"]) + len(result["profile_traits"])
+        return result
+
+
+    async def _bridge_v32_to_v30(self, parse, fusion, turn, sentence=''):
+        """Bridge v3.2 state to v3.0 orchestrator infrastructure.
+        Collects and caches v3.2 state for v3.0 back-end processing.
+        Currently a placeholder; will feed v3.0 meta-cognitive/
+        reflective phases when orchestrator is available."""
+        try:
+            import time
+            state = dict(
+                turn=turn,
+                stability=getattr(parse, 'stability', 0),
+                fusion_confidence=getattr(fusion, 'confidence', 0) if fusion else 0,
+                slots=len(getattr(parse, 'slots', {})),
+                graph_nodes=len(self.graph.nodes) if self.graph else 0,
+                graph_edges=len(self.graph.edges) if self.graph else 0,
+                timestamp=time.time(),
+            )
+            self._bridge_cache[turn] = state
+            while len(self._bridge_cache) > 10:
+                oldest = min(self._bridge_cache.keys())
+                del self._bridge_cache[oldest]
+            # Call v3.0 orchestrator if available
+            if self._v30_orchestrator:
+                try:
+                    h = await self._v30_orchestrator.health_check()
+                    state["v30_healthy"] = h.get("healthy", False)
+                except Exception:
+                    state["v30_healthy"] = False
+            if turn % 5 == 0 and sentence:
+                asyncio.create_task(self._run_orchestrator_background(sentence))
+        except Exception:
+            pass
+
+    def get_bridge_status(self) -> dict:
+        return dict(
+            enabled=self._bridge_enabled,
+            v30_healthy=getattr(self, '_v30_orchestrator', None) is not None,
+            orch_ready=self._bridge_cache.get('orchestrator_ready', False),
+            orch_result=self._bridge_cache.get('orchestrator_result', {}),
+            last_turn=max(self._bridge_cache.keys()) if self._bridge_cache else None,
+        )
+
+
+    async def _run_orchestrator_background(self, sentence):
+        try:
+            result = await self._v30_orchestrator.process_turn(
+                session_id="v32_session",
+                user_input=sentence,
+            )
+            self._bridge_cache["orchestrator_result"] = {
+                "answer": str(result.answer)[:200] if result.answer else "",
+                "confidence": result.answer_confidence,
+                "status": result.status,
+            }
+            self._bridge_cache["orchestrator_ready"] = True
+        except Exception as e:
+            import logging
+            logging.debug(f"[Bridge] Orchestrator background run failed: {e}")
+
     async def close(self):
         """Graceful shutdown - save all state"""
+        if hasattr(self, '_profile_updater'):
+            await self._profile_updater.record_session_end(llm=self.llm)
         if self.persistence:
             self.persistence.close()
         if self.session_recorder:
             self.session_recorder.close()
 
     def get_status(self):
-        return {"turn": self.turn, "graph_nodes": len(self.graph.nodes) if self.enable_graph else 0}
+        return {"turn": self.turn, "graph_nodes": len(self.graph.nodes) if self.enable_graph else 0, "bridge": self.get_bridge_status()}
