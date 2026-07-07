@@ -35,6 +35,7 @@ class BehaviorEdge:
     success_count: int = 0
     failure_count: int = 0
     correction_count: int = 0
+    importance: float = 0.5
     last_updated: float = 0.0
     is_stable: bool = True
     is_deprecated: bool = False
@@ -90,6 +91,7 @@ class GraphStatistics:
     seed_count: int = 0
     total_samples: int = 0
     avg_weight: float = 0.0
+    avg_importance: float = 0.0
     unstable_edge_count: int = 0
     deprecated_seed_count: int = 0
     last_prune_time: float = 0.0

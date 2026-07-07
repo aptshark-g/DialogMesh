@@ -119,6 +119,20 @@ class ProfileUpdater:
         if stability < 0.3 and action_type != "UNKNOWN":
             p.stable_traits["neuroticism"] = min(1.0, p.stable_traits.get("neuroticism",0.5)+0.005)
 
+    def merge_session(self, other_profile):
+        """Merge another CognitiveProfile (cross-session HY-Memory style)."""
+        self._profile.total_turns += other_profile.total_turns
+        self._profile.metacognition = 0.7 * self._profile.metacognition + 0.3 * other_profile.metacognition
+        self._profile.confidence = 0.6 * self._profile.confidence + 0.4 * other_profile.confidence
+        self._profile.divergence = max(self._profile.divergence, other_profile.divergence)
+        if hasattr(self._profile, 'traits') and hasattr(other_profile, 'traits'):
+            for trait_name, td in other_profile.traits.items():
+                if trait_name in self._profile.traits:
+                    curr = self._profile.traits[trait_name].get('value', 0.5)
+                    other = td.get('value', 0.5)
+                    self._profile.traits[trait_name]['value'] = curr * 0.7 + other * 0.3
+        return self._profile
+
     async def record_session_end(self, llm=None):
         self.profile.session_count += 1
         if llm:

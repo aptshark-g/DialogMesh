@@ -93,7 +93,7 @@ class V32Pipeline:
         # Persistence (lazy init, call init_persistence() to start)
         self.persistence = None
 
-    async def process(self, sentence, context=None, track1=None, track_p=None, causal=None, profile_lite=False):
+    async def process(self, sentence, context=None, track1=None, track_p=None, causal=None, profile_lite=False, hy_memory_mode=False):
         self.turn += 1
         block_ids = self.block_tree.ingest_turn(self.turn, sentence)
         if self.monitor:
@@ -262,7 +262,12 @@ class V32Pipeline:
                 output=orch_plan,
                 confidence=orch_plan.get("confidence", 0.5),
             )
-        fusion = await self.fusion.fuse(track0, track1, track_p, causal, strategic=strategic_track, profile_lite=profile_lite)
+        if hy_memory_mode:
+            sys1 = max(getattr(track0, chr(34) + 'confidence' + chr(34), 0), getattr(track_p, chr(34) + 'confidence' + chr(34), 0))
+            t1 = track1 if sys1 < 0.6 else None
+        else:
+            t1 = track1
+        fusion = await self.fusion.fuse(track0, t1, track_p, causal, strategic=strategic_track, profile_lite=profile_lite)
         if self.monitor:
             dt = str(getattr(fusion.dominant_track, "value", fusion.dominant_track))
             self.monitor.record("fusion", "result", {"confidence": fusion.confidence, "track": dt, "conflicts": len(fusion.conflicts), "clarify": fusion.ask_clarification}, duration=getattr(fusion, "latency_ms", 0))
@@ -305,7 +310,21 @@ class V32Pipeline:
             self._meta_cog.enabled = enabled
 
 
-    def _waterwave_activate(self) -> dict:
+    def _fire_event(self, event_type, edge_key=None, data=None):
+        if edge_key and edge_key in self.graph.edges:
+            e = self.graph.edges[edge_key]
+            if event_type == "SUCCESS":
+                e.weight = min(1.0, e.weight + 0.05)
+            elif event_type == "CORRECTION":
+                e.weight = max(0.0, e.weight - 0.10)
+            elif event_type == "CONSOLIDATE":
+                if hasattr(e, 'importance'):
+                    e.importance = min(1.0, e.importance + 0.08)
+        if self.monitor:
+            self.monitor.record("mem_events", event_type, {"edge": str(edge_key)[:20]})
+
+    def _waterwave_activate(self, expand_hops=1) -> dict:
+
         """Content-aware semantic cascade: tree -> graph -> profile.
         Uses BGE embeddings + cosine similarity. NOT BFS.
         """
