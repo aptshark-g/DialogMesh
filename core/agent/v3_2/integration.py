@@ -406,7 +406,7 @@ class V32Pipeline:
                     self._v30_orchestrator.update_v32_state(self.pull_v32_state())
             except Exception:
                 pass
-            if turn % 5 == 0 and sentence:
+            if turn % 3 == 0 and sentence:
                 asyncio.create_task(self._run_orchestrator_background(sentence))
         except Exception:
             pass

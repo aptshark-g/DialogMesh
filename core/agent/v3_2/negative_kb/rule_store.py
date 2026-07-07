@@ -13,4 +13,13 @@ class RuleStore:
         levels = [r.level for r in applicable]
         if NegativeLevel.HARD_BLOCK in levels: return NegativeLevel.HARD_BLOCK
         if NegativeLevel.WARN in levels: return NegativeLevel.WARN
+
         return NegativeLevel.SOFT_DISCOURAGE
+
+    def add_with_verification(self, rule, verified=False):
+        from .models import NegativeLevel as NL
+        if rule.level == NL.HARD_BLOCK and not verified:
+            rule.level = NL.WARN
+            rule.message = '[downgraded] ' + rule.message
+        self.register(rule)
+        return rule.level

@@ -5,6 +5,7 @@ class ACTRActivator:
     DEFAULT_DECAY = 0.3
     ACTIVATION_THRESHOLD = 0.3
     MAX_NODES = 5
+    INHIBITION_FACTOR = 0.15
 
     def __init__(self, decay=DEFAULT_DECAY):
         self.decay = decay
@@ -22,6 +23,9 @@ class ACTRActivator:
                     dist = cur.distance_from_seed + 1
                     base = node_degrees.get(tgt, 0)
                     act = base + weight * cur.activation - self.decay * dist
+                    same_level = [n for n in visited.values() if n.distance_from_seed == dist]
+                    if same_level:
+                        act -= self.INHIBITION_FACTOR * sum(n.activation for n in same_level)
                     if act > self.ACTIVATION_THRESHOLD:
                         visited[tgt] = AttentionNode(tgt, act, base, dist)
                         queue.append(tgt)
