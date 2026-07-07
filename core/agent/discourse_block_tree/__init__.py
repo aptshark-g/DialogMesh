@@ -1,5 +1,5 @@
 """DiscourseBlock Tree ? ?????"""
-from .models import EDU, DiscourseBlock, CohesionScore, DiscourseEntity, ProgressiveSummary
+from .models import EDU, DiscourseBlock, CohesionScore, DiscourseEntity, ProgressiveSummary, CrossReference
 from .header_injector import HeaderInjector, EntityCache
 from .syntactic_decomposer import SyntacticDecomposer
 from .topic_markers import TopicMarkerDetector, DETECTOR

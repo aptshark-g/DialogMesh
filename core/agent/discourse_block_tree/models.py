@@ -118,6 +118,7 @@ class DiscourseBlock:
     response_count: int = 0
     topic_switch: bool = False
     topic_switch_confidence: float = 0.0
+    cross_refs: list = field(default_factory=list)  # list[CrossReference]
 
     def add_edu(self, edu: EDU):
         self.atomic_units.append(edu)
@@ -129,4 +130,15 @@ class DiscourseBlock:
                 "status": self.status, "primary_intent": self.primary_intent,
                 "summary_version": self.summary.version,
                 "edu_count": len(self.atomic_units),
-                "created_at_turn": self.created_at_turn}
+                "created_at_turn": self.created_at_turn,
+                "cross_refs": [{"target": r.target_block_id, "type": r.ref_type,
+                                "strength": r.strength, "source": r.source}
+                               for r in getattr(self, "cross_refs", [])]}
+@dataclass
+class CrossReference:
+    """Cross-topic reference between two DiscourseBlocks"""
+    target_block_id: str
+    ref_type: str = "see_also"   # "analogy", "continuation", "correction", "see_also", "behavior_similar"
+    strength: float = 0.5
+    created_at_turn: int = 0
+    source: str = "manual"       # "manual", "auto_entity", "auto_graph"

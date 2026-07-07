@@ -95,5 +95,23 @@ class TopicMarkerDetector:
             return True, l2, "entity"
         return False, max(0.0, l2), "none"
 
+    CROSS_REF_PATTERNS = {
+        "analogy": ["跟.*一样", "类似于", "和.*类似", "就像", "同样的道理", "同理", "跟.*一样的地方"],
+        "continuation": ["接着说", "继续刚才", "回到"],
+        "correction": ["不对", "错了", "不是这样", "更正一下"],
+    }
+
+    def detect_cross_ref(self, text: str) -> list:
+        """Detect cross-topic references. Returns list of (ref_type, confidence)."""
+        import re
+        results = []
+        for ref_type, patterns in self.CROSS_REF_PATTERNS.items():
+            for pat in patterns:
+                if re.search(pat, text):
+                    conf = 0.8 if ref_type in ("analogy", "correction") else 0.7
+                    results.append((ref_type, conf))
+                    break
+        return results
+
 DETECTOR = TopicMarkerDetector()
 __all__ = ["DETECTOR", "TopicMarkerDetector"]
