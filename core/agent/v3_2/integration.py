@@ -24,6 +24,8 @@ from .rewarder.reward_rules import RewardRuleTable
 from .behavior_graph.pruning import GraphPruner
 from .consolidation import ConsolidationCycle
 from .cold_indexer import ColdIndexer
+from .complexity_scorer import ComplexityScorer
+COMPLEXITY_SCORER = ComplexityScorer()
 from .behavior_graph.fast_correction import FastCorrectionDetector
 from .behavior_graph.causal_discovery import LightweightCausalDiscovery
 from .embedding.behavior_embedding import PredicateMapper
@@ -353,6 +355,7 @@ class V32Pipeline:
         query_text = " ".join(qparts).lower()
         qtokens = set(query_text.split())
         if not qtokens: return result
+        dynamic_thresh = COMPLEXITY_SCORER.get_threshold_from_text(query_text)
         # Try BGE embeddings, fall back to token overlap
         try:
             qvec = EMBEDDER.encode(query_text)
@@ -374,7 +377,7 @@ class V32Pipeline:
                 olap = len(qtokens & etoks)
                 sim = olap / max(len(qtokens | etoks), 1)
             sim = sim * (1 + min(e.sample_count / 10, 0.5))
-            if sim > 0.12:
+            if sim > dynamic_thresh:
                 result["graph_edges"].append({
                     "key": ek, "weight": round(e.weight, 3),
                     "samples": e.sample_count, "similarity": round(sim, 3),
