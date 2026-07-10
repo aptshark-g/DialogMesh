@@ -25,4 +25,7 @@ class GraphPruner:
             for k in keys: del self.graph.edges[k]
             del self.graph.nodes[sid]
         self.orphaned_step_ids = list(leaves)
+        # Update last_prune_time in graph statistics
+        if hasattr(self.graph, "stats") and hasattr(self.graph.stats, "last_prune_time"):
+            self.graph.stats.last_prune_time = time.time()
         return (len(leaves), leaves)

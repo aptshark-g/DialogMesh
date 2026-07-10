@@ -27,3 +27,14 @@ class ABLReflection:
     suggested_correction: str
     turn_count: int = 0
     timestamp: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "edge_key": self.edge_key,
+            "error_type": self.error_type,
+            "correct_path": self.correct_path,
+            "why_wrong": self.why_wrong,
+            "suggested_correction": self.suggested_correction,
+            "turn_count": self.turn_count,
+            "timestamp": self.timestamp,
+        }

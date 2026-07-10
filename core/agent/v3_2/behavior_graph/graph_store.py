@@ -48,7 +48,39 @@ class BehaviorGraph:
             if r and r.has_result: return r.avg_weight
         return self.cold_start.get_weight(fsum, tsum)
 
-    
+    def get_chain(self, start_step_id, max_depth=5):
+        """BFS traversal returning list of (step, edge) tuples from start_step_id."""
+        from collections import deque
+        result = []
+        visited = set()
+        queue = deque([(start_step_id, 0)])
+        visited.add(start_step_id)
+        while queue:
+            current_id, depth = queue.popleft()
+            if depth >= max_depth:
+                continue
+            step = self.nodes.get(current_id)
+            if not step:
+                continue
+            for ek, edge in self.edges.items():
+                if edge.from_step_id == current_id and edge.to_step_id not in visited:
+                    visited.add(edge.to_step_id)
+                    next_step = self.nodes.get(edge.to_step_id)
+                    if next_step:
+                        result.append((next_step, edge))
+                        queue.append((edge.to_step_id, depth + 1))
+        return result
+
+    def get_edges_for_chain(self, step_ids):
+        """Return all edges connecting the given step_ids."""
+        if not step_ids:
+            return []
+        sid_set = set(step_ids)
+        return [
+            edge for edge in self.edges.values()
+            if edge.from_step_id in sid_set and edge.to_step_id in sid_set
+        ]
+
     def save(self, path):
         import json
         data = {"nodes": {}, "edges": {}, "stats": {}}
