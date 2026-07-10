@@ -28,6 +28,13 @@ class L1Summary:
         self.entries.append(entry)
         tid = meta.topic_id
         self.topic_counts[tid] = self.topic_counts.get(tid, 0) + 1
+        l2_trigger_signal = None
         if self.topic_counts[tid] >= self.L2_TRIGGER:
+            topic_entries = [e for e in self.entries if e.meta_info.get("topic_id") == tid]
+            l2_trigger_signal = {
+                "topic_id": tid,
+                "entry_count": len(topic_entries),
+                "entries": topic_entries,
+            }
             self.topic_counts[tid] = 0
-        return entry
+        return entry, l2_trigger_signal

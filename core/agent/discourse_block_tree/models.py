@@ -119,6 +119,7 @@ class DiscourseBlock:
     topic_switch: bool = False
     topic_switch_confidence: float = 0.0
     cross_refs: list = field(default_factory=list)  # list[CrossReference]
+    group_refs: list = field(default_factory=list)  # list[GroupReference]
 
     def add_edu(self, edu: EDU):
         self.atomic_units.append(edu)
@@ -133,7 +134,12 @@ class DiscourseBlock:
                 "created_at_turn": self.created_at_turn,
                 "cross_refs": [{"target": r.target_block_id, "type": r.ref_type,
                                 "strength": r.strength, "source": r.source}
-                               for r in getattr(self, "cross_refs", [])]}
+                               for r in getattr(self, "cross_refs", [])],
+                "group_refs": [{"group_id": g.group_id, "type": g.ref_type,
+                                "strength": g.strength, "block_ids": g.block_ids}
+                               for g in getattr(self, "group_refs", [])]}
+
+
 @dataclass
 class CrossReference:
     """Cross-topic reference between two DiscourseBlocks"""
@@ -144,3 +150,14 @@ class CrossReference:
     source: str = "manual"       # "manual", "auto_entity", "auto_graph"
     hyperedge_type: str = "pairwise"  # HyperMem: pairwise/groupwise/hierarchical
     node_ids: list = None  # For groupwise: all connected block IDs
+
+
+@dataclass
+class GroupReference:
+    """High-order group reference connecting multiple DiscourseBlocks (HyperMem-style hyperedge)."""
+    group_id: str
+    block_ids: list = field(default_factory=list)
+    ref_type: str = "analogy"  # "analogy", "continuation", "correction", "conclusion"
+    strength: float = 0.5
+    context_summary: str = ""
+    created_at_turn: int = 0

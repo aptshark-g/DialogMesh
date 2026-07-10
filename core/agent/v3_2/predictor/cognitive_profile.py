@@ -125,33 +125,91 @@ class ProfileUpdater:
 
     def merge_session(self, other_profile):
         """Merge another CognitiveProfile (cross-session HY-Memory style)."""
-        self._profile.total_turns += other_profile.total_turns
-        self._profile.metacognition = 0.7 * self._profile.metacognition + 0.3 * other_profile.metacognition
-        self._profile.confidence = 0.6 * self._profile.confidence + 0.4 * other_profile.confidence
-        self._profile.divergence = max(self._profile.divergence, other_profile.divergence)
-        if hasattr(self._profile, 'traits') and hasattr(other_profile, 'traits'):
-            for trait_name, td in other_profile.traits.items():
-                if trait_name in self._profile.traits:
-                    curr = self._profile.traits[trait_name].get('value', 0.5)
-                    other = td.get('value', 0.5)
-                    self._profile.traits[trait_name]['value'] = curr * 0.7 + other * 0.3
-        return self._profile
+        p = self.profile
+        total = p.total_turns + other_profile.total_turns
+        if total > 0:
+            weight_self = p.total_turns / total
+            weight_other = other_profile.total_turns / total
+        else:
+            weight_self = weight_other = 0.5
+        p.total_turns = total
+        p.metacognition = 0.7 * p.metacognition + 0.3 * other_profile.metacognition
+        p.confidence = 0.6 * p.confidence + 0.4 * other_profile.confidence
+        p.divergence = max(p.divergence, other_profile.divergence)
+        # expertise domains weighted average
+        for domain in set(p.expertise.keys()) | set(other_profile.expertise.keys()):
+            s = p.expertise.get(domain, 0.0)
+            o = other_profile.expertise.get(domain, 0.0)
+            p.expertise[domain] = round(s * weight_self + o * weight_other, 3)
+        # preferences weighted average
+        for pref in set(p.preferences.keys()) | set(other_profile.preferences.keys()):
+            s = p.preferences.get(pref, 0.0)
+            o = other_profile.preferences.get(pref, 0.0)
+            p.preferences[pref] = round(s * weight_self + o * weight_other, 3)
+        # tags union
+        p.tags = list(dict.fromkeys(p.tags + other_profile.tags))[-50:]
+        # avg_stability weighted
+        if total > 0:
+            self_stability_sum = p.avg_stability * (p.total_turns - other_profile.total_turns) if p.total_turns > other_profile.total_turns else 0.0
+            other_stability_sum = other_profile.avg_stability * other_profile.total_turns
+            p.avg_stability = round((self_stability_sum + other_stability_sum) / total, 3)
+        # stable_traits full merge with evidence preservation
+        for key in STABLE_TRAIT_KEYS:
+            s_entry = p.stable_traits.get(key)
+            if not isinstance(s_entry, dict):
+                s_entry = {"value": s_entry if isinstance(s_entry, (int, float)) else 0.5, "evidence": [], "samples": 0}
+            o_entry = other_profile.stable_traits.get(key)
+            if not isinstance(o_entry, dict):
+                o_entry = {"value": o_entry if isinstance(o_entry, (int, float)) else 0.5, "evidence": [], "samples": 0}
+            merged_value = round(s_entry["value"] * weight_self + o_entry["value"] * weight_other, 3)
+            merged_evidence = (s_entry.get("evidence", []) + o_entry.get("evidence", []))[-10:]
+            merged_samples = s_entry.get("samples", 0) + o_entry.get("samples", 0)
+            p.stable_traits[key] = {"value": merged_value, "evidence": merged_evidence, "samples": merged_samples}
+        p.session_count += other_profile.session_count
+        p.updated_at = time.time()
+        return p
 
-    def _judge_evidence(self, llm=None):
+    def _judge_evidence(self, llm=None) -> dict[int, float]:
+        """Batch-judge evidence for high-noise traits and return {index: score} dict."""
         if not hasattr(self, '_evidence_buffer') or not self._evidence_buffer or not llm:
-            return
-        batch = self._evidence_buffer[-10:]
-        prompt = 'Judge if these actions reveal stable user personality traits. Reply ONLY trait names.'
-        for e in batch:
-            prompt += chr(92) + 'n- action ' + str(e.get('action','')) + ': ' + str(e.get('summary',''))[:30]
+            return {}
+        # Only trigger for high-noise traits
+        high_noise_traits = {"neuroticism", "risk_tolerance"}
+        if not any(k in high_noise_traits for k in self.profile.stable_traits):
+            return {}
+        # Batch evidence to N=10 then judge
+        N = 10
+        if len(self._evidence_buffer) < N:
+            return {}
+        batch = self._evidence_buffer[:N]
+        prompt = (
+            "Judge the diagnostic value of each user action for inferring personality traits.\n"
+            "For each item, reply with a score 0-1 (1 = highly diagnostic).\n"
+            "Format: index|score|brief_reason\n"
+        )
+        for i, e in enumerate(batch):
+            prompt += f"{i}: action={e.get('action','')}, summary={str(e.get('summary',''))[:40]}\n"
+        judgments: dict[int, float] = {}
         try:
             import asyncio
-            result = asyncio.run(llm.generate(prompt, max_tokens=100))
-            if result and len(str(result)) > 5:
-                self._judged_traits.add(str(result)[:50])
+            raw = asyncio.run(llm.generate(prompt, max_tokens=300))
+            for line in str(raw).splitlines():
+                parts = line.split("|")
+                if len(parts) >= 2:
+                    try:
+                        idx = int(parts[0].strip())
+                        score = float(parts[1].strip())
+                        if 0 <= idx < len(batch):
+                            judgments[idx] = min(1.0, max(0.0, score))
+                            batch[idx]["judgment_score"] = judgments[idx]
+                    except (ValueError, IndexError):
+                        continue
+            # Prune low-value evidence (<0.3) at session end
+            self._evidence_buffer = [e for e in self._evidence_buffer[N:] if e.get("judgment_score", 1.0) >= 0.3]
+            self._evidence_buffer.extend([e for e in batch if e.get("judgment_score", 1.0) >= 0.3])
         except Exception:
             pass
-        self._evidence_buffer = []
+        return judgments
 
     async def record_session_end(self, llm=None):
         self._judge_evidence(llm)

@@ -1,7 +1,7 @@
 """DiscourseBlockTreeManager - core orchestrator"""
 import hashlib
 from typing import Dict, List, Optional
-from .models import DiscourseBlock, DiscourseEntity
+from .models import DiscourseBlock, DiscourseEntity, GroupReference
 from .header_injector import HeaderInjector, EntityCache
 from .syntactic_decomposer import SyntacticDecomposer
 from .macro_micro_quantizer import QUANTIZER
@@ -35,6 +35,7 @@ class DiscourseBlockTreeManager:
         self.context_builder = CONTEXT_BUILDER
         self.context_builder.max_tokens = max_tokens
         self.indexer = Indexer()
+        self.group_ref_index: dict[str, GroupReference] = {}
 
     def ingest_turn(self, turn_index, text):
         self.turn_count = turn_index
@@ -232,3 +233,24 @@ class DiscourseBlockTreeManager:
             elif current_turn - block.last_active_turn > 5:
                 if block.status == "active":
                     block.status = "paused"
+
+    def add_group_reference(self, group_id: str, block_ids: list[str], ref_type: str = "analogy",
+                            strength: float = 0.5, context_summary: str = "") -> GroupReference:
+        """Add a high-order GroupReference and attach it to all member blocks."""
+        gr = GroupReference(group_id=group_id, block_ids=list(block_ids), ref_type=ref_type,
+                            strength=strength, context_summary=context_summary,
+                            created_at_turn=self.turn_count)
+        self.group_ref_index[group_id] = gr
+        for bid in block_ids:
+            block = self.blocks.get(bid)
+            if block:
+                block.group_refs.append(gr)
+        return gr
+
+    def find_activated_groups(self, block_id: str) -> list[GroupReference]:
+        """Return all GroupReferences that contain the given block_id."""
+        activated = []
+        for gr in self.group_ref_index.values():
+            if block_id in gr.block_ids:
+                activated.append(gr)
+        return activated

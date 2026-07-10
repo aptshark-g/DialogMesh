@@ -1,5 +1,5 @@
 """DiscourseBlock Tree ? ?????"""
-from .models import EDU, DiscourseBlock, CohesionScore, DiscourseEntity, ProgressiveSummary, CrossReference
+from .models import EDU, DiscourseBlock, CohesionScore, DiscourseEntity, ProgressiveSummary, CrossReference, GroupReference
 from .header_injector import HeaderInjector, EntityCache
 from .syntactic_decomposer import SyntacticDecomposer
 from .topic_markers import TopicMarkerDetector, DETECTOR
@@ -13,6 +13,7 @@ from .manager import DiscourseBlockTreeManager
 
 __all__ = [
     "EDU", "DiscourseBlock", "CohesionScore", "DiscourseEntity", "ProgressiveSummary",
+    "CrossReference", "GroupReference",
     "HeaderInjector", "EntityCache", "SyntacticDecomposer", "MacroMicroQuantizer",
     "Segmenter", "GranularityRegulator", "SummaryEngine", "ContextBuilder",
     "Indexer", "DiscourseBlockTreeManager", "TopicMarkerDetector", "DETECTOR",

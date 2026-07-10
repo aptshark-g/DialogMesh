@@ -14,6 +14,12 @@ class CorrectionDetector:
     def __init__(self):
         self.fail_counts = {}
 
+    def reset(self):
+        self.fail_counts = {}
+
+    def success(self, edge_key: str):
+        self.fail_counts.pop(edge_key, None)
+
     def detect(self, text, prev_actions, current, edge_hist=None):
         for kw in self.NEGATIONS:
             if kw in text:
@@ -27,4 +33,9 @@ class CorrectionDetector:
             self.fail_counts[key] = self.fail_counts.get(key, 0) + 1
             if self.fail_counts[key] >= 3:
                 return CorrectionSignal(True, "consecutive_failure", "", 0.6, key)
+        else:
+            # Non-failure turn: reset counts for this edge to avoid false positives
+            if edge_hist is not None and prev_actions:
+                key = prev_actions[-1] + "->" + current
+                self.success(key)
         return CorrectionSignal()
