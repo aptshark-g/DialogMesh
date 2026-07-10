@@ -30,6 +30,13 @@ class AdaptiveParameter:
     def reset(self):
         self.value = self.config.anchor
 
+    def reanchor(self, new_anchor: float):
+        """v4: Change anchor and pull value toward it while preserving bounds."""
+        self.config.anchor = new_anchor
+        # Pull value 30% toward new anchor (preserves some learned offset)
+        self.value = self.value + (new_anchor - self.value) * 0.3
+        self.value = max(self.config.min_val, min(self.config.max_val, self.value))
+
     def stats(self) -> dict:
         return {"name": self.config.name, "value": round(self.value, 4),
                 "range": [self.config.min_val, self.config.max_val],
