@@ -3,6 +3,7 @@ from .compiler.hybrid_compiler import HybridCompiler
 from .compiler.models import ParseResult, ParseContext
 from .behavior_graph.graph_store import BehaviorGraph
 from .behavior_graph.models import BehaviorStep
+from .behavior_graph.statistics import GraphStatisticsCollector
 from .fusion.fusion_engine import FusionEngine
 from .fusion.models import TrackResult, TrackType
 from .predictor.predictor import BehaviorPredictor
@@ -12,12 +13,16 @@ from .predictor.profile_matcher import ProfileMatcher
 from .behavior_graph.cold_start import ColdStartManager
 from .negative_kb.negative_kb import NegativeKB
 from .causal_substrate.causal_substrate import CausalSubstrate
+from .causal_substrate.delta_adjuster import DeltaAdjuster
+from .do_calculus.do_calculus import DoCalculusEngine
+from .do_calculus.frontdoor_criterion import FrontdoorCriterion
+from .do_calculus.d_separation import DSeparator
 from ..discourse_block_tree import DiscourseBlockTreeManager
 from .predictor.cognitive_profile import ProfileUpdater, CognitiveProfile, EnhancedProfileMatcher
 from .predictor.training_loop import TrainingFeedbackLoop
 from .foa import FoA
 from .l1_summary.l1_summary import L1Summary
-from .l2_summary.l2_summary import L2Summary
+from .l2_summary.l2_summary import L2SummaryAggregator, L2Summary, L2SummaryEntry
 from .rewarder.rewarder import BehaviorRewarder
 from .rewarder.correction_detector import CorrectionDetector
 from .rewarder.reward_rules import RewardRuleTable
@@ -84,11 +89,21 @@ class V32Pipeline:
         except Exception as e:
             import logging; logging.warning(f'[Bridge] v3.0 Orchestrator unavailable: {e}')
         self._l1 = L1Summary()
-        self._l2 = L2Summary()
+        self._l2_aggregator = L2SummaryAggregator(llm_provider=self.llm)
+        self._l2_entries = []  # Accumulate L1 entries for L2 aggregation
+        # Graph statistics collector
+        self._stats_collector = GraphStatisticsCollector(self.graph)
+        # Do-calculus engine for causal validation
+        self._do_calculus = DoCalculusEngine()
+        self._frontdoor = FrontdoorCriterion()
+        self._d_separator = DSeparator()
+        # Causal substrate with delta adjuster that writes back to graph
+        self._delta_adjuster = DeltaAdjuster()
+        self._causal_substrate = CausalSubstrate(self.graph, adj=self._delta_adjuster)
         # L2Summary - lazy import in process() to avoid relative import issue
         self._rew_rules = RewardRuleTable()
         self._rewarder = BehaviorRewarder(self.graph, rules=self._rew_rules)
-        self._training_loop = TrainingFeedbackLoop(rewarder=self._rewarder)
+        self._training_loop = TrainingFeedbackLoop(graph=self.graph)
         self._corr_detector = CorrectionDetector()
         # Circuit breaker for LLM calls
         self._llm_cb = CircuitBreaker(name="llm", max_failures=3, cooldown=30)
@@ -114,13 +129,27 @@ class V32Pipeline:
             self._last_topic_switch = False
         parse = await self.compiler.process(sentence, self._context)
 
-        # Causal structural prior
+        # Causal structural prior + process behavior chain if available
+        if self._chain:
+            chain_steps = [self.graph.nodes.get(sid) for sid in self._chain[-10:] if sid in self.graph.nodes]
+            if chain_steps:
+                self._causal_substrate.process_chain(chain_steps)
         self._causal_substrate.process_single(parse)
         if self.monitor:
             self.monitor.record("causal", "process_single",
                 {"stable": parse.stability > 0.6,
                  "slots": len(parse.slots),
                  "reliable": parse.is_reliable})
+                 
+        # Update graph statistics after causal processing
+        if self.graph:
+            self._stats_collector.update()
+            if self.monitor:
+                s = self.graph.stats
+                self.monitor.record("graph", "stats",
+                    {"avg_weight": round(s.avg_weight, 3),
+                     "avg_activation": round(s.avg_activation, 3),
+                     "unstable_edges": s.unstable_edge_count})
         # Negative KB check
         kb_res = self._negative_kb.check(sentence)
         kb_blocked = getattr(kb_res, 'hard_block', False)
@@ -284,11 +313,29 @@ class V32Pipeline:
                 pass
         bt_summary = self.block_tree.get_tree_summary()
         bt_context = self.block_tree.build_context()
+        # L1 Summary processing + L2 aggregation trigger
+        l1_entry, l2_trigger = None, None
+        if hasattr(self, '_l1'):
+            l1_entry, l2_trigger = await self._l1.process(
+                {"turn_id": f"turn_{self.turn}", "raw_text": sentence, "stability": parse.stability},
+                prev_type=getattr(parse, "utterance_type", ""),
+                prediction=pred_result,
+            )
+            if l2_trigger and self._l2_aggregator:
+                topic_id = l2_trigger.get("topic_id", "default")
+                entries = l2_trigger.get("entries", [])
+                l2_summary = self._l2_aggregator.aggregate(topic_id, entries)
+                if self.monitor:
+                    self.monitor.record("l2", "aggregate",
+                        {"topic": topic_id, "turns": l2_summary.total_turns,
+                         "correction_rate": round(l2_summary.correction_rate, 3),
+                         "prediction_accuracy": round(l2_summary.prediction_accuracy, 3)})
+
         # Heartbeat: unmonitored modules
         if self.monitor and self.turn % 5 == 0:
             self.monitor.record("foa", "heartbeat", {"active": "1"})
             self.monitor.record("l1", "heartbeat", {"active": "1"})
-        if self.monitor and hasattr(self, "_l2"):
+        if self.monitor and hasattr(self, '_l2_aggregator'):
             self.monitor.record("l2", "heartbeat", {"turns": self.turn})
         ww = self._waterwave_activate()
         await self._bridge_v32_to_v30(parse, fusion, self.turn, sentence)
@@ -500,7 +547,7 @@ class V32Pipeline:
             self.session_recorder.close()
     def pull_v32_state(self) -> dict:
         """Extract compact v3.2 state for v3.0 orchestration injection."""
-        state = {"compiler": {}, "behavior_graph": [], "cognitive_profile": {}, "block_tree": {}}
+        state = {"compiler": {}, "behavior_graph": [], "cognitive_profile": {}, "block_tree": {}, "causal": {}, "l2_summary": {}}
         if hasattr(self, "_profile_updater") and self._profile_updater:
             p = self._profile_updater.profile
             state["cognitive_profile"] = {
@@ -515,9 +562,23 @@ class V32Pipeline:
                 if not e.is_deprecated and e.sample_count > 0:
                     succ.append({"edge": str(ek)[:30], "weight": round(e.weight, 3), "samples": e.sample_count, "corrections": e.correction_count})
             state["behavior_graph"] = sorted(succ, key=lambda x: -x["weight"])[:5]
+            # Add graph statistics
+            s = self.graph.stats
+            state["behavior_graph_stats"] = {
+                "avg_weight": round(s.avg_weight, 3),
+                "avg_activation": round(s.avg_activation, 3),
+                "unstable_edges": s.unstable_edge_count,
+                "deprecated_seeds": s.deprecated_seed_count,
+            }
         state["block_tree"] = self.block_tree.get_tree_summary() if hasattr(self, "block_tree") else {}
         if hasattr(self, "compiler") and self.compiler:
             state["compiler"] = {"type": type(self.compiler).__name__}
+        # Causal substrate state
+        if hasattr(self, "_causal_substrate"):
+            state["causal"] = {"chain_processed": len(self._chain) > 0}
+        # L2 summary state
+        if hasattr(self, "_l2_aggregator"):
+            state["l2_summary"] = {"aggregator_ready": True}
         return state
 
 
