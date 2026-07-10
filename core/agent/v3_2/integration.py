@@ -295,7 +295,24 @@ class V32Pipeline:
         if self._meta_scheduler:
             tokens = max(len(sentence) // 2, 1)
             ctx = {"stability": getattr(parse, "stability", 0), "edges": len(self.graph.edges) if self.graph else 0}
-            self._meta_scheduler.record_turn(sentence, str(getattr(parse, "stability", 0)), ctx, tokens)
+            task = self._meta_scheduler.record_turn(sentence, str(getattr(parse, "stability", 0)), ctx, tokens)
+            if task is not None:
+                try:
+                    metacog_result = await task
+                    # Pass metacognition result into fusion on every turn
+                    fusion = await self.fusion.fuse(
+                        track0, t1, track_p, causal,
+                        strategic=strategic_track, profile_lite=profile_lite,
+                        metacog_result=metacog_result
+                    )
+                    if self.monitor:
+                        dt = str(getattr(fusion.dominant_track, "value", fusion.dominant_track))
+                        self.monitor.record("fusion", "metacog_wired",
+                            {"confidence": fusion.confidence, "track": dt,
+                             "action": metacog_result.action_recommended},
+                            duration=getattr(fusion, "latency_ms", 0))
+                except Exception:
+                    pass
         return {"parse": parse, "fusion": fusion, "turn": self.turn, "track1": track1,
                 "track_p": track_p, "causal": causal, "kb_blocked": kb_blocked,
                 "block_tree": {"summary": bt_summary, "context": bt_context},

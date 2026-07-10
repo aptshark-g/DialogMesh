@@ -1,11 +1,12 @@
-'''LLM metacognition - self-assessment and clarification flow
+'''LLM metacognition - self-assessment and clarification flow (v3.2)
 After each pipeline turn, optionally ask the LLM to self-assess its response.
 Produces structured signals: confidence, uncertainty, suggested clarifications.
+Closed-loop: MetaCognitionResult now carries action recommendations consumed by FusionEngine.
 '''
 import json, logging, asyncio
-import json
 from dataclasses import dataclass, field
 from typing import Optional
+
 
 @dataclass
 class MetaAssessment:
@@ -15,6 +16,17 @@ class MetaAssessment:
     clarification_question: str = ''
     raw_assessment: str = ''
     latency_ms: float = 0.0
+    turn: int = 0
+    timestamp: float = 0.0
+
+
+@dataclass
+class MetaCognitionResult:
+    """Structured metacognition result with action recommendation."""
+    assessment: MetaAssessment = field(default_factory=MetaAssessment)
+    action_recommended: str = "continue"   # "continue" / "clarify" / "fallback" / "escalate"
+    confidence_adjustment: float = 0.0      # -0.2 to +0.1
+
 
 class MetaCognitionAdapter:
     '''Post-generation self-assessment via LLM'''
@@ -58,6 +70,7 @@ You responded: {response}
             logging.debug(f'[MetaCog] assessment failed: {e}')
             return MetaAssessment(confidence=0.5, raw_assessment=f'error: {e}')
 
+
 class MetaCognitionScheduler:
 
     DEFAULT_TOKEN_THRESHOLD = 10000
@@ -72,6 +85,7 @@ class MetaCognitionScheduler:
         self._error_count = 0
         self._total_count = 0
         self._turn_of_last = 0
+        self._latest_result: Optional[MetaCognitionResult] = None
 
     def record_turn(self, query, response_summary, context, tokens_used):
         if not self.adapter or not self.adapter.enabled:
@@ -100,15 +114,43 @@ class MetaCognitionScheduler:
     async def _run_assessment(self, query, response_summary, context):
         self.tokens_since_last = 0
         self._turn_of_last = self._total_count
-        result = await self.adapter.assess(
+        assessment = await self.adapter.assess(
             query=query,
             response=response_summary or str(context.get("stability", "?")),
             context=context
         )
-        result.turn = self._total_count
-        result.timestamp = __import__("time").time()
-        self.assessments.append(result)
+        assessment.turn = self._total_count
+        assessment.timestamp = __import__("time").time()
+        self.assessments.append(assessment)
+        # Build MetaCognitionResult with action recommendation
+        conf = assessment.confidence
+        if conf < 0.3:
+            action = "fallback"
+            adj = -0.15
+        elif conf < 0.5:
+            action = "clarify"
+            adj = -0.1
+        elif conf < 0.7:
+            action = "continue"
+            adj = -0.1
+        else:
+            action = "continue"
+            adj = 0.05
+        result = MetaCognitionResult(
+            assessment=assessment,
+            action_recommended=action,
+            confidence_adjustment=adj,
+        )
+        self._latest_result = result
         return result
+
+    def get_latest_result(self) -> Optional[MetaCognitionResult]:
+        """Retrieve the most recent assessment result."""
+        return self._latest_result
+
+    def should_clarify(self) -> bool:
+        """Helper: true if latest result recommends clarification."""
+        return self._latest_result is not None and self._latest_result.action_recommended == "clarify"
 
     def configure(self, token_threshold=None, change_sensitivity=None):
         if token_threshold is not None:
