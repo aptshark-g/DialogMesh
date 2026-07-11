@@ -248,6 +248,16 @@ v4_PREDEFINED: dict[str, v4ParamConfig] = {
     "heat_min_samples": v4ParamConfig("heat_min_samples", 50, 10, 500, lr=0.02, namespace="heat", description="HeatBridge min samples for evaluation"),
 
 
+    # --- Tiered rule/cognitive/context thresholds (v4) ---
+    "rule_engine_rule_threshold": v4ParamConfig("rule_engine_rule_threshold", 0.70, 0.50, 0.90, lr=0.005, namespace="rule_engine", description="RuleEngine rule tier pass threshold"),
+    "rule_engine_llm_threshold": v4ParamConfig("rule_engine_llm_threshold", 0.50, 0.30, 0.70, lr=0.005, namespace="rule_engine", description="RuleEngine LLM tier pass threshold"),
+    "cognitive_rule_threshold": v4ParamConfig("cognitive_rule_threshold", 0.75, 0.55, 0.90, lr=0.005, namespace="cognitive", description="CognitiveCompiler rule-only tier pass threshold"),
+    "cognitive_full_threshold": v4ParamConfig("cognitive_full_threshold", 0.60, 0.40, 0.80, lr=0.005, namespace="cognitive", description="CognitiveCompiler full LLM tier pass threshold"),
+    "context_rule_threshold": v4ParamConfig("context_rule_threshold", 0.80, 0.60, 0.95, lr=0.005, namespace="context", description="ContextCompiler rule tier pass threshold"),
+    "context_hybrid_threshold": v4ParamConfig("context_hybrid_threshold", 0.65, 0.45, 0.85, lr=0.005, namespace="context", description="ContextCompiler hybrid tier pass threshold"),
+    "context_llm_threshold": v4ParamConfig("context_llm_threshold", 0.50, 0.30, 0.70, lr=0.005, namespace="context", description="ContextCompiler LLM tier pass threshold"),
+
+
 }
 
 # Explicit dot-notation aliases: dot_key → flat_key
@@ -300,6 +310,13 @@ DOT_ALIASES: dict[str, str] = {
     "heat.demote_threshold": "heat_demote_threshold",
     "heat.collect_interval_ms": "heat_collect_interval_ms",
     "heat.min_samples": "heat_min_samples",
+    "rule_engine.rule_threshold": "rule_engine_rule_threshold",
+    "rule_engine.llm_threshold": "rule_engine_llm_threshold",
+    "cognitive.rule_threshold": "cognitive_rule_threshold",
+    "cognitive.full_threshold": "cognitive_full_threshold",
+    "context.rule_threshold": "context_rule_threshold",
+    "context.hybrid_threshold": "context_hybrid_threshold",
+    "context.llm_threshold": "context_llm_threshold",
 }
 
 
@@ -339,6 +356,13 @@ STRATEGY_PRESETS: dict[str, dict[str, float]] = {
         "heat_demote_threshold": -0.30,
         "heat.collect_interval_ms": 120000,
         "heat.min_samples": 100,
+        "rule_engine_rule_threshold": 0.80,
+        "rule_engine_llm_threshold": 0.55,
+        "cognitive_rule_threshold": 0.85,
+        "cognitive_full_threshold": 0.70,
+        "context_rule_threshold": 0.85,
+        "context_hybrid_threshold": 0.75,
+        "context_llm_threshold": 0.55,
     },
     "aggressive": {
         "compiler_confidence": 0.70,
@@ -367,6 +391,13 @@ STRATEGY_PRESETS: dict[str, dict[str, float]] = {
         "fusion_stage1_threshold": 0.70,
         "fusion_stage2_threshold": 0.65,
         "fusion_stage3_4_threshold": 0.60,
+        "rule_engine_rule_threshold": 0.60,
+        "rule_engine_llm_threshold": 0.45,
+        "cognitive_rule_threshold": 0.65,
+        "cognitive_full_threshold": 0.50,
+        "context_rule_threshold": 0.70,
+        "context_hybrid_threshold": 0.55,
+        "context_llm_threshold": 0.45,
         "heat_promote_threshold": 0.50,
         "heat_demote_threshold": -0.50,
         "heat.collect_interval_ms": 30000,
