@@ -91,3 +91,6 @@ test_dashboard_fix.py
 test_final_dashboard.py
 test_fixes.py
 test_ui_fixes.py
+
+eval_log.json
+self.max_turns

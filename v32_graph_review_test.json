@@ -1,0 +1,18 @@
+{
+  "nodes": {
+    "v32_1": {
+      "step_id": "v32_1",
+      "action_summary": "run",
+      "action_type": "CODE_RUN",
+      "entities": {},
+      "result": "",
+      "timestamp": 0.0
+    }
+  },
+  "edges": {},
+  "stats": {
+    "node_count": 1,
+    "edge_count": 0,
+    "total_samples": 0
+  }
+}

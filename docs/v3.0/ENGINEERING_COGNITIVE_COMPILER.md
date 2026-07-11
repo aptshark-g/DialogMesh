@@ -1,4 +1,4 @@
-# DialogMesh 认知编译器 — 工程实现文档
+﻿# DialogMesh 认知编译器 — 工程实现文档
 
 > **文档编号**: ENGINEERING-COGNITIVE-COMPILER-009  
 > **版本**: v1.0  

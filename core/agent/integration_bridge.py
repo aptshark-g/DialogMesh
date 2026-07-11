@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.pcr.tests.intent_trace_cli import run_intent_trace
 from core.agent.llm_providers.base import LLMProvider
+from core.agent.v3_2.integration import V32Pipeline
 
 from core.agent.cognitive_compiler import (
     CognitiveCompiler, CompilerMode, EntityCache, CompiledInput,
@@ -57,6 +58,7 @@ class AgentPipeline:
         window_config: Optional[WindowConfig] = None,
         verbose_bridge: bool = True,
         conversation_mode: bool = False,
+        enable_v32: bool = False,
     ):
         """
         初始化 Pipeline。
@@ -72,12 +74,17 @@ class AgentPipeline:
         :param window_config: 窗口配置（None 则用默认）
         :param verbose_bridge: 打印桥接层信息
         :param conversation_mode: 对话模式 — 当意图为 UNKNOWN 时强制调用 LLM 生成自然语言回复
+        :param enable_v32: 启用 v3.2 模块（HybridCompiler + BehaviorGraph + FusionEngine）作为并行分析轨
         """
         self._session_id = session_id or f"cli-{int(time.time())}"
         self._turn_index = 0
         self._session_history: List[Dict[str, Any]] = []
         self._verbose_bridge = verbose_bridge
         self._conversation_mode = conversation_mode
+        self._enable_v32 = enable_v32
+        self._v32_pipeline = None
+        self._v32_monitor = None
+        self._v32_recorder = None
 
         # 模块初始化
         self._persistence = CLISessionPersistence(db_path=db_path) if use_persistence else None
@@ -112,6 +119,10 @@ class AgentPipeline:
         self._metrics = SessionMetrics(session_id=self._session_id) if use_observability else None
         self._alerts = AlertEngine() if use_observability else None
 
+        # 初始化 v3.2 并行管线
+        if self._enable_v32:
+            self._init_v32_pipeline()
+
         # 记录启用的模块
         self._active_modules = {
             "persistence": use_persistence,
@@ -120,7 +131,28 @@ class AgentPipeline:
             "window": use_window,
             "observability": use_observability,
             "conversation_mode": conversation_mode,
+            "v32": enable_v32,
         }
+
+    def _init_v32_pipeline(self) -> None:
+        """初始化 v3.2 并行分析管线。"""
+        try:
+            from core.agent.v3_2.testing_utils import MockLLM, DEFAULT_COMPILER_RESPONSE
+            from core.agent.v3_2.integration import V32Pipeline
+            from core.agent.v3_2.monitor import Monitor
+            from core.agent.v3_2.session_recorder import SessionRecorder
+            self._v32_monitor = Monitor(verbose=True)
+            self._v32_recorder = SessionRecorder(f"v32_logs_{self._session_id}")
+            self._v32_pipeline = V32Pipeline(
+                MockLLM(DEFAULT_COMPILER_RESPONSE),
+                monitor=self._v32_monitor,
+                session_recorder=self._v32_recorder,
+                save_path=f"v32_graph_{self._session_id}.json",
+            )
+            if self._verbose_bridge:
+                print(f"[V32] Pipeline initialized (session={self._session_id})")
+        except Exception as e:
+            print(f"[V32] Init failed: {e}")
 
     # ── 核心 API ───────────────────────────────────────────
 
@@ -157,10 +189,31 @@ class AgentPipeline:
         # 3. 窗口过滤：按话题决策构建历史
         filtered_history = self._step_window_filter(decision, bridge_trace)
 
-        # 4. 调用现有 PCR 决策链
+        # 4. 运行 v3.2 并行管线（与 PCR 流程并行）
+        v32_result = self._step_v32(query, bridge_trace)
+
+        # 5. 调用现有 PCR 决策链
         pcr_result = self._step_pcr(query, compiled, filtered_history, provider, verbose, conv_mode)
 
-        # 5. 更新窗口
+        # 将 v3.2 结果合并到 pcr_result
+        if v32_result:
+            parse = v32_result.get("parse")
+            fusion = v32_result.get("fusion")
+            if parse:
+                pcr_result["v32_parse"] = {
+                    "slots": parse.to_dict().get("slots", {}) if hasattr(parse, "to_dict") else {},
+                    "stability": parse.stability,
+                    "degraded": parse.degraded,
+                    "is_reliable": parse.is_reliable,
+                }
+            if fusion:
+                pcr_result["v32_fusion"] = {
+                    "confidence": fusion.confidence,
+                    "dominant_track": str(fusion.dominant_track) if fusion.dominant_track else None,
+                    "final_output": fusion.final_output,
+                }
+
+        # 6. 更新窗口
         self._step_window_update(query, compiled, decision, pcr_result, bridge_trace)
 
         # 6. 持久化
@@ -408,8 +461,41 @@ class AgentPipeline:
 
     # ── 生命周期 ───────────────────────────────────────────
 
+    def _step_v32(self, query: str, trace: List[str]) -> dict:
+        """Run v3.2 pipeline. Optional, requires enable_v32=True."""
+        if not self._enable_v32 or not self._v32_pipeline:
+            return {}
+        import asyncio
+        try:
+            result = asyncio.run(self._v32_pipeline.process(query))
+            trace.append("[V32] v3.2 pipeline completed")
+            return result
+        except Exception as e:
+            trace.append(f"[V32] Error: {e}")
+            return {}
+    
+    
     def shutdown(self) -> None:
         """优雅关闭：保存所有状态。"""
+        # 关闭 v3.2 管线
+        if self._v32_recorder:
+            try:
+                self._v32_recorder.close()
+                if self._verbose_bridge:
+                    print(f"[V32] Session recorder closed")
+            except Exception as e:
+                print(f"[V32] Recorder close error: {e}")
+        if self._v32_monitor:
+            try:
+                self._v32_monitor.report()
+            except Exception:
+                pass
+        if self._v32_pipeline and self._v32_pipeline.graph:
+            try:
+                self._v32_pipeline.graph.save(f"v32_graph_{self._session_id}_final.json")
+            except Exception:
+                pass
+
         if self._topic_tree and self._graph_store:
             try:
                 self._topic_tree.save_to_graph_store(self._graph_store, self._session_id)
