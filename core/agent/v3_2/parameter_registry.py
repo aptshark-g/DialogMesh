@@ -205,6 +205,23 @@ v4_PREDEFINED: dict[str, v4ParamConfig] = {
     # --- Similarity ---
     "sim_threshold": v4ParamConfig("sim_threshold", 0.75, 0.55, 0.85, lr=0.01, namespace="similarity", description="BGE semantic similarity threshold"),
 
+
+    # --- do_calculus ---
+    "do_calculus_backdoor": v4ParamConfig("do_calculus_backdoor", 0.95, 0.90, 0.99, lr=0.005, namespace="do_calculus", description="Backdoor criterion confidence threshold"),
+
+    # --- Consolidation ---
+    "consolidation_merge": v4ParamConfig("consolidation_merge", 15, 8, 30, lr=1.0, namespace="consolidation", description="Event merge batch minimum size"),
+    "consolidation_delta": v4ParamConfig("consolidation_delta", 0.0, -0.05, 0.05, lr=0.005, namespace="consolidation", description="Merge satisfaction offset"),
+
+    # --- Embedding ---
+    "embedding_behavior": v4ParamConfig("embedding_behavior", 0.30, 0.15, 0.50, lr=0.01, namespace="embedding", description="Behavior embedding match threshold"),
+    "embedding_index": v4ParamConfig("embedding_index", 0.20, 0.10, 0.35, lr=0.01, namespace="embedding", description="Index query hit threshold"),
+
+    # --- Persistence ---
+    "persistence_save": v4ParamConfig("persistence_save", 60, 30, 120, lr=5.0, namespace="persistence", description="Auto-save interval seconds"),
+
+    # --- Metacognition ---
+    "metacognition_token": v4ParamConfig("metacognition_token", 10000, 5000, 20000, lr=500.0, namespace="metacognition", description="Token threshold to trigger metacognitive review"),
     # --- v4 Context Engineering additions ---
     "ctx_token_budget": v4ParamConfig("ctx_token_budget", 500, 200, 2000, lr=1.0, namespace="context_engine", description="Context IR token budget", tunable=False),
     "ctx_compile_timeout": v4ParamConfig("ctx_compile_timeout", 100, 50, 500, lr=5.0, namespace="context_engine", description="Context Compiler timeout (ms)", tunable=False),
