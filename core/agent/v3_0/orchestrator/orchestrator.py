@@ -122,6 +122,7 @@ class Orchestrator:
     def __init__(
         self,
         config: Optional[OrchestratorConfig] = None,
+        llm_providers: Optional[Dict[str, Any]] = None,
         llm_provider: Optional[Any] = None,
         cognitive_compiler: Optional[CognitiveCompiler] = None,
         context_manager: Optional[ContextManager] = None,
@@ -132,6 +133,7 @@ class Orchestrator:
     ) -> None:
         self.config = config or OrchestratorConfig()
         self.provider = llm_provider
+        self.providers = llm_providers or {}
         self.compiler = cognitive_compiler
         self.context_manager = context_manager
         self.planning_skill = planning_skill
@@ -151,6 +153,7 @@ class Orchestrator:
         self.reflective_analyzer = ReflectiveAnalyzer()
         self.profile_updater = ProfileUpdater()
         self.cold_start_probe = ColdStartProbe()
+        self.v32_context: dict = {}  # v3.2 state (set by integration bridge)
 
         self.hybrid_engine = HybridEngine(
             algorithm_engine=self.algorithm_engine,
@@ -174,6 +177,10 @@ class Orchestrator:
         self._turn_counter = 0
 
         logger.info("Orchestrator initialized (v3.0.0)")
+    def update_v32_state(self, data: dict) -> None:
+        """Update v3.2 execution state for phase prompt injection."""
+        self.v32_context.update(data)
+
 
     # ── 初始化 ────────────────────────────────────────────────────────────
 
@@ -197,7 +204,7 @@ class Orchestrator:
             if enabled:
                 self._llm_instances[name] = LLMInstance(
                     name=name,
-                    provider=self.provider,
+                    provider=self.providers.get(name, self.providers.get("default", self.provider)),
                     cognitive_compiler=self.compiler,
                     config=self.config,
                     cog_type=cog_type,
@@ -449,6 +456,8 @@ Cognitive Tree 统计：{tree_stats}
 
         # 构建上下文
         context_data = {"user_input": turn_ctx.user_input, "context": "{}", "history": "[]"}
+        if self.v32_context and self.v32_context.get("compiler"):
+            context_data["v32_compiler"] = self.v32_context["compiler"]
 
         # 使用 HybridEngine 并行执行
         if hasattr(self, "hybrid_engine"):
@@ -567,6 +576,8 @@ Cognitive Tree 统计：{tree_stats}
             try:
                 # 算法侧：基于规则的快速规划
                 intent_cat = turn_ctx.intent_result.category.value if turn_ctx.intent_result else "UNKNOWN"
+                if self.v32_context and self.v32_context.get("behavior_graph"):
+                    context_data["v32_behavior_graph"] = self.v32_context["behavior_graph"]
                 user_input = turn_ctx.user_input
                 algo_plan = self.algorithm_engine.generate_plan(intent_cat, user_input) if hasattr(self, "algorithm_engine") else {}
                 
@@ -677,6 +688,8 @@ Cognitive Tree 统计：{tree_stats}
         system_confidence = turn_ctx.intent_result.confidence if turn_ctx.intent_result else 0.5
         if turn_ctx.pcr_result:
             system_confidence = (system_confidence + turn_ctx.pcr_result.get("confidence", 0.5)) / 2
+        if self.v32_context and self.v32_context.get("cognitive_profile"):
+            context_data["v32_cognitive_profile"] = self.v32_context["cognitive_profile"]
 
         # 如果系统置信度低于阈值，直接生成诚实声明（不走 LLM）
         if system_confidence < self.config.clarification_threshold:
