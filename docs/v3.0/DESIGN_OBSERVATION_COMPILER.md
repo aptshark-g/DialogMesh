@@ -327,12 +327,38 @@ Stage 3: Observation Builder  — 组装 Bundle + 写入 Observation Pool
 
 非匹配的事件进入 `memory` 默认域。
 
-### 5.3 Per-Domain Interpreter
+### 5.3 Parser + Action Resolver (per domain)
 
-每个域有独立的轻量解释器，以 Action/Object/Relation 三元组为基础生成候选 Interpretation。
+每个域有两路并行处理：
 
-**输入**：`NormalizedEvent` + `domain`  
-**输出**：`list[Interpretation]`
+**Parser**：抽取事实（What happened）
+- 输入：NormalizedEvent + domain
+- 输出：subject, predicate, object, entities, surface_relations
+- 复用 TieredParser 或域专用 parser
+
+**Action Resolver**：分类动作（Interaction Action + Domain Action）
+- 输入：ParsedClause + domain
+- 输出：interaction_action（用户在做什么）+ domain_action（领域发生了什么）
+- 复用 TieredActionResolver
+
+关键设计：
+- **Interaction Action**（对话域的 action）与 **Domain Action**（工程/行为域的 action）分离
+- 对话域 `ask`/`confirm`/`reject`/`request_change`/`inform` — 描述用户交互意图
+- 工程域 `reorder`/`add`/`remove`/`configure` — 描述领域动作
+- 同一 Event 的两个 DomainObservation 自然承载这两层
+- **Surface Relation**（`before`/`after`/`inside`/`subject`/`object`）由 Parser 直接从文本提取
+- **Semantic Relation**（`depends_on`/`implements`/`causes`）留在 Hypothesis Engine
+
+### 5.3.1 Surface Relation vs Semantic Relation 边界
+
+| | Surface（Parser 提取） | Semantic（Hypothesis 推断） |
+|:---|:---|:---|
+| 来源 | 文本中显式出现的词 | 需要推理才能得出 |
+| 示例 | before, after, inside, subject, object | depends_on, implements, constraint, causes, improves |
+| 置信度 | 高（直接匹配） | 中低（需要多证据竞争） |
+| 产生时机 | Parser 阶段 | Hypothesis Engine 阶段 |
+
+Observation 层只保存 Surface Relation。Semantic Relation 留给 Hypothesis Engine 在多证据竞争后生成。
 
 #### EngineeringInterpreter
 
@@ -385,7 +411,60 @@ Interpretations:
 
 **关键设计**：DialogueInterpreter 复用已有的 `TieredParser`（rule → spaCy → LLM 三级），但输出格式从 `intent + slots` 改为 `actions + objects + relations + interpretations`。
 
-### 5.4 Observation Builder
+### 5.4 Interpretation Generator
+
+Interpretation Generator is independent of Parser and ActionResolver.
+
+Interpretation does not bind to a single Action. The same set of
+{action: request_change, objects: [RateLimiter, Auth], relations: [{before}]}
+can produce completely different explanations depending on behavior history,
+engineering graph state, and user profile.
+
+```python
+class InterpretationGenerator:
+    def generate(self, domain_obs: DomainObservation,
+                 context: InterpretationContext) -> list[Interpretation]:
+```
+
+Generation strategies:
+
+| Strategy | Source | Example |
+|:---|:---|:---|
+| Action-driven | from action | request_change -> "user requests modification" |
+| Object-driven | from objects | [RateLimiter, Auth] -> "focusing on middleware security" |
+| Relation-driven | from surface relations | {before} -> "focusing on Pipeline order" |
+| Context-driven | from history/graph/profile | 3 recent reorders -> "continuously optimizing" |
+| Uncertainty-driven | low-confidence signals | -> "exploratory operation" |
+
+Constraints:
+- Generator does not eliminate Interpretations. Hypothesis Engine does.
+- Each Interpretation has evidence_refs pointing to Evidence records.
+- Generator does not access TieredActionResolver.
+
+#### DialogueInterpreter
+
+Parse stage reuses TieredParser. Action classification reuses TieredActionResolver.
+
+```
+Event: dialog.message(text="put RateLimiter before Auth")
+
+Parser output:
+  predicate: "put"
+  object: "RateLimiter"
+  surface_relations: [{type: "before", from: "RateLimiter", to: "Auth"}]
+
+Action Resolver output:
+  interaction_action: "request_change"
+  domain_action: "reorder"
+
+Interpretation Generator output:
+  A: "user requests Pipeline reorder"  (evidence_refs: [action, surface_rel])
+  B: "user testing different orders"   (evidence_refs: [action, context_new])
+  C: "user found ordering bug"         (evidence_refs: [action, context_fix])
+  D: "user learning Pipeline structure" (evidence_refs: [action, profile_learn])
+```
+
+### 5.5 Observation Builder
 
 **职责**：将各域的结果组装成 `ObservationBundle`，写入 Observation Pool，发布 `ObservationEvent`。
 
