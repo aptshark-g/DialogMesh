@@ -1,209 +1,230 @@
-# DESIGN_STRUCTURAL_WORLD_MODEL.md — 结构化世界模型
+# DESIGN_SEMANTIC_WORLD_MODEL.md — Structural World Model
 
-> 版本: v1.0 | 日期: 2026-07-12
+> Version: v1.1 | Date: 2026-07-12
 >
-> 不是做"代码知识库"——而是构建一个统一的结构化世界模型。
-> 源码/CAD/Unity Scene/DOM/DB Schema 都只是这个世界的不同视图。
+> Not a code knowledge base — a unified Structural World Model.
+> Source code / CAD / Unity Scene / DOM / DB Schema are just different views.
 >
-> Code Adapter 是第一个 World Adapter, 但不是唯一一个。
+> Code Adapter is the first World Adapter, not the only one.
 
 ---
 
-## 目录
+## 1. Positioning: Structural World IR, Not a Code Knowledge Base
 
-1. [定位：结构化世界IR而非代码知识库](#1-定位结构化世界ir而非代码知识库)
-2. [Reference Unit：节点的唯一标准](#2-reference-unit节点的唯一标准)
-3. [多类型边 + 社区发现](#3-多类型边-社区发现)
-4. [主干染色：Betweenness Centrality 多维融合](#4-主干染色betweenness-centrality-多维融合)
-5. [三级召回：Intent → Subgraph → Reference → Raw Code](#5-三级召回)
-6. [世界适配器架构](#6-世界适配器架构)
-7. [Schema 定义](#7-schema-定义)
-8. [集成面：与已有 v4 模块的关系](#8-集成面与已有-v4-模块的关系)
-9. [实现计划](#9-实现计划)
+### 1.1 Why Not Code Context Graph
 
----
+Code is just the entry point. What we are really modeling is **any structured external object**.
 
-## 1. 定位：结构化世界IR而非代码知识库
-
-### 1.1 为什么不是 Code Context Graph
-
-Code 只是入口。真正要建模的不是代码——是**任何具有结构性的外部对象**。
-
-| 世界 | 输入 |
+| World | Input |
 |:---|:---|
-| 源码 | Class, Function, Variable, Module, Package |
+| Source Code | Class, Function, Variable, Module, Package |
 | CAD | Part, Assembly, Constraint, Material |
 | Unity | GameObject, Prefab, Scene, Component |
 | DOM | Element, Style, Script, Event |
 | Database | Table, Column, FK, Index, Query |
 
-它们都共享同一个结构：**有拓扑关系、可被引用、可被定位的对象集合。**
+They all share the same structure: **a collection of objects with topological relationships, that can be referenced and located.**
 
 ### 1.2 Structural World IR
 
 ```
 External World
-      │
-      ▼
+       |
+       v
 World Adapter (Code / CAD / Unity / DB / ...)
-      │
-      ▼
-Structure Extractor (Tree-sitter / LSP / Custom)
-      │
-      ▼
-Structural World IR (统一图格式)
-      │
-      ▼
-Context Compiler (推理 + 融合 → 局部子图 → 文本 → LLM)
+       |
+       v
+StructureExtractor (ABC)
+       |
+ +-----+-----+-----+
+ |     |     |     |
+ v     v     v     v
+Tree  AST   LSP   Custom
+Sitter      (deep) (CAD/Unity...)
+       |
+       v
+Structural World IR (unified graph format)
+       |
+       v
+Context Compiler (reason + fuse -> local subgraph -> text -> LLM)
 ```
 
-**Code Adapter 是第一个 Adapter。其余世界是预留扩展。**
+**Code Adapter is the first Adapter. Other worlds are reserved for extension.**
 
-### 1.3 核心原则
-
-| 原则 | 说明 |
-|:---|:---|
-| **?????** | BackboneScore (??) + ContextScore (??) |
-| **????** | Intent -> Community -> Summary -> Reference -> Raw Code |
-| **Projection ???** | ?? Unit ????????? |
-| **??????** | World Model ???? World Observation |
-| **??????** | LLM ????????+????, ?????? |
+| **Dual-axis ranking** | BackboneScore (long-term importance) + ContextScore (current relevance) |
+| **Progressive expansion** | Intent -> Community -> Reference Summary -> Reference Unit -> Raw Code |
+| **Projection decoupling** | Same Reference Unit can be projected to different cognitive domains |
+| **World as Observer** | World Model continuously emits World Observations |
+| **LLM sees the world** | LLM never sees raw code directly; it sees the local engineering world structure |
 
 ---
 
-## 2. Reference Unit：节点的唯一标准
+## 2. Reference Unit: The Only Node Criterion
 
-### 2.1 什么能成为节点
+### 2.1 What Qualifies as a Node
 
-标准只有一条：**任何能被外部引用的对象就是 Reference Unit, 就是节点。**
+There is only one rule: **anything that can be externally referenced is a Reference Unit, i.e., a node.**
 
-| 是节点 | 不是节点 |
+| Is a Node | Is NOT a Node |
 |:---|:---|
 | File, Module, Package | if(){}, for(){}, while(){} |
-| Class, Interface, Trait, Struct | 局部临时变量 |
-| Function, Method, Constructor | 注释, 空白行 |
-| Global Variable, Cross-file const | 魔法数字 |
+| Class, Interface, Trait, Struct | Local temporary variables |
+| Function, Method, Constructor | Comments, blank lines |
+| Global Variable, Cross-file const | Magic numbers |
 | Enum, Type Alias | inline lambda |
 
-### 2.2 Reference Unit Schema
+### 2.2 ReferenceUnit Schema
 
 ```python
 @dataclass
 class ReferenceUnit:
-    unit_id: str                    # "pkg::module::ClassName" or file path
-    unit_type: str                  # "file" | "class" | "function" | "variable" | "module"
+    unit_id: str                    # pkg::module::ClassName or file path
+    unit_type: str                  # file | class | function | variable | module
     name: str                       # human-readable name
-    world: str                      # "code" | "cad" | "unity" | "dom" | "db"
-    language: str = ""              # "python" | "rust" | "java" | ...
+    world: str                      # code | cad | unity | dom | db
+    language: str = ""              # python | rust | java | ...
     location: Location | None = None # file + line range
     attributes: dict = field(default_factory=dict)  # world-specific metadata
-    backbone_score: float = 0.0     # 主干染色分数
+    backbone_score: float = 0.0     # backbone coloring score
     last_updated: float = 0.0
 ```
 
-这个 Schema 跨语言统一。Python 的 class 和 Rust 的 struct 都是 `unit_type="class"`。
+This schema is language-agnostic. Python class and Rust struct are both `unit_type="class"`.
 
 ---
+## 3. Multi-Type Edges + Community Detection
 
-## 3. 多类型边 + 社区发现
+### 3.1 Edge Type System
 
-### 3.1 边的类型体系
+Relationships are not a single `depends_on`. Different edges carry different semantics and propagation weights:
 
-关系不是一条 `depends_on`。不同的边承载不同的语义和传播权重：
-
-| 边类型 | 语义 | 传播权重 | 来源 |
+| Edge Type | Semantics | Propagation Weight | Source |
 |:---|:---|:---|:---|
-| `imports` | A 导入 B | 0.30 | 静态分析 |
-| `calls` | A 调用 B | 0.25 | 静态分析 + trace |
-| `overrides` | A 覆写 B | 0.20 | 静态分析 |
-| `references` | A 引用 B (非调用) | 0.15 | 静态分析 |
-| `co_changes` | A 和 B 经常一起被修改 | 0.25 | Git history |
-| `constrains` | A 约束 B 的行为 | 0.20 | 工程链/配置 |
-| `tests` | A 测试 B | 0.10 | 测试文件映射 |
-| `implements` | A 实现接口 B | 0.20 | 静态分析 |
-| `generates` | A 生成 B | 0.15 | 编译产物 |
+| `imports` | A imports B | 0.30 | Static analysis |
+| `calls` | A calls B | 0.25 | Static analysis + trace |
+| `overrides` | A overrides B | 0.20 | Static analysis |
+| `references` | A references B (non-call) | 0.15 | Static analysis |
+| `co_changes` | A and B are frequently co-modified | 0.25 | Git history |
+| `constrains` | A constrains B's behavior | 0.20 | Engineering chain / config |
+| `tests` | A tests B | 0.10 | Test file mapping |
+| `implements` | A implements interface B | 0.20 | Static analysis |
+| `generates` | A generates B | 0.15 | Build artifacts |
 
-### 3.2 社区发现替代 Git 聚类
+### 3.2 Community Detection Replaces Git Clustering
 
-Git 目录树只是初始 Prior, 不是最终聚类。真正的模块边界由**多类型边的社区发现算法**决定。
+The Git directory tree is only an initial Prior, not the final cluster. True module boundaries are determined by **community detection on multi-type edges**.
 
 ```python
 class CommunityDetector:
     def detect(self, graph: StructuralWorldGraph) -> List[Community]:
-        """Run Louvain / Leiden community detection on multi-edge weighted graph."""
-        # 边权重融合: Import*0.3 + Call*0.25 + CoChange*0.25 + Reference*0.15 + ...
-        # 社区边界 = 模块边界
+        # Run Louvain / Leiden community detection on multi-edge weighted graph.
+        # Edge weight fusion: Import*0.3 + Call*0.25 + CoChange*0.25 + Reference*0.15 + ...
+        # Community boundary = module boundary
 ```
 
-`utils/` 目录下 `logger.py` 和 `cache.py` 如果没有任何边连接, 就不属于同一社区——即便它们在同一个目录下。
+If `utils/logger.py` and `utils/cache.py` have no edges between them, they do not belong to the same community --- even though they are in the same directory.
 
-### 3.3 动态索引锚点
+### 3.3 Dynamic Index Anchors
 
-社区检测后, 每个社区的核心节点（Bridge → 高 Betweenness）获得动态索引锚点。锚点大小通过 ParameterRegistry 浮点管理, 随访问频率和最新度调整。
+After community detection, core nodes in each community (i.e., high StructuralImportance nodes) receive dynamic index anchors. Anchor sizes are managed via ParameterRegistry floating-point, adjusting with access frequency and freshness.
 
 ---
+## 4. Backbone Coloring: StructuralImportance Multi-Dimensional Fusion (Strategy Pattern)
 
-## 4. 主干染色：Betweenness Centrality 多维融合
+### 4.1 Backbone Is Not Most Accessed
 
-### 4.1 主干不是"访问最多"
+Logger may be the most called, but it does not determine system topology. Backbone is about **information flow paths**. However, **we do not bind to a single algorithm** --- use the Strategy pattern, switchable via ParameterRegistry.
 
-Logger 被调用次数最多, 但不决定系统拓扑。主干是**信息流必经路径**——用 Betweenness Centrality 衡量。
+### 4.2 StructuralImportance Strategy
 
-### 4.2 多维融合
+```python
+class StructuralImportanceStrategy(ABC):
+    # Strategy interface for computing node importance in a structural graph.
+    @abstractmethod
+    def compute(self, graph: StructuralWorldGraph) -> Dict[str, float]: ...
+
+class BetweennessStrategy(StructuralImportanceStrategy):
+    # Betweenness centrality: how many shortest paths pass through this node.
+    def compute(self, graph): ...
+
+class PageRankStrategy(StructuralImportanceStrategy):
+    # PageRank: importance by incoming edge weight.
+    def compute(self, graph): ...
+
+class DegreeStrategy(StructuralImportanceStrategy):
+    # Weighted degree: simple but fast.
+    def compute(self, graph): ...
+
+class HybridStrategy(StructuralImportanceStrategy):
+    # Ensemble of multiple strategies, weighted by registry params.
+    def compute(self, graph): ...
+```
+
+Strategy selection via ParameterRegistry:
+
+| Param | Description | Default |
+|:---|:---|:---|
+| `world.importance.strategy` | Current strategy name | `betweenness` |
+| `world.importance.strategies` | Available strategies | `[betweenness, pagerank, degree, hybrid]` |
+
+**Default**: betweenness (accurate for small/medium projects). Later switch to Hybrid or auto-learn the best strategy for the project scale.
+
+### 4.3 Multi-Dimensional Fusion (Strategy-Agnostic)
+
+Regardless of which StructuralImportance strategy is used, the BackboneScore fuses four dimensions:
 
 ```
 BackboneScore =
-    0.30 × Structural Centrality      # 图拓扑中多少路径经过
-  + 0.30 × Runtime Centrality         # Trace 中的桥梁程度
-  + 0.20 × Commit Centrality          # Git 共同修改模式
-  + 0.20 × Retrieval Centrality       # Context Compiler 访问频率
+    0.30 x Structural Importance      # Graph topology importance (strategy output)
+  + 0.30 x Runtime Centrality         # Bridge degree in traces
+  + 0.20 x Commit Centrality          # Git co-change patterns
+  + 0.20 x Retrieval Centrality       # Context Compiler access frequency
 ```
 
-四种 Centrality 各自归一化后融合。后续加入新的观察源——例如 Test Coverage Centrality——只需要加权一层, 不改公式。
+Each dimension is independently normalized before fusion. Adding a new observation source --- e.g., Test Coverage Centrality --- only requires adding one weighted layer, without changing the formula.
 
-### 4.3 主干染色效果
+### 4.4 Backbone Coloring Effects
 
-高 BackboneScore 的节点 → 获得更优先的索引锚点 → 在 ContextCompiler 的图遍历中被优先包含 → 整个子图切得小而准。
+High BackboneScore node -> higher priority index anchor -> prioritized in ContextCompiler graph traversal -> subgraph is smaller and more precise.
 
-所有参数纳入 ParameterRegistry：`world.backbone.structural_weight`、`world.backbone.runtime_weight` 等。
+All parameters in ParameterRegistry: `world.backbone.structural_weight`, `world.backbone.runtime_weight`, etc.
 
 ---
+## 5. Three-Level Recall
 
-## 5. 三级召回
-
-### 5.1 LLM 永远不该直接看到代码
+### 5.1 LLM Should Never See Raw Code Directly
 
 ```
-用户意图
-    │
-    ▼
-Level 1: Intent → Subgraph
-    系统从 World Model 中为当前意图切出一个局部子图 (~300 节点)
-    │
-    ▼
-Level 2: Subgraph → Reference Units
-    在 300 节点中提取关键的 Reference Unit (Class/Function 签名 + 关系)
-    │
-    ▼
-Level 3: Reference Units → Raw Code
-    只对最相关 5-10 个 Unit 展开源码内容
+User Intent
+     |
+     v
+Level 1: Intent -> Subgraph
+    System cuts a local subgraph from World Model for the current intent (~300 nodes)
+     |
+     v
+Level 2: Subgraph -> Reference Units
+    Extract key Reference Units (Class/Function signatures + relationships) from 300 nodes
+     |
+     v
+Level 3: Reference Units -> Raw Code
+    Only expand source code content for the top 5-10 most relevant Units
 ```
 
-### 5.2 每级的 Token 预算
+### 5.2 Per-Level Token Budget
 
-| 级别 | 内容 | 典型 Token |
+| Level | Content | Typical Tokens |
 |:---|:---|:---|
-| L1: 子图 | 节点名 + 边关系 | ~500 |
-| L2: Reference Units | 签名 + docstring | ~300 |
-| L3: Raw Code | 单个函数的完整源码 | ~200/function |
+| L1: Subgraph | Node names + edge relationships | ~500 |
+| L2: Reference Units | Signatures + docstrings | ~300 |
+| L3: Raw Code | Full source of a single function | ~200/function |
 
-总额控制在 2000 token 以内——LLM 看到的是一个"局部世界"而非代码堆。
+Total controlled under 2000 tokens --- LLM sees a local world, not a code dump.
 
 ---
 
-## 6. 世界适配器架构
+## 6. World Adapter Architecture: StructureExtractor Abstraction + Plugin Grammar
 
-### 6.1 World Adapter 接口
+### 6.1 WorldAdapter Interface (Unchanged)
 
 ```python
 class WorldAdapter(ABC):
@@ -215,37 +236,88 @@ class WorldAdapter(ABC):
     def resolve_reference(self, ref: str) -> Optional[ReferenceUnit]: ...
     @abstractmethod
     def get_raw_content(self, unit_id: str) -> Optional[str]: ...
+```
 
+### 6.2 StructureExtractor Abstraction (NEW --- replaces direct Tree-sitter binding)
+
+WorldAdapter does not depend on Tree-sitter directly. It depends on the `StructureExtractor` abstract interface:
+
+```python
+class StructureExtractor(ABC):
+    # Abstraction over grammar/parser backends.
+    # Each world type (code/CAD/DOM) implements its own extractor.
+    # For code worlds, TreeSitterExtractor is the default implementation.
+    @abstractmethod
+    def extract_units(self, source_path: str) -> List[ReferenceUnit]: ...
+    @abstractmethod
+    def extract_edges(self, source_path: str) -> List[StructuralEdge]: ...
+    @abstractmethod
+    def incremental_update(self, changed_file: str) -> List[str]: ...
+```
+
+Concrete implementations:
+
+```
+StructureExtractor (ABC)
+    +-- TreeSitterExtractor    # Code worlds: tree-sitter syntax trees
+    +-- ASTExtractor           # Fallback: stdlib AST
+    +-- LSPExtractor           # Deep: LSP semantic analysis
+    +-- RegexExtractor         # Lightweight: regex quick scan
+    +-- CustomExtractor        # CAD/Unity/DOM: own implementations
+```
+
+### 6.3 Grammar Plugin-Based Loading
+
+Grammars are not compiled into the main program. They are loaded on demand, per language:
+
+```
+extractors/
+    python/
+        grammar.so        # tree-sitter-python compiled artifact
+    rust/
+        grammar.so
+    typescript/
+        grammar.so
+    ...
+```
+
+On first use, `load("python")` caches the Parser. Subsequent uses reuse it directly. Grammar updates do not affect core code.
+
+### 6.4 CodeWorldAdapter Composes Extractors
+
+```python
 class CodeWorldAdapter(WorldAdapter):
-    """第一个实现——源码世界。"""
     def __init__(self, languages: List[str] = None):
         self._languages = languages or ["python"]
-        self._extractors = {lang: TreeSitterExtractor(lang) for lang in self._languages}
+        self._extractors: Dict[str, StructureExtractor] = {}
+        for lang in self._languages:
+            # Default: TreeSitterExtractor; switchable via config
+            self._extractors[lang] = TreeSitterExtractor(lang)
 ```
 
-### 6.2 双轨提取：一进入就复用 MultiTierPipeline
+### 6.5 Dual-Track Extraction: Reuses MultiTierPipeline
 
-CodeWorldAdapter 内置三级精度：
+CodeWorldAdapter has three built-in precision tiers:
 
-| Tier | 工具 | 速度 | 产出 |
+| Tier | Tool | Speed | Output |
 |:---|:---|:---|:---|
-| Tier 0 | Tree-sitter Query | ~500ms/1000 文件 | Import/Call 关系的快速近似 |
-| Tier 1 | Tree-sitter 完整遍历 | ~5s/1000 文件 | 全部 Reference Unit + 精确边 |
-| Tier 2 | LSP / HoloGram / knot | 分钟级 | 跨文件语义级关系 |
+| Tier 0 | Tree-sitter Query | ~500ms/1000 files | Quick Import/Call approximations |
+| Tier 1 | Tree-sitter Full Traversal | ~5s/1000 files | All Reference Units + precise edges |
+| Tier 2 | LSP / HoloGram / knot | minutes | Cross-file semantic relationships |
 
-和 MultiTierPipeline 完全同构——Tier 0 先跑出 Partial Model, 后台补 Tier 1+2。
+Fully isomorphic with MultiTierPipeline --- Tier 0 runs first to produce a Partial Model, then Tier 1+2 fill in the background.
 
-### 6.3 增量更新
+### 6.6 Incremental Updates
 
 ```
-git.commit Event → CodeWorldAdapter.evict(file) → re-extract → merge into Structural Graph
+git.commit Event -> CodeWorldAdapter.evict(file) -> re-extract -> merge into Structural Graph
 ```
 
-不是全量重建。只更新变更文件及其直接邻居的边。
+Not a full rebuild. Only update changed files and their direct neighbor edges.
 
 ---
 
-## 7. Schema 定义
+## 7. Schema Definitions
 
 ### 7.1 StructuralWorldGraph
 
@@ -253,11 +325,11 @@ git.commit Event → CodeWorldAdapter.evict(file) → re-extract → merge into 
 @dataclass
 class StructuralWorldGraph:
     graph_id: str
-    world: str                          # "code" | "cad" | ...
-    units: Dict[str, ReferenceUnit]     # unit_id → ReferenceUnit
-    edges: List[StructuralEdge]         # 多类型边
-    communities: Dict[str, List[str]]   # community_id → unit_ids
-    backbone: Dict[str, float]          # unit_id → backbone_score
+    world: str                          # code | cad | ...
+    units: Dict[str, ReferenceUnit]     # unit_id -> ReferenceUnit
+    edges: List[StructuralEdge]         # multi-type edges
+    communities: Dict[str, List[str]]   # community_id -> unit_ids
+    backbone: Dict[str, float]          # unit_id -> backbone_score
     created_at: float
     last_extracted_at: float
 ```
@@ -268,66 +340,65 @@ class StructuralWorldGraph:
 @dataclass
 class StructuralEdge:
     edge_id: str
-    edge_type: str                      # "imports" | "calls" | "references" | ...
-    source_id: str                      # 源 ReferenceUnit ID
-    target_id: str                      # 目标 ReferenceUnit ID
-    weight: float = 1.0                 # 边权重
-    source: str = ""                    # "static" | "trace" | "commit" | "test"
+    edge_type: str                      # imports | calls | references | ...
+    source_id: str                      # source ReferenceUnit ID
+    target_id: str                      # target ReferenceUnit ID
+    weight: float = 1.0                 # edge weight
+    source: str = ""                    # static | trace | commit | test
     confidence: float = 1.0             # 0-1
 ```
 
-### 7.3 Context Compiler 接口
+### 7.3 Context Compiler Interface (Stub-Ready)
 
 ```python
 class StructuralContextCompiler:
     def compile_subgraph(self, intent: str, world: str = "code",
                          max_nodes: int = 300) -> SubgraphResult:
-        """从 World Model 中为给定意图切出局部子图。"""
+        # Cut a local subgraph from World Model for the given intent.
 
 @dataclass
 class SubgraphResult:
     nodes: List[ReferenceUnit]
     edges: List[StructuralEdge]
-    backbone_units: List[str]           # 高骨干节点
+    backbone_units: List[str]           # high-backbone nodes
     total_tokens_estimate: int
 ```
 
-这个接口不关心 World Model 内部是什么——Code/CAD/Unity 都一样。
+This interface does not care what is inside the World Model --- Code/CAD/Unity are all the same.
 
 ---
+## 8. Integration Surface
 
-## 8. 集成面
-
-| 模块 | 关系 |
+| Module | Relationship |
 |:---|:---|
-| MultiTierPipeline | CodeWorldAdapter 内置三级精度提取 |
-| Projector | `git.commit` → engineering/memory 域（已有） |
-| Context Compiler | World Model 输出子图 → 融合其他域 → 变为 LLM 上下文 |
-| Observation Compiler | 代码事件（新文件/函数）→ Observation |
-| Hypothesis Engine | 主干节点的高共识 Hypothesis → Knowledge |
-| Skill Layer | 跨项目结构模式蒸馏（插件/中间件/仓储模式） |
-| ParameterRegistry | 所有权重、阈值、锚点大小统一管理 |
-| TierHeatBridge | 高 Backbone 节点 = 热数据 → 提升 GC 层级 |
-| Cognitive Scheduler | ExtractionTask → Worker Pool 异步执行 |
+| MultiTierPipeline | CodeWorldAdapter built-in three-tier precision extraction |
+| Projector | `git.commit` -> engineering/memory domains (existing) |
+| Context Compiler | World Model outputs subgraph -> fuse with other domains -> LLM context |
+| Observation Compiler | Code events (new file/function) -> Observation |
+| Hypothesis Engine | High-consensus Hypothesis on backbone nodes -> Knowledge |
+| Skill Layer | Cross-project structural pattern distillation (plugin/middleware/repository) |
+| ParameterRegistry | All weights, thresholds, anchor sizes, strategy selection |
+| TierHeatBridge | High Backbone nodes = hot data -> elevate GC tier |
+| Cognitive Scheduler | ExtractionTask -> Worker Pool async execution |
 
 ---
 
-## 9. 实现计划
+## 9. Implementation Plan
 
-| Phase | 内容 | 依赖 |
+| Phase | Content | Dependencies |
 |:---|:---|:---|
-| Phase 1 | ReferenceUnit + StructuralEdge + StructuralWorldGraph Schema | 无 |
-| Phase 2 | Tree-sitter 集成 + 双轨提取 (Tier 0+1) | Phase 1, tree-sitter |
-| Phase 3 | 社区检测 + Betweenness Centrality 染色 | Phase 2 |
-| Phase 4 | Subgraph 编译 + ContextCompiler 接口 | Phase 2-3, ContextCompiler |
-| Phase 5 | 增量更新 (git.commit → re-extract) | Phase 2, EventBus |
-| Phase 6 | ParameterRegistry 集成 (权重/阈值/锚点) | ParameterRegistry |
-| Phase 7 | LSP/HoloGram 辅助提取 (Tier 2) | Phase 2 |
+| Phase 1 | ReferenceUnit + StructuralEdge + StructuralWorldGraph Schema | None |
+| Phase 2 | StructureExtractor(ABC) + TreeSitterExtractor + dual-track extraction (Tier 0+1) | Phase 1, tree-sitter |
+| Phase 3 | Community Detection + StructuralImportance strategy coloring | Phase 2, networkx |
+| Phase 4 | Subgraph compilation + ContextCompiler interface (Stub) | Phase 2-3 |
+| Phase 5 | Incremental updates (git.commit -> re-extract) | Phase 2, EventBus |
+| Phase 6 | ParameterRegistry integration (weights/thresholds/anchors/strategy) | ParameterRegistry |
+| Phase 7 | LSP/HoloGram assisted extraction (Tier 2) | Phase 2 |
 
 ---
 
-> 不是做"代码知识库"。
-> 是把代码世界压缩成可推理的局部工程子图。
-> Code 是第一个 World。CAD、Unity、DB 以后都是同一个接口。
+> Not a code knowledge base.
+> It compresses the code world into a reasonable local engineering subgraph.
+> Code is the first World. CAD, Unity, DB will all share the same interface.
 >
-> LLM 看到的永远不是代码——是这个局部世界的结构。
+> LLM never sees raw code --- it sees the structure of this local world.
