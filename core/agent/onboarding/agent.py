@@ -36,13 +36,13 @@ if str(project_root) not in sys.path:
 # ── 延迟导入（避免启动时依赖未安装）──────────────────────────────
 
 try:
-    from core.agent.discourse_integration import DiscoursePipeline
+    from core.agent.v3_common.discourse_integration import DiscoursePipeline
 except ImportError as e:
     DiscoursePipeline = None  # type: ignore
     logger.debug(f"DiscoursePipeline not available: {e}")
 
 try:
-    from core.agent.health_check import HealthChecker, HealthStatus
+    from core.agent.v3_common.health_check import HealthChecker, HealthStatus
 except ImportError as e:
     HealthChecker = None  # type: ignore
     HealthStatus = None  # type: ignore
@@ -372,7 +372,7 @@ class OnboardingAgent:
         """返回使用示例代码。"""
         examples = {
             "basic": """```python
-from core.agent.discourse_integration import DiscoursePipeline
+from core.agent.v3_common.discourse_integration import DiscoursePipeline
 
 # 初始化管道
 pipeline = DiscoursePipeline(session_id="demo", hot_turns=5)
@@ -390,7 +390,7 @@ print(context)
 ```
 """,
             "multi_turn": """```python
-from core.agent.discourse_integration import DiscoursePipeline
+from core.agent.v3_common.discourse_integration import DiscoursePipeline
 
 pipeline = DiscoursePipeline(session_id="chat", hot_turns=5)
 pipeline.preload(blocking=True)
@@ -415,7 +415,7 @@ reload_discourse_config()
 ```
 """,
             "health": """```python
-from core.agent.health_check import HealthChecker
+from core.agent.v3_common.health_check import HealthChecker
 
 checker = HealthChecker()
 status = checker.check_all()

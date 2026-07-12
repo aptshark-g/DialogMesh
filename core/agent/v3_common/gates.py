@@ -20,14 +20,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.pcr.datacontract import PCRInput_v1, PCROutput_v1
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
-from core.agent.models import IntentContext, ParseContext, ParseResult
+from core.agent.v3_common.intent_parser import IntentParser
+from core.agent.v3_common.models import IntentContext, ParseContext, ParseResult
 
 from core.agent.tools.cognitive_tools import CognitiveTools, ExecutionContext
-from core.agent.blueprints import (
+from core.agent.v3_common.blueprints import (
     Blueprint, BLUEPRINT_ZERO, BLUEPRINT_REGISTRY, validate_blueprint_registry,
 )
-from core.agent.orchestrator import (
+from core.agent.v3_common.orchestrator import (
     BlueprintExecutor, RouterOutputValidator, RouterDecision, ExecutionResult,
 )
 

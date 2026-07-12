@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.agent.models import DependencyType, IntentCategory, TaskStatus
+from core.agent.v3_common.models import DependencyType, IntentCategory, TaskStatus
 from core.agent.v3_0.data_models import (
     IntentContext_v3,
     Intent_v3,
@@ -727,7 +727,7 @@ class PlanningSkill:
 
     def _extract_entity_value(self, intent: Intent_v3, entity_type_name: str) -> Optional[str]:
         """从意图中提取指定类型的实体值（字符串化）。"""
-        from core.agent.models import EntityType
+        from core.agent.v3_common.models import EntityType
         try:
             etype = EntityType(entity_type_name.upper())
         except ValueError:

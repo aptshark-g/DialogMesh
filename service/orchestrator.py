@@ -15,7 +15,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from core.agent.pcr.datacontract import PCRInput_v1, HistoryEntry, Modality
-from core.agent.models import (
+from core.agent.v3_common.models import (
     IntentContext, ParseContext, ParseResult,
     Intent, IntentCategory, TaskGraph,
 )

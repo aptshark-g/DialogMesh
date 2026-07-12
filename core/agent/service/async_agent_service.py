@@ -31,8 +31,8 @@ from core.agent.service.rate_limiter import RateLimiter
 from core.agent.service.distributed_lock import DistributedLock, AsyncLockAdapter
 
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
-from core.agent.gates import DualTrackOrchestrator, GateResult
+from core.agent.v3_common.intent_parser import IntentParser
+from core.agent.v3_common.gates import DualTrackOrchestrator, GateResult
 from core.agent.llm_providers.base import LLMProvider
 
 import logging

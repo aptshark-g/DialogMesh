@@ -29,7 +29,7 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.service.agent_service import AgentService
 from core.agent.service.async_session_manager import AsyncSessionManager
 from core.agent.service.rate_limiter import RateLimiter

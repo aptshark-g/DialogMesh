@@ -4,9 +4,9 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.v4.tiered.pipeline import Tier, TierResult, MultiTierPipeline
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.prompts.intent_classifier import intent_classify_prompt, parse_intent_result
-from core.agent.models import (
+from core.agent.v3_common.models import (
     Intent, IntentCategory, Entity, ParseContext, IntentContext,
     ParseResult, ParserConfig,
 )

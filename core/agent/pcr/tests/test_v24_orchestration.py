@@ -25,16 +25,16 @@ from unittest.mock import MagicMock, patch
 from core.agent.tools.cognitive_tools import (
     CognitiveTools, ExecutionContext, _summarize_for_llm,
 )
-from core.agent.blueprints import (
+from core.agent.v3_common.blueprints import (
     Blueprint, BLUEPRINT_ZERO, BLUEPRINT_TUTORIAL,
     BLUEPRINT_DEEP, BLUEPRINT_CUSTOM, BLUEPRINT_REGISTRY,
     validate_blueprint_registry,
 )
-from core.agent.orchestrator import (
+from core.agent.v3_common.orchestrator import (
     BlueprintExecutor, RouterOutputValidator, RouterDecision,
     ExecutionResult, ExecutionStep,
 )
-from core.agent.gates import (
+from core.agent.v3_common.gates import (
     HardGate, PCRGate, OrchestrationGate, DualTrackOrchestrator,
     GateResult,
 )

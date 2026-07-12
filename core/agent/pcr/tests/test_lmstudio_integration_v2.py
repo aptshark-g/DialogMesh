@@ -30,14 +30,14 @@ from core.agent.llm_providers import ProviderFactory, OpenAIProvider
 from core.agent.llm_providers.base import GenerateRequest, LLMProvider
 from core.agent.pcr.rule_based import RuleBasedPCR
 from core.agent.pcr.datacontract import PCRInput_v1, HistoryEntry
-from core.agent.gates import (
+from core.agent.v3_common.gates import (
     DualTrackOrchestrator, AdaptiveThresholds,
     HardGate, PCRGate, OrchestrationGate
 )
-from core.agent.intent_parser import IntentParser
-from core.agent.models import IntentContext, ParseContext
-from core.agent.blueprints import BLUEPRINT_REGISTRY
-from core.agent.orchestrator import BlueprintExecutor, ExecutionContext
+from core.agent.v3_common.intent_parser import IntentParser
+from core.agent.v3_common.models import IntentContext, ParseContext
+from core.agent.v3_common.blueprints import BLUEPRINT_REGISTRY
+from core.agent.v3_common.orchestrator import BlueprintExecutor, ExecutionContext
 from core.agent.frontend.clarification_fsm import (
     ClarificationFSM, ClarificationFSMContext, ClarificationState, ClarificationEvent
 )

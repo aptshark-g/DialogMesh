@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.agent.models import IntentCategory, TaskStatus
+from core.agent.v3_common.models import IntentCategory, TaskStatus
 from core.agent.v3_0.cognitive_compiler.compiler import CognitiveCompiler
 from core.agent.v3_0.cognitive_compiler.event_bus import EventBus
 from core.agent.v3_0.cognitive_compiler.meta_cognitive import MetaCognitiveValidator

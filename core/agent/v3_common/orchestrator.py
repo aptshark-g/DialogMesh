@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.tools.cognitive_tools import CognitiveTools, ExecutionContext
-from core.agent.blueprints import Blueprint, BLUEPRINT_REGISTRY
+from core.agent.v3_common.blueprints import Blueprint, BLUEPRINT_REGISTRY
 
 
 @dataclass

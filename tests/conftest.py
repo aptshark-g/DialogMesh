@@ -46,15 +46,15 @@ from service.stores.async_sqlite import AsyncSQLiteSessionStore
 
 from core.agent.pcr.datacontract import PCRInput_v1, PCROutput_v1, CognitiveProfile_v1
 from core.agent.pcr.interface import PCRHealthStatus
-from core.agent.models import (
+from core.agent.v3_common.models import (
     Intent, IntentCategory, ParseResult, TaskGraph, Entity, EntityType,
     Ambiguity, AmbiguityType, IntentContext, CognitiveProfile as ParserCognitiveProfile,
     UserExpectation, ParseContext,
 )
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 
-from core.agent.discourse_integration import DiscoursePipeline
+from core.agent.v3_common.discourse_integration import DiscoursePipeline
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

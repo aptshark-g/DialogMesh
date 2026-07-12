@@ -28,7 +28,7 @@ from typing import Dict, List, Any, Optional, Tuple, Set, Callable, Pattern
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from core.agent.models import (
+from core.agent.v3_common.models import (
     Intent, IntentCategory, Entity, EntityType, Ambiguity, AmbiguityType,
     TaskNode, TaskGraph, TaskEdge, TaskStatus, DependencyType,
     ParseResult, ParseContext, ParserConfig, ConfidenceLevel,
@@ -97,8 +97,8 @@ class EntityExtractorRule:
 
 # ── Intent Rule Registry ──────────────────────────────────────────────────────
 
-from core.agent.intent_rule_registry import IntentRuleRegistry, ConflictReport, IntentRule as _RegistryIntentRule
-from core.agent.intent_rule_registry import register_intent_rule as _registry_register, check_rule_conflicts
+from core.agent.v3_common.intent_rule_registry import IntentRuleRegistry, ConflictReport, IntentRule as _RegistryIntentRule
+from core.agent.v3_common.intent_rule_registry import register_intent_rule as _registry_register, check_rule_conflicts
 
 # 创建全局单例，与旧代码共享
 _rule_registry = IntentRuleRegistry()

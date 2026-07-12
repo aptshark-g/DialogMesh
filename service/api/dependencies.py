@@ -35,9 +35,9 @@ from service.protocol.fsm import (
 from service.protocol.ui_schema import ClarificationUISchema
 
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.pcr.datacontract import PCRInput_v1, HistoryEntry
-from core.agent.models import IntentContext, ParseContext
+from core.agent.v3_common.models import IntentContext, ParseContext
 
 from service.api.websocket import WebSocketManager
 

@@ -21,12 +21,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 
 from core.agent.pcr.datacontract import PCRInput_v1, PCROutput_v1
-from core.agent.models import (
+from core.agent.v3_common.models import (
     IntentContext, ParseContext, ParseResult, TaskGraph, Entity,
     Ambiguity, Intent,
 )
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.llm_providers.base import GenerateRequest
 from core.agent.config import get_config
 

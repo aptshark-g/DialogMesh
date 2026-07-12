@@ -24,13 +24,13 @@ if _PROJECT_ROOT not in sys.path:
 
 from core.agent.pcr.rule_based import RuleBasedPCR
 from core.agent.pcr.datacontract import PCRInput_v1
-from core.agent.intent_parser import IntentParser, IntentCategory
-from core.agent.gates import (
+from core.agent.v3_common.intent_parser import IntentParser, IntentCategory
+from core.agent.v3_common.gates import (
     DualTrackOrchestrator, GateResult, AdaptiveThresholds,
     HardGate, PCRGate, OrchestrationGate
 )
-from core.agent.blueprints import BLUEPRINT_REGISTRY, Blueprint
-from core.agent.orchestrator import BlueprintExecutor, ExecutionContext
+from core.agent.v3_common.blueprints import BLUEPRINT_REGISTRY, Blueprint
+from core.agent.v3_common.orchestrator import BlueprintExecutor, ExecutionContext
 from core.agent.frontend.clarification_fsm import (
     ClarificationFSM, ClarificationFSMContext, ClarificationState, ClarificationEvent
 )
@@ -149,7 +149,7 @@ def run_trace(
     
     # ── 3. 意图解析详情 ──────────────────────────────────────
     _print_header("Step 3: 意图解析详情 (Layer 1)")
-    from core.agent.models import IntentContext, ParseContext
+    from core.agent.v3_common.models import IntentContext, ParseContext
     intent_ctx = IntentContext.from_pcr_output(pcr_output)
     parse_ctx = ParseContext(session_id="demo-session-001")
     parse_result = parser.parse(query, intent_ctx, parse_ctx)

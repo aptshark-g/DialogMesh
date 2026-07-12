@@ -247,7 +247,7 @@ class TestIntegrationWithOrchestration(unittest.TestCase):
 
     def test_orchestrator_with_mock_llm(self):
         """使用 MockProvider 作为 Router LLM，验证端到端流程。"""
-        from core.agent.gates import DualTrackOrchestrator, OrchestrationGate
+        from core.agent.v3_common.gates import DualTrackOrchestrator, OrchestrationGate
 
         # Mock PCR：UNKNOWN 高噪声，触发 Gate-2
         mock_pcr_out = MagicMock()

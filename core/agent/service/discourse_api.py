@@ -38,7 +38,7 @@ except ImportError:
     Field = lambda *a, **k: None
 
 try:
-    from core.agent.discourse_integration import DiscoursePipeline
+    from core.agent.v3_common.discourse_integration import DiscoursePipeline
     from core.agent.config.discourse_config import get_discourse_config
 except ImportError:
     DiscoursePipeline = None  # type: ignore

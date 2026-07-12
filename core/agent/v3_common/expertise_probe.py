@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
-from core.agent.models import CognitiveProfile, IntentContext
+from core.agent.v3_common.models import CognitiveProfile, IntentContext
 
 logger = logging.getLogger("expertise_probe")
 logger.setLevel(logging.DEBUG)

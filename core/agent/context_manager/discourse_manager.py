@@ -51,7 +51,7 @@ except ImportError:
     ConsistencyChecker = None  # type: ignore
 
 try:
-    from core.agent.discourse_integration import DiscoursePipeline
+    from core.agent.v3_common.discourse_integration import DiscoursePipeline
 except ImportError:
     DiscoursePipeline = None  # type: ignore
 
@@ -77,7 +77,7 @@ except ImportError:
     Task = None  # type: ignore
 
 try:
-    from core.agent.serialization import save_session as _save_session, load_session as _load_session
+    from core.agent.v3_common.serialization import save_session as _save_session, load_session as _load_session
 except ImportError:
     _save_session = None  # type: ignore
     _load_session = None  # type: ignore

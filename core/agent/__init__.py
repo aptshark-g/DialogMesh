@@ -8,7 +8,7 @@ Agent package exports.
 from __future__ import annotations
 
 try:
-    from core.agent.integration_bridge import AgentPipeline
+    from core.agent.v3_common.integration_bridge import AgentPipeline
 except Exception as _integration_err:
     import logging
     logging.getLogger(__name__).warning(

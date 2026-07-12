@@ -58,7 +58,7 @@ from service.protocol.task_graph import (
     EdgeType,
     NodeType,
 )
-from core.agent.models import AmbiguityType, TaskStatus, DependencyType
+from core.agent.v3_common.models import AmbiguityType, TaskStatus, DependencyType
 
 logger = logging.getLogger(__name__)
 

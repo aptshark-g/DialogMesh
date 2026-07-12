@@ -14,7 +14,7 @@ from core.agent.persistence.cli_middleware import CLISessionPersistence
 from core.agent.persistence.sqlite_store import SQLiteSessionStore
 from core.agent.persistence.session_manager import SessionManager
 from core.agent.persistence.models import Session, TurnRecord, SessionState
-from core.agent.gates import AdaptiveThresholds
+from core.agent.v3_common.gates import AdaptiveThresholds
 
 
 class TestSQLiteSessionStore(unittest.TestCase):

@@ -23,7 +23,7 @@ from core.agent.service.models import Session, TurnRecord, IntentResult, Clarifi
 
 from core.agent.pcr.rule_based import RuleBasedPCR
 from core.agent.llm_providers.mock_provider import MockProvider
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.frontend import ClarificationFSM, ClarificationState
 from core.agent.frontend.multimodal import MediaAttachment, MultimodalPipeline
 

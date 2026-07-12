@@ -21,7 +21,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
 # 引用现有核心模型（保持与上层系统的一致性）
-from core.agent.models import IntentCategory, EntityType
+from core.agent.v3_common.models import IntentCategory, EntityType
 
 logger = logging.getLogger(__name__)
 

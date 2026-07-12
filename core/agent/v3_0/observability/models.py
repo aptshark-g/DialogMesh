@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.agent.models import IntentCategory
+    from core.agent.v3_common.models import IntentCategory
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

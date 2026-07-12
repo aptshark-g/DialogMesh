@@ -67,7 +67,7 @@ def _get_discourse_pipeline():
     if _discourse_pipeline is not None:
         return _discourse_pipeline
     try:
-        from core.agent.discourse_integration import DiscoursePipeline
+        from core.agent.v3_common.discourse_integration import DiscoursePipeline
 
         _discourse_pipeline = DiscoursePipeline(session_id="gui_chat", hot_turns=5)
         return _discourse_pipeline
@@ -95,7 +95,7 @@ def _get_health_checker():
     if _health_checker is not None:
         return _health_checker
     try:
-        from core.agent.health_check import HealthChecker
+        from core.agent.v3_common.health_check import HealthChecker
 
         _health_checker = HealthChecker()
         return _health_checker

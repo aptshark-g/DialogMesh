@@ -39,14 +39,14 @@ from core.agent.llm_providers import ProviderFactory
 from core.agent.llm_providers.base import GenerateRequest, LLMProvider
 from core.agent.pcr.rule_based import RuleBasedPCR
 from core.agent.pcr.datacontract import PCRInput_v1, HistoryEntry
-from core.agent.gates import (
+from core.agent.v3_common.gates import (
     DualTrackOrchestrator, AdaptiveThresholds,
     HardGate, PCRGate,
 )
-from core.agent.intent_parser import IntentParser
-from core.agent.models import IntentContext, ParseContext
-from core.agent.blueprints import BLUEPRINT_REGISTRY
-from core.agent.orchestrator import BlueprintExecutor, ExecutionContext
+from core.agent.v3_common.intent_parser import IntentParser
+from core.agent.v3_common.models import IntentContext, ParseContext
+from core.agent.v3_common.blueprints import BLUEPRINT_REGISTRY
+from core.agent.v3_common.orchestrator import BlueprintExecutor, ExecutionContext
 from core.agent.frontend.clarification_fsm import (
     ClarificationFSM, ClarificationFSMContext, ClarificationState, ClarificationEvent
 )
@@ -736,7 +736,7 @@ def main():
     # 单轮模式
     if args.query:
         if args.pipeline == "v2":
-            from core.agent.integration_bridge import AgentPipeline
+            from core.agent.v3_common.integration_bridge import AgentPipeline
             pipeline = AgentPipeline(
                 session_id=session_id,
                 db_path=args.db_path,
@@ -781,7 +781,7 @@ def main():
     if args.interactive or args.load_session:
         if args.pipeline == "v2":
             # v2: AgentPipeline 模式
-            from core.agent.integration_bridge import AgentPipeline
+            from core.agent.v3_common.integration_bridge import AgentPipeline
             pipeline = AgentPipeline(
                 session_id=session_id,
                 db_path=args.db_path,

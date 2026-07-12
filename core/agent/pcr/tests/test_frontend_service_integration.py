@@ -21,12 +21,12 @@ from core.agent.service.models import Session, TurnRecord, IntentResult, Clarifi
 from core.agent.service.session_manager import SessionManager
 from core.agent.service.rate_limiter import RateLimiter
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 from core.agent.frontend import (
     ClarificationFSM, ClarificationFSMContext, ClarificationState, ClarificationEvent,
     EventBuilder, EventSerializer,
 )
-from core.agent.gates import ExecutionResult, GateResult
+from core.agent.v3_common.gates import ExecutionResult, GateResult
 from core.agent.pcr.datacontract import PCROutput_v1, CognitiveProfile_v1
 
 

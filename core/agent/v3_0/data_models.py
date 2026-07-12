@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 _import_fallback_needed = False
 try:
-    from core.agent.models import (
+    from core.agent.v3_common.models import (
         AmbiguityType,
         ConfidenceLevel,
         DependencyType,

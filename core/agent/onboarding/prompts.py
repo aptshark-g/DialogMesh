@@ -160,7 +160,7 @@ python scripts/download_models.py --check
     "example": """使用示例：
 
 ```python
-from core.agent.discourse_integration import DiscoursePipeline
+from core.agent.v3_common.discourse_integration import DiscoursePipeline
 
 # 初始化管道
 pipeline = DiscoursePipeline(session_id="demo", hot_turns=5)

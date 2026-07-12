@@ -25,7 +25,7 @@ from core.agent.mcp.security import SecurityManager
 
 from core.agent.tools.cognitive_tools import CognitiveTools, ExecutionContext
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 
 try:
     from mcp.server.fastmcp import FastMCP, Context
@@ -226,7 +226,7 @@ def create_mcp_server(
 
         # 手动构造 intent_context（如果缺失）
         if ctx.intent_context is None and pcr_out is not None:
-            from core.agent.models import IntentContext
+            from core.agent.v3_common.models import IntentContext
             ctx.intent_context = IntentContext.from_pcr_output(pcr_out)
 
         ambiguities = CognitiveTools.run("detect_ambiguities", ctx, state)
@@ -258,7 +258,7 @@ def create_mcp_server(
             JSON 对象，包含 registered_tools、blueprints、health
         """
         import json
-        from core.agent.blueprints import BLUEPRINT_REGISTRY
+        from core.agent.v3_common.blueprints import BLUEPRINT_REGISTRY
 
         tools = CognitiveTools.list_registered()
         blueprints = list(BLUEPRINT_REGISTRY.keys())

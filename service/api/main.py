@@ -36,7 +36,7 @@ from service.api.websocket import WebSocketManager
 from service.async_session_manager import AsyncSessionManager
 
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 
 logger = logging.getLogger(__name__)
 

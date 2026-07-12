@@ -23,7 +23,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from core.agent.models import IntentCategory
+from core.agent.v3_common.models import IntentCategory
 from core.agent.v3_0.data_models import CognitiveProfile_v3, Intent_v3
 from core.agent.v3_0.planning.models import (
     PlanStrategy,

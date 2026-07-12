@@ -2,7 +2,7 @@
 """健康检查接口 —— 系统就绪状态诊断。
 
 使用方式：
-    from core.agent.health_check import HealthChecker
+    from core.agent.v3_common.health_check import HealthChecker
 
     checker = HealthChecker()
     status = checker.check_all()

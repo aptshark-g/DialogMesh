@@ -25,7 +25,7 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from core.agent.models import IntentCategory, TaskStatus
+from core.agent.v3_common.models import IntentCategory, TaskStatus
 from core.agent.v3_0.data_models import (
     Ambiguity_v3,
     EventType,
@@ -166,14 +166,14 @@ class AgentService_v3:
         graph.add_node(node2)
         # 添加顺序依赖
         from core.agent.v3_0.data_models import TaskEdge_v3
-        from core.agent.models import DependencyType
+        from core.agent.v3_common.models import DependencyType
         graph.add_edge(TaskEdge_v3(source_id=node1.id, target_id=node2.id, dep_type=DependencyType.SEQUENTIAL))
         return graph
 
     async def _check_clarification(self, intent: Intent_v3) -> Tuple[bool, List[Ambiguity_v3]]:
         """检查是否需要澄清（简化版：低置信度或未知意图）。"""
         if intent.confidence < 0.5 or intent.category == IntentCategory.UNKNOWN:
-            from core.agent.models import AmbiguityType
+            from core.agent.v3_common.models import AmbiguityType
             ambiguity = Ambiguity_v3(
                 type=AmbiguityType.MISSING_ENTITY,
                 description="意图置信度较低，请确认具体操作。",

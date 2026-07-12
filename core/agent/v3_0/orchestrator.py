@@ -569,7 +569,7 @@ class Orchestrator:
     def _convert_to_intent_v3(self, raw_intent: Any) -> Optional[Intent_v3]:
         """将 v2.x Intent 转换为 v3 Intent_v3。"""
         try:
-            from core.agent.models import IntentCategory
+            from core.agent.v3_common.models import IntentCategory
 
             intent = Intent_v3(
                 category=getattr(raw_intent, "category", IntentCategory.UNKNOWN),

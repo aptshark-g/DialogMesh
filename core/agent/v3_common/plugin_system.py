@@ -8,7 +8,7 @@ Allows users to register and inject custom Segmenter, SummaryEngine,
 and HeaderInjector implementations into the DiscoursePipeline.
 
 Usage:
-    from core.agent.plugin_system import PluginRegistry
+    from core.agent.v3_common.plugin_system import PluginRegistry
 
     PluginRegistry.register_strategy(
         name="aggressive_split",

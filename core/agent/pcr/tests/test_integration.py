@@ -23,12 +23,12 @@ from core.agent.pcr.datacontract import (
     PCRInput_v1, PCROutput_v1, CognitiveProfile_v1, HistoryEntry,
 )
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.models import (
+from core.agent.v3_common.models import (
     IntentContext, UserExpectation, CognitiveProfile,
     ParserConfig, ParseContext, ParseResult, Intent, TaskGraph,
     IntentCategory, Entity, EntityType,
 )
-from core.agent.intent_parser import IntentParser
+from core.agent.v3_common.intent_parser import IntentParser
 
 
 # ──────────────────────────────────────────────────────────────────────────────

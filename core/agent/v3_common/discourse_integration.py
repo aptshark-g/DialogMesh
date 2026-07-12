@@ -7,7 +7,7 @@
 - 返回上下文字符串（Hot/Warm/Cold 组装）
 
 使用方式（在 interactive_test.py 的 respond() 中）:
-    from core.agent.discourse_integration import DiscoursePipeline
+    from core.agent.v3_common.discourse_integration import DiscoursePipeline
     
     # 在 __init__ 中初始化
     self.discourse = DiscoursePipeline()
@@ -96,7 +96,7 @@ class DiscoursePipeline:
         # Metrics collector (optional, lightweight)
         self._metrics = None
         try:
-            from core.agent.metrics import MetricsCollector
+            from core.agent.v3_common.metrics import MetricsCollector
             self._metrics = MetricsCollector(prefix="memorygraph")
         except Exception:
             pass
@@ -126,7 +126,7 @@ class DiscoursePipeline:
         strategy_name = self.strategy.get(component_type)
         if strategy_name:
             try:
-                from core.agent.plugin_system import PluginRegistry
+                from core.agent.v3_common.plugin_system import PluginRegistry
                 instance = PluginRegistry.get_strategy(component_type, strategy_name)
                 if instance is not None:
                     logger.info(f"Using custom strategy '{strategy_name}' for {component_type}")

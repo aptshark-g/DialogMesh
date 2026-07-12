@@ -584,7 +584,7 @@ class SystemBootstrap:
     async def _init_intent_parser(self, llm_providers: Any, observability: Any) -> Any:
         """初始化 Intent Parser（使用 v2.x 解析器作为基础）。"""
         try:
-            from core.agent.intent_parser import IntentParser
+            from core.agent.v3_common.intent_parser import IntentParser
 
             parser = IntentParser()
             logger.info("[Intent] IntentParser initialized")
@@ -791,7 +791,7 @@ class _StubIntentParser:
     """Intent Parser 存根 — 提供最小解析功能。"""
 
     def parse(self, user_input: str, intent_context: Any, parse_context: Any) -> Any:
-        from core.agent.models import Entity, EntityType, Intent, IntentCategory, ParseResult
+        from core.agent.v3_common.models import Entity, EntityType, Intent, IntentCategory, ParseResult
 
         intent = Intent(
             category=IntentCategory.UNKNOWN,
