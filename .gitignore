@@ -94,3 +94,11 @@ test_ui_fixes.py
 
 eval_log.json
 self.max_turns
+
+# --- Runtime artifacts (v32 sessions, graphs, debug outputs) ---
+_artifacts/
+v32_graph*.json
+v32_logs_*/
+v32_test/
+_research_downloads/
+2.1
