@@ -1,0 +1,57 @@
+# Cognitive Runtime Configuration v1.0
+# Soft-coded: edit this file to adjust module paths, timeouts, and parameters.
+# Parameter override priority: Runtime config > WorldParams defaults > Module defaults
+
+version: "1.0"
+
+# Four-path architecture (Fast/Async/Slow/Deep)
+paths:
+  # Async Path (<5s, background): runs after every user event
+  async:
+    - name: observation_compiler
+      module: core.agent.v4.observation_compiler.builder.ObservationBuilder
+      adapter: core.agent.v4.runtime.adapter.ObservationCompilerAdapter
+      timeout_ms: 2000
+      retry: 3
+      params: {}
+
+  # Slow Path (checkpoint, minutes): triggered by event accumulation or time
+  slow:
+    - name: hypothesis_engine
+      module: core.agent.v4.hypothesis_engine.pipeline.HypothesisPipeline
+      adapter: core.agent.v4.runtime.adapter.HypothesisEngineAdapter
+      timeout_ms: 30000
+      trigger: checkpoint
+      trigger_config:
+        event_count: 50
+        time_minutes: 30
+      params:
+        min_support: 8
+        max_conflict: 3
+        min_stability: 0.70
+        min_consensus_domains: 2
+
+    - name: world_model
+      module: core.agent.v4.adapter.code.adapter.CodeWorldAdapter
+      adapter: core.agent.v4.runtime.adapter.WorldModelAdapter
+      timeout_ms: 60000
+      trigger: checkpoint
+      trigger_config:
+        event_count: 10
+      params:
+        extraction_tier: 1
+
+  # Deep Path (hours/days): triggered by pattern accumulation threshold
+  deep:
+    - name: skill_distiller
+      module: core.agent.v4.skill_layer.distillation_engine.DistillationEngine
+      adapter: core.agent.v4.runtime.adapter.SkillDistillerAdapter
+      timeout_ms: 60000
+      trigger: threshold
+      trigger_config:
+        pattern_count: 5
+        success_rate: 0.9
+      params: {}
+
+# Fast Path (not configured): uses old pipeline (PCR -> TopicTree -> LLM)
+# New Fast Path modules (DomainSelector, BudgetAllocator, ContextSerializer) are stubs.
