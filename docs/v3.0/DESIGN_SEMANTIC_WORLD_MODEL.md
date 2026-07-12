@@ -1,4 +1,4 @@
-﻿# DESIGN_STRUCTURAL_WORLD_MODEL.md — 结构化世界模型
+# DESIGN_STRUCTURAL_WORLD_MODEL.md — 结构化世界模型
 
 > 版本: v1.0 | 日期: 2026-07-12
 >
