@@ -127,6 +127,141 @@ All design documents in [docs/v3.0/](docs/v3.0/):
 | 8 | DESIGN_SEMANTIC_WORLD_MODEL.md | Semantic World Model |
 | 9 | DESIGN_TIERED_PARSER.md | Syntactic Decomposer |
 
+
+---
+
+## Usage Example
+
+### Programmatic Pipeline
+
+`python
+from core.agent.v4.event_ir import EventIR
+from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+
+# Start the v4 cognitive runtime
+engine = CognitiveRuntimeEngine()
+engine.start()
+
+# Send a user event - triggers Observation -> Hypothesis pipeline
+event = EventIR(
+    id="ev1",
+    kind="dialog.message",
+    payload={"text": "add monitoring to the gateway", "source": "user"}
+)
+engine.on_event(event)
+
+# Checkpoint: run Hypothesis Engine on accumulated observations
+results = engine.trigger_checkpoint()
+
+# Inspect stats
+for path_name, stats in engine.stats.items():
+    print(f"{path_name}: {stats.trigger_count} triggers, "
+          f"{stats.success_count} success, {stats.failure_count} failure")
+
+engine.stop()
+`
+
+### Runtime DAG Builder
+
+`python
+from core.agent.v4.cli.builder import RuntimeBuilder
+
+# Build a custom pipeline
+builder = RuntimeBuilder("my-pipeline")
+dag = (builder
+    .add_module("obs", "observation_compiler")
+    .add_module("hyp", "hypothesis_engine", path="slow", trigger="checkpoint")
+    .connect("obs", "hyp")
+    .param("hyp", "min_support", 8)
+    .build())
+
+# Export as YAML config
+dag.save("config/my-runtime.yaml")
+`
+
+### Context Assembly
+
+`python
+from core.agent.v4.context.assembler import ContextAssembler
+from core.agent.v4.context.source import KnowledgeSource, WorldSource
+
+# Create knowledge sources
+sources = [KnowledgeSource(nodes), WorldSource(graph)]
+assembler = ContextAssembler(sources)
+
+# Assemble context for an intent
+ctx = assembler.assemble("gateway monitoring", top_k=10)
+for item in ctx.top_k(5):
+    print(f"[{item.source}] relevance={item.relevance:.2f}")
+`
+
+---
+
+## Deployment Guide
+
+### Prerequisites
+- Python 3.9+
+- pip
+
+### Quick Deploy (Development)
+`ash
+git clone https://github.com/aptshark-g/DialogMesh.git
+cd DialogMesh
+pip install -r requirements.txt
+python -m pytest core/agent/v4/ -q --noconftest  # Verify: 376 tests pass
+`
+
+### Production Setup
+`ash
+# 1. Create persistent database
+mkdir -p data
+python -c "from core.agent.v4.persistence.unified_store import UnifiedGraphStore; s=UnifiedGraphStore('data/dialogmesh.db'); s.open(); s.close()"
+
+# 2. Customize runtime config
+cp config/runtime.yaml config/runtime-prod.yaml
+# Edit: adjust timeouts, retry counts, trigger thresholds
+
+# 3. Start runtime
+python -c "
+from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+engine = CognitiveRuntimeEngine(config_path='config/runtime-prod.yaml')
+engine.start()
+# ... handle events ...
+engine.stop()
+"
+`
+
+### Configuration
+Edit [config/runtime.yaml](config/runtime.yaml) to adjust:
+- Path timeouts and retry policies
+- Checkpoint trigger thresholds (event count, time interval)
+- Parameter overrides for each module
+
+---
+
+## Known Limitations
+
+### Current Scope
+- **Python-only**: No cross-language SDK (Go/Java/JS). Designed as a Python cognitive engine.
+- **Single-machine**: Designed for single-node deployment. No distributed coordination beyond basic etcd locks.
+- **Text + Code**: Multimodal (image/audio/video) not yet supported. Focus on text and code reasoning.
+- **Pre-1.0**: API stability not guaranteed. Breaking changes may occur between releases.
+
+### Performance
+- **Not benchmarked at scale**: Test datasets are small/medium projects and short conversations. No performance data for 10M+ graph nodes or 100K+ dialogue events.
+- **Betweenness centrality**: O(N^3) on large graphs. Use PageRank or Degree strategy via world.importance.strategy for graphs >5000 nodes.
+- **No GPU optimization**: All computation is CPU-bound. Hypothesis Engine belief propagation runs on CPU.
+
+### Integrations
+- **Storage backends**: SQLite is the only production-ready backend. Neo4j and Milvus adapters are reserved as future interfaces.
+- **No cloud-native features**: No multi-tenancy, RBAC, quota management, or billing modules. Designed for private/internal deployment.
+- **Fast Path**: The DomainSelector/BudgetAllocator/ContextSerializer pipeline is not yet implemented. LLM context assembly currently uses the ContextSource + Assembler pattern.
+
+### Maintenance
+- **Solo maintainer**: No team schedule, community contributors, or fixed release cadence.
+- **Feedback lag**: Temporal misalignment between events and observations not yet compensated. May affect convergence metrics on rapid interaction sequences.
+
+
 ---
 
 ## License
