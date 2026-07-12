@@ -1,8 +1,8 @@
 """MultiTierLLMProvider: wraps multiple LLM providers as pipeline tiers."""
 from __future__ import annotations
-import logging
+import logging, time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Dict, List, Tuple, Union
 
 from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
 
@@ -15,32 +15,46 @@ class LLMResult:
     provider_name: str = ""; latency_ms: float = 0.0
 
 
+ProviderSpec = Union[Tuple[str, Callable, dict], Dict[str, Any]]
+
+
 class MultiTierLLMProvider:
-    """Multi-tier LLM provider with automatic fallback."""
-    def __init__(self, providers: list[dict], registry=None):
+
+    def __init__(self, providers: List[ProviderSpec], registry=None):
         tiers = []
-        for i, p in enumerate(providers):
-            def make_process(provider):
-                def process(prompt: str, _ctx: dict) -> LLMResult:
-                    start = __import__("time").perf_counter()
-                    try:
-                        if callable(provider.get("call")):
-                            return LLMResult(content=provider["call"](prompt),
-                                             confidence=0.9, provider_name=provider.get("name", ""))
-                    except Exception:
-                        logger.warning("Provider %s failed", provider.get("name", ""))
-                    return LLMResult(content="", confidence=0.0, provider_name=provider.get("name", ""))
-                return process
-            tier = Tier(level=i, name=p.get("name", f"tier{i}"),
-                        process=make_process(p), confidence_threshold=0.7,
-                        time_budget_ms=p.get("timeout_ms", 5000))
+        for i, spec in enumerate(providers):
+            if isinstance(spec, dict):
+                name = spec.get("name", f"tier{i}")
+                call = spec.get("call")
+                timeout = spec.get("timeout_ms", 5000)
+            else:
+                name, call, opts = spec
+                timeout = opts.get("timeout_ms", 5000) if opts else 5000
+
+            tier = Tier(level=i, name=name,
+                        process=self._make_process(name, call),
+                        confidence_threshold=0.7, time_budget_ms=timeout)
             tiers.append(tier)
         self._pipeline = MultiTierPipeline(tiers, name="llm_provider")
+
+    @staticmethod
+    def _make_process(name, call):
+        def process(prompt, _ctx):
+            try:
+                result = call(prompt)
+                return LLMResult(content=str(result), confidence=0.9, provider_name=name)
+            except Exception:
+                logger.warning("Provider %s failed", name)
+                return LLMResult(content="", confidence=0.0, provider_name=name)
+        return process
 
     def complete(self, prompt: str) -> str:
         result = self._pipeline.execute(prompt)
         val = result.value
         return val.content if isinstance(val, LLMResult) else str(val)
+
+    def generate(self, prompt: str) -> str:
+        return self.complete(prompt)
 
     def stats(self) -> dict:
         return self._pipeline.stats()
