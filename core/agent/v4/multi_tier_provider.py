@@ -39,22 +39,24 @@ class MultiTierLLMProvider:
 
     @staticmethod
     def _make_process(name, call):
-        def process(prompt, _ctx):
+        def process(prompt, ctx):
             try:
-                result = call(prompt)
+                kw = ctx.get("kwargs", {}) if ctx else {}
+                result = call(prompt, **kw) if kw else call(prompt)
                 return LLMResult(content=str(result), confidence=0.9, provider_name=name)
             except Exception:
                 logger.warning("Provider %s failed", name)
                 return LLMResult(content="", confidence=0.0, provider_name=name)
         return process
 
-    def complete(self, prompt: str) -> str:
-        result = self._pipeline.execute(prompt)
+    def complete(self, prompt: str, **kwargs) -> str:
+        ctx = {"kwargs": kwargs} if kwargs else {}
+        result = self._pipeline.execute(prompt, ctx)
         val = result.value
         return val.content if isinstance(val, LLMResult) else str(val)
 
-    def generate(self, prompt: str) -> str:
-        return self.complete(prompt)
+    def generate(self, prompt: str, **kwargs) -> str:
+        return self.complete(prompt, **kwargs)
 
     def stats(self) -> dict:
         return self._pipeline.stats()
