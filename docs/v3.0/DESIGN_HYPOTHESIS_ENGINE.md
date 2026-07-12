@@ -351,7 +351,30 @@ class KnowledgeNode:
     frozen_at: float
 ```
 
-### 7.4 VoteRecord
+### 7.4 ReasonSession??????
+
+ReasonSession ?????????????????????? trace??
+???"?? Knowledge ??????????"?append-only?
+
+```python
+@dataclass
+class ReasonSession:
+    session_id: str                     # ????
+    triggering_event: str               # ?? ObservationBundle/Event ??
+    domain: str = ""                    # ?????
+    candidates: list[str] = field(default_factory=list)  # ??? Hypothesis ID
+    votes: list["VoteRecord"] = field(default_factory=list)  # ????
+    merged: list[dict] = field(default_factory=list)        # ????
+    winner: str | None = None           # ????? Hypothesis ID
+    knowledge_ref: str | None = None    # ??? Knowledge ID
+    started_at: float = field(default_factory=time.time)
+    closed_at: float | None = None
+    status: str = "open"                # open | closed | archived
+```
+
+Session ?? ? ???Knowledge ???Session ???
+
+### 7.5 VoteRecord
 
 ```python
 @dataclass
@@ -417,7 +440,8 @@ Knowledge 写入 UGS 图
 | Phase 1 | HypothesisNode + HypothesisEdge + VoteRecord Schema | Observation Compiler models |
 | Phase 2 | Match + Vote primitive | Phase 1 |
 | Phase 3 | Decay + Resolve + KnowledgeNode 冻结 | Phase 2 |
-| Phase 4 | Hypothesis Graph + Belief Propagation | Phase 1 |
+| Phase 4 | Hypothesis Graph (reference-based edges) + Reference-based Support ?? + Belief Propagation | Phase 1 |
+| Phase 4.5 | ReasonSession ?? + Replay + ??? trace | Phase 2-4 |
 | Phase 5 | 消费调度 (ObservationBundle → Match+Vote 触发) | Phase 2, Observation Compiler |
 | Phase 6 | ParameterRegistry 权重 + 阈值参数 | ParameterRegistry |
 | Phase 7 | ContextCompiler 集成 | Phase 2-5, ContextCompiler |
