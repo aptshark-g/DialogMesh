@@ -19,14 +19,14 @@ class SurfaceRelationExtractor:
     ]
 
     EN_PATTERNS: List[tuple] = [
-        (re.compile(r"before", re.IGNORECASE), "before"),
+        (re.compile(r"\bbefore\b", re.IGNORECASE), "before"),
         (re.compile(r"in front of", re.IGNORECASE), "before"),
-        (re.compile(r"after", re.IGNORECASE), "after"),
+        (re.compile(r"\bafter\b", re.IGNORECASE), "after"),
         (re.compile(r"behind", re.IGNORECASE), "after"),
-        (re.compile(r"inside|within", re.IGNORECASE), "inside"),
-        (re.compile(r"between", re.IGNORECASE), "between"),
-        (re.compile(r"beside|next to", re.IGNORECASE), "beside"),
-        (re.compile(r"above|below", re.IGNORECASE), "above_below"),
+        (re.compile(r"\binside\b|\bwithin\b", re.IGNORECASE), "inside"),
+        (re.compile(r"\bbetween\b", re.IGNORECASE), "between"),
+        (re.compile(r"\bbeside\b|\bnext to\b", re.IGNORECASE), "beside"),
+        (re.compile(r"\babove\b|\bbelow\b", re.IGNORECASE), "above_below"),
     ]
 
     def __init__(self):
