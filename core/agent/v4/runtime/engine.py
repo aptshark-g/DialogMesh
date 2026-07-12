@@ -1,6 +1,6 @@
 """CognitiveRuntimeEngine: orchestrates v4 modules across four paths."""
 from __future__ import annotations
-import importlib, time, logging
+import importlib, time, logging, threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -30,6 +30,11 @@ class PathStats:
 class CognitiveRuntimeEngine:
     """Orchestrates v4 cognitive modules across Fast/Async/Slow/Deep paths.
 
+    Path data flow:
+        Async: Event -> ObservationCompiler -> ObservationPool
+        Slow:  ObservationPool -> HypothesisEngine -> Knowledge
+        Deep:  Patterns -> SkillDistiller -> Skill
+
     Usage:
         engine = CognitiveRuntimeEngine()
         engine.start()
@@ -39,15 +44,12 @@ class CognitiveRuntimeEngine:
 
         # Or manually trigger checkpoint:
         engine.trigger_checkpoint()
+
+        # On session end:
+        engine.on_session_end()
     """
 
     def __init__(self, config_path: str = None, world_params: WorldParams = None):
-        """Initialize the runtime engine.
-
-        Args:
-            config_path: Path to runtime.yaml. If None, uses default config.
-            world_params: WorldParams for parameter injection. If None, uses defaults.
-        """
         if config_path:
             self._config = load_runtime_config(config_path)
         else:
@@ -58,36 +60,46 @@ class CognitiveRuntimeEngine:
         self._stats: Dict[str, PathStats] = {}
         self._event_buffer: List[EventIR] = []
         self._running = False
+        self._checkpoint_timer: Optional[threading.Timer] = None
+        self._session_active = False
+        self._last_event_time = 0.0
 
-        # Initialize path stats
+        # Observation pool for path-to-path data flow
+        self._observation_pool = None
+
         for path_name in self._config.paths:
             self._stats[path_name] = PathStats(path_name=path_name)
 
     # ---- Lifecycle ----
 
     def start(self) -> None:
-        """Start the runtime engine. Instantiates all adapters."""
         self._running = True
+        self._session_active = True
         self._instantiate_adapters()
-        logger.info("CognitiveRuntimeEngine started with %d adapters", len(self._adapters))
+        self._observation_pool = self._create_observation_pool()
+        self._start_checkpoint_timer()
+        logger.info("CognitiveRuntimeEngine started with %d adapters + ObservationPool", len(self._adapters))
 
     def stop(self) -> None:
-        """Stop the runtime engine."""
         self._running = False
+        self._session_active = False
+        self._cancel_checkpoint_timer()
         self._adapters.clear()
         self._event_buffer.clear()
+        self._observation_pool = None
         logger.info("CognitiveRuntimeEngine stopped")
 
     # ---- Event-driven triggers ----
 
     def on_event(self, event: EventIR) -> None:
         """Process a single user event through the Async Path."""
-        if not self._running:
+        if not self._running or not self._session_active:
             return
 
         self._event_buffer.append(event)
+        self._last_event_time = time.time()
         self._stats["async"].trigger_count += 1
-        self._stats["async"].last_triggered_at = time.time()
+        self._stats["async"].last_triggered_at = self._last_event_time
 
         path_config = self._config.get_path("async")
         if not path_config:
@@ -107,35 +119,39 @@ class CognitiveRuntimeEngine:
             pas.total_latency_ms += elapsed
             if result.ok:
                 pas.success_count += 1
+                # ---- Observation Pool integration ----
+                if result.data is not None and self._observation_pool is not None:
+                    try:
+                        self._observation_pool.put(result.data)
+                    except (TypeError, AttributeError):
+                        # If result.data is not an ObservationBundle, skip
+                        pass
+                    logger.debug("Observation written to pool: %s", event.id)
+
                 # Feed observation into context for downstream modules
-                if result.data is not None:
-                    ctx.observations.append(result.data)
+                ctx.observations.append(result.data)
             else:
                 pas.failure_count += 1
-                logger.warning("Async adapter %s failed: %s", module_config.name, result.error)
 
-        # Check if checkpoint should fire
-        slow_path = self._config.get_path("slow")
-        if slow_path and slow_path.modules:
-            for mc in slow_path.modules:
-                if mc.trigger == "checkpoint":
-                    tc = mc.trigger_config
-                    if len(self._event_buffer) >= tc.get("event_count", 50):
-                        self.trigger_checkpoint()
-                        break
+    def on_session_end(self) -> None:
+        """Trigger checkpoint on session end."""
+        if not self._running:
+            return
+        self._session_active = False
+        logger.info("Session ended, triggering checkpoint")
+        self.trigger_checkpoint()
 
     def trigger_checkpoint(self) -> List[AdapterResult]:
-        """Manually trigger the Slow Path (checkpoint)."""
+        """Run the Slow Path (checkpoint) with ObservationPool data."""
         return self._run_path("slow")
 
     def trigger_deep(self) -> List[AdapterResult]:
-        """Manually trigger the Deep Path."""
+        """Run the Deep Path."""
         return self._run_path("deep")
 
     # ---- Internal ----
 
     def _run_path(self, path_name: str) -> List[AdapterResult]:
-        """Run all modules in a given path."""
         if not self._running:
             return []
 
@@ -146,9 +162,17 @@ class CognitiveRuntimeEngine:
         self._stats[path_name].trigger_count += 1
         self._stats[path_name].last_triggered_at = time.time()
 
-        ctx = RuntimeContext(observations=list(self._event_buffer))
-        results = []
+        # Build context from ObservationPool (if available)
+        ctx = RuntimeContext()
+        if self._observation_pool is not None and path_name == "slow":
+            # Read all observations from pool (all domains, since last checkpoint)
+            raw_obs = self._observation_pool.get_by_domain("all")
+            ctx.observations = list(raw_obs) if raw_obs else []
+        elif path_name == "slow":
+            # Fallback: use event buffer
+            ctx.observations = list(self._event_buffer)
 
+        results = []
         for module_config in path_config.modules:
             adapter = self._adapters.get(module_config.name)
             if adapter is None:
@@ -173,8 +197,52 @@ class CognitiveRuntimeEngine:
 
         return results
 
+    def _start_checkpoint_timer(self) -> None:
+        """Start a timer that triggers checkpoint periodically."""
+        slow_path = self._config.get_path("slow")
+        if not slow_path or not slow_path.modules:
+            return
+
+        for mc in slow_path.modules:
+            if mc.trigger == "checkpoint":
+                time_minutes = mc.trigger_config.get("time_minutes", 30)
+                interval_sec = time_minutes * 60
+                self._schedule_checkpoint_timer(interval_sec)
+                break
+
+    def _schedule_checkpoint_timer(self, interval_sec: float) -> None:
+        """Schedule the next checkpoint timer tick."""
+        if not self._running:
+            return
+
+        def _tick():
+            if not self._running:
+                return
+            elapsed_since_last = time.time() - self._last_event_time
+            if self._session_active and elapsed_since_last < interval_sec * 1.5:
+                logger.info("Time-based checkpoint triggered")
+                self.trigger_checkpoint()
+            self._schedule_checkpoint_timer(interval_sec)
+
+        self._checkpoint_timer = threading.Timer(interval_sec, _tick)
+        self._checkpoint_timer.daemon = True
+        self._checkpoint_timer.start()
+
+    def _cancel_checkpoint_timer(self) -> None:
+        if self._checkpoint_timer is not None:
+            self._checkpoint_timer.cancel()
+            self._checkpoint_timer = None
+
+    def _create_observation_pool(self):
+        """Create the ObservationPool for path-to-path data flow."""
+        try:
+            from core.agent.v4.observation_compiler.pool import ObservationPool
+            return ObservationPool()
+        except Exception as e:
+            logger.warning("Cannot create ObservationPool: %s", e)
+            return None
+
     def _instantiate_adapters(self) -> None:
-        """Instantiate all adapters from config."""
         for path_config in self._config.paths.values():
             for module_config in path_config.modules:
                 adapter_cls = self._import_class(module_config.adapter)
@@ -182,7 +250,6 @@ class CognitiveRuntimeEngine:
                     logger.error("Cannot import adapter: %s", module_config.adapter)
                     continue
 
-                # Merge params: WorldParams default -> config override
                 merged_params = dict(self._world_params.__dict__)
                 merged_params.update(module_config.params)
 
@@ -194,13 +261,11 @@ class CognitiveRuntimeEngine:
                         params=merged_params,
                     )
                     self._adapters[module_config.name] = adapter
-                    logger.info("Instantiated adapter: %s -> %s", module_config.name, adapter_cls.__name__)
                 except Exception as e:
                     logger.error("Failed to instantiate adapter %s: %s", module_config.name, e)
 
     @staticmethod
     def _import_class(full_path: str):
-        """Import a class from a dotted path string."""
         try:
             parts = full_path.rsplit(".", 1)
             module = importlib.import_module(parts[0])
@@ -221,3 +286,7 @@ class CognitiveRuntimeEngine:
     @property
     def adapter_count(self) -> int:
         return len(self._adapters)
+
+    @property
+    def observation_pool(self):
+        return self._observation_pool
