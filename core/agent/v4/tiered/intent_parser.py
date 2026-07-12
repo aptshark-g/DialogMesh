@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v4.tiered_pipeline import Tier, TierResult, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, TierResult, MultiTierPipeline
 from core.agent.intent_parser import IntentParser
 from core.agent.prompts.intent_classifier import intent_classify_prompt, parse_intent_result
 from core.agent.models import (

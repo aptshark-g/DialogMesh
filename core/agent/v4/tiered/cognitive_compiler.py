@@ -5,7 +5,7 @@ import concurrent.futures
 import logging
 from typing import Any, Dict
 
-from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
 from core.agent.v3_2.compiler.hybrid_compiler import HybridCompiler
 from core.agent.v3_2.compiler.models import ParseResult, ParseContext
 

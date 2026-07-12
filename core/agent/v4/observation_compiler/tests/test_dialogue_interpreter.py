@@ -54,7 +54,7 @@ class TestInterpretationGenerator:
 
 class TestDialogueInterpreter:
     def test_interpret_basic(self):
-        from core.agent.v4.tiered_action_resolver import TieredActionResolver
+        from core.agent.v4.tiered.action_resolver import TieredActionResolver
         from core.agent.v4.observation_compiler.dialogue_domain_adapter import create_dialogue_adapter
         resolver = TieredActionResolver()
         resolver.register_domain(create_dialogue_adapter())
@@ -66,7 +66,7 @@ class TestDialogueInterpreter:
         assert len(result["interpretations"]) >= 1
 
     def test_action_classification(self):
-        from core.agent.v4.tiered_action_resolver import TieredActionResolver
+        from core.agent.v4.tiered.action_resolver import TieredActionResolver
         from core.agent.v4.observation_compiler.dialogue_domain_adapter import create_dialogue_adapter
         resolver = TieredActionResolver()
         resolver.register_domain(create_dialogue_adapter())
@@ -76,7 +76,7 @@ class TestDialogueInterpreter:
         assert result["meta"]["interaction_action"] == "request_change"
 
     def test_extract_before_relation(self):
-        from core.agent.v4.tiered_action_resolver import TieredActionResolver
+        from core.agent.v4.tiered.action_resolver import TieredActionResolver
         from core.agent.v4.observation_compiler.dialogue_domain_adapter import create_dialogue_adapter
         resolver = TieredActionResolver()
         resolver.register_domain(create_dialogue_adapter())

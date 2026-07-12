@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
 from core.agent.v3_2.compiler.rule_engine import RuleConstraintEngine, FrameLibrary
 from core.agent.v3_2.compiler.models import ConstraintRule
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from core.agent.v4.tiered_pipeline import Tier, TierResult, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, TierResult, MultiTierPipeline
 from core.agent.v3_2.negative_kb.negative_kb import NegativeKB
 from core.agent.v3_2.negative_kb.models import NegativeLevel, NegativeResult, ContextualNegativeRule
 

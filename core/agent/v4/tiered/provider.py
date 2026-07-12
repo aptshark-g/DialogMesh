@@ -4,7 +4,7 @@ import logging, time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple, Union
 
-from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
+from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
 
 logger = logging.getLogger(__name__)
 

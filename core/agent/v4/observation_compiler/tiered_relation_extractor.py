@@ -5,8 +5,8 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-from core.agent.v4.tiered_pipeline import Tier, MultiTierPipeline
-from core.agent.v4.tiered_action_resolver import EmbeddingIndex
+from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
+from core.agent.v4.tiered.action_resolver import EmbeddingIndex
 from .surface_relation_extractor import SurfaceRelationExtractor
 
 logger = logging.getLogger(__name__)

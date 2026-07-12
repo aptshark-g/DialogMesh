@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .node_annotation_store import NodeAnnotationStore, NodeAnnotation
+from .annotation_store import NodeAnnotationStore, NodeAnnotation
 
 logger = logging.getLogger(__name__)
 

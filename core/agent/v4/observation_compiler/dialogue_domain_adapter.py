@@ -1,5 +1,5 @@
 """Dialogue domain adapter for TieredActionResolver."""
-from core.agent.v4.tiered_action_resolver import DomainAdapter, EmbeddingIndex
+from core.agent.v4.tiered.action_resolver import DomainAdapter, EmbeddingIndex
 
 
 def create_dialogue_adapter() -> DomainAdapter:
