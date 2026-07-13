@@ -152,6 +152,19 @@ def _build_parser():
     sch = sub.add_parser("search", help="Cross-module search")
     sch.add_argument("keyword", help="Search keyword")
 
+    # export
+    exp = sub.add_parser("export", help="Export data")
+    exp_sub = exp.add_subparsers(dest="exp_cmd")
+    exp_sub.add_parser("knowledge", help="Export frozen Knowledge")
+    exp_sub.add_parser("skills", help="Export Skills")
+
+    # session
+    ses = sub.add_parser("session", help="Session management")
+    ses_sub = ses.add_subparsers(dest="ses_cmd")
+    ses_sub.add_parser("list", help="List active sessions")
+    ses_show = ses_sub.add_parser("show", help="Show session details")
+    ses_show.add_argument("session_id", help="Session ID")
+
     return parser
 
 
@@ -184,6 +197,10 @@ def main(argv=None):
         return cmd_maintenance(args)
     elif args.command == "search":
         return cmd_search(args)
+    elif args.command == "export":
+        return cmd_export(args)
+    elif args.command == "session":
+        return cmd_session(args)
     else:
         parser.print_help()
         return 0
@@ -317,6 +334,35 @@ def cmd_search(args):
         return _search(_engine, args.keyword)
     except Exception as e:
         print(f"Search error: {e}", file=sys.stderr)
+        return 1
+
+def cmd_export(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.export_cmd import _export_knowledge, _export_skills
+        if args.exp_cmd == "knowledge":
+            return _export_knowledge(_engine)
+        elif args.exp_cmd == "skills":
+            return _export_skills(_engine)
+        print(f"Unknown export command: {args.exp_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Export error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_session(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.session_cmd import _session_list, _session_show
+        if args.ses_cmd == "list":
+            return _session_list(_engine)
+        elif args.ses_cmd == "show":
+            return _session_show(_engine, args.session_id)
+        print(f"Unknown session command: {args.ses_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Session error: {e}", file=sys.stderr)
         return 1
 
 def cmd_start(args):
