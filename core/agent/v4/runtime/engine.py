@@ -18,6 +18,10 @@ from core.agent.v4.context.source import (
 )
 from core.agent.v4.context.domain_selector import DomainSelector
 from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
+from core.agent.v4.cognitive_scheduler.scheduler import CognitiveScheduler
+
+from core.agent.v4.optimizer.signals import FeedbackSignal
+from core.agent.v4.optimizer.optimizer import BayesianOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +92,11 @@ class CognitiveRuntimeEngine:
         self._observation_pool = self._create_observation_pool()
         self._context_assembler = self._create_context_assembler()
         self._domain_selector = DomainSelector()
+        self._scheduler = CognitiveScheduler()
+        self._optimizer = BayesianOptimizer(bounds={})
+        self._feedback_signal = FeedbackSignal()
         self._start_checkpoint_timer()
-        logger.info("CognitiveRuntimeEngine started with %d adapters + ObservationPool + ContextEngine", len(self._adapters))
+        logger.info("CognitiveRuntimeEngine started — %d adapters + Pool + Context + Scheduler + Optimizer", len(self._adapters))
 
     def stop(self) -> None:
         self._running = False
@@ -101,6 +108,11 @@ class CognitiveRuntimeEngine:
         self._context_assembler = None
         self._domain_selector = None
         self._last_context = None
+        if self._scheduler:
+            self._scheduler.stop()
+            self._scheduler = None
+        self._optimizer = None
+        self._feedback_signal = None
         logger.info("CognitiveRuntimeEngine stopped")
 
     # ---- Event-driven triggers ----
@@ -149,6 +161,13 @@ class CognitiveRuntimeEngine:
 
         # ---- Context Engineering: compile CrossDomainContextIR ----
         self._compile_context(event)
+
+        # ---- Feedback collection ----
+        if self._feedback_signal and pas.success_count > 0:
+            self._feedback_signal.add_implicit_feedback(
+                success=(pas.failure_count == 0),
+                latency_ms=pas.total_latency_ms / max(1, pas.trigger_count),
+            )
 
     def on_session_end(self) -> None:
         """Trigger checkpoint on session end."""
@@ -262,10 +281,28 @@ class CognitiveRuntimeEngine:
         # Clear buffer after checkpoint
         if path_name == "slow":
             self._event_buffer.clear()
+            self._checkpoint_count += 1
 
         # Auto-trigger Deep Path if checkpoint produced results
         if path_name == "slow" and results and any(r.ok for r in results):
             self.trigger_deep()
+
+        # Bayesian Optimizer step (every 3rd checkpoint)
+        if path_name == "slow" and self._optimizer and self._feedback_signal:
+            if self._checkpoint_count % 3 == 0:
+                try:
+                    reward = self._feedback_signal.composite_reward()
+                    # Collect current top params
+                    current_params = {
+                        "min_support": self._world_params.backbone_weights.get("min_support", 8),
+                        "community_resolution": self._world_params.community_resolution,
+                        "compiler_max_nodes": self._world_params.compiler_max_nodes,
+                    }
+                    suggestion = self._optimizer.suggest()
+                    if suggestion:
+                        logger.info("Optimizer suggests: %s", suggestion)
+                except Exception as e:
+                    logger.debug("Optimizer step skipped: %s", e)
 
         return results
 
