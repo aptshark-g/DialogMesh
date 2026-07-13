@@ -1,12 +1,12 @@
 # DESIGN_CLI_REFERENCE.md — CLI 命令大全
 
-> 版本: v2.0 | 日期: 2026-07-13
+> 版本: v3.0 | 日期: 2026-07-14
 >
 > DialogMesh v4 CLI 完整命令参考。覆盖运行时控制、流水线编排、系统查看、运维管理。
 
 ---
 
-## 1. 命令总览 (21 个命令)
+## 1. 命令总览 (27 个命令)
 
 `
 运行时:
@@ -40,6 +40,35 @@
   inspect topics       [v3+]
 
 查看 (详情):
+  inspect X --detail [--id ID]         单条钻取 (7-dim BeliefState 全量)
+  inspect X --detail --page N           分页全量展开
+  inspect X --json                       JSON 输出 [NEW]
+
+审计:
+  event history [--limit N] [--kind X]  事件历史
+  event replay [--unconsumed]           重放未消费事件
+
+运维:
+  maintenance gc                        手动触发 GC + 冷热迁移
+  maintenance stats                     存储分层状态
+
+搜索:
+  search KEYWORD [--module X]           跨模块搜索
+
+导出:
+  export knowledge [--output PATH]      导出 Knowledge
+  export skills [--output PATH]         导出 Skills
+  import skills PATH                    导入 Skills [FUTURE]
+
+监控:
+  inspect X --watch [--interval SEC]    实时刷新
+
+会话:
+  session list                          列出活跃会话
+  session show ID                       查看会话详情
+
+自动补全:
+  completion bash/zsh/powershell        生成 Shell 补全脚本
   inspect X --detail [--id ID]         单条钻取 (7-dim BeliefState 全量)
   inspect X --detail --page N           分页全量展开
   inspect X --json                       JSON 输出 [NEW]
@@ -247,6 +276,108 @@ dialogmesh inspect hypotheses --detail --id hyp_001 --json
 `
 输出 JSON 格式，供外部脚本消费。
 
+## 5.5 --json 输出标志 [NEW]
+
+### 全局 JSON 输出
+`
+dialogmesh inspect hypotheses --json
+dialogmesh inspect knowledge --json
+dialogmesh inspect world --json
+`
+所有 inspect 子命令支持 --json 标志。当指定时，输出为 JSON 而非文本表格。
+
+输出格式：
+`json
+{
+  "command": "inspect hypotheses",
+  "data": [
+    {"id": "hyp_001", "statement": "...", "status": "active", ...},
+    {"id": "hyp_002", "statement": "...", "status": "frozen", ...}
+  ],
+  "count": 2
+}
+`
+
+## 5.6 事件审计命令 [NEW]
+
+### event history
+`
+dialogmesh event history [--limit N] [--kind X]
+`
+查看事件历史。从 EventLog (SQLite) 读取。支持按 kind 过滤（dialog.message / ui.drag / git.commit）。
+
+### event replay
+`
+dialogmesh event replay [--unconsumed]
+`
+重放事件。--unconsumed 只重放未消费事件。用于 crash recovery / 回放测试。
+
+## 5.7 存储维护命令 [NEW]
+
+### maintenance gc
+`
+dialogmesh maintenance gc
+`
+手动触发 GC：热→温→冷→归档分层迁移 + 旧事件清理。
+
+### maintenance stats
+`
+dialogmesh maintenance stats
+`
+显示分层存储状态：每层节点数、磁盘使用量、上次 GC 时间。
+
+## 5.8 跨模块搜索 [NEW]
+
+### search
+`
+dialogmesh search "gateway monitoring" [--module X]
+`
+跨所有认知模块搜索关键词。匹配 Observation、Hypothesis、Knowledge、Skill。
+--module 可限定搜索范围（observations / hypotheses / knowledge / skills）。
+
+## 5.9 导出导入 [NEW]
+
+### export knowledge / export skills
+`
+dialogmesh export knowledge --output data/knowledge.json
+dialogmesh export skills --output data/skills.json
+`
+导出冻结 Knowledge 或 Skill 为 JSON 文件。用于备份、迁移、分析。
+
+### import skills [FUTURE]
+`
+dialogmesh import skills data/skills.json
+`
+从 JSON 文件导入 Skill。需要验证格式和去重逻辑。
+
+## 5.10 实时监控 [NEW]
+
+### --watch 标志
+`
+dialogmesh inspect observations --watch --interval 5
+dialogmesh inspect hypotheses --watch
+`
+实时刷新显示。类似 Linux watch 命令。默认间隔 2 秒。
+
+## 5.11 会话管理 [NEW]
+
+### session list / session show
+`
+dialogmesh session list
+dialogmesh session show <session_id>
+`
+列出活跃会话或查看单个会话详情。
+
+## 5.12 Shell 自动补全 [NEW]
+
+### completion
+`
+dialogmesh completion bash > ~/.bash_completion.d/dialogmesh
+dialogmesh completion zsh  > ~/.zfunc/_dialogmesh
+dialogmesh completion powershell > dialogmesh.ps1
+`
+生成 Shell 自动补全脚本。
+
 ## 6. 运维命令 [NEW]
 
 ### snapshot list
@@ -301,6 +432,28 @@ core/agent/v4/cli/
 ├── inspect.py           # v4 查看命令 (摘要 + 详情 + JSON)
 ├── inspect_v3.py        # v3.2/v3 查看命令
 ├── builder.py           # 流水线 DAG 构建器
+├── snapshot.py          # 快照管理命令
+├── config_cmd.py        # 配置管理命令
+├── health.py            # 健康检查命令
+├── event_cmd.py         # 事件审计命令 [NEW]
+├── maintenance_cmd.py   # 存储维护命令 [NEW]
+├── search_cmd.py        # 跨模块搜索命令 [NEW]
+├── export_cmd.py        # 导出命令 [NEW]
+├── session_cmd.py       # 会话管理命令 [NEW]
+├── __init__.py
+└── tests/
+    ├── test_main.py
+    ├── test_builder.py
+    ├── test_inspect.py
+    ├── test_ops.py
+    ├── test_event_cmd.py [NEW]
+    ├── test_maintenance.py [NEW]
+    ├── test_search.py [NEW]
+    └── test_export.py [NEW]
+├── main.py              # CLI入口: argparse + 命令路由
+├── inspect.py           # v4 查看命令 (摘要 + 详情 + JSON)
+├── inspect_v3.py        # v3.2/v3 查看命令
+├── builder.py           # 流水线 DAG 构建器
 ├── snapshot.py          # 快照管理命令 [NEW]
 ├── config_cmd.py        # 配置管理命令 [NEW]
 ├── health.py            # 健康检查命令 [NEW]
@@ -312,7 +465,22 @@ core/agent/v4/cli/
     └── test_snapshot.py, test_config.py, test_health.py [NEW]
 `
 
-## 9. 实现优先级
+## 9. CLI 完成度
+
+| 状态 | 命令数 | 内容 |
+|:---|:---|:---|
+| ✅ 已实现 | 21 | start/stop/status/event/health + pipeline(8) + inspect(6 v4 + 9 v3) + snapshot/config |
+
+| 优先级 | 命令 | 用途 | 工作量 |
+|:---|:---|:---|:---|
+| 🔴 | --json 输出 | TUI/脚本消费 | 小 |
+| 🔴 | event history/replay | 审计和回放 | 小 |
+| 🔴 | maintenance gc/stats | 存储管理 | 小 |
+| 🔴 | search | 跨模块搜索 | 中 |
+| 🟡 | export knowledge/skills | 备份迁移 | 小 |
+| 🟡 | --watch (监控) | 实时刷新 | 小 |
+| 🟢 | session list/show | 会话管理 | 小 |
+| 🟢 | completion | Shell 补全 | 小 |
 
 | 优先级 | 命令 | 依赖 | 工作量 |
 |:---|:---|:---|:---|
