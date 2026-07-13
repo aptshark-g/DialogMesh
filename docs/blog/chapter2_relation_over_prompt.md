@@ -52,35 +52,37 @@ graph LR
 那么 v4 会怎么做？不是给 LLM 一条 system prompt。
 是给 LLM 一个**局部世界的子图**：
 
-`mermaid
+
+
+```mermaid
 flowchart TD
     RateLimiter[RateLimiter 新节点]
+subgraph "上游约束 (Auth)"
+    Auth_Metric[/metrics 端点/]
+    Auth_Health[/health 端点/]
+    Auth_C[工程约束: 所有中间件需监控]
+end
 
-    subgraph "上游约束 (Auth)"
-        Auth_Metric[/metrics 端点/]
-        Auth_Health[/health 端点/]
-        Auth_C[工程约束: 所有中间件需监控]
-    end
+subgraph "下游约束 (Logger)"
+    Logger_Metric[/metrics 端点/]
+    Logger_Pattern[行为模式: 3/3 次加模块补了监控]
+end
 
-    subgraph "下游约束 (Logger)"
-        Logger_Metric[/metrics 端点/]
-        Logger_Pattern[行为模式: 3/3 次加模块补了监控]
-    end
+subgraph "已有能力"
+    Skill_Monitor[Skill: 中间件监控模板]
+end
 
-    subgraph "已有能力"
-        Skill_Monitor[Skill: 中间件监控模板]
-    end
+Auth_Metric -->|约束继承| RateLimiter
+Auth_C -->|约束继承| RateLimiter
+Logger_Metric -->|约束继承| RateLimiter
+Logger_Pattern -->|行为参考| RateLimiter
+Skill_Monitor -->|可复用| RateLimiter
 
-    Auth_Metric -->|约束继承| RateLimiter
-    Auth_C -->|约束继承| RateLimiter
-    Logger_Metric -->|约束继承| RateLimiter
-    Logger_Pattern -->|行为参考| RateLimiter
-    Skill_Monitor -->|可复用| RateLimiter
+style RateLimiter fill:#ffeb3b,stroke:#f57f17,stroke-width:3px
+style Skill_Monitor fill:#e1bee7,stroke:#9c27b0
+style Auth_C fill:#b3e5fc,stroke:#0288d1
+```
 
-    style RateLimiter fill:#ffeb3b,stroke:#f57f17,stroke-width:3px
-    style Skill_Monitor fill:#e1bee7,stroke:#9c27b0
-    style Auth_C fill:#b3e5fc,stroke:#0288d1
-`
 
 这不是一段 prompt。这是从代码仓库、工程约束、行为历史和已有技能中
 **编译出来的局部知识快照**。LLM 看到它之后，不需要被提醒要加监控——
