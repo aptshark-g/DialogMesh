@@ -23,11 +23,11 @@ class DashboardTab(Static):
             engine = None
 
         lines = []
-        lines.append("DialogMesh v4 Cognitive Runtime")
+        lines.append(t("tui.dashboard.title"))
         lines.append("=" * 50)
 
         if engine is None:
-            lines.append("  [red]Engine not started[/]")
+            lines.append(t("tui.dashboard.engine_off"))
         else:
             stats = engine.stats
             for path_name in ["async", "slow", "deep"]:
@@ -46,7 +46,7 @@ class DashboardTab(Static):
                 bundles = pool.get_by_domain("all")
             else:
                 bundles = []
-            lines.append(f"  Observation Pool: {len(bundles)} bundles")
+            lines.append(t("tui.dashboard.obs_pool", count=len(bundles)))
 
             # Context
             ctx = getattr(engine, '_last_context', None)
@@ -192,7 +192,7 @@ class WorldTab(Static):
             world_graph = None
 
         if world_graph is None:
-            lines.append("  [yellow]World Graph not loaded[/]")
+            lines.append(t("tui.world.not_loaded"))
             lines.append("  Use: engine._world_graph = CodeWorldAdapter().build_graph('.')")
         else:
             lines.append(f"  Graph: {world_graph.world} ({world_graph.node_count} nodes, {world_graph.edge_count} edges)")
@@ -229,11 +229,11 @@ class ContextTab(Static):
             engine = None
 
         if engine is None:
-            lines.append("  [red]Engine not started[/]")
+            lines.append(t("tui.dashboard.engine_off"))
         else:
             ctx = getattr(engine, '_last_context', None)
             if ctx is None:
-                lines.append("  (no context compiled yet)")
+                lines.append(t("tui.context.no_data"))
                 lines.append("  Send an event via CLI or API to trigger compilation.")
             else:
                 intent = getattr(ctx, 'intent', '?')
