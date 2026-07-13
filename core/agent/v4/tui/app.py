@@ -370,9 +370,75 @@ class DialogMeshTUI(App):
         t = threading.Thread(target=_start_engine, daemon=True)
         t.start()
 
-        # Refresh every second
-        self._timer = self.set_interval(1, self.refresh_all)
-        self.notify("9 panels | e/z=language | 1-9=tab", title="Ready")
+        # Staggered refresh: fast panels first, heavy panels delayed
+        self._tick = 0
+        self._timer = self.set_interval(1, self._staggered_refresh)
+        self.notify("Loading panels...", title="Ready")
+
+    def _staggered_refresh(self):
+        """Stagger panel refreshes to avoid blocking UI thread."""
+        self._tick += 1
+
+        # Always refresh Dashboard (lightweight)
+        dash = self.query_one("#dash-content", DashboardTab)
+        if dash:
+            dash.update_stats()
+
+        # Tick 2: Observations + Context
+        if self._tick == 2:
+            obs = self.query_one("#obs-content", ObservationsTab)
+            if obs:
+                obs.update_data()
+            ctx = self.query_one("#ctx-content", ContextTab)
+            if ctx:
+                ctx.update_data()
+
+        # Tick 4: Hypotheses + Knowledge
+        elif self._tick == 4:
+            hyp = self.query_one("#hyp-content", HypothesesTab)
+            if hyp:
+                hyp.update_data()
+            know = self.query_one("#know-content", KnowledgeTab)
+            if know:
+                know.update_data()
+
+        # Tick 6: Skills + World
+        elif self._tick == 6:
+            skill = self.query_one("#skill-content", SkillsTab)
+            if skill:
+                skill.update_data()
+            world = self.query_one("#world-content", WorldTab)
+            if world:
+                world.update_data()
+
+        # Tick 8+: All panels refresh normally
+        elif self._tick >= 8:
+            obs = self.query_one("#obs-content", ObservationsTab)
+            if obs:
+                obs.update_data()
+            ctx = self.query_one("#ctx-content", ContextTab)
+            if ctx:
+                ctx.update_data()
+            hyp = self.query_one("#hyp-content", HypothesesTab)
+            if hyp:
+                hyp.update_data()
+            know = self.query_one("#know-content", KnowledgeTab)
+            if know:
+                know.update_data()
+            skill = self.query_one("#skill-content", SkillsTab)
+            if skill:
+                skill.update_data()
+            world = self.query_one("#world-content", WorldTab)
+            if world:
+                world.update_data()
+
+        # Settings + Events always refresh
+        evt = self.query_one("#evtlog-content", EventLogTab)
+        if evt:
+            evt.update_data()
+        settings = self.query_one("#settings-content", SettingsTab)
+        if settings:
+            settings.update_data()
 
     def refresh_all(self):
         dash = self.query_one("#dash-content", DashboardTab)
