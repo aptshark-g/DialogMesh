@@ -100,6 +100,30 @@ class WorldParams:
     extraction_tier: int = 1
     """Default extraction tier: 0 (imports only) or 1 (full AST)."""
 
+    # ---- Bayesian Optimizer ----
+    optimizer_enabled: bool = False
+    """Enable Bayesian parameter optimization."""
+
+    optimizer_top_params: list = field(default_factory=lambda: [
+        "min_support", "max_conflict", "min_stability",
+        "community_resolution", "compiler_max_nodes",
+    ])
+    """Parameters under Bayesian optimization. Start with 5 core params."""
+
+    # ---- Hypothesis Engine (frozen thresholds) ----
+    min_support: int = 8
+    """Min support votes for Hypothesis to freeze into Knowledge."""
+
+    max_conflict: int = 3
+    """Max conflict votes before Hypothesis is rejected."""
+
+    min_stability: float = 0.70
+    """Min stability score for Hypothesis freeze."""
+
+    # ---- Compiler ----
+    compiler_max_nodes: int = 300
+    """Max nodes for subgraph compilation."""
+
 
 # Global defaults instance
 DEFAULTS = WorldParams()
