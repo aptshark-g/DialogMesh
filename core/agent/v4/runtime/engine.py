@@ -95,6 +95,7 @@ class CognitiveRuntimeEngine:
         self._scheduler = CognitiveScheduler()
         self._optimizer = BayesianOptimizer(bounds={})
         self._feedback_signal = FeedbackSignal()
+        self._checkpoint_count = 0
         self._start_checkpoint_timer()
         logger.info("CognitiveRuntimeEngine started — %d adapters + Pool + Context + Scheduler + Optimizer", len(self._adapters))
 
@@ -164,10 +165,7 @@ class CognitiveRuntimeEngine:
 
         # ---- Feedback collection ----
         if self._feedback_signal and pas.success_count > 0:
-            self._feedback_signal.add_implicit_feedback(
-                success=(pas.failure_count == 0),
-                latency_ms=pas.total_latency_ms / max(1, pas.trigger_count),
-            )
+            self._feedback_signal.with_implicit(accepted=(pas.failure_count == 0))
 
     def on_session_end(self) -> None:
         """Trigger checkpoint on session end."""
