@@ -12,6 +12,12 @@ from core.agent.v4.runtime.config import (
     RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config,
 )
 from core.agent.v4.world.params import WorldParams, get_world_params
+from core.agent.v4.context.assembler import ContextAssembler
+from core.agent.v4.context.source import (
+    ObservationSource, KnowledgeSource, SkillSource, WorldSource,
+)
+from core.agent.v4.context.domain_selector import DomainSelector
+from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +72,9 @@ class CognitiveRuntimeEngine:
 
         # Observation pool for path-to-path data flow
         self._observation_pool = None
+        self._context_assembler: Optional[ContextAssembler] = None
+        self._domain_selector: Optional[DomainSelector] = None
+        self._last_context: Optional[CrossDomainContextIR] = None
 
         for path_name in self._config.paths:
             self._stats[path_name] = PathStats(path_name=path_name)
@@ -77,8 +86,10 @@ class CognitiveRuntimeEngine:
         self._session_active = True
         self._instantiate_adapters()
         self._observation_pool = self._create_observation_pool()
+        self._context_assembler = self._create_context_assembler()
+        self._domain_selector = DomainSelector()
         self._start_checkpoint_timer()
-        logger.info("CognitiveRuntimeEngine started with %d adapters + ObservationPool", len(self._adapters))
+        logger.info("CognitiveRuntimeEngine started with %d adapters + ObservationPool + ContextEngine", len(self._adapters))
 
     def stop(self) -> None:
         self._running = False
@@ -87,6 +98,9 @@ class CognitiveRuntimeEngine:
         self._adapters.clear()
         self._event_buffer.clear()
         self._observation_pool = None
+        self._context_assembler = None
+        self._domain_selector = None
+        self._last_context = None
         logger.info("CognitiveRuntimeEngine stopped")
 
     # ---- Event-driven triggers ----
@@ -133,6 +147,9 @@ class CognitiveRuntimeEngine:
             else:
                 pas.failure_count += 1
 
+        # ---- Context Engineering: compile CrossDomainContextIR ----
+        self._compile_context(event)
+
     def on_session_end(self) -> None:
         """Trigger checkpoint on session end."""
         if not self._running:
@@ -150,6 +167,57 @@ class CognitiveRuntimeEngine:
         return self._run_path("deep")
 
     # ---- Internal ----
+
+    # ---- Context Engineering ----
+
+    def _compile_context(self, event: EventIR) -> None:
+        """Compile CrossDomainContextIR from current cognitive state.
+
+        DomainSelector determines which domains are relevant.
+        BudgetAllocator (inside assemble_ir) allocates token budget.
+        ContextAssembler retrieves from all available sources.
+        """
+        if self._context_assembler is None or self._domain_selector is None:
+            return
+
+        text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        try:
+            self._last_context = self._context_assembler.assemble_ir(
+                text,
+                token_budget=self._world_params.compiler_token_budget,
+                domain_boosts=self._get_domain_boosts(event),
+            )
+            logger.debug("Context compiled: %d entries, %d tokens",
+                        len(self._last_context.entries),
+                        self._last_context.total_tokens)
+        except Exception as e:
+            logger.warning("Context compilation failed: %s", e)
+
+    def _create_context_assembler(self) -> ContextAssembler:
+        """Build ContextAssembler with all available knowledge sources."""
+        sources = []
+        if self._observation_pool is not None:
+            sources.append(ObservationSource(self._observation_pool))
+        sources.append(KnowledgeSource())
+        sources.append(SkillSource())
+        sources.append(WorldSource())
+        return ContextAssembler(sources)
+
+    def _get_domain_boosts(self, event: EventIR) -> dict:
+        """Adjust domain weights based on event type."""
+        kind = event.kind if hasattr(event, "kind") else ""
+        if kind == "dialog.message":
+            return {"knowledge": 1.5}
+        elif kind in ("ui.drag", "ui.drop", "tool.call"):
+            return {"engineering": 2.0}
+        elif kind == "git.commit":
+            return {"engineering": 1.5, "world": 1.5}
+        return {}
+
+    @property
+    def last_context(self) -> Optional[CrossDomainContextIR]:
+        return self._last_context
 
     def _run_path(self, path_name: str) -> List[AdapterResult]:
         if not self._running:
