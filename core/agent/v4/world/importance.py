@@ -296,8 +296,9 @@ class TieredImportanceStrategy(StructuralImportanceStrategy):
             # Tier 2: Community Chunk
             return CommunityChunkStrategy(resolution=self._resolution).compute(graph)
         else:
-            # Tier 3: Exact fallback for very large graphs
-            return BetweennessStrategy().compute(graph)
+            # Tier 3: K-Sampling with large k for very large graphs
+            # Exact Betweenness O(N^3) is too slow for >50000 nodes
+            return KSamplingStrategy(k=self._k * 5).compute(graph)
 
 
 def compute_backbone_scores(
