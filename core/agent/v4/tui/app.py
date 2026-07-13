@@ -5,7 +5,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, DataTable, Label
 from textual.reactive import reactive
 from textual.timer import Timer
-import time
+import time, os
+from i18n import load_locale, t as _
 
 
 class DashboardTab(Static):
@@ -293,6 +294,31 @@ class EventLogTab(Static):
         self.update("\n".join(lines))
 
 
+
+class SettingsTab(Static):
+    """Settings panel with language switcher."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        loc = load_locale()
+        current_lang = os.environ.get("DIALOGMESH_LANG", "en")
+        lang_name = "English" if current_lang == "en" else "Chinese" if current_lang == "zh" else current_lang
+
+        lines = []
+        lines.append("Settings")
+        lines.append("=" * 50)
+        lines.append("")
+        lines.append(f"  Language: [{current_lang}] {lang_name}")
+        lines.append("")
+        lines.append("  Press 'e' for English, 'z' for Chinese")
+        lines.append("  (changes take effect on next refresh)")
+        lines.append("")
+        lines.append(f"  Current locale keys: {len(loc) - 1}")  # minus t function
+        self.update("\n".join(lines))
+
+
 class DialogMeshTUI(App):
     """DialogMesh v4 Terminal Dashboard."""
 
@@ -323,6 +349,8 @@ class DialogMeshTUI(App):
                 yield ContextTab(id="ctx-content")
             with TabPane("Event Log", id="evtlog"):
                 yield EventLogTab(id="evtlog-content")
+            with TabPane("Settings", id="settings"):
+                yield SettingsTab(id="settings-content")
         yield Footer()
 
     def on_mount(self):
@@ -365,6 +393,27 @@ class DialogMeshTUI(App):
         evt_tab = self.query_one("#evtlog-content", EventLogTab)
         if evt_tab:
             evt_tab.update_data()
+        settings = self.query_one("#settings-content", SettingsTab)
+        if settings:
+            settings.update_data()
+
+    def on_key(self, event):
+        """Keyboard shortcuts."""
+        # Language switching
+        if event.key == "e":
+            os.environ["DIALOGMESH_LANG"] = "en"
+            self.notify("Language: English", title="Settings")
+            self.refresh_all()
+        elif event.key == "z":
+            os.environ["DIALOGMESH_LANG"] = "zh"
+            self.notify("Language: Chinese", title="Settings")
+            self.refresh_all()
+        # Tab switching (1-9)
+        elif event.key in "123456789":
+            idx = int(event.key) - 1
+            tabs = self.query_one(TabbedContent)
+            if idx < len(tabs.children):
+                tabs.active = tabs.children[idx].id
 
     def on_unmount(self):
         try:
