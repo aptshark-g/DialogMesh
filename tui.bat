@@ -12,3 +12,5 @@ echo.
 
 cd /d "%PROJECT_ROOT%"
 python scripts/tui.py
+
+pause
