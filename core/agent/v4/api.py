@@ -128,31 +128,110 @@ async def get_status():
 
 
 @app.get("/v4/inspect/{module}")
-async def inspect(module: str, detail: bool = False, limit: int = 10):
-    """Inspect system state. Modules: observations, hypotheses, knowledge,
-    skills, world, context."""
+async def inspect(module: str, limit: int = 10, detail: bool = False):
+    """Inspect system state. Returns structured JSON.
+
+    Modules: observations, hypotheses, knowledge, skills, world, context.
+    """
     if _engine is None:
         raise HTTPException(503, "API not initialized")
 
-    # Delegate to CLI inspect functions
     try:
-        from core.agent.v4.cli.inspect import (
-            _inspect_observations, _inspect_hypotheses, _inspect_knowledge,
-            _inspect_skills, _inspect_world, _inspect_context,
-        )
-        # Use JSON mode by capturing output? Better: return structured data.
-        # For now, return basic info based on module
         if module == "observations":
             pool = getattr(_engine, '_observation_pool', None)
-            bundles = pool.get_by_domain("all")[:limit] if pool else []
-            return {"count": len(bundles), "items": [str(b)[:200] for b in bundles]}
+            if pool is None:
+                return {"module": "observations", "count": 0, "items": []}
+            bundles = pool.get_by_domain("all")[-limit:]
+            items = []
+            for b in bundles:
+                items.append({
+                    "id": str(getattr(b, 'bundle_id', '?')),
+                    "domain": str(getattr(b, 'domain', '?')),
+                    "summary": str(getattr(b, 'summary', ''))[:200],
+                    "timestamp": getattr(b, 'timestamp', 0),
+                })
+            return {"module": "observations", "count": len(bundles), "items": items}
+
+        elif module == "hypotheses":
+            from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+            pipe = HypothesisPipeline()
+            items = []
+            if hasattr(pipe, '_match_vote') and hasattr(pipe._match_vote, '_hypotheses'):
+                for hid, h in list(pipe._match_vote._hypotheses.items())[:limit]:
+                    bs = h.belief_state
+                    items.append({
+                        "id": hid,
+                        "statement": h.statement,
+                        "domain": h.domain,
+                        "status": h.status,
+                        "belief_state": {
+                            "support": bs['support'], "conflict": bs['conflict'],
+                            "stability": bs['stability'], "coverage": bs['coverage'],
+                            "recency": bs['recency'], "novelty": bs['novelty'],
+                            "entropy": bs['entropy'],
+                        },
+                        "domain_signals": h.domain_signals,
+                    })
+            return {"module": "hypotheses", "count": len(items), "items": items}
+
+        elif module == "knowledge":
+            from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+            pipe = HypothesisPipeline()
+            items = []
+            if hasattr(pipe, '_match_vote') and hasattr(pipe._match_vote, '_hypotheses'):
+                for hid, h in pipe._match_vote._hypotheses.items():
+                    if h.status == "frozen":
+                        items.append({
+                            "id": hid, "statement": h.statement,
+                            "domain": h.domain, "score": h.belief_score(),
+                        })
+            return {"module": "knowledge", "count": len(items), "items": items[:limit]}
+
+        elif module == "skills":
+            from core.agent.v4.skill_layer.skill_pool import SkillPool
+            pool = SkillPool()
+            skills = pool.list_all() if hasattr(pool, 'list_all') else []
+            items = []
+            for s in skills[:limit]:
+                items.append({
+                    "name": getattr(s, 'name', str(s)),
+                    "domain": getattr(s, 'domain', ''),
+                    "status": getattr(s, 'status', ''),
+                    "usage": getattr(s, 'usage_count', 0),
+                })
+            return {"module": "skills", "count": len(items), "items": items}
+
+        elif module == "world":
+            graph = getattr(_engine, '_world_graph', None)
+            if graph is None:
+                return {"module": "world", "status": "not loaded", "nodes": 0, "edges": 0}
+            top = sorted(graph.backbone.items(), key=lambda x: x[1], reverse=True)[:limit]
+            backbone = [{"id": uid, "score": score} for uid, score in top]
+            comms = {cid: len(units) for cid, units in list(graph.communities.items())[:limit]}
+            return {
+                "module": "world",
+                "nodes": graph.node_count, "edges": graph.edge_count,
+                "communities": len(graph.communities), "community_sizes": comms,
+                "top_backbone": backbone,
+            }
+
         elif module == "context":
             ctx = getattr(_engine, '_last_context', None)
-            if ctx:
-                return {"intent": str(getattr(ctx, 'intent', '')), "items": ctx.total_items if hasattr(ctx, 'total_items') else 0}
-            return {"intent": "", "items": 0}
+            if ctx is None:
+                return {"module": "context", "compiled": False}
+            result = {"module": "context", "compiled": True, "intent": str(getattr(ctx, 'intent', ''))}
+            if hasattr(ctx, 'total_items'):
+                result["total_items"] = ctx.total_items
+            if hasattr(ctx, 'items'):
+                from collections import Counter
+                sources = Counter(i.source for i in ctx.items)
+                result["sources"] = {src: count for src, count in sources.most_common()}
+            return result
+
         else:
-            return {"module": module, "status": "available", "detail": detail}
+            return {"module": module, "status": "unknown", "available_modules": [
+                "observations", "hypotheses", "knowledge", "skills", "world", "context",
+            ]}
     except Exception as e:
         raise HTTPException(500, str(e))
 
