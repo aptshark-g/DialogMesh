@@ -263,6 +263,10 @@ class CognitiveRuntimeEngine:
         if path_name == "slow":
             self._event_buffer.clear()
 
+        # Auto-trigger Deep Path if checkpoint produced results
+        if path_name == "slow" and results and any(r.ok for r in results):
+            self.trigger_deep()
+
         return results
 
     def _start_checkpoint_timer(self) -> None:

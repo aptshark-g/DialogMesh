@@ -145,8 +145,17 @@ class SkillDistillerAdapter(RuntimeAdapter):
         from core.agent.v4.skill_layer.distillation_engine import DistillationEngine
 
         engine = DistillationEngine()
-        patterns = ctx.patterns if ctx.patterns else []
-        candidates = engine.scan(patterns)
+        # Build inputs from context: pass hypothesis engine for knowledge access
+        hypothesis_engine = ctx.params.get("_hypothesis_engine", None)
+        knowledge_store = ctx.params.get("_knowledge_store", None)
+
+        try:
+            candidates = engine.scan(
+                hypothesis_engine=hypothesis_engine,
+                knowledge_store=knowledge_store,
+            )
+        except Exception:
+            candidates = []
 
         return AdapterResult(ok=True, data=candidates, adapter_name=self.name)
 
