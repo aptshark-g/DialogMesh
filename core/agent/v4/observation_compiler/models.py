@@ -22,7 +22,6 @@ class ObservationBundle:
     status: str = "partial"  # partial | complete | stale
 
 
-@dataclass
     @classmethod
     def from_dict(cls, d: dict) -> "ObservationBundle":
         """Deserialize from dict."""
