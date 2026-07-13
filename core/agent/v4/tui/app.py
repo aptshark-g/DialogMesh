@@ -87,7 +87,7 @@ class ObservationsTab(Static):
                     summary = str(getattr(b, 'summary', str(b)))[:60]
                     lines.append(f"  [{domain:<12s}] {summary}")
             else:
-                lines.append("  (no observations)")
+                lines.append(t("tui.no_observations"))
         self.update("\n".join(lines))
 
 
@@ -112,12 +112,12 @@ class HypothesesTab(Static):
                         bar = "#" * min(10, int(s / 2))
                         lines.append(f"  [{h.domain:<12s}] {h.statement[:40]:<40s} S={s:<3d} C={c:<3d} Stab={st:.2f} {bar}")
             else:
-                lines.append("  (no hypotheses available)")
+                lines.append(t("tui.no_hypotheses_available"))
         except Exception as e:
-            lines.append(f"  [red]Error: {e}[/]")
+            lines.append(t("tui.error", error=e))
 
         if len(lines) <= 2:
-            lines.append("  (no active hypotheses)")
+            lines.append(t("tui.no_hypotheses"))
         self.update("\n".join(lines))
 
 
@@ -141,11 +141,11 @@ class KnowledgeTab(Static):
                         if count >= 15:
                             break
                 if count == 0:
-                    lines.append("  (no frozen knowledge)")
+                    lines.append(t("tui.no_knowledge"))
             else:
-                lines.append("  (not available)")
+                lines.append(t("tui.not_available"))
         except Exception as e:
-            lines.append(f"  [red]Error: {e}[/]")
+            lines.append(t("tui.error", error=e))
         self.update("\n".join(lines))
 
 
@@ -170,9 +170,9 @@ class SkillsTab(Static):
                     color = "green" if status == "verified" else "yellow"
                     lines.append(f"  [{color}]{name:<25s}[/] {domain:<12s} usage={usage} {status}")
             else:
-                lines.append("  (no skills)")
+                lines.append(t("tui.no_skills"))
         except Exception as e:
-            lines.append(f"  [red]Error: {e}[/]")
+            lines.append(t("tui.error", error=e))
         self.update("\n".join(lines))
 
 
@@ -193,14 +193,14 @@ class WorldTab(Static):
 
         if world_graph is None:
             lines.append(t("tui.world.not_loaded"))
-            lines.append("  Use: engine._world_graph = CodeWorldAdapter().build_graph('.')")
+            lines.append(t('tui.world.usage_hint'))
         else:
-            lines.append(f"  Graph: {world_graph.world} ({world_graph.node_count} nodes, {world_graph.edge_count} edges)")
+            lines.append(t("tui.graph.stats", world=world_graph.world, nodes=world_graph.node_count, edges=world_graph.edge_count))
             lines.append(f"  Communities: {len(world_graph.communities)}")
 
             # Top backbone
             ranked = sorted(world_graph.backbone.items(), key=lambda x: x[1], reverse=True)[:8]
-            lines.append("  Top Backbone:")
+            lines.append(t("tui.world.top_backbone"))
             for uid, score in ranked:
                 node = world_graph.get_unit(uid)
                 name = node.name if node else uid
@@ -208,9 +208,9 @@ class WorldTab(Static):
                 lines.append(f"    {bar} {score:.2f}  {name[:30]}")
 
             # Communities summary
-            lines.append(f"  Communities ({len(world_graph.communities)}):")
+            lines.append(t("tui.world.communities", count=len(world_graph.communities)))
             for cid, units in list(world_graph.communities.items())[:5]:
-                lines.append(f"    {cid}: {len(units)} nodes")
+                lines.append(t("tui.world.community_item", cid=cid, size=len(units)))
         self.update("\n".join(lines))
 
 
@@ -234,11 +234,11 @@ class ContextTab(Static):
             ctx = getattr(engine, '_last_context', None)
             if ctx is None:
                 lines.append(t("tui.context.no_data"))
-                lines.append("  Send an event via CLI or API to trigger compilation.")
+                lines.append(t("tui.context.send_hint"))
             else:
                 intent = getattr(ctx, 'intent', '?')
                 total = getattr(ctx, 'total_items', 0)
-                lines.append(f"  Intent: {intent} ({total} items)")
+                lines.append(t("tui.context.intent", intent=intent, total=total))
 
                 if hasattr(ctx, 'items'):
                     from collections import Counter
@@ -247,7 +247,7 @@ class ContextTab(Static):
                         items = [i for i in ctx.items if i.source == src]
                         rels = [i.relevance for i in items if hasattr(i, 'relevance')]
                         rng = f"{min(rels):.2f}-{max(rels):.2f}" if rels else "?"
-                        lines.append(f"  [{src:<15s}] {count} items (relevance: {rng})")
+                        lines.append(t("tui.context.domain_item", src=src, count=count, rng=rng))
                 elif hasattr(ctx, 'entries'):
                     lines.append(f"  Domains: {list(ctx.entries.keys()) if hasattr(ctx, 'entries') else '?'}")
         self.update("\n".join(lines))
@@ -264,7 +264,7 @@ class EventLogTab(Static):
         try:
             from core.agent.v4.api_event_log import EventLog
         except Exception:
-            lines.append("  [red]EventLog module not available[/]")
+            lines.append(t("tui.events.module_error"))
             self.update("\n".join(lines))
             return
 
@@ -287,10 +287,10 @@ class EventLogTab(Static):
                 lines.append(f"  {eid:<20s} {kind:<18s} {payload_preview}")
 
             if len(events) > 20:
-                lines.append(f"  ... ({len(events) - 20} more events)")
+                lines.append(t("tui.events.more", count=len(events)-20))
         except Exception as e:
-            lines.append(f"  [yellow]EventLog not available: {e}[/]")
-            lines.append("  Create data/ directory or send events to populate.")
+            lines.append(t("tui.events.not_available", error=e))
+            lines.append(t("tui.events.no_db"))
         self.update("\n".join(lines))
 
 
@@ -307,15 +307,15 @@ class SettingsTab(Static):
         lang_name = "English" if current_lang == "en" else "Chinese" if current_lang == "zh" else current_lang
 
         lines = []
-        lines.append("Settings")
+        lines.append(t("tui.settings.title"))
         lines.append("=" * 50)
         lines.append("")
-        lines.append(f"  Language: [{current_lang}] {lang_name}")
+        lines.append(t("tui.settings.lang", lang=current_lang, name=lang_name))
         lines.append("")
-        lines.append("  Press 'e' for English, 'z' for Chinese")
-        lines.append("  (changes take effect on next refresh)")
+        lines.append(t("tui.settings.press"))
+        lines.append(t("tui.settings.changed"))
         lines.append("")
-        lines.append(f"  Current locale keys: {len(loc) - 1}")  # minus t function
+        lines.append(t("tui.settings.locale_count", count=len(loc)-1))  # minus t function
         self.update("\n".join(lines))
 
 
