@@ -4,7 +4,8 @@ import importlib, os
 from typing import Dict
 
 
-_cache: Dict[str, dict] = {}
+_cache.clear()
+        return load_locale(lang)
 
 
 def load_locale(lang: str = None) -> dict:
@@ -21,7 +22,8 @@ def load_locale(lang: str = None) -> dict:
     if lang is None:
         lang = os.environ.get("DIALOGMESH_LANG", "en")
 
-    if lang in _cache:
+    # Allow cache bypass via env change
+    if lang in _cache and os.environ.get("DIALOGMESH_LANG") == lang:
         return _cache[lang]
 
     try:
@@ -37,6 +39,12 @@ def load_locale(lang: str = None) -> dict:
         if lang != "en":
             return load_locale("en")
         return {"t": lambda key, **kw: key}
+
+
+def clear_cache():
+    """Clear locale cache (for language switch)."""
+    global _cache
+    _cache = {}
 
 
 def t(key: str, **kwargs) -> str:

@@ -354,19 +354,25 @@ class DialogMeshTUI(App):
         yield Footer()
 
     def on_mount(self):
-        # Start engine if not started
-        try:
-            from core.agent.v4.cli.main import _engine
-            if _engine is None:
+        # Start engine in background (deferred)
+        import threading
+        def _start_engine():
+            try:
                 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
                 import core.agent.v4.cli.main as cm
-                cm._engine = CognitiveRuntimeEngine()
-                cm._engine.start()
-        except Exception:
-            pass
+                if cm._engine is None:
+                    cm._engine = CognitiveRuntimeEngine()
+                    cm._engine.start()
+                    self.notify("Engine started", title="Runtime")
+            except Exception as e:
+                self.notify(f"Engine: {e}", title="Runtime", severity="warning")
+
+        t = threading.Thread(target=_start_engine, daemon=True)
+        t.start()
 
         # Refresh every second
         self._timer = self.set_interval(1, self.refresh_all)
+        self.notify("9 panels | e/z=language | 1-9=tab", title="Ready")
 
     def refresh_all(self):
         dash = self.query_one("#dash-content", DashboardTab)
@@ -402,11 +408,15 @@ class DialogMeshTUI(App):
         # Language switching
         if event.key == "e":
             os.environ["DIALOGMESH_LANG"] = "en"
+            from i18n import clear_cache
+            clear_cache()
             self.notify("Language: English", title="Settings")
             self.refresh_all()
         elif event.key == "z":
             os.environ["DIALOGMESH_LANG"] = "zh"
-            self.notify("Language: Chinese", title="Settings")
+            from i18n import clear_cache
+            clear_cache()
+            self.notify("Language: Chinese / 中文", title="Settings")
             self.refresh_all()
         # Tab switching (1-9)
         elif event.key in "123456789":
