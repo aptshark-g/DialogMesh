@@ -139,6 +139,29 @@ class StructuralWorldGraph:
             G.add_edge(e.source_id, e.target_id, weight=e.effective_weight())
         return G
 
+    @classmethod
+    def from_networkx(cls, G, graph_id: str = "restored", world: str = "code") -> "StructuralWorldGraph":
+        """Reconstruct StructuralWorldGraph from a networkx Graph.
+
+        Restores node IDs only (ReferenceUnit metadata is lost in networkx).
+        """
+        graph = cls(graph_id=graph_id, world=world)
+        from core.agent.v4.world.schema import ReferenceUnit, StructuralEdge
+        for uid in G.nodes():
+            graph.units[uid] = ReferenceUnit(
+                unit_id=uid, unit_type="unknown", name=uid, world=world,
+            )
+        for i, (src, tgt, data) in enumerate(G.edges(data=True)):
+            weight = data.get("weight", 1.0)
+            graph.edges.append(StructuralEdge(
+                edge_id=f"restored_{i}",
+                edge_type="unknown",
+                source_id=src,
+                target_id=tgt,
+                weight=weight,
+            ))
+        return graph
+
 
 @dataclass
 class SubgraphResult:

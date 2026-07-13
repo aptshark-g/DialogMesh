@@ -37,6 +37,41 @@ class HypothesisNode:
             + min(1.0, bs["entropy"]) * p.get("weight_entropy", 0.10)
         )
 
+    def to_dict(self) -> dict:
+        """Serialize to dict for persistence."""
+        return {
+            "hypothesis_id": self.hypothesis_id,
+            "interpretation_ref": self.interpretation_ref,
+            "domain": self.domain,
+            "statement": self.statement,
+            "objects": self.objects,
+            "topic": self.topic,
+            "belief_state": dict(self.belief_state),
+            "domain_signals": dict(self.domain_signals),
+            "status": self.status,
+            "merged_into": self.merged_into,
+            "created_at": self.created_at,
+            "last_vote_at": self.last_vote_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "HypothesisNode":
+        """Deserialize from dict."""
+        return cls(
+            hypothesis_id=d.get("hypothesis_id", ""),
+            interpretation_ref=d.get("interpretation_ref", ""),
+            domain=d.get("domain", ""),
+            statement=d.get("statement", ""),
+            objects=d.get("objects", []),
+            topic=d.get("topic", ""),
+            belief_state=d.get("belief_state", {}),
+            domain_signals=d.get("domain_signals", {}),
+            status=d.get("status", "active"),
+            merged_into=d.get("merged_into"),
+            created_at=d.get("created_at", 0.0),
+            last_vote_at=d.get("last_vote_at", 0.0),
+        )
+
     def should_freeze(self, params: dict = None) -> bool:
         p = params or {}
         bs = self.belief_state

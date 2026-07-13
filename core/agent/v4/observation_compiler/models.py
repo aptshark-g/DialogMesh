@@ -23,6 +23,19 @@ class ObservationBundle:
 
 
 @dataclass
+    @classmethod
+    def from_dict(cls, d: dict) -> "ObservationBundle":
+        """Deserialize from dict."""
+        return cls(
+            bundle_id=d.get("bundle_id", d.get("id", "")),
+            domain=d.get("domain", ""),
+            summary=d.get("summary", ""),
+            interpretations=d.get("interpretations", []),
+            evidence=d.get("evidence", []),
+            timestamp=d.get("timestamp", 0.0),
+        )
+
+
 class DomainObservation:
     """Per-domain observation. Does NOT contain confidence."""
     domain: str
