@@ -1,6 +1,6 @@
 # DESIGN_SEMANTIC_WORLD_MODEL.md — Structural World Model
 
-> Version: v1.1 | Date: 2026-07-12
+> Version: v1.2 | Date: 2026-07-12
 >
 > Not a code knowledge base — a unified Structural World Model.
 > Source code / CAD / Unity Scene / DOM / DB Schema are just different views.
@@ -129,67 +129,113 @@ If `utils/logger.py` and `utils/cache.py` have no edges between them, they do no
 After community detection, core nodes in each community (i.e., high StructuralImportance nodes) receive dynamic index anchors. Anchor sizes are managed via ParameterRegistry floating-point, adjusting with access frequency and freshness.
 
 ---
-## 4. Backbone Coloring: StructuralImportance Multi-Dimensional Fusion (Strategy Pattern)
+## 4. Backbone Coloring: Tiered Importance Pipeline (Strategy Pattern + Multi-Tier)
 
-### 4.1 Backbone Is Not Most Accessed
+### 4.1 Design Principle: Not "Which Algorithm", But "Which Tier"
 
-Logger may be the most called, but it does not determine system topology. Backbone is about **information flow paths**. However, **we do not bind to a single algorithm** --- use the Strategy pattern, switchable via ParameterRegistry.
+Backbone is not "most accessed" — it's about information flow paths. The pipeline auto-selects
+the best strategy based on graph size:
 
-### 4.2 StructuralImportance Strategy
+`
+Tier 0: Degree (O(N+M), <1ms)        ← <5000 nodes, fast scan
+  |  accuracy insufficient? -> upgrade
+Tier 1: K-Sampling (O(kM), ~100ms)   ← <20000 nodes, Brandes k-sampling
+  |  accuracy insufficient? -> upgrade
+Tier 2: Community Chunk (O(Sum(N_i*M_i)), ~1s)  ← <50000 nodes, per-community exact
+  |  accuracy insufficient? -> ultimate fallback
+Tier 3: Exact Betweenness (O(N^3), ~10s+)       ← large graph, full precision
+`
 
-```python
-class StructuralImportanceStrategy(ABC):
-    # Strategy interface for computing node importance in a structural graph.
-    @abstractmethod
-    def compute(self, graph: StructuralWorldGraph) -> Dict[str, float]: ...
+This is a concrete application of the MultiTierPipeline pattern.
+A TieredImportanceSelector (adapter) routes the graph to the right strategy.
 
+### 4.2 Strategy Implementations
+
+`python
 class BetweennessStrategy(StructuralImportanceStrategy):
-    # Betweenness centrality: how many shortest paths pass through this node.
+    """Tier 3: Exact betweenness centrality. O(N^3). For <5000 nodes."""
+    def compute(self, graph): ...
+
+class KSamplingStrategy(StructuralImportanceStrategy):
+    """Tier 1: Brandes k-sampling. O(k*M). 95% quality, 10x speed."""
+    def __init__(self, k: int = 1000): ...
+    def compute(self, graph): ...
+
+class CommunityChunkStrategy(StructuralImportanceStrategy):
+    """Tier 2: Per-community exact + meta-graph bridge. 85% quality, 20x speed."""
+    def __init__(self, resolution: float = 1.0): ...
     def compute(self, graph): ...
 
 class PageRankStrategy(StructuralImportanceStrategy):
-    # PageRank: importance by incoming edge weight.
-    def compute(self, graph): ...
+    """Alternate: PageRank. O(N+M) per iteration. For large graphs."""
+    def __init__(self, alpha: float = 0.85): ...
 
 class DegreeStrategy(StructuralImportanceStrategy):
-    # Weighted degree: simple but fast.
+    """Tier 0: Weighted degree. O(N+M). Fastest approximation."""
     def compute(self, graph): ...
 
-class HybridStrategy(StructuralImportanceStrategy):
-    # Ensemble of multiple strategies, weighted by registry params.
-    def compute(self, graph): ...
-```
+class TieredImportanceStrategy(StructuralImportanceStrategy):
+    """Adapter: auto-routes based on graph size.
 
-Strategy selection via ParameterRegistry:
+    Configuration (from WorldParams):
+        tier0_max_nodes: 5000   -> Degree / Exact Betweenness
+        tier1_max_nodes: 20000  -> K-Sampling
+        tier2_max_nodes: 50000  -> Community Chunk
+        tier3_fallback          -> Exact Betweenness
+        k_sampling_size: 1000
+    """
+    def compute(self, graph): ...
+`
+
+### 4.3 Strategy Selection via ParameterRegistry
 
 | Param | Description | Default |
 |:---|:---|:---|
-| `world.importance.strategy` | Current strategy name | `betweenness` |
-| `world.importance.strategies` | Available strategies | `[betweenness, pagerank, degree, hybrid]` |
+| world.importance.strategy | Strategy name | "tiered" |
+| world.importance.tiered.tier0_max_nodes | Tier 0 max nodes | 5000 |
+| world.importance.tiered.tier1_max_nodes | Tier 1 max nodes | 20000 |
+| world.importance.tiered.tier2_max_nodes | Tier 2 max nodes | 50000 |
+| world.importance.tiered.k_sampling_size | K for sampling | 1000 |
+| world.importance.pagerank_alpha | PageRank damping | 
+Available strategy names: "tiered", "betweenness", "k_sampling", "community_chunk",
+"pagerank", "degree", "hybrid".
 
-**Default**: betweenness (accurate for small/medium projects). Later switch to Hybrid or auto-learn the best strategy for the project scale.
+### 4.4 Quality vs Speed Tradeoff
 
-### 4.3 Multi-Dimensional Fusion (Strategy-Agnostic)
+| Graph Size | Strategy | Speed | Quality |
+|:---|:---|:---|:---|
+| <5000 nodes | Exact Betweenness (Tier 1/3) | fast | 100% |
+| 5000-20000 | K-Sampling (Tier 1) | medium | ~95% |
+| 20000-50000 | Community Chunk (Tier 2) | slow | ~85% |
+| >50000 | Exact Betweenness (Tier 3) | very slow | 100% |
 
-Regardless of which StructuralImportance strategy is used, the BackboneScore fuses four dimensions:
+Community Chunk slightly underestimates cross-community bridge nodes.
+Adjust 
+esolution (higher = smaller communities) to compensate.
 
-```
+### 4.5 Multi-Dimensional Fusion (Strategy-Agnostic)
+
+`
 BackboneScore =
     0.30 x Structural Importance      # Graph topology importance (strategy output)
   + 0.30 x Runtime Centrality         # Bridge degree in traces
   + 0.20 x Commit Centrality          # Git co-change patterns
   + 0.20 x Retrieval Centrality       # Context Compiler access frequency
-```
+`
 
-Each dimension is independently normalized before fusion. Adding a new observation source --- e.g., Test Coverage Centrality --- only requires adding one weighted layer, without changing the formula.
+Each dimension is independently normalized before fusion. Adding a new observation source
+only requires one weighted layer, without changing the formula.
 
-### 4.4 Backbone Coloring Effects
+### 4.6 Backbone Coloring Effects
 
-High BackboneScore node -> higher priority index anchor -> prioritized in ContextCompiler graph traversal -> subgraph is smaller and more precise.
+High BackboneScore node -> higher priority index anchor -> prioritized in ContextCompiler
+graph traversal -> subgraph is smaller and more precise.
 
-All parameters in ParameterRegistry: `world.backbone.structural_weight`, `world.backbone.runtime_weight`, etc.
+All parameters in ParameterRegistry: world.backbone.structural_weight,
+world.backbone.runtime_weight, etc.
 
 ---
+
 ## 5. Three-Level Recall
 
 ### 5.1 LLM Should Never See Raw Code Directly

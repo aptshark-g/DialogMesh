@@ -30,8 +30,23 @@ class WorldParams:
     """Default anchor size for community index anchors."""
 
     # ---- Structural Importance ----
-    importance_strategy: str = "betweenness"
-    """Default strategy: betweenness | pagerank | degree | hybrid."""
+    importance_strategy: str = "tiered"
+    """Default strategy: tiered | betweenness | k_sampling | community_chunk | pagerank | degree | hybrid."""
+
+    importance_tier0_max: int = 5000
+    """Tier 0: max nodes for exact betweenness."""
+
+    importance_tier1_max: int = 20000
+    """Tier 1: max nodes for k-sampling."""
+
+    importance_tier2_max: int = 50000
+    """Tier 2: max nodes for community chunk."""
+
+    importance_k_sampling_size: int = 1000
+    """K for Brandes k-sampling."""
+
+    importance_community_resolution: float = 1.0
+    """Louvain resolution for community chunk strategy."""
 
     pagerank_alpha: float = 0.85
     """PageRank damping factor (0-1). Higher = more weight on incoming edges."""
