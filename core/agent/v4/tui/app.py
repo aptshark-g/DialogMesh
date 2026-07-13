@@ -213,6 +213,86 @@ class WorldTab(Static):
         self.update("\n".join(lines))
 
 
+class ContextTab(Static):
+    """CrossDomainContextIR viewer."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        lines = ["Context Engineering (last IR)", "=" * 60]
+        try:
+            from core.agent.v4.cli.main import _engine
+            engine = _engine
+        except Exception:
+            engine = None
+
+        if engine is None:
+            lines.append("  [red]Engine not started[/]")
+        else:
+            ctx = getattr(engine, '_last_context', None)
+            if ctx is None:
+                lines.append("  (no context compiled yet)")
+                lines.append("  Send an event via CLI or API to trigger compilation.")
+            else:
+                intent = getattr(ctx, 'intent', '?')
+                total = getattr(ctx, 'total_items', 0)
+                lines.append(f"  Intent: {intent} ({total} items)")
+
+                if hasattr(ctx, 'items'):
+                    from collections import Counter
+                    sources = Counter(i.source for i in ctx.items)
+                    for src, count in sources.most_common():
+                        items = [i for i in ctx.items if i.source == src]
+                        rels = [i.relevance for i in items if hasattr(i, 'relevance')]
+                        rng = f"{min(rels):.2f}-{max(rels):.2f}" if rels else "?"
+                        lines.append(f"  [{src:<15s}] {count} items (relevance: {rng})")
+                elif hasattr(ctx, 'entries'):
+                    lines.append(f"  Domains: {list(ctx.entries.keys()) if hasattr(ctx, 'entries') else '?'}")
+        self.update("\n".join(lines))
+
+
+class EventLogTab(Static):
+    """Event log viewer."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        lines = ["Event Log (last 20)", "=" * 60]
+        try:
+            from core.agent.v4.api_event_log import EventLog
+        except Exception:
+            lines.append("  [red]EventLog module not available[/]")
+            self.update("\n".join(lines))
+            return
+
+        try:
+            el = EventLog("data/event_log.db")
+            el.open()
+            events = el.replay_unconsumed(limit=40)  # Get all events for display
+            # Also get consumed by querying stats
+            stats = el.stats
+            el.close()
+
+            lines.append(f"  Total: {stats['total']} events, {stats['unconsumed']} unconsumed")
+            lines.append("")
+
+            shown = events[-20:]
+            for ev in shown:
+                eid = ev["event_id"][:20]
+                kind = ev["kind"][:18]
+                payload_preview = str(ev.get("payload", {}).get("text", ""))[:35]
+                lines.append(f"  {eid:<20s} {kind:<18s} {payload_preview}")
+
+            if len(events) > 20:
+                lines.append(f"  ... ({len(events) - 20} more events)")
+        except Exception as e:
+            lines.append(f"  [yellow]EventLog not available: {e}[/]")
+            lines.append("  Create data/ directory or send events to populate.")
+        self.update("\n".join(lines))
+
+
 class DialogMeshTUI(App):
     """DialogMesh v4 Terminal Dashboard."""
 
@@ -240,7 +320,9 @@ class DialogMeshTUI(App):
             with TabPane("World", id="world"):
                 yield WorldTab(id="world-content")
             with TabPane("Context", id="ctx"):
-                yield Static("Context / Event Log panels — Phase 3")
+                yield ContextTab(id="ctx-content")
+            with TabPane("Event Log", id="evtlog"):
+                yield EventLogTab(id="evtlog-content")
         yield Footer()
 
     def on_mount(self):
@@ -277,6 +359,12 @@ class DialogMeshTUI(App):
         world = self.query_one("#world-content", WorldTab)
         if world:
             world.update_data()
+        ctx_tab = self.query_one("#ctx-content", ContextTab)
+        if ctx_tab:
+            ctx_tab.update_data()
+        evt_tab = self.query_one("#evtlog-content", EventLogTab)
+        if evt_tab:
+            evt_tab.update_data()
 
     def on_unmount(self):
         try:
