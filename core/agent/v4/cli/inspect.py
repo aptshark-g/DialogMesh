@@ -10,7 +10,7 @@ from typing import Optional, List
 # ---- v4: observations ----
 
 def _inspect_observations(engine, detail: bool = False, item_id: str = None,
-                          page: int = 1, page_size: int = 10):
+                          page: int = 1, page_size: int = 10, json_output: bool = False):
     """Show observations from the ObservationPool."""
     pool = getattr(engine, '_observation_pool', None)
     if pool is None:
@@ -137,7 +137,7 @@ def _inspect_knowledge(engine, limit: int = 10):
 # ---- v4: skills ----
 
 def _inspect_skills(engine, detail: bool = False, item_id: str = None,
-                    page: int = 1, page_size: int = 10):
+                    page: int = 1, page_size: int = 10, json_output: bool = False):
     """Show distilled Skills from SkillPool."""
     try:
         from core.agent.v4.skill_layer.skill_pool import SkillPool
@@ -245,3 +245,15 @@ def _inspect_context(engine):
     elif hasattr(ctx, 'entries'):
         print(f"  Domains: {list(ctx.entries.keys()) if hasattr(ctx, 'entries') else '?'}")
     return 0
+
+
+
+def _to_json_output(command: str, data, error: str = None) -> str:
+    """Convert inspect output to JSON string."""
+    import json
+    result = {"command": command, "count": 0, "data": data}
+    if error:
+        result["error"] = error
+    if isinstance(data, list):
+        result["count"] = len(data)
+    return json.dumps(result, ensure_ascii=False, default=str, indent=2)

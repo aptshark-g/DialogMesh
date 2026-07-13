@@ -27,6 +27,12 @@ def _build_parser():
 
     # event
     event = sub.add_parser("event", help="Send a user event to the runtime")
+
+    # events (audit) — separate from event (send)
+    evt = sub.add_parser("events", help="Event audit and replay")
+    evt_sub = evt.add_subparsers(dest="evt_cmd")
+    evt_sub.add_parser("history", help="Show event history")
+    evt_sub.add_parser("replay", help="Replay unconsumed events")
     event.add_argument("text", help="Event text")
 
     # pipeline
@@ -74,15 +80,18 @@ def _build_parser():
     obs.add_argument("--id", help="Show single observation by ID")
     obs.add_argument("--page", type=int, default=1, help="Page number")
     obs.add_argument("--page-size", type=int, default=10)
+    obs.add_argument("--json", action="store_true")
 
     hyp = inv_sub.add_parser("hypotheses", help="View Hypothesis competition")
     hyp.add_argument("--detail", action="store_true")
     hyp.add_argument("--id", help="Show single hypothesis by ID")
     hyp.add_argument("--page", type=int, default=1, help="Page number")
     hyp.add_argument("--page-size", type=int, default=10)
+    hyp.add_argument("--json", action="store_true")
 
     kno = inv_sub.add_parser("knowledge", help="View frozen Knowledge")
     kno.add_argument("--detail", action="store_true")
+    kno.add_argument("--json", action="store_true")
     kno.add_argument("--id", help="Show single knowledge by ID")
 
     ski = inv_sub.add_parser("skills", help="View distilled Skills")
@@ -90,6 +99,7 @@ def _build_parser():
     ski.add_argument("--id", help="Show single skill by name")
     ski.add_argument("--page", type=int, default=1)
     ski.add_argument("--page-size", type=int, default=10)
+    ski.add_argument("--json", action="store_true")
 
     wor = inv_sub.add_parser("world", help="View World Graph")
     wor.add_argument("--detail", action="store_true")
@@ -126,6 +136,22 @@ def _build_parser():
     # health
     sub.add_parser("health", help="Run system health check")
 
+    # event commands
+    evt = sub.add_parser("event", help="Event management")
+    evt_sub = evt.add_subparsers(dest="evt_cmd")
+    evt_sub.add_parser("history", help="Show event history")
+    evt_sub.add_parser("replay", help="Replay unconsumed events")
+
+    # maintenance
+    mnt = sub.add_parser("maintenance", help="Storage maintenance")
+    mnt_sub = mnt.add_subparsers(dest="mnt_cmd")
+    mnt_sub.add_parser("gc", help="Run garbage collection")
+    mnt_sub.add_parser("stats", help="Show storage stats")
+
+    # search
+    sch = sub.add_parser("search", help="Cross-module search")
+    sch.add_argument("keyword", help="Search keyword")
+
     return parser
 
 
@@ -152,6 +178,12 @@ def main(argv=None):
         return cmd_config(args)
     elif args.command == "health":
         return cmd_health(args)
+    elif args.command == "events":
+        return cmd_events(args)
+    elif args.command == "maintenance":
+        return cmd_maintenance(args)
+    elif args.command == "search":
+        return cmd_search(args)
     else:
         parser.print_help()
         return 0
@@ -188,7 +220,8 @@ def cmd_inspect(args):
             "world": lambda: _inspect_world(
                 _engine, detail=args.detail, item_id=getattr(args, 'id', None)),
             "context": lambda: _inspect_context(
-                _engine, detail=args.detail),
+                _engine, detail=args.detail,
+                json_output=getattr(args, "json", False)),
             "behavior": lambda: _inspect_behavior(_engine),
             "causal": lambda: _inspect_causal(_engine),
             "constraints": lambda: _inspect_constraints(_engine),
@@ -245,6 +278,45 @@ def cmd_health(args):
         return _health_check(_engine)
     except Exception as e:
         print(f"Health check error: {e}", file=sys.stderr)
+        return 1
+
+def cmd_events(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.event_cmd import _event_history, _event_replay
+        if args.evt_cmd == "history":
+            return _event_history(_engine)
+        elif args.evt_cmd == "replay":
+            return _event_replay(_engine)
+        print(f"Unknown events command: {args.evt_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Events error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_maintenance(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.maintenance_cmd import _maintenance_gc, _maintenance_stats
+        if args.mnt_cmd == "gc":
+            return _maintenance_gc(_engine)
+        elif args.mnt_cmd == "stats":
+            return _maintenance_stats(_engine)
+        print(f"Unknown maintenance command: {args.mnt_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Maintenance error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_search(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.search_cmd import _search
+        return _search(_engine, args.keyword)
+    except Exception as e:
+        print(f"Search error: {e}", file=sys.stderr)
         return 1
 
 def cmd_start(args):
