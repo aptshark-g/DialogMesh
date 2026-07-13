@@ -9,28 +9,65 @@ from typing import Optional, List
 
 # ---- v4: observations ----
 
-def _inspect_observations(engine, limit: int = 10, domain: str = None):
-    """Show recent observations from the ObservationPool."""
+def _inspect_observations(engine, detail: bool = False, item_id: str = None,
+                          page: int = 1, page_size: int = 10):
+    """Show observations from the ObservationPool."""
     pool = getattr(engine, '_observation_pool', None)
     if pool is None:
-        print("Observation pool not available (engine not started?)")
+        print("Observation pool not available")
         return 1
 
-    bundles = pool.get_by_domain(domain or "all")
+    bundles = pool.get_by_domain("all")
     if not bundles:
         print("No observations")
         return 0
 
-    shown = bundles[-limit:]
-    print(f"{'ID':<20s} {'Domain':<15s} {'Summary':<50s} {'Time':<8s}")
-    print("-" * 95)
-    for b in shown:
-        bid = str(getattr(b, 'bundle_id', '?'))
-        bdomain = str(getattr(b, 'domain', '?'))
-        summary = str(getattr(b, 'summary', str(b)))[:50]
-        ts = str(getattr(b, 'timestamp', ''))[:8]
-        print(f"{bid:<20s} {bdomain:<15s} {summary:<50s} {ts:<8s}")
+    # Single item drill-down
+    if item_id:
+        for b in bundles:
+            if str(getattr(b, 'bundle_id', '')) == item_id:
+                _show_observation_detail(b)
+                return 0
+        print(f"Observation {item_id} not found")
+        return 1
+
+    # Paginated summary
+    start = (page - 1) * page_size
+    end = start + page_size
+    shown = list(bundles)[start:end]
+
+    if detail:
+        for b in shown:
+            _show_observation_detail(b)
+            print("-" * 60)
+    else:
+        print(f"{'ID':<20s} {'Domain':<15s} {'Summary':<50s} {'Time':<8s}")
+        print("-" * 95)
+        for b in shown:
+            bid = str(getattr(b, 'bundle_id', '?'))
+            bdomain = str(getattr(b, 'domain', '?'))
+            summary = str(getattr(b, 'summary', str(b)))[:50]
+            ts = str(getattr(b, 'timestamp', ''))[:8]
+            print(f"{bid:<20s} {bdomain:<15s} {summary:<50s} {ts:<8s}")
+        total = len(bundles)
+        pages = (total + page_size - 1) // page_size
+        print(f"Page {page}/{pages} ({len(shown)} of {total} observations)")
     return 0
+
+
+def _show_observation_detail(b):
+    """Show full detail of a single ObservationBundle."""
+    bid = getattr(b, 'bundle_id', '?')
+    bdomain = getattr(b, 'domain', '?')
+    print(f"ID:      {bid}")
+    print(f"Domain:  {bdomain}")
+    print(f"Summary: {getattr(b, 'summary', 'N/A')}")
+    if hasattr(b, 'interpretations'):
+        for intr in getattr(b, 'interpretations', []):
+            print(f"  Interpretation: {str(intr)[:100]}")
+    if hasattr(b, 'evidence'):
+        ev = getattr(b, 'evidence', [])
+        print(f"  Evidence: {len(ev)} items")
 
 
 # ---- v4: hypotheses ----
@@ -99,27 +136,63 @@ def _inspect_knowledge(engine, limit: int = 10):
 
 # ---- v4: skills ----
 
-def _inspect_skills(engine, domain: str = None, status: str = "all"):
+def _inspect_skills(engine, detail: bool = False, item_id: str = None,
+                    page: int = 1, page_size: int = 10):
     """Show distilled Skills from SkillPool."""
     try:
         from core.agent.v4.skill_layer.skill_pool import SkillPool
         pool = SkillPool()
-        skills = pool.get_ready() if status == "verified" else pool.get_by_domain(domain or None) if domain else pool.list_all()
+        skills = pool.list_all() if hasattr(pool, 'list_all') else []
         if not skills:
             print("No skills")
             return 0
-        print(f"{'Name':<30s} {'Domain':<15s} {'Usage':<6s} {'Status':<12s}")
-        print("-" * 65)
-        for s in skills:
-            name = getattr(s, 'name', str(s))[:30]
-            sdomain = getattr(s, 'domain', '?')[:15]
-            usage = str(getattr(s, 'usage_count', '?'))[:6]
-            sstatus = getattr(s, 'status', '?')[:12]
-            print(f"{name:<30s} {sdomain:<15s} {usage:<6s} {sstatus:<12s}")
+
+        if item_id:
+            for s in skills:
+                if getattr(s, 'name', str(s)) == item_id:
+                    _show_skill_detail(s)
+                    return 0
+            print(f"Skill {item_id} not found")
+            return 1
+
+        start = (page - 1) * page_size
+        shown = skills[start:start + page_size]
+
+        if detail:
+            for s in shown:
+                _show_skill_detail(s)
+                print("-" * 50)
+        else:
+            print(f"{'Name':<25s} {'Domain':<12s} {'Usage':<6s} {'Status':<10s}")
+            print("-" * 55)
+            for s in shown:
+                name = getattr(s, 'name', str(s))[:25]
+                sdomain = getattr(s, 'domain', '?')[:12]
+                usage = str(getattr(s, 'usage_count', '?'))[:6]
+                sstatus = getattr(s, 'status', '?')[:10]
+                print(f"{name:<25s} {sdomain:<12s} {usage:<6s} {sstatus:<10s}")
+            pages = (len(skills) + page_size - 1) // page_size
+            print(f"Page {page}/{pages} ({len(shown)} of {len(skills)} skills)")
         return 0
     except Exception as e:
         print(f"Error: {e}")
         return 1
+
+
+def _show_skill_detail(s):
+    """Show full detail of a single Skill."""
+    print(f"Name:      {getattr(s, 'name', 'N/A')}")
+    print(f"Domain:    {getattr(s, 'domain', 'N/A')}")
+    print(f"Status:    {getattr(s, 'status', 'N/A')}")
+    print(f"Usage:     {getattr(s, 'usage_count', 0)}")
+    if hasattr(s, 'trigger'):
+        print(f"Trigger:   {s.trigger}")
+    if hasattr(s, 'constraints'):
+        cons = getattr(s, 'constraints', [])
+        print(f"Constraints: {len(cons)} items" if cons else "Constraints: none")
+    if hasattr(s, 'procedure'):
+        proc = getattr(s, 'procedure', None)
+        print(f"Procedure:  {'defined' if proc else 'none'}")
 
 
 # ---- v4: world ----

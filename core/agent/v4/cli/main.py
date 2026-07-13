@@ -67,12 +67,38 @@ def _build_parser():
     # inspect
     inv = sub.add_parser("inspect", help="View system state")
     inv_sub = inv.add_subparsers(dest="inspect_cmd")
-    inv_sub.add_parser("observations", help="View Observation pool")
-    inv_sub.add_parser("hypotheses", help="View Hypothesis competition")
-    inv_sub.add_parser("knowledge", help="View frozen Knowledge")
-    inv_sub.add_parser("skills", help="View distilled Skills")
-    inv_sub.add_parser("world", help="View World Graph")
-    inv_sub.add_parser("context", help="View last context IR")
+
+    # v4 — with detail support
+    obs = inv_sub.add_parser("observations", help="View Observation pool")
+    obs.add_argument("--detail", action="store_true", help="Show full detail")
+    obs.add_argument("--id", help="Show single observation by ID")
+    obs.add_argument("--page", type=int, default=1, help="Page number")
+    obs.add_argument("--page-size", type=int, default=10)
+
+    hyp = inv_sub.add_parser("hypotheses", help="View Hypothesis competition")
+    hyp.add_argument("--detail", action="store_true")
+    hyp.add_argument("--id", help="Show single hypothesis by ID")
+    hyp.add_argument("--page", type=int, default=1, help="Page number")
+    hyp.add_argument("--page-size", type=int, default=10)
+
+    kno = inv_sub.add_parser("knowledge", help="View frozen Knowledge")
+    kno.add_argument("--detail", action="store_true")
+    kno.add_argument("--id", help="Show single knowledge by ID")
+
+    ski = inv_sub.add_parser("skills", help="View distilled Skills")
+    ski.add_argument("--detail", action="store_true")
+    ski.add_argument("--id", help="Show single skill by name")
+    ski.add_argument("--page", type=int, default=1)
+    ski.add_argument("--page-size", type=int, default=10)
+
+    wor = inv_sub.add_parser("world", help="View World Graph")
+    wor.add_argument("--detail", action="store_true")
+    wor.add_argument("--id", help="Show single node by unit_id")
+
+    ctx = inv_sub.add_parser("context", help="View last context IR")
+    ctx.add_argument("--detail", action="store_true")
+
+    # v3.2 — simple viewers (no detail needed)
     inv_sub.add_parser("behavior", help="View v3.2 behavior patterns")
     inv_sub.add_parser("causal", help="View v3.2 causal chains")
     inv_sub.add_parser("constraints", help="View engineering constraints")
@@ -124,12 +150,21 @@ def cmd_inspect(args):
         )
 
         dispatch = {
-            "observations": lambda: _inspect_observations(_engine),
-            "hypotheses": lambda: _inspect_hypotheses(_engine),
-            "knowledge": lambda: _inspect_knowledge(_engine),
-            "skills": lambda: _inspect_skills(_engine),
-            "world": lambda: _inspect_world(_engine),
-            "context": lambda: _inspect_context(_engine),
+            "observations": lambda: _inspect_observations(
+                _engine, detail=args.detail, item_id=getattr(args, 'id', None),
+                page=args.page, page_size=args.page_size),
+            "hypotheses": lambda: _inspect_hypotheses(
+                _engine, detail=args.detail, item_id=getattr(args, 'id', None),
+                page=args.page, page_size=args.page_size),
+            "knowledge": lambda: _inspect_knowledge(
+                _engine, detail=args.detail, item_id=getattr(args, 'id', None)),
+            "skills": lambda: _inspect_skills(
+                _engine, detail=args.detail, item_id=getattr(args, 'id', None),
+                page=args.page, page_size=args.page_size),
+            "world": lambda: _inspect_world(
+                _engine, detail=args.detail, item_id=getattr(args, 'id', None)),
+            "context": lambda: _inspect_context(
+                _engine, detail=args.detail),
             "behavior": lambda: _inspect_behavior(_engine),
             "causal": lambda: _inspect_causal(_engine),
             "constraints": lambda: _inspect_constraints(_engine),
