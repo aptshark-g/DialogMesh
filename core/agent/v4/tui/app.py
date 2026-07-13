@@ -1,4 +1,4 @@
-"""DialogMesh v4 TUI — Textual terminal dashboard (Phase 1)."""
+"""DialogMesh v4 TUI — Textual terminal dashboard (Phase 1+2)."""
 from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
@@ -120,6 +120,99 @@ class HypothesesTab(Static):
         self.update("\n".join(lines))
 
 
+class KnowledgeTab(Static):
+    """Frozen Knowledge viewer."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        lines = ["Knowledge Vault (frozen)", "=" * 60]
+        try:
+            from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+            pipe = HypothesisPipeline()
+            if hasattr(pipe, '_match_vote') and hasattr(pipe._match_vote, '_hypotheses'):
+                count = 0
+                for hid, h in pipe._match_vote._hypotheses.items():
+                    if h.status == "frozen":
+                        lines.append(f"  [{h.domain:<12s}] {h.statement[:45]:<45s} score={h.belief_score():.2f}")
+                        count += 1
+                        if count >= 15:
+                            break
+                if count == 0:
+                    lines.append("  (no frozen knowledge)")
+            else:
+                lines.append("  (not available)")
+        except Exception as e:
+            lines.append(f"  [red]Error: {e}[/]")
+        self.update("\n".join(lines))
+
+
+class SkillsTab(Static):
+    """Skill forge viewer."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        lines = ["Skill Forge", "=" * 60]
+        try:
+            from core.agent.v4.skill_layer.skill_pool import SkillPool
+            pool = SkillPool()
+            skills = pool.list_all() if hasattr(pool, 'list_all') else []
+            if skills:
+                for s in skills[:15]:
+                    name = getattr(s, 'name', str(s))[:25]
+                    domain = getattr(s, 'domain', '?')[:12]
+                    usage = getattr(s, 'usage_count', 0)
+                    status = getattr(s, 'status', '?')
+                    color = "green" if status == "verified" else "yellow"
+                    lines.append(f"  [{color}]{name:<25s}[/] {domain:<12s} usage={usage} {status}")
+            else:
+                lines.append("  (no skills)")
+        except Exception as e:
+            lines.append(f"  [red]Error: {e}[/]")
+        self.update("\n".join(lines))
+
+
+class WorldTab(Static):
+    """World Graph viewer."""
+
+    def on_mount(self):
+        self.update_data()
+
+    def update_data(self):
+        lines = ["Semantic World Model", "=" * 60]
+        try:
+            from core.agent.v4.cli.main import _engine
+            engine = _engine
+            world_graph = getattr(engine, '_world_graph', None) if engine else None
+        except Exception:
+            world_graph = None
+
+        if world_graph is None:
+            lines.append("  [yellow]World Graph not loaded[/]")
+            lines.append("  Use: engine._world_graph = CodeWorldAdapter().build_graph('.')")
+        else:
+            lines.append(f"  Graph: {world_graph.world} ({world_graph.node_count} nodes, {world_graph.edge_count} edges)")
+            lines.append(f"  Communities: {len(world_graph.communities)}")
+
+            # Top backbone
+            ranked = sorted(world_graph.backbone.items(), key=lambda x: x[1], reverse=True)[:8]
+            lines.append("  Top Backbone:")
+            for uid, score in ranked:
+                node = world_graph.get_unit(uid)
+                name = node.name if node else uid
+                bar = "#" * int(score * 20)
+                lines.append(f"    {bar} {score:.2f}  {name[:30]}")
+
+            # Communities summary
+            lines.append(f"  Communities ({len(world_graph.communities)}):")
+            for cid, units in list(world_graph.communities.items())[:5]:
+                lines.append(f"    {cid}: {len(units)} nodes")
+        self.update("\n".join(lines))
+
+
 class DialogMeshTUI(App):
     """DialogMesh v4 Terminal Dashboard."""
 
@@ -140,8 +233,14 @@ class DialogMeshTUI(App):
                 yield ObservationsTab(id="obs-content")
             with TabPane("Hypotheses", id="hyp"):
                 yield HypothesesTab(id="hyp-content")
-            with TabPane("More coming...", id="more"):
-                yield Static("Knowledge / Skills / World / Context panels — Phase 2+3")
+            with TabPane("Knowledge", id="know"):
+                yield KnowledgeTab(id="know-content")
+            with TabPane("Skills", id="skill"):
+                yield SkillsTab(id="skill-content")
+            with TabPane("World", id="world"):
+                yield WorldTab(id="world-content")
+            with TabPane("Context", id="ctx"):
+                yield Static("Context / Event Log panels — Phase 3")
         yield Footer()
 
     def on_mount(self):
@@ -169,6 +268,15 @@ class DialogMeshTUI(App):
         hyp = self.query_one("#hyp-content", HypothesesTab)
         if hyp:
             hyp.update_data()
+        know = self.query_one("#know-content", KnowledgeTab)
+        if know:
+            know.update_data()
+        skill = self.query_one("#skill-content", SkillsTab)
+        if skill:
+            skill.update_data()
+        world = self.query_one("#world-content", WorldTab)
+        if world:
+            world.update_data()
 
     def on_unmount(self):
         try:
