@@ -1,6 +1,6 @@
 """DialogMesh v4 CLI — Runtime DAG Editor and Status Monitor."""
 from __future__ import annotations
-import argparse, json, sys, os
+import argparse, sys, os
 from typing import Dict, Optional
 
 # Global registry of active pipelines
@@ -64,6 +64,24 @@ def _build_parser():
 
     default = pipe_sub.add_parser("default", help="Build default v4 DAG")
 
+    # inspect
+    inv = sub.add_parser("inspect", help="View system state")
+    inv_sub = inv.add_subparsers(dest="inspect_cmd")
+    inv_sub.add_parser("observations", help="View Observation pool")
+    inv_sub.add_parser("hypotheses", help="View Hypothesis competition")
+    inv_sub.add_parser("knowledge", help="View frozen Knowledge")
+    inv_sub.add_parser("skills", help="View distilled Skills")
+    inv_sub.add_parser("world", help="View World Graph")
+    inv_sub.add_parser("context", help="View last context IR")
+    inv_sub.add_parser("behavior", help="View v3.2 behavior patterns")
+    inv_sub.add_parser("causal", help="View v3.2 causal chains")
+    inv_sub.add_parser("constraints", help="View engineering constraints")
+    inv_sub.add_parser("discourse", help="View discourse tree")
+    inv_sub.add_parser("fusion", help="View fusion engine")
+    inv_sub.add_parser("summary", help="View L1/L2 summaries")
+    inv_sub.add_parser("store", help="View tiered storage")
+    inv_sub.add_parser("pcr", help="View parameter registry")
+    inv_sub.add_parser("topics", help="View topic tree")
     return parser
 
 
@@ -82,12 +100,54 @@ def main(argv=None):
         return cmd_event(args)
     elif args.command == "pipeline":
         return cmd_pipeline(args)
+    elif args.command == "inspect":
+        return cmd_inspect(args)
     else:
         parser.print_help()
         return 0
 
 
 # ---- Command implementations ----
+
+def cmd_inspect(args):
+    global _engine
+    cmd = args.inspect_cmd
+    try:
+        from core.agent.v4.cli.inspect import (
+            _inspect_observations, _inspect_hypotheses, _inspect_knowledge,
+            _inspect_skills, _inspect_world, _inspect_context,
+        )
+        from core.agent.v4.cli.inspect_v3 import (
+            _inspect_behavior, _inspect_causal, _inspect_constraints,
+            _inspect_discourse, _inspect_fusion, _inspect_summary,
+            _inspect_store, _inspect_pcr, _inspect_topics,
+        )
+
+        dispatch = {
+            "observations": lambda: _inspect_observations(_engine),
+            "hypotheses": lambda: _inspect_hypotheses(_engine),
+            "knowledge": lambda: _inspect_knowledge(_engine),
+            "skills": lambda: _inspect_skills(_engine),
+            "world": lambda: _inspect_world(_engine),
+            "context": lambda: _inspect_context(_engine),
+            "behavior": lambda: _inspect_behavior(_engine),
+            "causal": lambda: _inspect_causal(_engine),
+            "constraints": lambda: _inspect_constraints(_engine),
+            "discourse": lambda: _inspect_discourse(_engine),
+            "fusion": lambda: _inspect_fusion(_engine),
+            "summary": lambda: _inspect_summary(_engine),
+            "store": lambda: _inspect_store(_engine),
+            "pcr": lambda: _inspect_pcr(_engine),
+            "topics": lambda: _inspect_topics(_engine),
+        }
+        fn = dispatch.get(cmd)
+        if fn:
+            return fn()
+        print(f"Unknown inspect command: {cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Inspect error: {e}", file=sys.stderr)
+        return 1
 
 def cmd_start(args):
     global _engine
