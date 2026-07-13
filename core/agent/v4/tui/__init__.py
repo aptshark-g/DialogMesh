@@ -1,1 +1,1 @@
-"""DialogMesh v4 TUI ¡ª Textual terminal dashboard."""
+# DialogMesh v4 TUI -- Textual terminal dashboard
