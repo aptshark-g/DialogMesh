@@ -108,6 +108,24 @@ def _build_parser():
     inv_sub.add_parser("store", help="View tiered storage")
     inv_sub.add_parser("pcr", help="View parameter registry")
     inv_sub.add_parser("topics", help="View topic tree")
+    # snapshot
+    snap = sub.add_parser("snapshot", help="Snapshot management")
+    snap_sub = snap.add_subparsers(dest="snap_cmd")
+    snap_sub.add_parser("list", help="List snapshots")
+    restore = snap_sub.add_parser("restore", help="Restore from snapshot")
+    restore.add_argument("snapshot_id", help="Snapshot ID")
+
+    # config
+    cfg = sub.add_parser("config", help="Configuration management")
+    cfg_sub = cfg.add_subparsers(dest="cfg_cmd")
+    cfg_sub.add_parser("show", help="Show current configuration")
+    cfg_set = cfg_sub.add_parser("set", help="Set a configuration value")
+    cfg_set.add_argument("key", help="Parameter key")
+    cfg_set.add_argument("value", help="Parameter value")
+
+    # health
+    sub.add_parser("health", help="Run system health check")
+
     return parser
 
 
@@ -128,6 +146,12 @@ def main(argv=None):
         return cmd_pipeline(args)
     elif args.command == "inspect":
         return cmd_inspect(args)
+    elif args.command == "snapshot":
+        return cmd_snapshot(args)
+    elif args.command == "config":
+        return cmd_config(args)
+    elif args.command == "health":
+        return cmd_health(args)
     else:
         parser.print_help()
         return 0
@@ -182,6 +206,45 @@ def cmd_inspect(args):
         return 1
     except Exception as e:
         print(f"Inspect error: {e}", file=sys.stderr)
+        return 1
+
+def cmd_snapshot(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.snapshot import _snapshot_list, _snapshot_restore
+        if args.snap_cmd == "list":
+            return _snapshot_list(_engine)
+        elif args.snap_cmd == "restore":
+            return _snapshot_restore(_engine, args.snapshot_id)
+        print(f"Unknown snapshot command: {args.snap_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Snapshot error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_config(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.config_cmd import _config_show, _config_set
+        if args.cfg_cmd == "show":
+            return _config_show(_engine)
+        elif args.cfg_cmd == "set":
+            return _config_set(_engine, args.key, args.value)
+        print(f"Unknown config command: {args.cfg_cmd}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_health(args):
+    global _engine
+    try:
+        from core.agent.v4.cli.health import _health_check
+        return _health_check(_engine)
+    except Exception as e:
+        print(f"Health check error: {e}", file=sys.stderr)
         return 1
 
 def cmd_start(args):
