@@ -179,3 +179,76 @@ class EngineeringSource(ContextSource):
     def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
         # Stub: Engineering chain not yet fully integrated
         return []
+
+
+
+class VectorKnowledgeSource(KnowledgeSource):
+    """Retrieves from Knowledge nodes using vector similarity.
+
+    Requires a VectorStore with pre-computed embeddings.
+    Falls back to keyword matching if no embedding for a node.
+    """
+
+    def __init__(self, nodes=None, vector_store=None, embedder=None):
+        super().__init__(nodes)
+        self._vector_store = vector_store
+        self._embedder = embedder
+
+    @property
+    def name(self) -> str:
+        return "knowledge_vector"
+
+    def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
+        # If no vector store or embedder, fall back to keyword matching
+        if self._vector_store is None or self._embedder is None:
+            return super().retrieve(query, top_k, **kwargs)
+
+        try:
+            query_vec = self._embedder.encode(query)
+            if isinstance(query_vec, list):
+                query_vec = __import__('numpy').array(query_vec)
+
+            # Search vector store
+            results = self._vector_store.search(query_vec, top_k)
+            items = []
+            for node_id, score in results:
+                # Find matching KnowledgeNode
+                for node in self._nodes:
+                    if hasattr(node, 'knowledge_id') and node.knowledge_id == node_id:
+                        items.append(ContextItem(
+                            source=self.name,
+                            content=node,
+                            relevance=float(score),
+                        ))
+                        break
+            return items
+        except Exception:
+            return super().retrieve(query, top_k, **kwargs)
+
+
+class TieredVectorStore:
+    """Auto-switches between SQLite and Milvus based on vector count.
+
+    Design: SQLite is source of truth. Milvus is optional accelerator.
+    When vector count exceeds threshold, new vectors are also written to Milvus.
+    Old vectors are never migrated -- Milvus warms up naturally over time.
+    """
+
+    def __init__(self, sqlite_store, milvus_store=None, threshold: int = 100_000):
+        self._sqlite = sqlite_store
+        self._milvus = milvus_store
+        self._threshold = threshold
+
+    def put(self, node_id: str, vector, metadata=None):
+        self._sqlite.put(node_id, vector, metadata)
+        if self._milvus and self._sqlite.count > self._threshold:
+            self._milvus.put(node_id, vector, metadata)
+
+    def search(self, query_vector, top_k=10):
+        if self._milvus and self._sqlite.count > self._threshold:
+            return self._milvus.search(query_vector, top_k)
+        return self._sqlite.search(query_vector, top_k)
+
+    @property
+    def count(self):
+        return self._sqlite.count
