@@ -13,11 +13,15 @@ from .annotation_store import NodeAnnotationStore, NodeAnnotation
 logger = logging.getLogger(__name__)
 
 
+
+
+
 @dataclass
 class LoadResult:
-    nodes: list[dict] = field(default_factory=list)
-    annotations: dict[str, NodeAnnotation] = field(default_factory=dict)
-    edges: list[dict] = field(default_factory=list)
+    nodes: list = field(default_factory=list)
+    annotations: dict = field(default_factory=dict)
+    edges: list = field(default_factory=list)
+    root: dict = None  # Reconstructed tree root when reconstruct=True
 
 
 class DialogueTreePersistenceAdapter:
@@ -127,8 +131,17 @@ class DialogueTreePersistenceAdapter:
             edges=list(raw.get("edges", [])),
         )
 
-    def load_tree(self, conversation_id: str) -> LoadResult:
-        """Load all nodes for a conversation. Returns LoadResult."""
+    def load_tree(self, conversation_id: str, reconstruct: bool = False) -> LoadResult:
+        """Load all nodes for a conversation.
+
+        Args:
+            conversation_id: The conversation to load.
+            reconstruct: If True, rebuild tree hierarchy from child_ids.
+                        root node is stored in result.root.
+
+        Returns:
+            LoadResult with nodes, annotations, edges, and optional root.
+        """
         if self._store is None:
             return LoadResult()
         try:
@@ -162,7 +175,11 @@ class DialogueTreePersistenceAdapter:
             for e in raw.get("edges", []):
                 edges.append(e)
 
-        return LoadResult(nodes=nodes, annotations=annotations, edges=edges)
+        root = None
+        if reconstruct:
+            root = self._reconstruct_tree(nodes)
+
+        return LoadResult(nodes=nodes, annotations=annotations, edges=edges, root=root)
 
     # ?? structural validation ?????????????????????????????????
 
@@ -202,6 +219,32 @@ class DialogueTreePersistenceAdapter:
         return edges
 
     # ?? helpers ???????????????????????????????????????????????
+
+
+    def _reconstruct_tree(self, nodes: list[dict]) -> dict:
+        """Rebuild tree hierarchy from a flat node list using child_ids.
+
+        Returns the root node (no parent). If multiple roots, returns
+        a virtual root with children.
+        """
+        if not nodes:
+            return {}
+
+        node_map = {n["node_id"]: dict(n, children=[]) for n in nodes}
+
+        roots = []
+        for n in node_map.values():
+            pid = n.get("parent_id", "")
+            if pid and pid in node_map:
+                node_map[pid]["children"].append(n)
+            else:
+                roots.append(n)
+
+        if len(roots) == 1:
+            return roots[0]
+        elif len(roots) > 1:
+            return {"node_id": "__virtual_root__", "summary": "[root]", "children": roots}
+        return {}
 
     def _resolve_action(self, node_id: str, text: str) -> Optional[dict]:
         existing = self._annotations.get(node_id, "dialogue")
