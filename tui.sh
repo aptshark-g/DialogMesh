@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# DialogMesh v4 TUI launcher — Unix/Linux/macOS
 
-PROJECT_ROOT=$(cd $(dirname $0) && pwd)
+set -e
 
-echo "================================"
-echo "DialogMesh v4 - Terminal Dashboard (TUI)"
-echo "================================"
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
+
+echo "================================================================"
+echo "   DialogMesh v4 - Terminal Dashboard (TUI)"
+echo "================================================================"
+echo ""
+echo "  Dual-mode: API (localhost:8000) | Offline (direct engine)"
+echo "  Mode auto-detected on startup."
+echo ""
+echo "  First launch may take 5-10 seconds for Python imports."
 echo ""
 
-cd $PROJECT_ROOT
 python scripts/tui.py
