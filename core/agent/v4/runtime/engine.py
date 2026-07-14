@@ -20,10 +20,28 @@ from core.agent.v4.context.domain_selector import DomainSelector
 from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
 from core.agent.v4.cognitive_scheduler.scheduler import CognitiveScheduler
 
+from core.agent.v4.cognitive_scheduler.path_trigger_policy import (
+    PathStateMachine, PathState, PathTriggerPolicy, ConfigDrivenTriggerPolicy,
+    EventCounter,
+)
+from core.agent.v4.cognitive_scheduler.path_scheduler import PathAwareScheduler
+from core.agent.v4.cognitive_scheduler.path_models import PathTask, PathWorkerPool
+from core.agent.v4.cognitive_scheduler.path_policy import PathAwarePolicy
+
 from core.agent.v4.optimizer.signals import FeedbackSignal
 from core.agent.v4.optimizer.optimizer import BayesianOptimizer
 
 logger = logging.getLogger(__name__)
+
+
+class PathTriggerContext:
+    """Context for trigger policy decisions."""
+    def __init__(self, event_count: int = 0, time_since_last: float = 0,
+                 slow_results: list = None, checkpoint_count: int = 0):
+        self.event_count = event_count
+        self.time_since_last = time_since_last
+        self.slow_results = slow_results or []
+        self.checkpoint_count = checkpoint_count
 
 
 @dataclass
@@ -72,9 +90,10 @@ class CognitiveRuntimeEngine:
         self._running = False
         self._checkpoint_timer: Optional[threading.Timer] = None
         self._session_active = False
-        self._last_event_time = 0.0
-
-        # Observation pool for path-to-path data flow
+        self._trigger_policy: Optional[PathTriggerPolicy] = None
+        self._path_state_machine: Optional[PathStateMachine] = None
+        self._event_counter: Optional[EventCounter] = None
+        self._last_checkpoint_time = 0.0
         self._observation_pool = None
         self._context_assembler: Optional[ContextAssembler] = None
         self._domain_selector: Optional[DomainSelector] = None
@@ -92,12 +111,28 @@ class CognitiveRuntimeEngine:
         self._observation_pool = self._create_observation_pool()
         self._context_assembler = self._create_context_assembler()
         self._domain_selector = DomainSelector()
-        self._scheduler = CognitiveScheduler()
-        self._optimizer = BayesianOptimizer(bounds={})
+        # ---- New: Config-driven trigger policy ----
+        self._trigger_policy = ConfigDrivenTriggerPolicy(
+            self._config, self._world_params
+        )
+        self._path_state_machine = self._trigger_policy.state_machine
+        self._event_counter = self._trigger_policy.event_counter
+        # ---- New: Path-aware scheduler ----
+        self._scheduler = PathAwareScheduler(
+            policy=PathAwarePolicy(),
+            pool=PathWorkerPool(size=4),
+            state_machine=self._path_state_machine,
+        )
+        # ---- Optimizer: check enabled flag ----
+        if getattr(self._world_params, 'optimizer_enabled', False):
+            self._optimizer = BayesianOptimizer(bounds={})
+        else:
+            self._optimizer = None
         self._feedback_signal = FeedbackSignal()
         self._checkpoint_count = 0
+        self._last_checkpoint_time = 0.0
         self._start_checkpoint_timer()
-        logger.info("CognitiveRuntimeEngine started — %d adapters + Pool + Context + Scheduler + Optimizer", len(self._adapters))
+        logger.info("CognitiveRuntimeEngine started — %d adapters + PathAwareScheduler + TriggerPolicy", len(self._adapters))
 
     def stop(self) -> None:
         self._running = False
@@ -119,7 +154,8 @@ class CognitiveRuntimeEngine:
     # ---- Event-driven triggers ----
 
     def on_event(self, event: EventIR) -> None:
-        """Process a single user event through the Async Path."""
+        """Process a single user event through the Async Path.
+        Auto-triggers Slow Path when event threshold reached."""
         if not self._running or not self._session_active:
             return
 
@@ -127,6 +163,11 @@ class CognitiveRuntimeEngine:
         self._last_event_time = time.time()
         self._stats["async"].trigger_count += 1
         self._stats["async"].last_triggered_at = self._last_event_time
+
+        # ---- New: Event counter + auto-trigger ----
+        if self._trigger_policy and self._trigger_policy.on_event():
+            logger.info("Event threshold reached — auto-triggering checkpoint")
+            self.trigger_checkpoint()
 
         path_config = self._config.get_path("async")
         if not path_config:
@@ -151,16 +192,13 @@ class CognitiveRuntimeEngine:
                     try:
                         self._observation_pool.put(result.data)
                     except (TypeError, AttributeError):
-                        # If result.data is not an ObservationBundle, skip
                         pass
                     logger.debug("Observation written to pool: %s", event.id)
-
-                # Feed observation into context for downstream modules
                 ctx.observations.append(result.data)
             else:
                 pas.failure_count += 1
 
-        # ---- Context Engineering: compile CrossDomainContextIR ----
+        # ---- Context Engineering ----
         self._compile_context(event)
 
         # ---- Feedback collection ----
@@ -276,31 +314,36 @@ class CognitiveRuntimeEngine:
 
             results.append(result)
 
-        # Clear buffer after checkpoint
+        # ---- New: Deep Path trigger via policy ----
         if path_name == "slow":
             self._event_buffer.clear()
             self._checkpoint_count += 1
-
-        # Auto-trigger Deep Path if checkpoint produced results
-        if path_name == "slow" and results and any(r.ok for r in results):
-            self.trigger_deep()
-
-        # Bayesian Optimizer step (every 3rd checkpoint)
-        if path_name == "slow" and self._optimizer and self._feedback_signal:
-            if self._checkpoint_count % 3 == 0:
-                try:
-                    reward = self._feedback_signal.composite_reward()
-                    # Collect current top params
-                    current_params = {
-                        "min_support": self._world_params.backbone_weights.get("min_support", 8),
-                        "community_resolution": self._world_params.community_resolution,
-                        "compiler_max_nodes": self._world_params.compiler_max_nodes,
-                    }
-                    suggestion = self._optimizer.suggest()
-                    if suggestion:
-                        logger.info("Optimizer suggests: %s", suggestion)
-                except Exception as e:
-                    logger.debug("Optimizer step skipped: %s", e)
+            self._last_checkpoint_time = time.time()
+            # Check if Deep Path should trigger
+            if self._trigger_policy:
+                trigger_ctx = PathTriggerContext(
+                    slow_results=results,
+                    checkpoint_count=self._checkpoint_count,
+                )
+                if self._trigger_policy.should_trigger("deep", trigger_ctx.__dict__):
+                    logger.info("Deep Path threshold met — triggering skill distillation")
+                    self.trigger_deep()
+            # Bayesian Optimizer step
+            if self._optimizer and self._feedback_signal:
+                if self._trigger_policy and self._trigger_policy.should_optimize(self._checkpoint_count):
+                    try:
+                        reward = self._feedback_signal.composite_reward()
+                        # Fix: read from correct params
+                        current_params = {
+                            "min_support": getattr(self._world_params, 'min_support', 8),
+                            "community_resolution": self._world_params.community_resolution,
+                            "compiler_max_nodes": self._world_params.compiler_max_nodes,
+                        }
+                        suggestion = self._optimizer.suggest()
+                        if suggestion:
+                            logger.info("Optimizer suggests: %s", suggestion)
+                    except Exception as e:
+                        logger.debug("Optimizer step skipped: %s", e)
 
         return results
 
