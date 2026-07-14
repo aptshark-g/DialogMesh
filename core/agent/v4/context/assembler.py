@@ -274,8 +274,12 @@ class ContextAssembler:
         selection = selector.select_from_string(intent)
 
         # Step 2: Allocate budget
-        allocator = BudgetAllocator(token_budget, min_per_domain=80)
-        budget_plan = allocator.allocate(selection)
+        allocator = BudgetAllocator(
+            mandatory_tokens=min(200, token_budget // 4),
+            strategy_tokens=token_budget - min(200, token_budget // 4),
+            flexible_tokens=0,
+        )
+        budget_plan = allocator.allocate(selection.intent_category.value)
 
         # Step 3: Retrieve from each domain within budget
         ir = CrossDomainContextIR(intent=intent)
