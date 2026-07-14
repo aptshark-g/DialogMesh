@@ -17,7 +17,7 @@ from core.agent.v4.context.source import (
     KnowledgeSource, SkillSource, ObservationSource, WorldSource, EngineeringSource,
 )
 from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
-from core.agent.v4.context.domain_selector import DomainSelector
+from core.agent.v4.context.domain_selector import DomainSelector, Domain
 from core.agent.v4.context.budget_allocator import BudgetAllocator
 from core.agent.v4.persistence.vector_store import SQLiteVectorStore, VectorStore
 from core.agent.v4.persistence.milvus_store import MilvusVectorStore
@@ -256,8 +256,21 @@ class ContextAssembler:
         """
         # Step 1: Select domains
         selector = DomainSelector()
+        selection = selector.select_from_string(intent)
         if domain_boosts:
-            selector = selector.with_boost(domain_boosts)
+            # Apply boosts: domain_boosts = {"knowledge": 1.5, ...}
+            for domain_key, boost in domain_boosts.items():
+                # Map string key to Domain enum
+                domain_map = {
+                    "knowledge": Domain.CONVERSATION,
+                    "engineering": Domain.ENGINEERING,
+                    "world": Domain.ENGINEERING,
+                    "skill": Domain.BEHAVIOR,
+                }
+                domain = domain_map.get(domain_key)
+                if domain:
+                    selection = selector.with_boost(selection, domain, budget=boost * 0.1)
+
         selection = selector.select_from_string(intent)
 
         # Step 2: Allocate budget
