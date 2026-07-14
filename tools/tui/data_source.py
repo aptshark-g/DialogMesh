@@ -335,7 +335,14 @@ class DataSource:
             return DataResult(ok=False, error="Engine not running", mode="offline")
         world_graph = getattr(engine, '_world_graph', None)
         if world_graph is None:
-            return DataResult(ok=False, error="World Graph not loaded", mode="offline")
+            # Graceful: return empty stats instead of hard error
+            return DataResult(ok=True, data={
+                "world": "not_loaded",
+                "nodes": 0,
+                "edges": 0,
+                "communities": 0,
+                "backbone": [],
+            }, mode="offline")
         data = {
             "world": world_graph.world,
             "nodes": world_graph.node_count,
@@ -363,9 +370,17 @@ class DataSource:
         return DataResult(ok=True, data=data, mode="offline")
 
     def _offline_events(self, limit: int) -> DataResult:
+        db_path = "data/event_log.db"
+        # Graceful: if DB doesn't exist, return empty state
+        if not os.path.exists(db_path):
+            return DataResult(ok=True, data={
+                "items": [],
+                "total": 0,
+                "unconsumed": 0,
+            }, mode="offline")
         try:
             from core.agent.v4.api_event_log import EventLog
-            el = EventLog("data/event_log.db")
+            el = EventLog(db_path)
             el.open()
             events = el.replay_unconsumed(limit=limit)
             stats = el.stats
@@ -383,4 +398,9 @@ class DataSource:
                 "unconsumed": stats.get("unconsumed", 0),
             }, mode="offline")
         except Exception as e:
-            return DataResult(ok=False, error=str(e), mode="offline")
+            return DataResult(ok=True, data={
+                "items": [],
+                "total": 0,
+                "unconsumed": 0,
+                "error": str(e),
+            }, mode="offline")
