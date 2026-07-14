@@ -23,6 +23,66 @@ from core.agent.v4.persistence.fts5_index import FTS5Index
 logger = logging.getLogger(__name__)
 
 
+class KeywordIndex:
+    """Simple inverted index for keyword matching.
+
+    Not a full BM25 — just term frequency scoring.
+    For production, replace with SQLite FTS5 or whoosh.
+    """
+
+    def __init__(self):
+        self._index: Dict[str, Set[str]] = {}  # term -> {doc_id}
+        self._docs: Dict[str, str] = {}         # doc_id -> text
+
+    def add(self, doc_id: str, text: str) -> None:
+        """Add a document to the index."""
+        self._docs[doc_id] = text.lower()
+        terms = set(self._tokenize(text))
+        for term in terms:
+            self._index.setdefault(term, set()).add(doc_id)
+
+    def remove(self, doc_id: str) -> None:
+        """Remove a document from the index."""
+        if doc_id not in self._docs:
+            return
+        text = self._docs.pop(doc_id)
+        for term in self._tokenize(text):
+            if term in self._index:
+                self._index[term].discard(doc_id)
+
+    def search(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Search by keyword matching. Returns (doc_id, score) pairs."""
+        query_terms = self._tokenize(query)
+        if not query_terms:
+            return []
+
+        # Score by term frequency
+        scores: Dict[str, float] = {}
+        for term in query_terms:
+            for doc_id in self._index.get(term, set()):
+                scores[doc_id] = scores.get(doc_id, 0.0) + 1.0
+
+        # Normalize by query length, then sort by score desc, then doc_id for stability
+        results = [
+            (doc_id, score / len(query_terms))
+            for doc_id, score in scores.items()
+        ]
+        results.sort(key=lambda x: (-x[1], x[0]))
+        return results[:top_k]
+
+    @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        """Simple whitespace tokenization + lowercasing."""
+        return text.lower().split()
+
+    def __contains__(self, doc_id: str) -> bool:
+        return doc_id in self._docs
+
+    @property
+    def doc_count(self) -> int:
+        return len(self._docs)
+
+
 class HybridIndex:
     """Hybrid retrieval: semantic + keyword + structural.
 

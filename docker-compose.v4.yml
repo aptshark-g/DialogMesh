@@ -1,0 +1,24 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh v4 — Docker Compose for E2E Testing
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Usage:
+#    docker-compose -f docker-compose.v4.yml up --build
+# ───────────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  v4-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.v4
+    image: dialogmesh:v4-test
+    container_name: dialogmesh-v4-test
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-27ab2dd8d9af4b0aa8fa54b46ec9ebe6}
+    volumes:
+      - ./core:/app/core:ro
+      - ./tests:/app/tests:ro
+    command: ["python", "tests/test_e2e_deepseek_raw.py"]

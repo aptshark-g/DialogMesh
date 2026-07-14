@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DialogMesh v4 — E2E Test Dockerfile
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Base: python:3.11-slim
+#  Purpose: Run isolated E2E tests with DeepSeek API
+# ───────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Environment
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8
+
+# Copy dependency manifests
+COPY requirements.txt pyproject.toml ./
+
+# Install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY core/ ./core/
+COPY tests/ ./tests/
+
+# Default: run E2E test
+CMD ["python", "tests/test_e2e_deepseek_raw.py"]
