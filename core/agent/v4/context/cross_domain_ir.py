@@ -160,6 +160,80 @@ class CrossDomainContextIR:
             metadata=data.get("metadata", {}),
         )
 
+    def to_prompt(self, system_instruction: str = None, max_tokens: int = None) -> str:
+        """Serialize IR to Transformer-ready prompt string.
+
+        Format:
+          [System]
+          <system_instruction>
+
+          [Context]
+          <domain:role> budget=N tokens
+          - <type> [conf=X.X] <content> [→ <cross_ref>]
+          ...
+
+          [User]
+          <last user message>
+
+        Args:
+            system_instruction: Override system prompt. If None, uses default.
+            max_tokens: Token budget for truncation. If None, uses all entries.
+
+        Returns:
+            Prompt string ready for LLM.generate().
+        """
+        lines: List[str] = []
+
+        # System section
+        if system_instruction:
+            lines.append("[System]")
+            lines.append(system_instruction)
+            lines.append("")
+
+        # Context header with intent and strategy
+        lines.append("[Context]")
+        lines.append(f"intent={self.intent_category.value} strategy={self.compile_strategy.value}")
+        lines.append("")
+
+        # Domain allocation summary
+        if self.domain_allocation:
+            lines.append("# Domain Allocation")
+            for alloc in self.domain_allocation:
+                role_tag = "★" if alloc.role == DomainRole.PRIMARY else "•" if alloc.role == DomainRole.AUXILIARY else "◎"
+                lines.append(f"  {role_tag} {alloc.domain}: {alloc.budget_tokens} tokens ({alloc.budget_pct:.0%})")
+            lines.append("")
+
+        # Entries by domain, with cross-ref annotations
+        current_domain = None
+        total_used = 0
+        for entry in self.entries:
+            if max_tokens and total_used + entry.estimated_tokens > max_tokens:
+                lines.append("  [... truncated by token budget]")
+                break
+
+            if entry.domain != current_domain:
+                current_domain = entry.domain
+                lines.append(f"## [{current_domain.upper()}]")
+
+            # Cross-ref annotation
+            cross_note = ""
+            if entry.cross_refs:
+                refs = [f"→{r.target_domain}:{r.target_event_id[:8]}" for r in entry.cross_refs[:2]]
+                cross_note = " " + " ".join(refs)
+
+            conf_tag = f"[{entry.confidence:.2f}]" if entry.confidence > 0 else ""
+            token_tag = f"({entry.estimated_tokens}t)" if entry.estimated_tokens > 0 else ""
+
+            content = entry.content.replace("\n", " ")[:500]  # flatten, cap length
+            lines.append(f"  • {entry.type} {conf_tag} {content}{cross_note} {token_tag}")
+            total_used += entry.estimated_tokens
+
+        lines.append("")
+        lines.append(f"# Total: {total_used} tokens used")
+        lines.append("")
+
+        return "\n".join(lines)
+
     def to_legacy_context(self) -> "CrossDomainContext":
         """Bridge to flat CrossDomainContext for backward compat."""
         from core.agent.v4.context.source import CrossDomainContext, ContextItem

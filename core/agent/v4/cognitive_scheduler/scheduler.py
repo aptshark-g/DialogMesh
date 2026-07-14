@@ -1,9 +1,20 @@
-"""CognitiveScheduler: unified scheduling loop."""
+"""CognitiveScheduler: unified scheduling loop.
+
+.. deprecated::
+    Use :class:`path_scheduler.PathAwareScheduler` for new code.
+    This module is kept for backward compatibility.
+"""
 import time
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from .models import Task, Worker, WorkerPool, WorkerStats
 from .policy import SchedulerPolicy, PriorityFIFOPolicy
+
+# Re-export PathAwareScheduler from path_scheduler for backward compatibility
+try:
+    from .path_scheduler import PathAwareScheduler  # noqa: F401
+except ImportError:
+    PathAwareScheduler = None  # type: ignore
 
 
 @dataclass

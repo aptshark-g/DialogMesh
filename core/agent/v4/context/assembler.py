@@ -1,22 +1,53 @@
-"""ContextAssembler: aggregates and ranks context from multiple sources."""
+"""ContextAssembler: aggregates and ranks context from multiple sources.
+
+v4 enhancements:
+    - HybridIndex integration for semantic + keyword retrieval
+    - TieredVectorStore auto-switch (SQLite < 100K, Milvus >= 100K)
+    - DomainSelector + BudgetAllocator for Context Engineering pipeline
+"""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, Callable, Dict, List, Optional
 
-from core.agent.v4.context.source import ContextSource, ContextItem, CrossDomainContext
+import numpy as np
+
+from core.agent.v4.context.source import (
+    ContextSource, ContextItem, CrossDomainContext,
+    HybridKnowledgeSource, HybridSkillSource,
+    KnowledgeSource, SkillSource, ObservationSource, WorldSource, EngineeringSource,
+)
 from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
 from core.agent.v4.context.domain_selector import DomainSelector
 from core.agent.v4.context.budget_allocator import BudgetAllocator
+from core.agent.v4.persistence.vector_store import SQLiteVectorStore, VectorStore
+from core.agent.v4.persistence.milvus_store import MilvusVectorStore
+from core.agent.v4.persistence.hybrid_index import HybridIndex, KeywordIndex
 
 
 class ContextAssembler:
     """Aggregates context from multiple sources and ranks by relevance.
 
-    Usage:
+    Usage (basic):
         sources = [ObservationSource(pool), KnowledgeSource(nodes), WorldSource(graph)]
         assembler = ContextAssembler(sources)
         ctx = assembler.assemble("gateway monitoring", top_k=10)
-        top = ctx.top_k(5)  # Top 5 most relevant items across all sources
+
+    Usage (hybrid):
+        assembler = ContextAssembler.with_hybrid_index(
+            knowledge_nodes=nodes,
+            skill_pool=pool,
+            embedder=embedder,
+        )
+        ctx = assembler.assemble("gateway monitoring", top_k=10)
+
+    Usage (tiered vector store):
+        assembler = ContextAssembler.with_tiered_store(
+            knowledge_nodes=nodes,
+            embedder=embedder,
+            db_path="data/vectors.db",
+            milvus_host="localhost",
+        )
+        ctx = assembler.assemble("gateway monitoring", top_k=10)
     """
 
     def __init__(self, sources: List[ContextSource] = None):
@@ -24,6 +55,162 @@ class ContextAssembler:
 
     def add_source(self, source: ContextSource) -> None:
         self._sources.append(source)
+
+    # ------------------------------------------------------------------ #
+    # Factory methods for easy setup
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def with_hybrid_index(
+        cls,
+        knowledge_nodes: List[Any] = None,
+        skill_pool=None,
+        observation_pool=None,
+        world_graph=None,
+        embedder: Callable[[str], np.ndarray] = None,
+        vector_store: VectorStore = None,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+    ) -> "ContextAssembler":
+        """Create assembler with HybridIndex for knowledge and skill sources.
+
+        Args:
+            knowledge_nodes: List of knowledge nodes
+            skill_pool: Skill pool instance
+            observation_pool: Observation pool instance
+            world_graph: World graph instance
+            embedder: Callable that encodes string -> np.ndarray
+            vector_store: Pre-built VectorStore (optional, creates SQLite if None)
+            semantic_weight: Weight for semantic scores (default 0.7)
+            keyword_weight: Weight for keyword scores (default 0.3)
+        """
+        sources = []
+
+        # Build vector store if not provided
+        if vector_store is None:
+            sqlite_store = SQLiteVectorStore(":memory:")
+            sqlite_store.open()
+            vector_store = sqlite_store
+
+        # Build HybridIndex for knowledge
+        hybrid_index = None
+        if knowledge_nodes and embedder:
+            keyword_index = KeywordIndex()
+            for node in knowledge_nodes:
+                text = getattr(node, 'statement', str(node))
+                node_id = getattr(node, 'knowledge_id', str(id(node)))
+                keyword_index.add(node_id, text)
+                # Pre-compute and store embedding if possible
+                try:
+                    vec = embedder(text)
+                    vector_store.put(node_id, vec, metadata={"text": text})
+                except Exception:
+                    pass
+
+            hybrid_index = HybridIndex(
+                vector_store=vector_store,
+                embedder=embedder,
+                keyword_index=keyword_index,
+                semantic_weight=semantic_weight,
+                keyword_weight=keyword_weight,
+            )
+            sources.append(HybridKnowledgeSource(knowledge_nodes, hybrid_index))
+        elif knowledge_nodes:
+            sources.append(KnowledgeSource(knowledge_nodes))
+
+        # Build HybridIndex for skills
+        if skill_pool and embedder:
+            keyword_index = KeywordIndex()
+            try:
+                skills = getattr(skill_pool, 'list_all', lambda: [])()
+                for skill in skills:
+                    name = getattr(skill, 'name', str(skill))
+                    skill_id = getattr(skill, 'skill_id', name)
+                    keyword_index.add(skill_id, name)
+                    try:
+                        vec = embedder(name)
+                        vector_store.put(skill_id, vec, metadata={"text": name})
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            hybrid_index_skill = HybridIndex(
+                vector_store=vector_store,
+                embedder=embedder,
+                keyword_index=keyword_index,
+                semantic_weight=semantic_weight,
+                keyword_weight=keyword_weight,
+            )
+            sources.append(HybridSkillSource(skill_pool, hybrid_index_skill))
+        elif skill_pool:
+            sources.append(SkillSource(skill_pool))
+
+        if observation_pool:
+            sources.append(ObservationSource(observation_pool))
+        if world_graph:
+            sources.append(WorldSource(world_graph))
+        sources.append(EngineeringSource())
+
+        return cls(sources)
+
+    @classmethod
+    def with_tiered_store(
+        cls,
+        knowledge_nodes: List[Any] = None,
+        skill_pool=None,
+        observation_pool=None,
+        world_graph=None,
+        embedder: Callable[[str], np.ndarray] = None,
+        db_path: str = None,
+        milvus_host: str = None,
+        milvus_port: int = 19530,
+        milvus_threshold: int = 100_000,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+    ) -> "ContextAssembler":
+        """Create assembler with TieredVectorStore (SQLite + optional Milvus).
+
+        Milvus is only used when vector count exceeds threshold AND
+        Milvus server is reachable. Otherwise, falls back to SQLite.
+        """
+        # SQLite store (always created)
+        sqlite_store = SQLiteVectorStore(db_path or ":memory:")
+        sqlite_store.open()
+
+        # Milvus store (optional, lazy connection)
+        milvus_store = None
+        if milvus_host:
+            milvus_store = MilvusVectorStore(
+                host=milvus_host,
+                port=milvus_port,
+            )
+            # Try to connect; if fails, milvus_store stays disconnected
+            # TieredVectorStore will handle the fallback
+
+        # Build TieredVectorStore
+        from core.agent.v4.context.source import TieredVectorStore
+        tiered_store = TieredVectorStore(
+            sqlite_store=sqlite_store,
+            milvus_store=milvus_store,
+            threshold=milvus_threshold,
+        )
+
+        # Use the tiered store as the vector store for hybrid index
+        return cls.with_hybrid_index(
+            knowledge_nodes=knowledge_nodes,
+            skill_pool=skill_pool,
+            observation_pool=observation_pool,
+            world_graph=world_graph,
+            embedder=embedder,
+            vector_store=tiered_store,
+            semantic_weight=semantic_weight,
+            keyword_weight=keyword_weight,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Core API
+    # ------------------------------------------------------------------ #
 
     def assemble(self, intent: str, top_k: int = 10, **kwargs) -> CrossDomainContext:
         """Retrieve and rank context from all sources.
@@ -55,7 +242,6 @@ class ContextAssembler:
             total_items=len(all_items),
         )
 
-
     def assemble_ir(self, intent: str, top_k: int = 10,
                     token_budget: int = 2000,
                     domain_boosts: dict = None,
@@ -67,15 +253,6 @@ class ContextAssembler:
         2. BudgetAllocator: allocate token budget per domain
         3. Source.retrieve(): each source fetches within its budget
         4. Build CrossDomainContextIR
-
-        Args:
-            intent: User/agent intent string.
-            top_k: Max total items across all domains.
-            token_budget: Total token budget.
-            domain_boosts: Optional per-domain boost factors.
-
-        Returns:
-            CrossDomainContextIR with domain-allocated entries and budget info.
         """
         # Step 1: Select domains
         selector = DomainSelector()
@@ -108,13 +285,16 @@ class ContextAssembler:
         domain_map = {
             'observation': 'observation',
             'knowledge': 'knowledge',
+            'knowledge_hybrid': 'knowledge',
+            'knowledge_vector': 'knowledge',
             'skill': 'skill',
+            'skill_hybrid': 'skill',
             'world': 'world',
             'engineering': 'engineering',
         }
         target = domain_map.get(domain_name, domain_name)
         for source in self._sources:
-            if source.name == target:
+            if source.name == target or source.name == domain_name:
                 return source
         return None
 

@@ -57,6 +57,13 @@ Issues = "https://github.com/yourusername/memorygraph-agent/issues"
 where = ["core"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests", "core/agent/v3_0", "core/service/v3_0", "core/agent/v4"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
 testpaths = ["tests", "core/agent/v3_0", "core/service/v3_0"]
 pythonpath = ["."]
 python_files = ["test_*.py"]

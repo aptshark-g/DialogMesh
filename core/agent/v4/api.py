@@ -85,7 +85,7 @@ def shutdown_api():
 
 @app.post("/v4/event", status_code=200)
 async def post_event(req: EventRequest):
-    """Receive event from Switch. Fire-and-forget."""
+    """Receive event from Switch. Process through cognitive runtime and return LLM response."""
     if _engine is None or _event_log is None:
         raise HTTPException(503, "API not initialized")
 
@@ -99,18 +99,23 @@ async def post_event(req: EventRequest):
     if not ok:
         raise HTTPException(500, "Failed to persist event")
 
-    # Route to Runtime (async)
+    # Route to Runtime (async) — now returns LLM response
     event_ir = EventIR(
         id=req.event_id,
         kind=req.kind,
         payload=req.payload,
     )
-    _engine.on_event(event_ir)
+    llm_response = _engine.on_event(event_ir)
 
     # Ack
     _event_log.ack_event(req.event_id)
 
-    return {"status": "accepted", "event_id": req.event_id}
+    return {
+        "status": "accepted",
+        "event_id": req.event_id,
+        "response": llm_response,
+        "llm_metrics": _engine.llm_metrics,
+    }
 
 
 @app.get("/v4/status")

@@ -1,9 +1,109 @@
-"""Cognitive Scheduler models: Task, Worker, WorkerPool."""
+"""Cognitive Scheduler models: Task, Worker, WorkerPool, PathStateMachine."""
 from __future__ import annotations
 import time, threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional
+
+
+class PathState(Enum):
+    """Finite state machine states for a cognitive path."""
+    IDLE = auto()
+    RUNNING = auto()
+    BACKLOGGED = auto()
+
+
+class PathStateMachine:
+    """Manages the lifecycle state of a single cognitive path.
+
+    Valid transitions:
+        IDLE -> RUNNING   (path starts execution)
+        RUNNING -> IDLE   (path completes successfully, queue empty)
+        RUNNING -> BACKLOGGED (queue depth exceeds threshold while running)
+        BACKLOGGED -> IDLE (queue drained below threshold)
+        BACKLOGGED -> RUNNING (path resumes execution from backlog)
+    """
+
+    _VALID_TRANSITIONS: Dict[PathState, set] = {
+        PathState.IDLE: {PathState.RUNNING},
+        PathState.RUNNING: {PathState.IDLE, PathState.BACKLOGGED},
+        PathState.BACKLOGGED: {PathState.IDLE, PathState.RUNNING},
+    }
+
+    def __init__(
+        self,
+        path_name: str,
+        backlog_threshold: int = 10,
+        initial_state: PathState = PathState.IDLE,
+    ):
+        self.path_name = path_name
+        self.backlog_threshold = backlog_threshold
+        self._state = initial_state
+        self._lock = threading.Lock()
+        self._state_changed_at = time.time()
+        self._history: List[tuple] = []
+
+    @property
+    def state(self) -> PathState:
+        """Current state of the path."""
+        with self._lock:
+            return self._state
+
+    def transition(self, new_state: PathState) -> bool:
+        """Attempt to transition to *new_state*.
+
+        Returns:
+            True if the transition was valid and applied, False otherwise.
+        """
+        with self._lock:
+            if new_state not in self._VALID_TRANSITIONS.get(self._state, set()):
+                return False
+            old_state = self._state
+            self._state = new_state
+            self._state_changed_at = time.time()
+            self._history.append((old_state, new_state, time.time()))
+            return True
+
+    def on_queue_depth(self, depth: int) -> PathState:
+        """Update state based on current queue depth.
+
+        Returns:
+            The (possibly updated) current state.
+        """
+        with self._lock:
+            if self._state == PathState.RUNNING and depth > self.backlog_threshold:
+                self._state = PathState.BACKLOGGED
+                self._state_changed_at = time.time()
+                self._history.append((PathState.RUNNING, PathState.BACKLOGGED, time.time()))
+            elif self._state == PathState.BACKLOGGED and depth <= self.backlog_threshold:
+                self._state = PathState.IDLE
+                self._state_changed_at = time.time()
+                self._history.append((PathState.BACKLOGGED, PathState.IDLE, time.time()))
+            return self._state
+
+    def time_in_state(self) -> float:
+        """Seconds spent in the current state."""
+        with self._lock:
+            return time.time() - self._state_changed_at
+
+    def can_run(self) -> bool:
+        """Return True if the path is eligible to start execution."""
+        with self._lock:
+            return self._state in (PathState.IDLE, PathState.BACKLOGGED)
+
+    def is_running(self) -> bool:
+        """Return True if the path is currently executing."""
+        with self._lock:
+            return self._state == PathState.RUNNING
+
+    def history(self) -> List[tuple]:
+        """Return a copy of the state transition history."""
+        with self._lock:
+            return list(self._history)
+
+    def __repr__(self) -> str:
+        return f"<PathStateMachine {self.path_name} state={self._state.name}>"
 
 
 class Task(ABC):

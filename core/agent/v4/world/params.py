@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 class WorldParams:
     """Centralized parameters for all Semantic World Model components.
 
-    Usage:
+    Usage::
+
         params = WorldParams()
         detector = CommunityDetector(resolution=params.community_resolution)
         strategy = StructuralImportanceStrategy.from_name(params.importance_strategy)
@@ -89,20 +90,23 @@ class WorldParams:
     incremental_enabled: bool = True
     """Whether to process git.commit events for incremental updates."""
 
-        # ---- LSP (Tier 2) ----
+    # ---- LSP (Tier 2) ----
     lsp_enabled: bool = False
     """Enable LSP-based deep extraction (future)."""
 
     lsp_languages: list = field(default_factory=lambda: ["python"])
     """Languages to attempt LSP connection for."""
 
-# ---- Extraction ----
+    # ---- Extraction ----
     extraction_tier: int = 1
     """Default extraction tier: 0 (imports only) or 1 (full AST)."""
 
     # ---- Bayesian Optimizer ----
     optimizer_enabled: bool = False
     """Enable Bayesian parameter optimization."""
+
+    optimizer_interval: int = 3
+    """Run optimizer every N checkpoints (0 to disable)."""
 
     optimizer_top_params: list = field(default_factory=lambda: [
         "min_support", "max_conflict", "min_stability",
@@ -120,9 +124,15 @@ class WorldParams:
     min_stability: float = 0.70
     """Min stability score for Hypothesis freeze."""
 
-    # ---- Compiler ----
-    compiler_max_nodes: int = 300
-    """Max nodes for subgraph compilation."""
+    # ---- Scheduler Trigger Thresholds ----
+    slow_event_threshold: int = 50
+    """Number of async events before auto-triggering Slow Path."""
+
+    deep_pattern_threshold: int = 5
+    """Min successful pattern observations to trigger Deep Path."""
+
+    deep_success_rate_threshold: float = 0.9
+    """Min success rate to allow Deep Path trigger."""
 
 
 # Global defaults instance

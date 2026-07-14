@@ -54,6 +54,10 @@ class ContextSource(ABC):
         """Retrieve relevant context items for a query."""
 
 
+# ============================================================================
+# Base sources
+# ============================================================================
+
 class ObservationSource(ContextSource):
     """Retrieves from ObservationPool."""
 
@@ -82,7 +86,7 @@ class ObservationSource(ContextSource):
 
 
 class KnowledgeSource(ContextSource):
-    """Retrieves from frozen Knowledge nodes."""
+    """Retrieves from frozen Knowledge nodes via O(n) keyword matching."""
 
     def __init__(self, knowledge_nodes: List[Any] = None):
         self._nodes = knowledge_nodes or []
@@ -109,7 +113,7 @@ class KnowledgeSource(ContextSource):
 
 
 class SkillSource(ContextSource):
-    """Retrieves from SkillPool."""
+    """Retrieves from SkillPool via O(n) keyword matching."""
 
     def __init__(self, skill_pool=None):
         self._pool = skill_pool
@@ -177,10 +181,12 @@ class EngineeringSource(ContextSource):
         return "engineering"
 
     def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
-        # Stub: Engineering chain not yet fully integrated
         return []
 
 
+# ============================================================================
+# Vector-based sources (v4)
+# ============================================================================
 
 class VectorKnowledgeSource(KnowledgeSource):
     """Retrieves from Knowledge nodes using vector similarity.
@@ -199,7 +205,6 @@ class VectorKnowledgeSource(KnowledgeSource):
         return "knowledge_vector"
 
     def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
-        # If no vector store or embedder, fall back to keyword matching
         if self._vector_store is None or self._embedder is None:
             return super().retrieve(query, top_k, **kwargs)
 
@@ -208,11 +213,9 @@ class VectorKnowledgeSource(KnowledgeSource):
             if isinstance(query_vec, list):
                 query_vec = __import__('numpy').array(query_vec)
 
-            # Search vector store
             results = self._vector_store.search(query_vec, top_k)
             items = []
             for node_id, score in results:
-                # Find matching KnowledgeNode
                 for node in self._nodes:
                     if hasattr(node, 'knowledge_id') and node.knowledge_id == node_id:
                         items.append(ContextItem(
@@ -225,6 +228,87 @@ class VectorKnowledgeSource(KnowledgeSource):
         except Exception:
             return super().retrieve(query, top_k, **kwargs)
 
+
+# ============================================================================
+# Hybrid sources (v4) — semantic + keyword dual-path
+# ============================================================================
+
+class HybridKnowledgeSource(KnowledgeSource):
+    """Hybrid retrieval: semantic + keyword with weighted merge.
+
+    Uses HybridIndex for dual-path search. Falls back to keyword matching
+    if HybridIndex is not available.
+    """
+
+    def __init__(self, nodes=None, hybrid_index=None):
+        super().__init__(nodes)
+        self._hybrid_index = hybrid_index
+
+    @property
+    def name(self) -> str:
+        return "knowledge_hybrid"
+
+    def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
+        if self._hybrid_index is None:
+            return super().retrieve(query, top_k, **kwargs)
+
+        try:
+            results = self._hybrid_index.search(query, top_k)
+            items = []
+            for node_id, score in results:
+                for node in self._nodes:
+                    node_id_attr = getattr(node, 'knowledge_id', None)
+                    if node_id_attr and node_id_attr == node_id:
+                        items.append(ContextItem(
+                            source=self.name,
+                            content=node,
+                            relevance=float(score),
+                            metadata={"retrieval": "hybrid"},
+                        ))
+                        break
+            return items
+        except Exception:
+            return super().retrieve(query, top_k, **kwargs)
+
+
+class HybridSkillSource(SkillSource):
+    """Hybrid retrieval for SkillPool: semantic + keyword."""
+
+    def __init__(self, skill_pool=None, hybrid_index=None):
+        super().__init__(skill_pool)
+        self._hybrid_index = hybrid_index
+
+    @property
+    def name(self) -> str:
+        return "skill_hybrid"
+
+    def retrieve(self, query: str, top_k: int = 5, **kwargs) -> List[ContextItem]:
+        if self._hybrid_index is None:
+            return super().retrieve(query, top_k, **kwargs)
+
+        try:
+            results = self._hybrid_index.search(query, top_k)
+            items = []
+            for skill_id, score in results:
+                skills = getattr(self._pool, 'list_all', lambda: [])()
+                for skill in skills:
+                    sid = getattr(skill, 'skill_id', getattr(skill, 'name', str(skill)))
+                    if sid == skill_id:
+                        items.append(ContextItem(
+                            source=self.name,
+                            content=skill,
+                            relevance=float(score),
+                            metadata={"retrieval": "hybrid"},
+                        ))
+                        break
+            return items
+        except Exception:
+            return super().retrieve(query, top_k, **kwargs)
+
+
+# ============================================================================
+# TieredVectorStore (backward compatibility)
+# ============================================================================
 
 class TieredVectorStore:
     """Auto-switches between SQLite and Milvus based on vector count.
