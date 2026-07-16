@@ -139,6 +139,11 @@ class CognitiveRuntimeEngine:
         # Extraction orchestration (regex / LMStudio / DeepSeek with fallback)
         self._extraction_orchestrator = None  # ExtractionOrchestrator set in start()
 
+        # Cognitive Runtime (Phase 2): LLM-driven reasoning loop
+        self._use_cognitive_runtime = False
+        self._cognitive_observer = None  # Observer set when enabled
+        self._cognitive_trace: Optional[object] = None  # ExecutionTrace for last run
+
         # Behavior tracking: record user navigation edges in RelationSubstrate
         self._last_concept: Optional[str] = None
         self._content_provider = None  # set by _create_context_assembler
@@ -1056,6 +1061,73 @@ class CognitiveRuntimeEngine:
                 if not hasattr(obj, '_extracted_defs'):
                     obj._extracted_defs = []
                 obj._extracted_defs.append(d.text[:500])
+
+    def enable_cognitive_runtime(self):
+        """Enable LLM-driven cognitive runtime (Phase 2).
+
+        Replaces the linear Pipeline with a MetaCognition-driven loop:
+        PERCEIVE -> [REASON -> REFLECT -> 决策 -> RETRIEVE/EXPAND] -> COMMIT
+        """
+        from core.agent.v4.cognitive.scheduler import Observer
+        self._use_cognitive_runtime = True
+        self._cognitive_observer = Observer(id=f"obs_{int(time.time())}")
+        logger.info("Cognitive Runtime enabled")
+
+
+    def run_cognitive(self, question: str, max_iterations: int = 5) -> str:
+        """Run the full cognitive loop for a single question.
+
+        Returns LLM response string.
+        """
+        if not self._use_cognitive_runtime or self._cognitive_observer is None:
+            return self.on_event(self._make_event(question))
+
+        from core.agent.v4.cognitive.metacognition import MetaCognition
+        from core.agent.v4.cognitive.scheduler import CognitiveScheduler
+        from core.agent.v4.cognitive.runtime import run_cognitive_loop
+
+        mc = MetaCognition(llm_provider=self._llm_provider)
+        scheduler = CognitiveScheduler(metacognition=mc)
+        obs = self._cognitive_observer
+        obs.token_budget = 4000
+        obs.token_used = 0
+
+        self._cognitive_trace = run_cognitive_loop(
+            observer=obs,
+            scheduler=scheduler,
+            engine=self,
+            question=question,
+            max_iterations=max_iterations,
+        )
+
+        # Return best candidate answer
+        if obs.workspace and obs.workspace.candidate_answers:
+            return obs.workspace.candidate_answers[-1].get("content", "")
+        return self._cognitive_trace.final_answer if self._cognitive_trace else ""
+
+
+    def cognitive_status(self) -> dict:
+        """Return cognitive runtime status for inspection."""
+        if not self._cognitive_observer:
+            return {"enabled": False}
+        obs = self._cognitive_observer
+        ws = obs.workspace
+        trace = self._cognitive_trace
+        return {
+            "enabled": True,
+            "observer": obs.snapshot(),
+            "workspace_state": ws.state if ws else "none",
+            "confidence": ws.confidence if ws else 0,
+            "hypotheses": len(ws.hypotheses) if ws else 0,
+            "trace": trace.summary() if trace else "none",
+            "trace_steps": len(trace.steps) if trace else 0,
+        }
+
+
+    def _make_event(self, text: str) -> object:
+        from core.agent.v4.event_ir import DialogAdapter
+        return DialogAdapter().adapt(text, session_id="cog_session", turn_number=1)
+
 
     def set_object_store(self, objects: dict, runtime, provider):
         """Inject SemanticObject store + ObjectRuntime + ContentProvider for world rendering."""
