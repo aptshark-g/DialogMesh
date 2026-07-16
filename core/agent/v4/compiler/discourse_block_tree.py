@@ -304,12 +304,54 @@ class DiscourseBlock:
         """Return compressed summary of all EDUs in this block."""
         texts = [getattr(e, 'raw_text', str(e)) for e in self.edus[:10]]
         return " | ".join(t[:80] for t in texts if t)
+
+    def llm_summarize(self, llm_provider=None) -> str:
+        """LLM-driven structured summary. Falls back to truncation if no LLM."""
+        if not self.edus:
+            return "(empty)"
+        if not llm_provider or not hasattr(self, '_llm'):
+            # Fallback: structured truncation with topic hints
+            texts = [getattr(e, 'raw_text', str(e)) for e in self.edus[:5]]
+            return " → ".join(t[:60] for t in texts if t)[:150]
+        try:
+            from core.agent.llm_providers.base import GenerateRequest
+            text = " ".join(getattr(e, 'raw_text', '') for e in self.edus[:5])
+            prompt = (
+                f"Summarize this conversation fragment in one Chinese sentence (max 40 characters). "
+                f"Include: topic, user intent, key information.\n\n"
+                f"Fragment: {text[:500]}\n\nSummary:"
+            )
+            result = llm_provider.generate(GenerateRequest(prompt=prompt, max_tokens=80, temperature=0.1))
+            summary = result.text.strip() if hasattr(result, 'text') else str(result).strip()
+            return summary[:120]
+        except Exception:
+            return self.serialize_edus_summary()[:120]
     children: List[str] = field(default_factory=list)  # child block_ids
     parent: Optional[str] = None
     depth: int = 0
     summary: str = ""
     created_at: float = field(default_factory=time.time)
     temperature: str = "active"  # active | paused | cold | frozen
+    importance: float = 0.3      # 0-1: LOW(0.3), MEDIUM(0.6), HIGH(0.9)
+
+    CORRECTION_SIGNALS = ["不是", "不对", "我才是", "你搞错了", "这是用户画像", "你才是系统"]
+    SWITCH_SIGNALS = ["switch", "切换", "换个话题"]
+
+    def compute_importance(self):
+        """Auto-score block importance from content signals."""
+        text = " ".join(getattr(e, 'raw_text', '') for e in self.edus)
+        # HIGH: user correction
+        if any(sig in text for sig in self.CORRECTION_SIGNALS):
+            self.importance = 0.9
+        # HIGH: meta-cognition discussion
+        elif any(sig in text for sig in ["元认知", "对话树", "设计不足", "颗粒度"]):
+            self.importance = 0.85
+        # MEDIUM: topic switch
+        elif any(sig in text for sig in self.SWITCH_SIGNALS):
+            self.importance = 0.6
+        # DEFAULT: normal conversation
+        else:
+            self.importance = 0.3
 
     @property
     def text(self) -> str:
@@ -349,17 +391,22 @@ class DiscourseBlockTree:
         return list(reversed(path))
 
     def update_temperature(self, block_id: str):
-        """Update block temperature based on time since last access."""
+        """Update block temperature based on time since last access + importance.
+
+        Important blocks (user corrections, meta-cognition) decay slower.
+        """
         if block_id not in self.blocks:
             return
         blk = self.blocks[block_id]
         now = time.time()
         age = now - blk.created_at
-        if age < 300:  # 5 min
+        # Importance-weighted thresholds: high importance = longer active window
+        factor = 1.0 + blk.importance  # range: 1.3 (low) to 1.9 (high)
+        if age < 300 * factor:
             blk.temperature = "active"
-        elif age < 1800:  # 30 min
+        elif age < 1800 * factor:
             blk.temperature = "paused"
-        elif age < 7200:  # 2 hours
+        elif age < 7200 * factor:
             blk.temperature = "cold"
         else:
             blk.temperature = "frozen"

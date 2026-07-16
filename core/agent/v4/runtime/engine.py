@@ -772,34 +772,61 @@ class CognitiveRuntimeEngine:
             except Exception:
                 pass
 
-            # Layer 3: Persistent session fallback — keyword match in past sessions
+            # Layer 3: Persistent session fallback — BGE semantic + keyword hybrid
             try:
                 text = current_event.payload.get('text', '') if hasattr(current_event, 'payload') else ''
                 if text:
-                    import glob, json, os, re
+                    import glob, json, os
                     session_files = sorted(glob.glob("data/chat_session_*.jsonl"), key=os.path.getmtime, reverse=True)
-                    for sf in session_files[:3]:
-                        if sid and sid in sf:
-                            continue  # skip current session
+                    # Collect past user texts
+                    candidates = []
+                    for sf in session_files[:2]:  # only last 2 sessions
+                        if sid and sid.replace("chat_","")[:8] in sf:
+                            continue
                         with open(sf, 'r', encoding='utf-8') as f:
                             for line in f:
                                 try:
                                     rec = json.loads(line)
                                     if rec.get("event_type") == "user_input":
-                                        user_text = rec.get("text", "")
-                                        # Simple keyword overlap (fast, no LLM cost)
-                                        kw = set(re.findall(r'[一-鿿]{2,}', text))
-                                        ukw = set(re.findall(r'[一-鿿]{2,}', user_text))
-                                        overlap = len(kw & ukw)
-                                        if overlap >= 2:
-                                            self._last_context.add_entry(
-                                                domain="C", type="past_session",
-                                                content=f"[Past] {rec.get('timestamp','')[:10]}: {user_text[:120]}",
-                                                confidence=0.2, estimated_tokens=50,
-                                            )
-                                            break  # one match per session
+                                        candidates.append({
+                                            "text": rec.get("text", ""),
+                                            "ts": rec.get("timestamp", "")[:10],
+                                        })
                                 except json.JSONDecodeError:
                                     pass
+
+                    if candidates:
+                        # BGE semantic search (fast, no LLM cost after model loaded)
+                        try:
+                            from core.agent.compiler.semantic_encoder import SemanticEncoder
+                            import numpy as np
+                            bge = SemanticEncoder()
+                            qv = bge.encode(text)
+                            scored = []
+                            for c in candidates:
+                                cv = bge.encode(c["text"])
+                                cos = float(np.dot(qv, cv) / (np.linalg.norm(qv) * np.linalg.norm(cv) + 1e-8))
+                                if cos > 0.5:
+                                    scored.append((c, cos))
+                            scored.sort(key=lambda x: x[1], reverse=True)
+                            for c, cos in scored[:3]:
+                                self._last_context.add_entry(
+                                    domain="C", type="past_session",
+                                    content=f"[Past {c['ts']}] {c['text'][:120]}",
+                                    confidence=cos * 0.4, estimated_tokens=50,
+                                )
+                        except Exception:
+                            # Fallback: keyword overlap
+                            import re
+                            kw = set(re.findall(r'[一-鿿]{2,}', text))
+                            for c in candidates[:10]:
+                                ukw = set(re.findall(r'[一-鿿]{2,}', c["text"]))
+                                if len(kw & ukw) >= 2:
+                                    self._last_context.add_entry(
+                                        domain="C", type="past_session",
+                                        content=f"[Past {c['ts']}] {c['text'][:120]}",
+                                        confidence=0.2, estimated_tokens=50,
+                                    )
             except Exception:
                 pass
                     content=f"[User T{entry['turn']}] {entry['text']}",
