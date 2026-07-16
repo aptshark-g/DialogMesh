@@ -87,11 +87,13 @@ class MetaCognition:
         self._llm = provider
 
     def reflect(self, workspace) -> MetaReflection:
-        """Ask LLM to evaluate its own reasoning workspace."""
+        """Ask LLM to evaluate its own reasoning workspace.
+
+        Returns MetaReflection from LLM, or fallback if LLM unavailable/fails.
+        """
         if self._llm is None:
             return self._fallback_reflection(workspace)
 
-        # Serialize workspace state for LLM
         ws_text = self._serialize_workspace(workspace)
 
         try:
@@ -99,20 +101,25 @@ class MetaCognition:
             prompt = META_PROMPT.format(workspace_text=ws_text)
             request = GenerateRequest(
                 prompt=prompt,
-                max_tokens=300,
-                temperature=0.1,  # low temp for structural decisions
-                response_format="json",
+                max_tokens=400,
+                temperature=0.1,
+                # No response_format="json" — not all providers support it
             )
             result = self._llm.generate(request)
             text = result.text if hasattr(result, 'text') else str(result)
 
-            # Parse JSON from response
+            # Try JSON parse, fall back to markdown-json extraction
             reflection = self._parse(text)
             reflection.raw_response = text
+
+            if reflection.next_action != "REASON":
+                logger.info("MetaCognition (LLM): action=%s confidence=%.2f reason=%s",
+                           reflection.next_action, reflection.confidence_self,
+                           reflection.action_reason[:80])
             return reflection
 
         except Exception as e:
-            logger.debug("MetaCognition LLM call failed: %s, using fallback", e)
+            logger.info("MetaCognition LLM failed (%s), using fallback", type(e).__name__)
             return self._fallback_reflection(workspace)
 
     def _serialize_workspace(self, workspace) -> str:
@@ -141,14 +148,26 @@ class MetaCognition:
         return "\n".join(lines)
 
     def _parse(self, text: str) -> MetaReflection:
-        """Parse LLM JSON response into MetaReflection."""
-        # Extract JSON block
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if not json_match:
+        """Parse LLM JSON response into MetaReflection.
+
+        Handles: raw JSON, markdown ```json blocks, and broken JSON fragments.
+        """
+        # Try markdown code fence first
+        fence_match = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", text)
+        if fence_match:
+            json_text = fence_match.group(1).strip()
+        else:
+            # Fallback to raw JSON extraction
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if not json_match:
+                return self._fallback_reflection(None)
+            json_text = json_match.group()
+
+        if not json_text:
             return self._fallback_reflection(None)
 
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(json_text)
             return MetaReflection(
                 confidence_self=float(data.get("confidence_self", 0.5)),
                 gaps=data.get("gaps", []),
