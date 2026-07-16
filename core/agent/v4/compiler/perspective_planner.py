@@ -73,7 +73,7 @@ class PerspectivePlanner:
         (["为什么", "原因", "动机", "背景", "历史", "演变", "之前", "为什么这么设计"], "evolution"),
         (["代码", "函数", "class", "实现", "method", "源码"], "engineering"),
         (["流程", "执行", "pipeline", "怎么跑", "运行", "调度", "步骤"], "execution"),
-        (["架构", "设计", "整体", "是什么", "结构", "概览", "介绍", "了解", "视角", "双视角", "你我", "元认知"], "architecture"),
+        (["架构", "设计", "整体", "是什么", "结构", "概览", "介绍", "了解"], "architecture"),
     ]
 
     # Depth base by strategy

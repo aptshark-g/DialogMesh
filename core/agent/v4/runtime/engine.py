@@ -814,7 +814,57 @@ class CognitiveRuntimeEngine:
     # ---- Expectation inference ----
 
     @staticmethod
-    def _infer_expectation(text: str) -> str:
+    def _cognitive_perspective(self, text: str):
+        """Use Cognitive Runtime observer for perspective selection.
+
+        When Cognitive Runtime is enabled, Observer identity drives perspective
+        selection — not keyword matching. The Observer knows whether it's
+        representing system self-reflection or user analysis.
+
+        Returns: (strategy, horizon_depth, domains_dict) or None for fallback
+        """
+        if not self._use_cognitive_runtime or self._cognitive_observer is None:
+            return None
+
+        from core.agent.v4.cognitive.metacognition import MetaCognition
+        from core.agent.v4.cognitive.workspace import CognitiveWorkspace
+
+        obs = self._cognitive_observer
+
+        # Ensure workspace exists
+        if obs.workspace is None:
+            obs._workspace = CognitiveWorkspace(id=f"ws_{obs.id}", goal=text)
+
+        obs.workspace.goal = text
+        obs.workspace.active_objects = getattr(obs.workspace, 'active_objects', []) or []
+
+        # MetaCognition decides based on workspace state + observer identity
+        try:
+            mc = MetaCognition(llm_provider=self._llm_provider)
+            reflection = mc.reflect(obs.workspace)
+
+            # Map reflection to perspective strategy
+            strategy_map = {
+                "RETRIEVE": "architecture",
+                "EXPAND": "engineering",
+                "REASON": "evolution",
+                "COMMIT": "execution",
+            }
+            strategy = strategy_map.get(reflection.next_action, "architecture")
+
+            # Domains from self-assessment
+            domains = {"K": 0.4, "C": 0.25, "P": 0.15, "E": 0.1, "B": 0.1}
+            if reflection.confidence_self < 0.4:
+                domains = {"K": 0.3, "P": 0.35, "C": 0.25, "E": 0.05, "B": 0.05}
+
+            logger.info("Cognitive Perspective: strategy=%s (via MetaCognition: %s)", 
+                        strategy, reflection.next_action)
+            return (strategy, 2, domains)
+        except Exception as e:
+            logger.debug("MetaCognition perspective failed: %s, using fallback", e)
+            return None
+
+    def _infer_expectation(self, text: str) -> dict:
         """Lightweight expectation classifier.
         TOOL=imperative, ADVISOR=analysis, COMPANION=social.
         """
