@@ -162,6 +162,34 @@ class MacroMicroQuantizer:
     def __init__(self):
         self._bge = None
 
+    def _bge_similarity(self, text_a: str, text_b: str) -> float:
+        """BGE cosine similarity fallback when entity overlap is low (Chinese short text)."""
+        self._ensure_bge()
+        if not self._bge or self._bge is False:
+            return 0.5  # neutral
+        try:
+            import numpy as np
+            v_a = self._bge.encode(text_a)
+            v_b = self._bge.encode(text_b)
+            return float(np.dot(v_a, v_b) / (np.linalg.norm(v_a) * np.linalg.norm(v_b) + 1e-8))
+        except Exception:
+            return 0.5
+
+    _QUESTION_PATTERNS = {
+        "self_reflection": ["你觉得", "你认为", "你对自己", "你如何看"],
+        "causal_query":   ["为什么", "原因", "怎么会"],
+        "definition":     ["是什么", "什么类型", "属于"],
+        "comparison":     ["有没有可能", "是不是", "还是"],
+        "meta_cognition": ["元认知", "镜子", "视角", "双视角"],
+    }
+
+    def _question_type(self, text: str) -> str:
+        """Classify Chinese question type for cohesion scoring."""
+        for qtype, patterns in self._QUESTION_PATTERNS.items():
+            if any(p in text for p in patterns):
+                return qtype
+        return "general"
+
     def _ensure_bge(self):
         if self._bge is not None:
             return
@@ -221,10 +249,17 @@ class MacroMicroQuantizer:
             scores.append(1.0 * self.MACRO_WEIGHTS["intent"])
         else:
             scores.append(0.3 * self.MACRO_WEIGHTS["intent"])
-        # topic embedding (simplified: entity overlap)
+        # topic embedding: entity overlap + BGE fallback for Chinese short text
         overlap = len(set(a.entities) & set(b.entities))
         total_e = len(set(a.entities) | set(b.entities)) or 1
-        scores.append((overlap / total_e) * self.MACRO_WEIGHTS["topic_embed"])
+        entity_score = overlap / total_e
+        if entity_score < 0.3 and self._bge is not False:
+            # Low entity overlap (Chinese short text): use BGE semantic similarity
+            bge_score = self._bge_similarity(getattr(a, 'raw_text', ''), getattr(b, 'raw_text', ''))
+            # Blend: BGE weight increases as entity overlap decreases
+            blend_weight = 1.0 - entity_score
+            entity_score = entity_score * (1 - blend_weight) + bge_score * blend_weight
+        scores.append(entity_score * self.MACRO_WEIGHTS["topic_embed"])
         # time decay (adjacent EDUs = no decay)
         scores.append(1.0 * self.MACRO_WEIGHTS["time_decay"])
         return sum(scores)

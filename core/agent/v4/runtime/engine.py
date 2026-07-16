@@ -895,13 +895,24 @@ class CognitiveRuntimeEngine:
         try:
             from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
             engine = TagAcquisitionEngine()
-            tags = engine.acquire(text)
+            # Use acquire_all for full L1+L2 tag acquisition
+            result = engine.acquire_all(text)
+            tags = list(result.values()) if isinstance(result, dict) else []
             for tag in tags:
                 self._cognitive_profile.track_b[tag.key] = tag
             if tags:
-                logger.info("TrackB: %d tags acquired: %s", len(tags), {t.key: t.value for t in tags[:5]})
+                stored = 0
+                for tag in tags[:10]:
+                    try:
+                        tag_name = getattr(tag, 'name', getattr(tag, 'key', str(tag)))[:40]
+                        self._cognitive_profile.track_b[tag_name] = tag
+                        stored += 1
+                    except Exception:
+                        pass
+                if stored:
+                    logger.info("TrackB: %d tags stored", stored)
             else:
-                logger.debug("TrackB: no tags for text[:50]=%r", text[:50])
+                logger.debug("TrackB: no tags from text[:50]=%r", text[:50])
         except Exception as e:
             logger.info("TrackB feed failed: %s", e)
 
@@ -1038,6 +1049,8 @@ class CognitiveRuntimeEngine:
                     if len(text) < effective_min:
                         continue
                     result = self._extraction_orchestrator.extract(text, concepts)
+                    logger.info("Slow Path extract: text_len=%d concepts=%d tuples=%d",
+                               len(text), len(concepts), len(result) if isinstance(result, list) else 0)
                     self._apply_extraction(result)
                     processed += 1
                     if processed >= 3:
@@ -1083,10 +1096,14 @@ class CognitiveRuntimeEngine:
         from core.agent.v4.compiler.relation_substrate import RelationEdge, Evidence
         prov = getattr(self, "_content_provider", None)
         if not prov:
+            logger.debug("Slow Path writeback: no content provider")
             return
 
         # Write relations to RelationSubstrate
-        for r in result.relations:
+        written = 0
+        rels = getattr(result, 'relations', [])
+        logger.info("Slow Path writeback: %d candidate relations", len(rels))
+        for r in rels:
             if not r.source or not r.target:
                 continue
             eid = f"ext:{r.source}\u2192{r.target}:{r.predicate}"
@@ -1103,6 +1120,12 @@ class CognitiveRuntimeEngine:
             )
             if hasattr(prov, "_relation_substrate") and prov._relation_substrate:
                 prov._relation_substrate.add(edge)
+                written += 1
+
+        if written > 0:
+            logger.info("Slow Path writeback: %d edges -> RelationSubstrate", written)
+        else:
+            logger.info("Slow Path writeback: 0 edges (no valid source/target in %d relations)", len(rels))
 
         # Write definitions to SemanticObject if store is available
         objects = getattr(self, '_world_objects', {})
@@ -1265,6 +1288,27 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("Jieba match skipped: %s", e)
 
+        # ---- BGE fallback: semantic similarity when jieba misses ----
+        if len(targets) < 3:
+            try:
+                from core.agent.compiler.semantic_encoder import SemanticEncoder
+                import numpy as np
+                bge = SemanticEncoder()
+                query_vec = bge.encode(text)
+                scored = []
+                for name in objects:
+                    if name in targets: continue
+                    nv = bge.encode(name)
+                    cos = float(np.dot(query_vec, nv) / (np.linalg.norm(query_vec) * np.linalg.norm(nv) + 1e-8))
+                    scored.append((name, cos))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                # Only accept high-confidence BGE matches (>0.6 cosine)
+                for name, cos in scored:
+                    if cos > 0.6 and len(targets) < 8:
+                        targets.add(name)
+            except Exception as e:
+                logger.debug("BGE fallback skip: %s", e)
+
         # ---- Final fallback: substring scan (original logic) ----
         if not targets:
             text_lower = text.lower()
@@ -1345,6 +1389,29 @@ class CognitiveRuntimeEngine:
                         ))
 
         logger.debug("Semantic world injected: %d objects x %d perspectives", len(targets), len(perspectives))
+
+        # Fallback: if no world_view entries were produced (e.g. evolution on empty design),
+        # try architecture rendering to ensure at least some world content
+        has_world = any('world_view' in getattr(e, 'type', '') for e in self._last_context.entries)
+        if not has_world and targets:
+            arch_persp = perspectives[0]
+            arch_persp.strategy = "architecture"
+            for target in targets[:3]:
+                obj = objects.get(target)
+                if not obj: continue
+                try:
+                    lod = LODObj(level=2.0)
+                    view = runtime.render(obj, lod, arch_persp)
+                    design = view.get('design', '') if isinstance(view, dict) else ''
+                    if design:
+                        self._last_context.add_entry(domain="K", entry=IREntry(
+                            domain="K", type="world_view_architecture",
+                            content=f"[ARCHITECTURE] {obj.name}\n{design[:600]}",
+                            confidence=0.6, estimated_tokens=200,
+                        ))
+                        has_world = True
+                except Exception:
+                    pass
 
         # Remove static graph entries when world views present
         has_world = any('world_view' in getattr(e, 'type', '') for e in self._last_context.entries)
