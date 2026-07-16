@@ -17,7 +17,7 @@ class FusionContext:
     def render_track_a(dynamics, engine: ConvergenceEngine = None) -> str:
         """Render Track A dynamics as structured text."""
         d = dynamics
-        parts = ["[Cognitive Dynamics — Track A]"]
+        parts = ["[User Cognitive Profile — Track A]"]
 
         # Core values
         parts.append(f"  Inertia: cog={d.cognitive_inertia:.2f} bhv={d.behavior_inertia:.2f}")
