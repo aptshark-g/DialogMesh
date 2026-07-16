@@ -308,6 +308,31 @@ class DiscourseBlockTree:
             bid = self.blocks[bid].parent
         return list(reversed(path))
 
+    def update_temperature(self, block_id: str):
+        """Update block temperature based on time since last access."""
+        if block_id not in self.blocks:
+            return
+        blk = self.blocks[block_id]
+        now = time.time()
+        age = now - blk.created_at
+        if age < 300:  # 5 min
+            blk.temperature = "active"
+        elif age < 1800:  # 30 min
+            blk.temperature = "paused"
+        elif age < 7200:  # 2 hours
+            blk.temperature = "cold"
+        else:
+            blk.temperature = "frozen"
+
+    def active_blocks(self) -> List[DiscourseBlock]:
+        """Return blocks that are active or paused (should be injected into context)."""
+        now = time.time()
+        active = []
+        for blk in self.blocks.values():
+            if now - blk.created_at < 1800:
+                active.append(blk)
+        return active
+
     def serialize_for_context(self, block_id: str, max_blocks: int = 8) -> str:
         """Build tree context string for LLM injection."""
         path = self.path_to_root(block_id)
@@ -432,6 +457,9 @@ class DiscourseBlockTreeManager:
 
         self._last_block[session_id] = last_bid
         tree.current_branch = last_bid
+        # Update temperature on all blocks for this tree
+        for bid in list(tree.blocks.keys()):
+            tree.update_temperature(bid)
         final = decisions[-1] if decisions else RouteDecision.CONTINUE
         return RouteResult(final, last_bid)
 

@@ -417,6 +417,7 @@ class CognitiveRuntimeEngine:
         # ---- Memory Point extraction (dialogue tree → capacitor model) ----
         # ---- Feed cognitive profile from current turn ----
         self._feed_profile(text, llm_response)
+        self._feed_trackb(text)  # TrackB: accumulate tags from user input
         if self._memory_manager is not None and text and llm_response:
             try:
                 turn_num = event.metadata.get("turn_number", 1) if hasattr(event, "metadata") else 1
@@ -832,6 +833,21 @@ class CognitiveRuntimeEngine:
         lens = [len(s) for s in sentences if len(s) > 3]
         divergence = 0.3 if len(lens) < 2 else min(1.0, max(lens) / max(1, sum(lens) / len(lens)) / 3)
         return {"expertise": expertise, "divergence": divergence, "stability": 0.5, "style": style}
+    def _feed_trackb(self, text: str):
+        """Feed TrackB tags from user input using TagAcquisitionEngine."""
+        if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
+            return
+        try:
+            from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
+            engine = TagAcquisitionEngine()
+            tags = engine.acquire(text)
+            for tag in tags:
+                self._cognitive_profile.track_b[tag.key] = tag
+            if tags:
+                logger.debug("TrackB: %d tags acquired", len(tags))
+        except Exception as e:
+            logger.debug("TrackB feed skipped: %s", e)
+
     def _feed_profile(self, text: str, response: str):
         """Feed current turn data into cognitive profile."""
         if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:

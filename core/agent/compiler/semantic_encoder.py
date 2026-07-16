@@ -35,6 +35,8 @@ class SemanticEncoder:
 
     # 备选模型 ID（用于错误提示）
     MODEL_ID = "BAAI/bge-small-zh"
+    # Fallback: multilingual model for cross-language (Chinese/English/Japanese)
+    MULTILINGUAL_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     # 向量维度（BGE-small-zh 固定为 512）
     EMBEDDING_DIM = 512
 
