@@ -107,3 +107,4 @@ data/chat_session_*.jsonl
 .pytest_cache/
 data/chat_session_*.jsonl
 world_fixture*.pkl
+_artifacts/
