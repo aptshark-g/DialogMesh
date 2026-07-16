@@ -299,6 +299,11 @@ class MacroMicroQuantizer:
 class DiscourseBlock:
     block_id: str
     edus: List[EDU] = field(default_factory=list)
+
+    def serialize_edus_summary(self) -> str:
+        """Return compressed summary of all EDUs in this block."""
+        texts = [getattr(e, 'raw_text', str(e)) for e in self.edus[:10]]
+        return " | ".join(t[:80] for t in texts if t)
     children: List[str] = field(default_factory=list)  # child block_ids
     parent: Optional[str] = None
     depth: int = 0
