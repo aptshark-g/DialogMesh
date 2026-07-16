@@ -6,6 +6,7 @@ Endpoints:
     GET  /v4/inspect/{mod}  System inspection (JSON)
     POST /v4/checkpoint     Manually trigger Slow Path
     GET  /v4/health         Health check
+    POST /v4/ingest         Ingest external documents
 """
 from __future__ import annotations
 import time, logging, os
@@ -34,6 +35,12 @@ class EventRequest(BaseModel):
     kind: str = "dialog.message"
     payload: dict = {}
     trace_id: str = ""
+
+
+class IngestRequest(BaseModel):
+    source_path: str
+    content: str = ""
+    file_type: str = "markdown"
 
 
 class StatusResponse(BaseModel):
@@ -116,6 +123,44 @@ async def post_event(req: EventRequest):
         "response": llm_response,
         "llm_metrics": _engine.llm_metrics,
     }
+
+
+@app.post("/v4/ingest", status_code=200)
+async def post_ingest(req: IngestRequest):
+    """Ingest external document content into the cognitive chain."""
+    if _engine is None:
+        raise HTTPException(503, "API not initialized")
+
+    try:
+        from core.agent.v4.document.pipeline import DocumentIngestionPipeline
+        from core.agent.v4.observation_compiler.document_domain_adapter import DocumentDomainAdapter
+
+        pool = getattr(_engine, '_observation_pool', None)
+        pipeline = DocumentIngestionPipeline(observation_pool=pool)
+
+        if req.content:
+            bundle = pipeline.ingest_text(req.content, source_path=req.source_path)
+        else:
+            bundle = pipeline.ingest_file(req.source_path)
+
+        if bundle is None:
+            raise HTTPException(400, "Ingest failed: no content parsed")
+
+        # Push to pool if available
+        if pool is not None:
+            adapter = DocumentDomainAdapter()
+            obs_bundle = adapter.adapt(bundle)
+            pool.put(obs_bundle)
+
+        return {
+            "status": "ingested",
+            "source_path": req.source_path,
+            "observation_count": len(bundle.observations),
+            "type_distribution": bundle.stats(),
+        }
+    except Exception as e:
+        logger.warning("Ingest API failed: %s", e)
+        raise HTTPException(500, f"Ingest error: {e}")
 
 
 @app.get("/v4/status")

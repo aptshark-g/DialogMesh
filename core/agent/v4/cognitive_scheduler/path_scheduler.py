@@ -119,6 +119,7 @@ class PathAwareScheduler:
         config: RuntimeConfig = None,
         world_params: WorldParams = None,
         registry=None,
+        chunk_registry=None,
     ):
         self.policy = policy or PriorityPathPolicy()
         self.pool = pool or PathWorkerPool(size=4)
@@ -129,6 +130,9 @@ class PathAwareScheduler:
             from core.agent.v4.world.params import get_world_params
             self.world_params = get_world_params()
         self._registry = registry
+
+        # Chunk strategy registry for document ingestion (DIL)
+        self._chunk_registry = chunk_registry
 
         # Queues per path
         self._queues: Dict[PathType, List[PathTask]] = {
@@ -417,6 +421,31 @@ class PathAwareScheduler:
     def get_queue(self, path: PathType) -> List[PathTask]:
         """Return the task queue for *path* (read-only copy)."""
         return list(self._queues[path])
+
+    # ---- Document Ingestion Layer (DIL) integration ----
+
+    def select_chunk_strategy(self, context, constraints=None):
+        """Select the best chunk strategy for document ingestion.
+
+        Args:
+            context: TaskContext (file_type, doc_size_chars, doc_depth, ...).
+            constraints: RuntimeConstraints (max_latency_ms, llm_available, ...).
+
+        Returns:
+            ChunkStrategy instance, or None if no registry configured.
+        """
+        if self._chunk_registry is None:
+            try:
+                from core.agent.v4.chunking.strategies import default_registry
+                self._chunk_registry = default_registry()
+            except Exception as e:
+                logger.warning("Failed to load default chunk registry: %s", e)
+                return None
+        try:
+            return self._chunk_registry.select(context, constraints)
+        except Exception as e:
+            logger.warning("Chunk strategy selection failed: %s", e)
+            return None
 
     # ---- Internal ----
 

@@ -1,195 +1,101 @@
 # DialogMesh v4
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Tests: 450+](https://img.shields.io/badge/tests-450%2B-green)](docs/v3.0/TEST_REPORT.md)
+[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-179%2B-green)](core/agent/v4/compiler/tests/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+[![Phase](https://img.shields.io/badge/phase-1%20complete-blue)](docs/merge/DESIGN_01_COGNITIVE_PIPELINE.md)
 
-**认知引擎** — 不是更好的 prompt，是让 LLM 能理解代码世界的关系结构。
-
----
-
-## 30 秒上手
-
-`ash
-git clone https://github.com/aptshark-g/DialogMesh.git
-cd DialogMesh
-pip install -r requirements.txt
-
-# 启动交互模式
-python main.py
-> add monitoring to gateway
-> status
-> quit
-
-# 一键启动（Windows）
-cli.bat
-
-# 查看系统状态
-python scripts/dialogmesh.py status
-python scripts/dialogmesh.py inspect hypotheses
-`
-
----
-
-## CLI 命令大全
-
-### 运行时
-`ash
-dialogmesh start                    # 启动认知引擎
-dialogmesh status                   # 引擎状态统计
-dialogmesh event "add monitoring"   # 发送事件
-dialogmesh health                   # 系统健康检查
-`
-
-### 查看认知状态
-`ash
-dialogmesh inspect observations     # 查看观测池
-dialogmesh inspect hypotheses       # 查看假设竞争
-dialogmesh inspect knowledge        # 查看已冻结知识
-dialogmesh inspect skills           # 查看蒸馏技能
-dialogmesh inspect world            # 查看世界图结构
-dialogmesh inspect context          # 查看上次上下文编译
-
-# 详细模式
-dialogmesh inspect hypotheses --detail --id hyp_001   # 7维信念状态全量
-dialogmesh inspect observations --json                # JSON输出
-`
-
-### 流水线编排
-`ash
-dialogmesh pipeline default         # 生成默认v4流水线
-dialogmesh pipeline show v4-default
-dialogmesh pipeline export v4-default config/custom.yaml
-`
-
-### 运维
-`ash
-dialogmesh snapshot list            # 查看快照
-dialogmesh config show              # 查看配置
-dialogmesh maintenance stats        # 存储分层状态
-dialogmesh events history           # 事件审计
-dialogmesh search "gateway"         # 跨模块搜索
-dialogmesh export knowledge         # 导出知识
-`
-
-**27 个命令，54 个测试，零失败。** 完整参考：[DESIGN_CLI_REFERENCE.md](docs/v3.0/DESIGN_CLI_REFERENCE.md)
+> **认知引擎** — 不是写更好的 prompt，是构建让 LLM 理解代码世界的结构化上下文。
+>
+> **白盒化**：每一个模块都是可探索的。你不只是在"用"一个引擎——你在理解它如何观察世界、如何决策、如何推理。从 SemanticObject 到 RelationEdge，从 DiscourseBlock 到 Perspective，全部可查看、可调试、可扩展。
 
 ---
 
 ## 是什么
 
-DialogMesh v4 是一台认知引擎。它做的事不是"给 LLM 更好的 prompt"——
-它把代码库、用户行为和工程约束建模为结构化关系图，让 LLM 看到一个"局部世界"。
+DialogMesh 是一个**语义世界运行时**——将设计文档、对话历史、行为链编译为 LLM 可导航的结构化世界模型。
 
-`
-Event -> Observation -> Hypothesis -> Knowledge -> Skill
-(事实)   (候选解释)     (竞争信念)      (冻结共识)   (可复用能力)
-`
+当前导入的文档（`docs/v3.0/DESIGN_*.md`）是**测试数据**——用来验证世界模型构建管线。你自己的代码库、设计文档、API 规范同样可以摄入，构建属于你项目的语义世界。
 
-**和 RAG / GraphRAG / AutoGPT 的区别：** v4 不替代它们。v4 做它们不做的那一层——
-在检索到信息之后、LLM 推理之前的知识组织和信念形成。
+[世界模型设计 →](docs/v3.0/DESIGN_SEMANTIC_WORLD_MODEL.md) ·
+[关系基座 →](docs/v3.0/DESIGN_RELATION_SUBSTRATE.md) ·
+[视角决策 →](docs/v3.0/DESIGN_PERSPECTIVE_PLANNER.md) ·
+[对象系统 →](docs/v3.0/DESIGN_SEMANTIC_OBJECT.md)
 
 ---
 
-## 快速开始
+## 5 分钟跑起来
 
-### 终端交互模式
+```bash
+git clone https://github.com/aptshark-g/DialogMesh.git
+cd DialogMesh
+uv venv .venv && uv pip install -r requirements.txt
 
-`ash
-python main.py
-# 输入文本发送事件，输入 status 看统计，输入 checkpoint 触发慢路径
-`
+# 交互对话（需要 DeepSeek API Key）
+export DEEPSEEK_API_KEY=sk-...
+.venv/Scripts/python run_chat.py
 
-### 单次命令
+# 或使用 CLI
+.venv/Scripts/python -m core.agent.v4.cli.main status
+.venv/Scripts/python -m core.agent.v4.cli.main inspect world
+```
 
-`ash
-python scripts/dialogmesh.py start
-python scripts/dialogmesh.py status
-python scripts/dialogmesh.py event "add monitoring to gateway"
-python scripts/dialogmesh.py inspect hypotheses
-`
-
-### 程序化调用
-
-`python
-from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
-from core.agent.v4.event_ir import EventIR
-
-engine = CognitiveRuntimeEngine()
-engine.start()
-
-event = EventIR(id="ev1", kind="dialog.message",
-                payload={"text": "add monitoring", "source": "user"})
-engine.on_event(event)
-engine.trigger_checkpoint()
-
-for name, stats in engine.stats.items():
-    print(f"{name}: {stats.trigger_count} triggers")
-engine.stop()
-`
+[完整 CLI 参考 →](docs/v3.0/DESIGN_CLI_REFERENCE.md) ·
+[安装帮助 →](docs/v3.0/SETUP.md)
 
 ---
 
-## 核心模块
+## 架构
 
-| 模块 | 做什么 |
-|:---|:---|
-| Observation Compiler | 把用户事件投影到 5 个认知域（行为/工程/记忆/对话/用户） |
-| Hypothesis Engine | 7 维信念状态 + 证据投票，假说自然竞争直到共识形成 |
-| Knowledge Vault | 冻结稳定共识，从竞争假说中沉淀事实 |
-| Skill Layer | 重复 Pattern 蒸馏为可执行能力蓝图 |
-| Semantic World Model | 代码库建模为图（社区检测 + 骨干染色 + 分层重要性） |
-| Context Engineering | DomainSelector → BudgetAllocator → CrossDomainContextIR |
-| Cognitive Runtime | 四路径调度（Async/Slow/Deep）自动触发 |
-| CLI + API | 27 命令 CLI + FastAPI REST 接口 + EventLog 审计 |
+```
+用户输入 ─→ PerspectivePlanner ─→ Multi-Perspective 渲染
+                  │                       │
+           Domain Allocator         SemanticObject × ObjectRuntime
+                  │                       │
+           DiscourseBlockTree ────→ ContextCompiler ──→ LLM
+                  │
+           RelationSubstrate (typed edges + evidence)
+```
 
----
-
-## 运行测试
-
-`ash
-python -m pytest core/agent/v4/ -q --noconftest
-# 450+ tests, 0 failures
-`
+[认知管线 →](docs/merge/DESIGN_01_COGNITIVE_PIPELINE.md) ·
+[上下文编译 →](docs/v3.0/DESIGN_CROSS_DOMAIN_CONTEXT.md) ·
+[话语块树 →](docs/v3.0/design_discourse_block_tree_v2.md)
 
 ---
 
-## 项目结构
+## 核心能力
 
-`
-core/agent/v4/
-    runtime/           认知调度
-    world/             语义世界模型
-    observation_compiler/ 观测编译
-    hypothesis_engine/ 假设引擎
-    skill_layer/       技能层
-    context/           上下文工程
-    tiered/            多级管道
-    persistence/       持久化
-    optimizer/         贝叶斯优化
-    cli/               CLI (27 命令)
-`
+| 能力 | 说明 |
+|------|------|
+| 🧠 **语义世界** | 9.8K SemanticObject + 5.4K RelationEdges，基于 88 篇设计文档构建 |
+| 🎯 **多视角渲染** | primary (depth=2) + secondary (depth=1) 互补观察，token budget 自适应 |
+| 🌳 **对话树** | 9 维粘合度模型，continue/fork/attach 分支决策 |
+| 🔗 **关系基座** | relation_kind × semantic_strength 正交模型，typed edges + evidence chain |
+| 👤 **用户画像** | TrackA 动态认知 (认知惯性/信任度/注意力锚点) 每轮累积 |
+| 📊 **多层次提取** | jieba (10ms) → Stanza (50ms) → LMStudio (500ms) → DeepSeek (2s) 四层降级 |
 
 ---
 
-## 设计文档
+## 测试
 
-全部在 [docs/v3.0/](docs/v3.0/)：
-DESIGN_OBSERVATION_COMPILER.md, DESIGN_HYPOTHESIS_ENGINE.md,
-DESIGN_SKILL_LAYER.md, DESIGN_SEMANTIC_WORLD_MODEL.md,
-DESIGN_COGNITIVE_RUNTIME.md, DESIGN_CLI_REFERENCE.md,
-DESIGN_API_EVENT_LOG.md, DESIGN_CLI_INSPECT.md,
-DESIGN_TUI.md 等 14 篇。
+```bash
+.venv/Scripts/python -m pytest core/agent/v4/compiler/tests/ -q
+```
+
+[测试报告 →](docs/v3.0/TEST_REPORT.md)
 
 ---
 
-## 已知局限
+## 文档导航
 
-- Python only, 单机部署, pre-1.0 API 可能变更
-- 未做大规模 benchmark, 无 GPU 优化
-- 对外依赖零（SQLite 默认, Neo4j/Milvus 预留接口）
-- Fast Path (DomainSelector/BudgetAllocator) 未完成
-
-## License
-
-MIT
+| 文档 | 内容 |
+|------|------|
+| [DESIGN_SEMANTIC_WORLD_MODEL](docs/v3.0/DESIGN_SEMANTIC_WORLD_MODEL.md) | 世界模型架构 + 6 Mermaid 图 |
+| [DESIGN_SEMANTIC_OBJECT](docs/v3.0/DESIGN_SEMANTIC_OBJECT.md) | 递归语义对象 + 投影解析器 |
+| [DESIGN_RELATION_SUBSTRATE](docs/v3.0/DESIGN_RELATION_SUBSTRATE.md) | 统一关系基座 + 因果解释层 |
+| [DESIGN_PERSPECTIVE_PLANNER](docs/v3.0/DESIGN_PERSPECTIVE_PLANNER.md) | 意图→策略→域分配 + Multi-Perspective |
+| [DESIGN_DISCOURSE_BLOCK_TREE](docs/v3.0/design_discourse_block_tree_v2.md) | 话语块树 + 粘合度模型 |
+| [DESIGN_CROSS_DOMAIN_CONTEXT](docs/v3.0/DESIGN_CROSS_DOMAIN_CONTEXT.md) | 跨域上下文编译 IR |
+| [CLI 参考](docs/v3.0/DESIGN_CLI_REFERENCE.md) | 27 个命令完整参考 |
+| [认知管线](docs/merge/DESIGN_01_COGNITIVE_PIPELINE.md) | 四路径调度 + 快慢系统 |
+| [Phase 计划](docs/merge/DESIGN_00_OVERVIEW.md) | Phase 0-4 里程碑 |

@@ -64,13 +64,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = "-v --tb=short"
-testpaths = ["tests", "core/agent/v3_0", "core/service/v3_0"]
-pythonpath = ["."]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
-addopts = "-v --tb=short"
 
 [tool.ruff]
 line-length = 120

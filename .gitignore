@@ -102,3 +102,8 @@ v32_logs_*/
 v32_test/
 _research_downloads/
 2.1
+data/chat_session_*.jsonl
+.venv-test/
+.pytest_cache/
+data/chat_session_*.jsonl
+world_fixture*.pkl

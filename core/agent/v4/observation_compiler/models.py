@@ -1,4 +1,4 @@
-﻿"""Observation Compiler models: Schema definitions for v4 cognitive pipeline.
+"""Observation Compiler models: Schema definitions for v4 cognitive pipeline.
 
 Design principle: Observation layer collects EVIDENCE, not CONFIDENCE.
 Confidence competition happens at Hypothesis Engine level via BeliefState.
@@ -35,11 +35,12 @@ class ObservationBundle:
         )
 
 
+@dataclass
 class DomainObservation:
     """Per-domain observation. Does NOT contain confidence."""
-    domain: str
-    observation_id: str
-    event_id: str
+    domain: str = ""
+    observation_id: str = ""
+    event_id: str = ""
     summary: str = ""
     actions: list[str] = field(default_factory=list)
     objects: list[str] = field(default_factory=list)

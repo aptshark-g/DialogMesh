@@ -47,7 +47,7 @@ class DomainSelection:
 # intent -> (primary, aux1, aux2, strategy)
 _MATRIX: Dict[IntentCategory, Tuple[Domain, Optional[Domain], Optional[Domain], str]] = {
     IntentCategory.TASK:         (Domain.ENGINEERING,  Domain.BEHAVIOR,    Domain.PROFILE,  "primary_deep"),
-    IntentCategory.QUERY:        (Domain.CONVERSATION, Domain.ENGINEERING, Domain.PROFILE,  "topic_anchor"),
+    IntentCategory.QUERY:        (Domain.CONVERSATION, Domain.CAUSAL,      Domain.ENGINEERING, "topic_anchor"),
     IntentCategory.CORRECTION:   (Domain.BEHAVIOR,     Domain.ENGINEERING, Domain.CAUSAL,   "causal_backtrack"),
     IntentCategory.DISCUSSION:   (Domain.PROFILE,      Domain.CONVERSATION, Domain.ENGINEERING, "breadth_diverge"),
     IntentCategory.CASUAL:       (Domain.CONVERSATION, Domain.PROFILE,     None,            "lightweight"),

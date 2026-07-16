@@ -82,6 +82,16 @@ class CrossDomainContextIR:
         self.total_estimated_tokens = sum(e.estimated_tokens for e in self.entries)
         return self.total_estimated_tokens
 
+    def add_entry(self, domain: str, entry: "IREntry") -> None:
+        """Add an entry to the IR, updating domain allocation if needed."""
+        self.entries.append(entry)
+        # Ensure domain exists in allocation
+        if not any(a.domain == domain for a in self.domain_allocation):
+            self.domain_allocation.append(
+                DomainAllocation(domain=domain, role=DomainRole.AUXILIARY, budget_pct=0.0, budget_tokens=0)
+            )
+        self.recalc_total()
+
     def entries_for(self, domain: str) -> List[IREntry]:
         return [e for e in self.entries if e.domain == domain]
 

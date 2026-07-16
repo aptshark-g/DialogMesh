@@ -3,6 +3,7 @@ from core.agent.v4.context.source import (
     ContextSource, ContextItem, CrossDomainContext,
     ObservationSource, KnowledgeSource, SkillSource,
     WorldSource, EngineeringSource,
+    CausalSource, CausalSubstrateAdapter,
 )
 from core.agent.v4.context.assembler import ContextAssembler
 from core.agent.v4.context.cross_domain_ir import (
@@ -34,6 +35,7 @@ __all__ = [
     "ContextSource", "ContextItem", "CrossDomainContext",
     "ObservationSource", "KnowledgeSource", "SkillSource",
     "WorldSource", "EngineeringSource",
+    "CausalSource", "CausalSubstrateAdapter",
     "ContextAssembler",
     # New v4 Context Engineering
     "CrossDomainContextIR", "IREntry", "CrossRef",

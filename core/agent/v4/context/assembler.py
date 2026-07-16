@@ -16,7 +16,7 @@ from core.agent.v4.context.source import (
     HybridKnowledgeSource, HybridSkillSource,
     KnowledgeSource, SkillSource, ObservationSource, WorldSource, EngineeringSource,
 )
-from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
+from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR, IREntry
 from core.agent.v4.context.domain_selector import DomainSelector, Domain
 from core.agent.v4.context.budget_allocator import BudgetAllocator
 from core.agent.v4.persistence.vector_store import SQLiteVectorStore, VectorStore
@@ -258,9 +258,7 @@ class ContextAssembler:
         selector = DomainSelector()
         selection = selector.select_from_string(intent)
         if domain_boosts:
-            # Apply boosts: domain_boosts = {"knowledge": 1.5, ...}
             for domain_key, boost in domain_boosts.items():
-                # Map string key to Domain enum
                 domain_map = {
                     "knowledge": Domain.CONVERSATION,
                     "engineering": Domain.ENGINEERING,
@@ -271,8 +269,6 @@ class ContextAssembler:
                 if domain:
                     selection = selector.with_boost(selection, domain, budget=boost * 0.1)
 
-        selection = selector.select_from_string(intent)
-
         # Step 2: Allocate budget
         allocator = BudgetAllocator(
             mandatory_tokens=min(200, token_budget // 4),
@@ -282,23 +278,60 @@ class ContextAssembler:
         budget_plan = allocator.allocate(selection.intent_category.value)
 
         # Step 3: Retrieve from each domain within budget
-        ir = CrossDomainContextIR(intent=intent)
+        ir = CrossDomainContextIR(intent_category=selection.intent_category)
         for alloc in selection.allocations:
             source = self._find_source(alloc.domain)
             if source is None:
                 continue
-            domain_budget = budget_plan.budget_for(alloc.domain)
-            # Convert token budget to item count (rough: ~5 tokens per item)
+            # Find budget for this domain from BudgetPlan.strategy_plan
+            domain_budget = 0
+            domain_value = alloc.domain.value if hasattr(alloc.domain, 'value') else str(alloc.domain)
+            for db in budget_plan.strategy_plan:
+                if db.domain == domain_value:
+                    domain_budget = db.budget_tokens
+                    break
+            if domain_budget == 0:
+                domain_budget = budget_plan.strategy_tokens // max(1, len(selection.allocations))
             item_limit = max(1, domain_budget // 5)
             items = source.retrieve(intent, top_k=min(top_k, item_limit))
+            # Filter noise: skip items below relevance floor
+            min_relevance = 0.25
+            items = [i for i in items if i.relevance >= min_relevance]
+            # Deduplicate by content prefix (first 60 chars)
+            seen = set()
+            deduped = []
             for item in items:
-                ir.add_entry(alloc.domain, item)
+                sig = item.text[:60] if item.text else str(item.content)[:60]
+                if sig not in seen:
+                    seen.add(sig)
+                    deduped.append(item)
+            items = deduped
+            for item in items:
+                # Use pre-extracted text from source (source is responsible for extraction)
+                content_str = item.text or str(item.content)
+                
+                # Truncate content to reasonable length
+                content_str = content_str[:1000] if len(content_str) > 1000 else content_str
+                
+                entry = IREntry(
+                    domain=domain_value,
+                    type=item.source or "context",
+                    content=content_str,
+                    confidence=item.relevance,
+                    estimated_tokens=len(content_str) // 4,
+                )
+                ir.add_entry(domain_value, entry)
 
         ir.recalc_total()
         return ir
 
-    def _find_source(self, domain_name: str):
-        """Find a ContextSource by domain name."""
+    def _find_source(self, domain):
+        """Find a ContextSource by domain name or Domain enum.
+
+        For 'knowledge' (K domain), prefers DocumentSource if available
+        (document observations are the primary knowledge source in v4
+        when no frozen KnowledgeNodes exist yet).
+        """
         domain_map = {
             'observation': 'observation',
             'knowledge': 'knowledge',
@@ -308,8 +341,28 @@ class ContextAssembler:
             'skill_hybrid': 'skill',
             'world': 'world',
             'engineering': 'engineering',
+            'document': 'document',
+            'E': 'engineering',
+            'C': 'observation',
+            'P': 'profile',
+            'B': 'behavior',
+            'K': 'knowledge',
         }
+        # Handle both string and Domain enum
+        domain_name = domain.value if hasattr(domain, 'value') else str(domain)
         target = domain_map.get(domain_name, domain_name)
+
+        # For 'knowledge' domain: prefer graph/knowledge sources, document as fallback
+        # ConceptGraphSource (name="knowledge") is the primary subgraph compiler
+        if target == 'knowledge':
+            for source in self._sources:
+                if source.name in ('knowledge', 'knowledge_hybrid', 'knowledge_vector'):
+                    return source
+            for source in self._sources:
+                if source.name == 'document':
+                    return source
+            return None
+
         for source in self._sources:
             if source.name == target or source.name == domain_name:
                 return source
