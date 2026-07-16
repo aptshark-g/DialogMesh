@@ -90,7 +90,8 @@ def start_engine(pool: ObservationPool) -> CognitiveRuntimeEngine:
         if provider.health_check():
             logger.info("Gateway ready (Switch at %s)", gateway_url)
         else:
-            logger.info("Gateway created — will start on demand")
+            logger.info("Gateway offline — falling back to direct DeepSeek")
+            provider = None  # trigger fallback below
     except Exception as e:
         logger.info("Gateway unavailable (%s)", e)
         provider = None
