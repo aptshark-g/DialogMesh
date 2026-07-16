@@ -108,3 +108,4 @@ data/chat_session_*.jsonl
 data/chat_session_*.jsonl
 world_fixture*.pkl
 _artifacts/
+.hermes/
