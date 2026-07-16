@@ -91,4 +91,5 @@ class ParameterRegistry:
             ("slow_path.event_threshold", 5, "int", "Events before Slow Path triggers (velocity-adjusted)", 2, 50, False),
             ("slow_path.velocity_window", 30, "int", "Velocity measurement window (seconds)", 10, 300, False),
             ("slow_path.min_text_length", 30, "int", "Min text length for extraction (elastic: half for CamelCase)", 10, 200, False),
+            ("conversation.max_history_entries", 10, "int", "Max conversation history entries in context", 3, 30, False),
         ]

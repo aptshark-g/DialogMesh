@@ -729,7 +729,9 @@ class CognitiveRuntimeEngine:
             return
         from core.agent.v4.context.cross_domain_ir import IREntry
 
-        history = self._conversation_tracker.get_history_entries(max_entries=5)
+        history = self._conversation_tracker.get_history_entries(
+            max_entries=self._get_param("conversation.max_history_entries", 10)
+        )
         for entry in history:
             self._last_context.add_entry(
                 domain="C",
@@ -990,6 +992,15 @@ class CognitiveRuntimeEngine:
                         LMStudioExtractionProvider().available())
         except Exception as e:
             logger.warning("ExtractionOrchestrator init failed: %s", e)
+
+    def _get_param(self, key: str, default):
+        """Read a parameter from ParameterRegistry with fallback."""
+        try:
+            from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+            val = ParameterRegistry().get(key)
+            return val if val is not None else default
+        except Exception:
+            return default
 
     def _get_slow_threshold(self) -> int:
         try:
