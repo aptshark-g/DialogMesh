@@ -849,9 +849,11 @@ class CognitiveRuntimeEngine:
             for tag in tags:
                 self._cognitive_profile.track_b[tag.key] = tag
             if tags:
-                logger.debug("TrackB: %d tags acquired", len(tags))
+                logger.info("TrackB: %d tags acquired: %s", len(tags), {t.key: t.value for t in tags[:5]})
+            else:
+                logger.debug("TrackB: no tags for text[:50]=%r", text[:50])
         except Exception as e:
-            logger.debug("TrackB feed skipped: %s", e)
+            logger.info("TrackB feed failed: %s", e)
 
     def _feed_profile(self, text: str, response: str):
         """Feed current turn data into cognitive profile."""
