@@ -409,6 +409,73 @@ class RouteResult:
     cohesion: Optional[CohesionScore] = None
 
 
+class DiscourseBlockGranularityRegulator:
+    """Dynamic granularity: split over-dense blocks, merge over-fragmented ones.
+
+    Design: design_discourse_block_tree_v2.md §6 BDI + BOR."""
+
+    OPTIMAL_BLOCKS_PER_TOPIC = 4
+    COOLDOWN_TURNS = 5
+
+    def __init__(self):
+        self.global_split_threshold = 0.25
+        self._last_regulation_turn = 0
+        self._turn_counter = 0
+
+    def regulate(self, tree: "DiscourseBlockTree", current_turn: int):
+        """Apply BDI+BOR regulation to tree. Called after feed()."""
+        self._turn_counter = current_turn
+        if current_turn - self._last_regulation_turn < self.COOLDOWN_TURNS:
+            return
+        # BDI: how healthy is block distribution?
+        non_root = [b for bid, b in tree.blocks.items() if bid != tree.root_id]
+        if not non_root:
+            return
+        bdi = len(non_root) / self.OPTIMAL_BLOCKS_PER_TOPIC
+        # BOR: boundary over-representation
+        actual_boundaries = len(non_root)
+        expected_boundaries = max(1, len(non_root) * 0.5)
+        bor = actual_boundaries / expected_boundaries
+
+        if bdi < 0.5 or bor < 0.6:
+            # Too sparse: merge similar adjacent blocks
+            self._merge_adjacent(tree)
+        elif bdi > 2.0 or bor > 1.5:
+            # Too dense: raise threshold to reduce splits
+            self.global_split_threshold = min(self.global_split_threshold * 1.2, 0.9)
+        self._last_regulation_turn = current_turn
+
+    def _merge_adjacent(self, tree: "DiscourseBlockTree"):
+        """Merge blocks with high entity overlap in the same branch."""
+        import itertools
+        merged = 0
+        for bid in list(tree.blocks.keys()):
+            if bid == tree.root_id:
+                continue
+            siblings = [b for b in tree.blocks.values()
+                        if b.parent == tree.blocks[bid].parent and b.block_id != bid]
+            for sib in siblings:
+                if sib.block_id not in tree.blocks or bid not in tree.blocks:
+                    continue
+                overlap = self._entity_overlap(tree.blocks[bid], sib)
+                if overlap > 0.6:
+                    # Merge sib into bid
+                    tree.blocks[bid].edus.extend(sib.edus)
+                    del tree.blocks[sib.block_id]
+                    merged += 1
+
+    @staticmethod
+    def _entity_overlap(a, b) -> float:
+        ea = set()
+        for edu in getattr(a, 'edus', []):
+            ea.update(getattr(edu, 'entities', []))
+        eb = set()
+        for edu in getattr(b, 'edus', []):
+            eb.update(getattr(edu, 'entities', []))
+        union = len(ea | eb)
+        return len(ea & eb) / union if union > 0 else 0.0
+
+
 class DiscourseBlockTreeManager:
     """Orchestrates the three-stage pipeline per conversation turn.
 

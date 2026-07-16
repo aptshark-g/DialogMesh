@@ -132,6 +132,10 @@ class CognitiveRuntimeEngine:
         self._conversation_tracker = ConversationTracker()
         # DiscourseBlockTree: conversation-to-tree compiler
         self._discourse_tree = DiscourseBlockTreeManager()
+        # Granularity regulator: BDI+BOR adaptive split/merge
+        from core.agent.v4.compiler.discourse_block_tree import DiscourseBlockGranularityRegulator
+        self._granularity_regulator = DiscourseBlockGranularityRegulator()
+        self._turn_counter = 0
 
         # User cognitive profile (dual-track: Track A dynamics + Track B tags)
         self._cognitive_profile: Optional[object] = None  # CognitiveProfileV2
@@ -293,6 +297,13 @@ class CognitiveRuntimeEngine:
             # Feed DiscourseBlockTree for conversation tree structure
             sid = event.payload.get('session_id', 'default') if hasattr(event, 'payload') else 'default'
             self._discourse_tree.feed(text, sid, history=None)
+
+            # Granularity regulation: BDI+BOR adaptive split/merge
+            self._turn_counter += 1
+            if hasattr(self, '_granularity_regulator'):
+                tree = self._discourse_tree._trees.get(sid)
+                if tree:
+                    self._granularity_regulator.regulate(tree, self._turn_counter)
 
             # Record behavior edge: user navigated from previous concept
             # Semantic filter: only record if concept exists in world model
@@ -1246,6 +1257,31 @@ class CognitiveRuntimeEngine:
             logger.warning("BGE index build failed: %s", e)
             self._bge_index = None
 
+    def _llm_review_bge(self, query: str, candidates: list) -> list:
+        """LLM filters BGE candidates for relevance. Slow but accurate."""
+        if self._llm_provider is None:
+            return []
+        try:
+            cand_list = ", ".join([name for name, _ in candidates[:8]])
+            prompt = (
+                f"User query: {query}\n\n"
+                f"BGE found these candidate concepts: {cand_list}\n\n"
+                f"Which 3 are MOST relevant to the query? Return ONLY a JSON array of names.\n"
+                f'Example: ["ConceptA", "ConceptB"]'
+            )
+            from core.agent.llm_providers.base import GenerateRequest
+            result = self._llm_provider.generate(GenerateRequest(prompt=prompt, max_tokens=150, temperature=0.1))
+            text = result.text if hasattr(result, 'text') else str(result)
+            import json, re
+            match = re.search(r'\[[\s\S]*?\]', text)
+            if match:
+                names = json.loads(match.group())
+                logger.info("LLM BGE review: %d candidates → %s", len(candidates), names)
+                return names[:5]
+        except Exception as e:
+            logger.debug("LLM BGE review failed: %s", e)
+        return []
+
     def _find_targets_semantic(self, text: str, objects: dict) -> list:
         """BGE semantic retrieval + jieba heading backtracking.
 
@@ -1302,10 +1338,18 @@ class CognitiveRuntimeEngine:
                     cos = float(np.dot(query_vec, nv) / (np.linalg.norm(query_vec) * np.linalg.norm(nv) + 1e-8))
                     scored.append((name, cos))
                 scored.sort(key=lambda x: x[1], reverse=True)
-                # Only accept high-confidence BGE matches (>0.6 cosine)
-                for name, cos in scored:
-                    if cos > 0.6 and len(targets) < 8:
+                # Take top-10 BGE candidates for LLM review
+                bge_candidates = scored[:10]
+                if bge_candidates and len(targets) < 3:
+                    # LLM review: filter BGE results for relevance
+                    by_llm = self._llm_review_bge(text, bge_candidates[:8])
+                    for name in by_llm:
                         targets.add(name)
+                else:
+                    # High confidence (>0.6) auto-accept
+                    for name, cos in scored:
+                        if cos > 0.6 and len(targets) < 8:
+                            targets.add(name)
             except Exception as e:
                 logger.debug("BGE fallback skip: %s", e)
 
@@ -1349,36 +1393,45 @@ class CognitiveRuntimeEngine:
             if not obj:
                 continue
 
-            # Render under each perspective (primary depth + secondary shallow)
-            prev_design = ""
-            for idx, persp in enumerate(perspectives[:2]):
-                try:
-                    lod_level = getattr(persp.horizon, 'depth', 2)
-                    lod = LODObj(level=float(lod_level))
-                    view = runtime.render(obj, lod, persp)
-                except Exception as e:
-                    logger.debug("Multi render failed %s/%s: %s", obj.name, persp.strategy, e)
-                    continue
-
-                strategy_label = persp.strategy.upper()
-                et = f"world_view_{persp.strategy}" if idx == 0 else f"world_view_aux"
-
+            # ── Primary perspective (full depth) ──
+            try:
+                primary = perspectives[0]
+                lod = LODObj(level=float(getattr(primary.horizon, 'depth', 2)))
+                view = runtime.render(obj, lod, primary)
                 design = view.get('design', '') if isinstance(view, dict) else ''
-                # Deduplicate: skip if secondary returns same content as primary
-                if idx > 0 and design[:100] == prev_design[:100]:
-                    continue
-                if idx == 0 and design:
-                    prev_design = design
-
                 if design:
                     self._last_context.add_entry(domain="K", entry=IREntry(
-                        domain="K", type=et,
-                        content=f"[{strategy_label}] {obj.name}\n{design[:500]}",
-                        confidence=0.7, estimated_tokens=len(design[:500]) // 4,
+                        domain="K", type=f"world_view_{primary.strategy}",
+                        content=f"[{primary.strategy.upper()}] {obj.name}\n{design[:500]}",
+                        confidence=0.7, estimated_tokens=200,
                     ))
+            except Exception as e:
+                logger.debug("Primary render failed %s: %s", obj.name, e)
 
-                # Relations only for primary
-                if idx == 0 and provider:
+        # ── Secondary perspective: DIFFERENT targets, shallow depth ──
+        if len(perspectives) > 1:
+            secondary = perspectives[1]
+            secondary_targets = targets[2:5] if len(targets) > 2 else targets[1:2]
+            for target in secondary_targets:
+                obj = objects.get(target)
+                if not obj: continue
+                try:
+                    lod = LODObj(level=1.0)
+                    view = runtime.render(obj, lod, secondary)
+                    design = view.get('design', '') if isinstance(view, dict) else ''
+                    if design:
+                        self._last_context.add_entry(domain="K", entry=IREntry(
+                            domain="K", type="world_view_aux",
+                            content=f"[{secondary.strategy.upper()}] {obj.name}\n{design[:300]}",
+                            confidence=0.5, estimated_tokens=120,
+                        ))
+                except Exception as e:
+                    logger.debug("Secondary render failed %s: %s", obj.name, e)
+
+        # ── Relations (only for primary perspective) ──
+        for target in targets[:3]:
+            obj = objects.get(target)
+            if obj and provider:
                     edges = provider.relation_query(source=obj.identity, min_confidence=0.3)[:5]
                     if edges:
                         rel_lines = [f"  {obj.name} {e.predicate} {e.target} ({e.relation_kind})" for e in edges]
