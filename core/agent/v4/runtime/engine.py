@@ -927,8 +927,33 @@ class CognitiveRuntimeEngine:
             return
         concepts = list(getattr(self, "_world_objects", {}).keys())[:10]
         if not concepts:
+            try:
+                from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+                jrp = JiebaRelationParser()
+                sample_texts = []
+                for domain in self._observation_pool.stats().get("by_domain", {}):
+                    for bundle in self._observation_pool.get_by_domain(domain)[:3]:
+                        for obs in getattr(bundle, "domain_observations", {}).values():
+                            for ip in getattr(obs, "interpretations", [])[:2]:
+                                s = ip.get("summary","") if isinstance(ip,dict) else getattr(ip,"summary","")
+                                if s: sample_texts.append(s)
+                for st in sample_texts[:5]:
+                    for tup in jrp.extract(st):
+                        concepts.append(tup["subject"]); concepts.append(tup["object"])
+                concepts = list(dict.fromkeys(concepts))[:10]
+            except Exception:
+                pass
+        if not concepts:
             return
+        min_text_len = 30
+        try:
+            from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+            min_text_len = ParameterRegistry().get_int("slow_path.min_text_length", 30)
+        except Exception:
+            pass
         processed = 0
+        import re
+        camel_re = re.compile(r'[A-Z][a-z]+(?:[A-Z][a-z]+)+')
         for domain in self._observation_pool.stats().get("by_domain", {}):
             for bundle in self._observation_pool.get_by_domain(domain):
                 for obs in getattr(bundle, "domain_observations", {}).values():
@@ -936,7 +961,8 @@ class CognitiveRuntimeEngine:
                         i.get("summary","") if isinstance(i,dict) else getattr(i,"summary","")
                         for i in getattr(obs,"interpretations",[])
                     )
-                    if len(text) < 50:
+                    effective_min = min_text_len // 2 if camel_re.search(text) else min_text_len
+                    if len(text) < effective_min:
                         continue
                     result = self._extraction_orchestrator.extract(text, concepts)
                     self._apply_extraction(result)
