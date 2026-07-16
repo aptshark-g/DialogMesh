@@ -724,137 +724,62 @@ class CognitiveRuntimeEngine:
         return self._conversation_tracker.enrich(current_text)
 
     def _inject_conversation_history(self, current_event: EventIR) -> None:
-        def _inject_conversation_history(self, current_event: EventIR) -> None:
-            """Hierarchical context injection: active blocks → cold summaries → persistent fallback."""
-            if self._last_context is None:
-                return
-            from core.agent.v4.context.cross_domain_ir import IREntry
+        """Hierarchical context: flat history → DiscourseTree → persistent sessions."""
+        if self._last_context is None:
+            return
+        from core.agent.v4.context.cross_domain_ir import IREntry
 
-            # Layer 1: Flat recent history (fast, always present)
-            history = self._conversation_tracker.get_history_entries(
-                max_entries=self._get_param("conversation.max_history_entries", 10)
-            )
-            for entry in history:
-                self._last_context.add_entry(
-                    domain="C", type="conversation_history",
-                    content=entry, confidence=0.8, estimated_tokens=len(entry) // 4,
-                )
-
-            # Layer 2: DiscourseTree — active/paused blocks with structured context
-            try:
-                sid = current_event.payload.get('session_id', 'default') if hasattr(current_event, 'payload') else 'default'
-                tree = self._discourse_tree._trees.get(sid)
-                if tree:
-                    # Active blocks (full content)
-                    active = tree.active_blocks()
-                    for blk in active[:5]:
-                        if blk.block_id == tree.current_branch:
-                            continue  # already in Active Branch
-                        content = blk.serialize_edus_summary()
-                        if content:
-                            self._last_context.add_entry(
-                                domain="C", type="tree_block",
-                                content=f"[Block {blk.block_id[:8]} ({blk.temperature})] {content[:200]}",
-                                confidence=0.5 if blk.temperature == "cold" else 0.7,
-                                estimated_tokens=100,
-                            )
-
-                    # Cold blocks: compressed summary only
-                    cold = [b for b in tree.blocks.values() if b.temperature == "cold"]
-                    for blk in cold[:3]:
-                        content = blk.serialize_edus_summary()[:100]
-                        if content:
-                            self._last_context.add_entry(
-                                domain="C", type="tree_block_summary",
-                                content=f"[Cold: {blk.block_id[:8]}] {content}",
-                                confidence=0.3, estimated_tokens=50,
-                            )
-            except Exception:
-                pass
-
-            # Layer 3: Persistent session fallback — BGE semantic + keyword hybrid
-            try:
-                text = current_event.payload.get('text', '') if hasattr(current_event, 'payload') else ''
-                if text:
-                    import glob, json, os
-                    session_files = sorted(glob.glob("data/chat_session_*.jsonl"), key=os.path.getmtime, reverse=True)
-                    # Collect past user texts
-                    candidates = []
-                    for sf in session_files[:2]:  # only last 2 sessions
-                        if sid and sid.replace("chat_","")[:8] in sf:
-                            continue
-                        with open(sf, 'r', encoding='utf-8') as f:
-                            for line in f:
-                                try:
-                                    rec = json.loads(line)
-                                    if rec.get("event_type") == "user_input":
-                                        candidates.append({
-                                            "text": rec.get("text", ""),
-                                            "ts": rec.get("timestamp", "")[:10],
-                                        })
-                                except json.JSONDecodeError:
-                                    pass
-
-                    if candidates:
-                        # BGE semantic search (fast, no LLM cost after model loaded)
-                        try:
-                            from core.agent.compiler.semantic_encoder import SemanticEncoder
-                            import numpy as np
-                            bge = SemanticEncoder()
-                            qv = bge.encode(text)
-                            scored = []
-                            for c in candidates:
-                                cv = bge.encode(c["text"])
-                                cos = float(np.dot(qv, cv) / (np.linalg.norm(qv) * np.linalg.norm(cv) + 1e-8))
-                                if cos > 0.5:
-                                    scored.append((c, cos))
-                            scored.sort(key=lambda x: x[1], reverse=True)
-                            for c, cos in scored[:3]:
-                                self._last_context.add_entry(
-                                    domain="C", type="past_session",
-                                    content=f"[Past {c['ts']}] {c['text'][:120]}",
-                                    confidence=cos * 0.4, estimated_tokens=50,
-                                )
-                        except Exception:
-                            # Fallback: keyword overlap
-                            import re
-                            kw = set(re.findall(r'[一-鿿]{2,}', text))
-                            for c in candidates[:10]:
-                                ukw = set(re.findall(r'[一-鿿]{2,}', c["text"]))
-                                if len(kw & ukw) >= 2:
-                                    self._last_context.add_entry(
-                                        domain="C", type="past_session",
-                                        content=f"[Past {c['ts']}] {c['text'][:120]}",
-                                        confidence=0.2, estimated_tokens=50,
-                                    )
-            except Exception:
-                pass
-                    content=f"[User T{entry['turn']}] {entry['text']}",
-                    confidence=0.9,
-                    estimated_tokens=len(entry['text']) // 4,
-                ),
-            )
-
-        # Inject topic info if available
-        topic = self._conversation_tracker.get_current_topic()
-        behavior = self._conversation_tracker.behavior_pattern
-        if topic or behavior:
-            parts = []
-            if topic:
-                parts.append(f"Current topic: {topic[:100]}")
-            if behavior:
-                parts.append(f"Behavior: {' → '.join(behavior[-4:])}")
+        # Layer 1: Flat recent history
+        history = self._conversation_tracker.get_history_entries(
+            max_entries=self._get_param("conversation.max_history_entries", 10))
+        for entry in history:
             self._last_context.add_entry(
-                domain="C",
-                entry=IREntry(
-                    domain="C", type="topic_context",
-                    content=" | ".join(parts),
-                    confidence=0.8,
-                    estimated_tokens=len(" | ".join(parts)) // 4,
-                ),
-            )
+                domain="C", type="conversation_history",
+                content=entry, confidence=0.8, estimated_tokens=len(entry)//4)
 
-        self._last_context.recalc_total()
+        # Layer 2: DiscourseTree blocks
+        try:
+            sid = current_event.payload.get('session_id','default') if hasattr(current_event,'payload') else 'default'
+            tree = self._discourse_tree._trees.get(sid)
+            if tree:
+                for blk in tree.active_blocks()[:5]:
+                    if blk.block_id == tree.current_branch: continue
+                    content = blk.serialize_edus_summary()
+                    if content:
+                        self._last_context.add_entry(domain="C",type="tree_block",
+                            content=f"[Block {blk.block_id[:8]} ({blk.temperature})] {content[:200]}",
+                            confidence=0.7,estimated_tokens=100)
+                for blk in [b for b in tree.blocks.values() if b.temperature=="cold"][:3]:
+                    content = blk.serialize_edus_summary()[:100]
+                    if content:
+                        self._last_context.add_entry(domain="C",type="tree_block_summary",
+                            content=f"[Cold:{blk.block_id[:8]}] {content}",
+                            confidence=0.3,estimated_tokens=50)
+        except Exception: pass
+
+        # Layer 3: BGE semantic persistent session search
+        try:
+            text = current_event.payload.get('text','') if hasattr(current_event,'payload') else ''
+            if text:
+                import glob,json,os
+                for sf in sorted(glob.glob("data/chat_session_*.jsonl"),key=os.path.getmtime,reverse=True)[:2]:
+                    with open(sf,'r',encoding='utf-8') as f:
+                        for line in f:
+                            try:
+                                rec=json.loads(line)
+                                if rec.get("event_type")=="user_input":
+                                    ut=rec.get("text","")
+                                    from core.agent.compiler.semantic_encoder import SemanticEncoder
+                                    import numpy as np
+                                    bge=SemanticEncoder(); qv=bge.encode(text); cv=bge.encode(ut)
+                                    cos=float(np.dot(qv,cv)/(np.linalg.norm(qv)*np.linalg.norm(cv)+1e-8))
+                                    if cos>0.5:
+                                        self._last_context.add_entry(domain="C",type="past_session",
+                                            content=f"[Past {rec.get('timestamp','')[:10]}] {ut[:120]}",
+                                            confidence=cos*0.4,estimated_tokens=50)
+                                    break
+                            except: pass
+        except Exception: pass
 
     def _inject_topic_tree_context(self, current_event: EventIR) -> None:
         if self._last_context is None:
