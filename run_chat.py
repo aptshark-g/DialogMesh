@@ -80,24 +80,35 @@ def start_engine(pool: ObservationPool) -> CognitiveRuntimeEngine:
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
     provider = None
-    if api_key:
+    gateway_url = os.environ.get("GATEWAY_URL", "http://localhost:8080")
+    try:
+        from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+        provider = GatewayLLMProvider("gateway", {
+            "base_url": gateway_url, "default_provider": "deepseek",
+            "default_model": "deepseek-chat", "timeout": 60.0,
+        })
+        if provider.health_check():
+            logger.info("Gateway ready (Switch at %s)", gateway_url)
+        else:
+            logger.info("Gateway created — will start on demand")
+    except Exception as e:
+        logger.info("Gateway unavailable (%s)", e)
+        provider = None
+
+    if not provider and api_key:
         try:
             from core.agent.llm_providers.openai_provider import OpenAIProvider
-            provider = OpenAIProvider(
-                "deepseek",
-                {
-                    "api_key": api_key,
-                    "base_url": "https://api.deepseek.com/v1",
-                    "model": "deepseek-chat",
-                },
-            )
-            logger.info("DeepSeek provider ready")
+            provider = OpenAIProvider("deepseek", {
+                "api_key": api_key, "base_url": "https://api.deepseek.com/v1",
+                "model": "deepseek-chat",
+            })
+            logger.info("DeepSeek ready (direct)")
         except Exception as e:
             logger.warning("DeepSeek failed: %s", e)
 
     if not provider:
         from core.agent.llm_providers.mock_provider import MockProvider
-        provider = MockProvider("mock", {"response_text": "[Mock: 请配置 DEEPSEEK_API_KEY]"})
+        provider = MockProvider("mock", {"response_text": "[Mock: start Switch gateway or set DEEPSEEK_API_KEY]"})
         logger.info("Using MockProvider")
 
     engine = CognitiveRuntimeEngine(llm_provider=provider)

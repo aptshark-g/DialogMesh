@@ -112,8 +112,17 @@ class LMStudioExtractionProvider(ExtractionProvider):
         if not concepts: return result
         try:
             if not self._p:
-                from core.agent.llm_providers.openai_provider import OpenAIProvider
-                self._p = OpenAIProvider("lmstudio",{"api_key":"lm-studio","base_url":self._base_url,"model":self._model})
+                try:
+                    from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+                    self._p = GatewayLLMProvider("extract_lm",{
+                        "base_url": "http://localhost:8080",
+                        "default_provider": "lmstudio",
+                        "default_model": "nvidia/nemotron-3-nano-4b",
+                        "timeout": 30.0,
+                    })
+                except Exception:
+                    from core.agent.llm_providers.openai_provider import OpenAIProvider
+                    self._p = OpenAIProvider("lmstudio",{"api_key":"lm-studio","base_url":self._base_url,"model":self._model})
             from core.agent.llm_providers.base import GenerateRequest
             cl = ", ".join(concepts[:5])
             prompt = (f"从以下文本提取关于{cl}的定义和关系。JSON:\n{{definitions:[{{subject,text}}],relations:[{{source,target,predicate:depends_on|calls|produces|extends|implements}}]}}\n文本:{text[:2000]}\nJSON:")
@@ -138,8 +147,17 @@ class DeepSeekExtractionProvider(ExtractionProvider):
         if not concepts: return result
         try:
             if not self._p:
-                from core.agent.llm_providers.openai_provider import OpenAIProvider
-                self._p = OpenAIProvider("deepseek",{"api_key":os.environ.get("DEEPSEEK_API_KEY",""),"base_url":"https://api.deepseek.com/v1","model":self._model})
+                try:
+                    from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+                    self._p = GatewayLLMProvider("extract_ds",{
+                        "base_url": "http://localhost:8080",
+                        "default_provider": "deepseek",
+                        "default_model": "deepseek-chat",
+                        "timeout": 30.0,
+                    })
+                except Exception:
+                    from core.agent.llm_providers.openai_provider import OpenAIProvider
+                    self._p = OpenAIProvider("deepseek",{"api_key":os.environ.get("DEEPSEEK_API_KEY",""),"base_url":"https://api.deepseek.com/v1","model":self._model})
             from core.agent.llm_providers.base import GenerateRequest
             cl = ", ".join(concepts[:5])
             prompt = (f"Extract definitions and relations for: {cl}. JSON:\n{{definitions:[{{subject,text}}],relations:[{{source,target,predicate:depends_on|calls|produces|extends|implements}}]}}\nText:{text[:2000]}\nJSON:")
