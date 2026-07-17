@@ -76,6 +76,53 @@ class PerspectivePlanner:
         (["架构", "设计", "整体", "是什么", "结构", "概览", "介绍", "了解"], "architecture"),
     ]
 
+    # BGE strategy descriptions for semantic matching
+    _STRATEGY_DESCRIPTIONS = {
+        "architecture": "系统架构设计、整体结构、模块关系、设计原则",
+        "evolution":   "历史演变、设计决策的原因、为什么这么设计、背景与动机",
+        "engineering": "代码实现、函数定义、技术细节、源码分析",
+        "execution":   "运行流程、执行步骤、调度逻辑、操作过程",
+    }
+
+    def __init__(self):
+        self._bge = None
+        self._meta = None
+
+
+    def set_metacognition(self, mc):
+        """Optional: use MetaCognition (LLM) for perspective decisions."""
+        self._meta = mc
+
+
+    def _ensure_bge(self):
+        if self._bge is not None:
+            return
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            self._bge = SemanticEncoder()
+        except Exception:
+            self._bge = False
+
+
+    def _bge_select_strategy(self, text: str) -> str:
+        """BGE semantic strategy selection (replaces keyword fallback)."""
+        import numpy as np
+        self._ensure_bge()
+        if not self._bge or self._bge is False:
+            return self._select_strategy(text)  # fallback to keywords
+
+        try:
+            qv = self._bge.encode(text)
+            best_strat, best_cos = "architecture", 0.0
+            for strat, desc in self._STRATEGY_DESCRIPTIONS.items():
+                dv = self._bge.encode(desc)
+                cos = float(np.dot(qv, dv) / (np.linalg.norm(qv) * np.linalg.norm(dv) + 1e-8))
+                if cos > best_cos:
+                    best_cos, best_strat = cos, strat
+            return best_strat
+        except Exception:
+            return self._select_strategy(text)
+
     # Depth base by strategy
     _DEPTH_BASE = {
         "architecture": 2,
@@ -114,12 +161,23 @@ class PerspectivePlanner:
         p = Perspective()
         p.token_budget = token_budget
 
-        # Layer 1: Strategy — PCR expectation first, keywords as fallback
+        # Layer 1: Strategy — PCR expectation → BGE semantic → keyword fallback
         expect = expectation.upper() if expectation else "UNKNOWN"
         if expect in self._EXPECTATION_STRATEGY:
             p.strategy = self._EXPECTATION_STRATEGY[expect]
+            logger.debug("PerspectivePlanner PCR: %s → %s", expect, p.strategy)
+        elif self._meta:
+            # MetaCognition (LLM) when available
+            from core.agent.v4.cognitive.workspace import CognitiveWorkspace
+            ws = CognitiveWorkspace(id="persp", goal=text)
+            ref = self._meta.reflect(ws)
+            strat_map = {"RETRIEVE":"architecture","EXPAND":"engineering","REASON":"evolution","COMMIT":"execution"}
+            p.strategy = strat_map.get(ref.next_action, "architecture")
+            logger.info("PerspectivePlanner MetaCognition: %s → %s", ref.next_action, p.strategy)
         else:
-            p.strategy = self._select_strategy(text)  # keyword fallback
+            # BGE semantic similarity (replaces keyword fallback)
+            p.strategy = self._bge_select_strategy(text)
+            logger.debug("PerspectivePlanner BGE: '%s' → %s", text[:40], p.strategy)
 
         # Layer 2: Horizon from token budget
         base_depth = self._DEPTH_BASE.get(p.strategy, 2)
