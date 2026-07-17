@@ -551,67 +551,35 @@ class CognitiveRuntimeEngine:
         self._feed_profile(text, llm_response)
         self._feed_trackb(text)  # TrackB: accumulate tags from user input
 
-        # ---- Internal Simulation: evaluate last prediction (even if LLM failed) ----
+                # ---- Internal Simulation: evaluate last prediction, simulate next ----
         if self._simulation_engine:
             try:
-                # 1. Evaluate previous simulation against actual user question
                 if self._last_simulation and text:
-                    feedback = self._simulation_engine.evaluate(
-                        self._last_simulation, text
-                    )
+                    feedback = self._simulation_engine.evaluate(self._last_simulation, text)
                     if feedback.matched:
                         self._simulation_stats["matches"] += 1
                     self._simulation_stats["total"] += 1
                     self._simulation_engine.learn(feedback)
-                    # Record simulation stats
-                    self._simulation_stats["total"] += 1
-                    if feedback.matched:
-                        self._simulation_stats["matches"] += 1
                     if self._monitor:
                         self._monitor.record_simulation(self._turn_counter,
-                            feedback.predicted_question, text,
-                            feedback.matched, feedback.similarity)
-                    logger.debug(
-                        "Simulation %s: predicted='%s' actual='%s' sim=%.2f",
-                        "✓" if feedback.matched else "✗",
-                        feedback.predicted_question[:50],
-                        text[:50],
-                        feedback.similarity,
-                    )
+                            feedback.predicted_question, text, feedback.matched, feedback.similarity)
+            except Exception as e:
+                logger.debug("Sim evaluation skipped: %s", e)
 
-                # 2. Run new simulation for next turn (only if LLM responded)
-                if llm_response:
+            try:
+                if llm_response and self._last_simulation:
                     user_understanding = ""
                     if self._conversation_tracker:
                         topics = self._conversation_tracker.recent_topics(3)
                         user_understanding = "; ".join(topics) if topics else ""
-                    profile_summary = ""
-                    if self._cognitive_profile:
-                        profile_summary = str(self._cognitive_profile.track_b)[:200]
-
+                    profile_summary = str(self._cognitive_profile.track_b)[:200] if self._cognitive_profile else ""
                     self._last_simulation = self._simulation_engine.simulate(
                         last_answer=llm_response,
                         user_understanding=user_understanding,
                         user_profile=profile_summary,
-                )
-                if self._last_simulation and self._last_simulation.simulated_questions:
-                    logger.debug(
-                        "Simulated next: %s (conf=%.2f)",
-                        self._last_simulation.simulated_questions[0][:60],
-                        self._last_simulation.confidence_scores[0] if self._last_simulation.confidence_scores else 0,
                     )
             except Exception as e:
-                logger.debug("Simulation skipped: %s", e)
-        if self._memory_manager is not None and text and llm_response:
-            try:
-                turn_num = event.metadata.get("turn_number", 1) if hasattr(event, "metadata") else 1
-                self._memory_manager.ingest_turn(
-                    user_text=text,
-                    system_response=llm_response or "",
-                    turn_number=int(turn_num),
-                )
-            except Exception as e:
-                logger.debug("MemoryPoint extraction skipped: %s", e)
+                logger.debug("Sim generation skipped: %s", e)
 
         # ---- v6 Trace: record post-reasoning transition ----
         post_state = None
