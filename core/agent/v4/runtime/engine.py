@@ -258,7 +258,7 @@ class CognitiveRuntimeEngine:
         try:
             from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
             # Enable with env: DIALOGMESH_MONITOR=1 or explicitly
-            if os.environ.get("DIALOGMESH_MONITOR", "1") == "1":
+            if os.environ.get("DIALOGMESH_MONITOR", "1") != "0":  # Default ON
                 self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
                 logger.info("InternalMonitor ON → %s", self._monitor._log_path)
             else:
@@ -376,7 +376,7 @@ class CognitiveRuntimeEngine:
             self._conversation_tracker.add_turn(text, concepts=concepts)
 
             # Feed DiscourseBlockTree for conversation tree structure
-            sid = event.payload.get('session_id', 'default') if hasattr(event, 'payload') else 'default'
+            sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
             self._discourse_tree.feed(text, sid, history=None)
 
             # Granularity regulation: BDI+BOR adaptive split/merge
@@ -526,7 +526,7 @@ class CognitiveRuntimeEngine:
                     [{"concepts": concepts[:3] if concepts else []}])
 
             # ACTIVATE: DiscourseTree block activated
-            sid = event.payload.get('session_id', 'default') if hasattr(event, 'payload') else 'default'
+            sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
             tree = self._discourse_tree._trees.get(sid) if hasattr(self._discourse_tree, '_trees') else None
             if tree:
                 self._trace_v3.record_transition(
@@ -569,7 +569,10 @@ class CognitiveRuntimeEngine:
                         self._simulation_stats["matches"] += 1
                     self._simulation_stats["total"] += 1
                     self._simulation_engine.learn(feedback)
-                    # Monitor simulation
+                    # Record simulation stats
+                    self._simulation_stats["total"] += 1
+                    if feedback.matched:
+                        self._simulation_stats["matches"] += 1
                     if self._monitor:
                         self._monitor.record_simulation(self._turn_counter,
                             feedback.predicted_question, text,
@@ -1015,7 +1018,7 @@ class CognitiveRuntimeEngine:
 
         # Layer 2: DiscourseTree
         try:
-            sid = current_event.payload.get('session_id','default') if hasattr(current_event,'payload') else 'default'
+            sid = (current_event.refs.get('session_id') if hasattr(current_event,'refs') and current_event.refs.get('session_id') else current_event.payload.get('session_id','default')) if hasattr(current_event,'payload') else 'default'
             tree = self._discourse_tree._trees.get(sid)
             if tree:
                 for blk in tree.active_blocks()[:5]:
