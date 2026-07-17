@@ -225,14 +225,20 @@ class CognitiveRuntimeEngine:
             from core.agent.v4.cognitive.reasoning_policy import PolicyGenerator
             self._meta_consumer = MetaConsumer(strategy_engine=self._strategy_engine)
             self._policy_generator = PolicyGenerator()
-            # LLM-driven policy generator (uses DeepSeek for dynamic policy selection)
             try:
                 from core.agent.v4.cognitive.policy_prompt import LLMPolicyGenerator
                 self._llm_policy_generator = LLMPolicyGenerator(llm_provider=self._llm_provider)
             except Exception:
                 self._llm_policy_generator = None
             self._active_policy: Optional[object] = None
-            # Mind: relation + attention + mistake prior learners
+            logger.info("MetaConsumer + PolicyGenerator initialized")
+        except Exception as e:
+            self._meta_consumer = None
+            self._policy_generator = None
+            logger.debug("MetaConsumer skipped: %s", e)
+
+        # ---- v6 Mind: relation + attention + mistake prior learners ----
+        try:
             from core.agent.v4.cognitive.mind_relation import MindRelation
             from core.agent.v4.cognitive.mind_attention import MindAttention
             from core.agent.v4.cognitive.mind_mistakes import MindMistakes
@@ -245,10 +251,12 @@ class CognitiveRuntimeEngine:
                 logger.info("Mind attention anchors loaded")
             if self._mind_mistakes.load():
                 logger.info("Mind mistake memory loaded")
-            logger.info("MetaConsumer + PolicyGenerator + Mind initialized")
+            logger.info("Mind initialized")
         except Exception as e:
-            self._meta_consumer = None
-            self._policy_generator = None
+            self._mind = None
+            self._mind_attention = None
+            self._mind_mistakes = None
+            logger.debug("Mind skipped: %s", e)
             logger.debug("MetaConsumer skipped: %s", e)
 
         # ---- v6 Interaction Graph (dynamic state propagation) ----
@@ -746,12 +754,12 @@ class CognitiveRuntimeEngine:
                     if self._policy_generator:
                         self._policy_generator._pattern_learner.save()
                     # Mind: learn from trace, profile, and MetaConsumer warnings
-                    if self._mind and self._trace_v3:
+                    if self._mind and self._trace_v3 and self._interaction_graph:
                         self._mind.learn(self._trace_v3.transitions[-10:])
-                        self._mind.apply(self._interaction_graph) if self._interaction_graph else None
-                    if self._mind_attention and ta:
+                        self._mind.apply(self._interaction_graph)
+                    if hasattr(self, '_mind_attention') and self._mind_attention and ta:
                         self._mind_attention.learn(ta)
-                    if self._mind_mistakes and advice.get('warnings'):
+                    if hasattr(self, '_mind_mistakes') and self._mind_mistakes and advice.get('warnings'):
                         ctx = {'perspective': self._active_policy.perspective or ''} if self._active_policy else {}
                         self._mind_mistakes.learn(advice['warnings'], advice.get('suggestions', []), ctx)
                         self._mind_mistakes.apply(self._active_policy, ctx) if self._active_policy else None
