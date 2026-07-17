@@ -8,7 +8,9 @@ Scenarios:
 
 Each scenario generates monitor data for analysis.
 """
+import sys, os
 import sys, os, time, json
+from core.agent.v4.cognitive.monitor_report import MonitorReport
 sys.path.insert(0, '.')
 
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
@@ -104,10 +106,10 @@ TOPIC_SWITCH = [
 ]
 
 if __name__ == "__main__":
+    report = MonitorReport("bench_live")
     results = {}
 
     print("DialogMesh v6 Benchmark Suite")
-    print("════════════════════════════")
 
     results["persona_intj"] = run_scenario("Persona: INTJ", PERSONA_INTJ)
     results["persona_enfp"] = run_scenario("Persona: ENFP", PERSONA_ENFP)
@@ -116,10 +118,12 @@ if __name__ == "__main__":
 
     # Save aggregate results
     os.makedirs("data/monitor", exist_ok=True)
+    report.finish()
     with open("data/monitor/benchmark_summary.json", "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     print(f"\n{'='*60}")
+    report = MonitorReport("bench_live")
     print("  Benchmark Complete")
     print(f"  Results: data/monitor/benchmark_summary.json")
     print(f"  Logs:    data/monitor/monitor_*.jsonl")
