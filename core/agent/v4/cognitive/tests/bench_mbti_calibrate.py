@@ -46,28 +46,43 @@ def run_mbti_93(provider_factory, sample_types=None, questions_per_type=20):
         sample_types = ["INTJ", "ENFP", "ISTJ", "ESFP"]
     
     # Take every 5th question for quick sampling (20 of 93)
-    questions = [
-        "当你要外出一整天，你会 A 计划做什么和在什么时候做 B 说去就去",
-        "你认为自己是一个 A 较为随兴所至的人 B 较为有条理的人",
-        "假如你是一位老师，你会选教 A 以事实为主的课程 B 涉及理论的课程",
-        "你通常 A 与人容易混熟 B 比较沉静或矜持",
-        "你是否经常让 A 你的情感支配你的理智 B 你的理智主宰你的情感",
-        "处理许多事情上，你会喜欢 A 凭兴所至行事 B 按照计划行事",
-        "在大多数情况下，你会选择 A 顺其自然 B 按程序表做事",
-        "你宁愿被人认为是一个 A 实事求是的人 B 机灵的人",
-        "你倾向 A 重视感情多于逻辑 B 重视逻辑多于感情",
-        "你喜欢花很多的时间 A 一个人独处 B 合别人在一起",
-        "与很多人一起会 A 令你活力倍增 B 常常令你心力憔悴",
-        "A注重隐私 B坦率开放",
-        "A抽象 B具体",
-        "A温柔 B坚定",
-        "A思考 B感受",
-        "A事实 B意念",
-        "A理论 B肯定",
-        "A敏感 B公正",
-        "A令人信服 B感人的",
-        "A声明 B概念",
-    ][:questions_per_type]
+    # Use 5 personality-statements per type as prompts (not test questions)
+    # These TRIGGER alignment/misalignment signals
+    statements = {
+        "INTJ": ["I approach problems through systematic analysis and logical frameworks.",
+                  "I prefer working independently on complex, long-term strategic challenges.",
+                  "Emotions are secondary to objective data — show me the evidence.",
+                  "I plan everything meticulously before taking action.",
+                  "I value intellectual rigor and strategic depth above social harmony."],
+        "ENFP": ["I am energized by connecting with people and exploring new possibilities!",
+                  "My intuition guides me more than rigid logic or detailed plans.",
+                  "I see potential in everyone and get excited about what could be!",
+                  "I thrive on variety, spontaneity, and emotional connections.",
+                  "I follow my heart rather than strict rules — life is an adventure!"],
+        "ISTJ": ["I follow established procedures and value reliability above all.",
+                  "I keep detailed records and check facts before making decisions.",
+                  "I respect tradition and proven methods — they exist for a reason.",
+                  "I fulfill my commitments precisely and expect others to do the same.",
+                  "I value stability, order, and predictable outcomes in work and life."],
+        "ESFP": ["I light up any room and bring energy and enthusiasm to every situation!",
+                  "I live for the moment and seek exciting new experiences.",
+                  "I connect with people through fun, warmth, and spontaneity.",
+                  "I learn by doing, not by reading or analyzing.",
+                  "I adapt instantly to whatever comes my way — flexibility is my strength!"],
+        "INTP": ["I love exploring abstract theoretical frameworks and logical models.",
+                  "I question assumptions constantly — every system has hidden flaws.",
+                  "I need time alone to process complex ideas deeply.",
+                  "I value precision and intellectual rigor above social harmony.",
+                  "I analyze everything from first principles — nothing is taken for granted."],
+        "ENFJ": ["I naturally inspire and motivate people to become their best selves.",
+                  "I feel responsible for the emotional well-being of my team.",
+                  "I read social dynamics effortlessly and adapt accordingly.",
+                  "I believe in developing people, not just achieving tasks.",
+                  "I seek harmony and meaningful connection in all relationships."],
+    }
+
+    prompt_list = statements.get(persona, statements["INTJ"])[:questions_per_type]
+
     
     results = {}
     for persona in sample_types:
@@ -77,9 +92,9 @@ def run_mbti_93(provider_factory, sample_types=None, questions_per_type=20):
         eng.start()
         ad = DialogAdapter()
         
-        for i, question in enumerate(questions):
+        for i, prompt in enumerate(prompt_list):
             full_prompt = f"你是一个{persona}类型的人。{desc}\n\n请用第一人称回答以下MBTI测试题，直接选择A或B，并简短解释原因：\n{question}"
-            eng.on_event(ad.adapt(full_prompt, persona, i + 1))
+            eng.on_event(ad.adapt(prompt, persona, i + 1))
         
         m = eng._trace_v3.meta_analyze()
         rd = m.get("reason_distribution", {})
