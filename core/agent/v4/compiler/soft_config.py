@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_CONFIG_DIR = Path(__file__).parent.parent.parent / "data" / "soft_config"
+_CONFIG_DIR = Path(__file__).parent.parent.parent.parent.parent / "data" / "soft_config"
 _DEFAULTS_DIR = _CONFIG_DIR  # same dir for now
 
 
@@ -45,11 +45,20 @@ class SoftConfig:
         self._data = self._defaults
         return self._data
 
-    def extend(self, key: str, value: Any):
-        """Add new entry at runtime (LLM-discovered patterns)."""
+    def extend(self, key: str, value: Any, append: bool = False):
+        """Add or append entry at runtime.
+
+        Args:
+            key: Config key to modify
+            value: New value (replaces by default, appends if append=True)
+            append: If True and key is a list, append value to list
+        """
         data = self.load()
         if isinstance(data, dict):
-            data[key] = value
+            if append and isinstance(data.get(key), list):
+                data[key].append(value)
+            else:
+                data[key] = value
 
     def persist(self):
         """Save runtime extensions back to file."""
