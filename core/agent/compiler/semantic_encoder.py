@@ -35,10 +35,12 @@ class SemanticEncoder:
 
     # 备选模型 ID（用于错误提示）
     MODEL_ID = "BAAI/bge-small-zh"
-    # Fallback: multilingual model for cross-language (Chinese/English/Japanese)
+    # Multilingual model for non-Chinese text (50+ languages, 384-dim)
     MULTILINGUAL_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    # 向量维度（BGE-small-zh 固定为 512）
+    MULTILINGUAL_MODEL_PATH = "models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # 向量维度（BGE-small-zh 固定为 512，multilingual 固定为 384）
     EMBEDDING_DIM = 512
+    MULTILINGUAL_DIM = 384
 
     def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
         # 从配置读取默认值（如果未显式传入）
@@ -48,6 +50,11 @@ class SemanticEncoder:
         self.model_path = model_path or (enc_cfg.model_path if enc_cfg else "models/BAAI/bge-small-zh")
         self.device = device or (enc_cfg.resolved_device if enc_cfg else ("cuda" if torch.cuda.is_available() else "cpu"))
         self.max_length = enc_cfg.max_length if enc_cfg else 512
+
+        # Lazy-loaded multilingual model for non-Chinese text
+        self._multilingual_model = None
+        self._multilingual_tokenizer = None
+        self._multilingual_loaded = False
         self._cache_size = enc_cfg.cache_size if enc_cfg else 10000
 
         # 延迟加载
@@ -79,6 +86,47 @@ class SemanticEncoder:
         self._initialized = True
         logger.info(f"SemanticEncoder loaded: {self.model_path} on {self.device}")
 
+    def _is_chinese(self, text: str) -> bool:
+        """Detect if text is primarily Chinese (>30% CJK characters)."""
+        cjk = sum(1 for ch in text if '\u4e00' <= ch <= '\u9fff' or '\u3040' <= ch <= '\u30ff')
+        return cjk > max(0, len(text)) * 0.3
+
+    def _load_multilingual(self):
+        """Lazy-load multilingual/English encoder for non-Chinese text.
+        
+        Falls back to word-overlap features if model unavailable.
+        """
+        if self._multilingual_loaded:
+            return
+        self._multilingual_loaded = True
+        try:
+            # Try loading multilingual model from local cache or modelscope
+            import sentence_transformers
+            # Check modelscope first (HF blocked in China)
+            try:
+                from modelscope import snapshot_download
+                path = snapshot_download('iic/nlp_corom_sentence-embedding_english-base')
+                self._multilingual_model = sentence_transformers.SentenceTransformer(path)
+                self._multilingual_tokenizer = self._multilingual_model.tokenizer
+                logger.info(f"English model loaded via ModelScope: {path}")
+                return
+            except Exception:
+                pass
+            # Try local path
+            for local_path in [self.MULTILINGUAL_MODEL_PATH, "models/all-MiniLM-L6-v2"]:
+                if os.path.exists(local_path):
+                    self._multilingual_model = sentence_transformers.SentenceTransformer(local_path)
+                    self._multilingual_tokenizer = self._multilingual_model.tokenizer
+                    logger.info(f"Multilingual model loaded locally: {local_path}")
+                    return
+        except Exception as e:
+            logger.warning(f"Multilingual model unavailable: {e}")
+
+    def _detect_language(self, texts) -> str:
+        """Detect primary language of input. Returns 'zh' or 'other'."""
+        sample = texts[0] if isinstance(texts, list) else texts
+        return "zh" if self._is_chinese(sample) else "other"
+
     def encode(
         self,
         texts: Union[str, List[str]],
@@ -102,6 +150,11 @@ class SemanticEncoder:
         if isinstance(texts, str):
             texts = [texts]
 
+        # Language detection: use multilingual model for non-Chinese
+        lang = self._detect_language(texts)
+        if lang != "zh":
+            self._load_multilingual()
+
         # 1. 检查缓存
         if use_cache:
             uncached_texts = []
@@ -120,25 +173,54 @@ class SemanticEncoder:
             uncached_indices = list(range(len(texts)))
             cached_results = {}
 
-        # 2. 批量编码
+        # 2. 批量编码 — use multilingual model for non-Chinese text
         all_vectors = []
         for i in range(0, len(uncached_texts), batch_size):
             batch = uncached_texts[i:i + batch_size]
-            encoded = self._tokenizer(
-                batch,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
-            )
-            encoded = {k: v.to(self.device) for k, v in encoded.items()}
-
-            with torch.no_grad():
-                output = self._model(**encoded)
-                # CLS token 作为句子表示 (batch_size, 512)
-                vecs = output.last_hidden_state[:, 0].cpu().numpy()
-
-            all_vectors.extend(vecs)
+            if lang != "zh" and self._multilingual_model:
+                tokenizer = self._multilingual_tokenizer
+                model = self._multilingual_model
+                encoded = tokenizer(
+                    batch, return_tensors="pt", padding=True,
+                    truncation=True, max_length=self.max_length,
+                )
+                encoded = {k: v.to(self.device) for k, v in encoded.items()}
+                with torch.no_grad():
+                    output = model(**encoded)
+                    vecs = output.last_hidden_state[:, 0].cpu().numpy()
+                all_vectors.extend(vecs)
+            elif lang != "zh" and not self._multilingual_model:
+                # No multilingual model: use n-gram overlap features
+                import re
+                dim = self.MULTILINGUAL_DIM
+                for text in batch:
+                    # Character n-grams (3-gram) — captures subword similarity
+                    clean = re.sub(r'\s+', ' ', text.lower().strip())
+                    ngrams = set()
+                    for j in range(len(clean) - 2):
+                        ngrams.add(clean[j:j+3])
+                    words = set(re.findall(r'\w+', clean))
+                    v = np.zeros(dim, dtype=np.float32)
+                    # Hash n-grams into vector (sparse encoding)
+                    for j, ng in enumerate(sorted(ngrams)[:dim * 2]):
+                        v[hash(ng) % dim] += 0.5
+                    for j, w in enumerate(sorted(words)[:dim]):
+                        v[hash(w) % dim] += 1.0
+                    norm = np.linalg.norm(v)
+                    all_vectors.append(v / norm if norm > 0 else v)
+            else:
+                encoded = self._tokenizer(
+                    batch,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                )
+                encoded = {k: v.to(self.device) for k, v in encoded.items()}
+                with torch.no_grad():
+                    output = self._model(**encoded)
+                    vecs = output.last_hidden_state[:, 0].cpu().numpy()
+                all_vectors.extend(vecs)
 
         # 3. 归一化
         if normalize:

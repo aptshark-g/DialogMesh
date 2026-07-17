@@ -219,10 +219,14 @@ class MacroMicroQuantizer:
             try:
                 va = self._bge.encode(edu_a.raw_text)
                 vb = self._bge.encode(edu_b.raw_text)
-                total = float(np.dot(va, vb))
+                # Flatten: sentence-transformers returns (1,512)
+                a = va.flatten() if len(va.shape) > 1 else va
+                b = vb.flatten() if len(vb.shape) > 1 else vb
+                total = float(np.dot(a, b))
+                fork_threshold = 0.20 if union else 0.10  # n-gram features are sparse
                 if total > 0.70:
                     return CohesionScore(total, total, 0.0, "continue")
-                if total < 0.20:
+                if total < fork_threshold:
                     return CohesionScore(total, total, 0.0, "fork")
             except Exception:
                 pass
