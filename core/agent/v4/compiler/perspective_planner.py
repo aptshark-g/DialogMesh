@@ -119,17 +119,40 @@ class PerspectivePlanner:
 
 
     def _bge_select_strategy(self, text: str) -> str:
-        """BGE semantic strategy selection (replaces keyword fallback)."""
+        """BGE semantic strategy selection (replaces keyword fallback).
+
+        Also detects command/action patterns before BGE lookup.
+        """
         import numpy as np
         self._ensure_bge()
         self._ensure_descriptions()
+
+        # Quick PCR: detect command-like patterns
+        cmd_patterns = ["book", "add", "set", "send", "play", "create", "delete", "open", "start"]
+        question_patterns = ["what", "who", "how", "why", "tell", "explain", "what's", "is there"]
+        if any(text.lower().startswith(p) for p in cmd_patterns):
+            return "engineering"  # TOOL → command execution
+        if any(text.lower().startswith(p) for p in question_patterns):
+            return "evolution"    # COMPANION → information seeking
+
         if not self._bge or self._bge is False:
             return self._select_strategy(text)  # fallback to keywords
 
         try:
             qv = self._bge.encode(text)
             best_strat, best_cos = "architecture", 0.0
+            # Detect language: use English descriptions for English queries
+            is_english = any(ch.isascii() and ch.isalpha() for ch in text[:20])
             for strat, desc in self._STRATEGY_DESCRIPTIONS.items():
+                # Append English description when query is English
+                if is_english:
+                    en_descs = {
+                        "architecture": "system architecture design, module relationships",
+                        "evolution": "historical changes, design decisions, reasons",
+                        "engineering": "code implementation, functions, technical details",
+                        "execution": "pipeline execution, step by step process",
+                    }
+                    desc = desc + " " + en_descs.get(strat, "")
                 dv = self._bge.encode(desc)
                 cos = float(np.dot(qv, dv) / (np.linalg.norm(qv) * np.linalg.norm(dv) + 1e-8))
                 if cos > best_cos:
