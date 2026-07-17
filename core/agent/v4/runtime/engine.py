@@ -222,10 +222,14 @@ class CognitiveRuntimeEngine:
         # ---- v6 Meta-Cognition Consumer (closes the learning loop) ----
         try:
             from core.agent.v4.cognitive.meta_consumer import MetaConsumer
+            from core.agent.v4.cognitive.reasoning_policy import PolicyGenerator
             self._meta_consumer = MetaConsumer(strategy_engine=self._strategy_engine)
-            logger.info("MetaConsumer initialized")
+            self._policy_generator = PolicyGenerator()
+            self._active_policy: Optional[object] = None  # ReasoningPolicy for current turn
+            logger.info("MetaConsumer + PolicyGenerator initialized")
         except Exception as e:
             self._meta_consumer = None
+            self._policy_generator = None
             logger.debug("MetaConsumer skipped: %s", e)
 
         # ---- v6 Interaction Graph (dynamic state propagation) ----
@@ -676,14 +680,19 @@ class CognitiveRuntimeEngine:
             advice = self._meta_consumer.consume(self._trace_v3, self._turn_counter)
             if advice.get("adjust"):
                 logger.info(
-                    "Meta: %d warnings, conf_mod=%.2f — %s",
+                    "Meta: %d warnings — %s",
                     len(advice.get("warnings", [])),
-                    advice.get("confidence_mod", 0),
                     "; ".join(advice.get("suggestions", [])[:2]),
                 )
-                # Apply confidence adjustment to next LLM call
-                if advice.get("confidence_mod", 0) != 0:
-                    self._llm_confidence_bias = advice["confidence_mod"]
+                # Generate structured ReasoningPolicy instead of raw bias
+                if self._policy_generator:
+                    self._active_policy = self._policy_generator.generate(advice)
+                    logger.info(
+                        "Policy: perspective=%s mode=%s depth=%d",
+                        self._active_policy.perspective or '-',
+                        self._active_policy.explanation_mode or '-',
+                        self._active_policy.depth_adjust,
+                    )
 
         return llm_response
 
@@ -1795,6 +1804,19 @@ class CognitiveRuntimeEngine:
                     f"(effectiveness: {best_score:.2f} in this context)"
                 )
 
+        # Apply ReasoningPolicy to system instruction
+        if hasattr(self, '_active_policy') and self._active_policy:
+            policy = self._active_policy
+            system_instruction = policy.apply_to_prompt(system_instruction)
+            # Apply depth to token budget
+            if policy.depth_adjust:
+                budget = getattr(self._world_params, 'compiler_token_budget', 2048)
+                self._world_params.compiler_token_budget = max(
+                    512, budget + policy.depth_adjust * 512
+                )
+            # Reset policy after consumption
+            self._active_policy = None
+
         # Serialize IR to prompt
         prompt = self._last_context.to_prompt(
             system_instruction=system_instruction,
@@ -1806,16 +1828,14 @@ class CognitiveRuntimeEngine:
         if user_text:
             prompt += f"\n[User]\n{user_text}\n"
 
-        # Call LLM — with MetaConsumer confidence adjustment
+        # Call LLM — with ReasoningPolicy temperature modulation
         try:
             temperature = 0.7
-            # Apply MetaConsumer confidence bias if set
-            if hasattr(self, '_llm_confidence_bias') and self._llm_confidence_bias:
-                bias = self._llm_confidence_bias
-                temperature = max(0.3, min(1.0, 0.7 + bias))  # lower=bias negative
-                logger.debug("LLM temperature adjusted: %.2f → %.2f (bias=%.2f)",
-                           0.7, temperature, bias)
-                self._llm_confidence_bias = 0.0  # reset after use
+            # Apply Policy temperature mod if active
+            if hasattr(self, '_active_policy') and self._active_policy:
+                policy = self._active_policy
+                if policy.temperature_mod:
+                    temperature = max(0.3, min(1.0, 0.7 + policy.temperature_mod))
 
             request = GenerateRequest(
                 prompt=prompt,
