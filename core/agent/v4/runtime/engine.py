@@ -232,15 +232,19 @@ class CognitiveRuntimeEngine:
             except Exception:
                 self._llm_policy_generator = None
             self._active_policy: Optional[object] = None
-            # Mind: relation + attention prior learners
+            # Mind: relation + attention + mistake prior learners
             from core.agent.v4.cognitive.mind_relation import MindRelation
             from core.agent.v4.cognitive.mind_attention import MindAttention
+            from core.agent.v4.cognitive.mind_mistakes import MindMistakes
             self._mind = MindRelation()
             self._mind_attention = MindAttention()
+            self._mind_mistakes = MindMistakes()
             if self._mind.load():
                 logger.info("Mind prior relations loaded")
             if self._mind_attention.load():
                 logger.info("Mind attention anchors loaded")
+            if self._mind_mistakes.load():
+                logger.info("Mind mistake memory loaded")
             logger.info("MetaConsumer + PolicyGenerator + Mind initialized")
         except Exception as e:
             self._meta_consumer = None
@@ -741,12 +745,16 @@ class CognitiveRuntimeEngine:
                     # Persist learned patterns
                     if self._policy_generator:
                         self._policy_generator._pattern_learner.save()
-                    # Mind: learn relation priorities from trace + attention from profile
+                    # Mind: learn from trace, profile, and MetaConsumer warnings
                     if self._mind and self._trace_v3:
                         self._mind.learn(self._trace_v3.transitions[-10:])
                         self._mind.apply(self._interaction_graph) if self._interaction_graph else None
                     if self._mind_attention and ta:
                         self._mind_attention.learn(ta)
+                    if self._mind_mistakes and advice.get('warnings'):
+                        ctx = {'perspective': self._active_policy.perspective or ''} if self._active_policy else {}
+                        self._mind_mistakes.learn(advice['warnings'], advice.get('suggestions', []), ctx)
+                        self._mind_mistakes.apply(self._active_policy, ctx) if self._active_policy else None
                     logger.info(
                         "Policy: perspective=%s mode=%s depth=%d",
                         self._active_policy.perspective or '-',
