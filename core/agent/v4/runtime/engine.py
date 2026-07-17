@@ -540,6 +540,21 @@ class CognitiveRuntimeEngine:
                     text[:60],
                     [{"concepts": concepts[:3] if concepts else []}])
 
+            # REJECT: detect if user input signals rejection of previous answer
+            reject_signals = ['wrong', 'incorrect', 're-read', 'you are wrong', "you're wrong",
+                            'still wrong', 'not correct', 'no,', 'try again']
+            if text and any(s in text.lower() for s in reject_signals):
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.REJECT,
+                    from_state=pre_state, to_state=pre_state,
+                    evidence=[f"User rejected: {text[:60]}"],
+                    effects=[StateDelta(key="reject_count", operation="inc", value=1)],
+                    confidence=0.85,
+                )
+                if self._monitor:
+                    self._monitor.record_transition(self._turn_counter, "reject",
+                        f"User rejected: {text[:50]}", [])
+
             # ACTIVATE: DiscourseTree block activated
             sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
             tree = self._discourse_tree._trees.get(sid) if hasattr(self._discourse_tree, '_trees') else None
@@ -626,20 +641,6 @@ class CognitiveRuntimeEngine:
                 ],
                 confidence=dyn_conf,
             )
-
-            # REJECT: detect if response indicates disagreement/correction
-            reject_signals = ['wrong', 'incorrect', 're-read', 'you are', 'you\'re wrong', 'still wrong', 'not correct']
-            if any(s in llm_response.lower() for s in reject_signals):
-                self._trace_v3.record_transition(
-                    reason=TransitionReason.REJECT,
-                    from_state=post_state, to_state=pre_state,
-                    evidence=[f"Rejected: {llm_response[:60]}"],
-                    effects=[StateDelta(key="reject_count", operation="inc", value=1)],
-                    confidence=0.85,
-                )
-                if self._monitor:
-                    self._monitor.record_transition(self._turn_counter, "reject",
-                        f"Rejected input: {llm_response[:50]}", [])
 
             # Monitor: record INFER transition
             if self._monitor:
