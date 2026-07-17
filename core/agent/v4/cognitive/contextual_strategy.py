@@ -34,7 +34,13 @@ class StrategyContext:
         """Extract context from current engine state."""
         perspective = "architecture"
         if hasattr(engine, '_last_perspective'):
-            perspective = engine._last_perspective or perspective
+            p = engine._last_perspective
+            if hasattr(p, 'strategy'):
+                perspective = p.strategy  # Perspective object → strategy string
+            elif isinstance(p, str):
+                perspective = p
+            else:
+                perspective = str(p) if p else "architecture"
 
         domain = ""
         if hasattr(engine, '_conversation_tracker'):
