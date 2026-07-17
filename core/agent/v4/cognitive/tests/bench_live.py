@@ -8,10 +8,9 @@ Scenarios:
 
 Each scenario generates monitor data for analysis.
 """
-import sys, os
 import sys, os, time, json
-from core.agent.v4.cognitive.monitor_report import MonitorReport
 sys.path.insert(0, '.')
+from core.agent.v4.cognitive.monitor_report import MonitorReport
 
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
