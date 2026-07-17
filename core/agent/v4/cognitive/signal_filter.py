@@ -131,13 +131,21 @@ class ProfileSignalFilter:
         return "\n".join(lines)
 
     def _fallback(self, user_text: str) -> FilterResult:
-        """Minimal heuristic when LLM unavailable."""
-        # Simple: if short text → TrackB, if emotional → TrackA
-        if len(user_text) > 100:
+        """Fast keyword fallback when LLM unavailable. No BGE — keep it fast."""
+        # Detect correction signals (highest priority)
+        if any(s in user_text for s in ['不是', '不对', '我才是', '你搞错了']):
             return FilterResult(
                 update_track_a=True,
-                track_a_updates={"cognitive_inertia": 0.02},
+                track_a_updates={"trust_score": -0.05, "attention_anchor": 0.1},
                 priority="track_a",
-                signal_strength=0.4,
+                signal_strength=0.7,
             )
-        return FilterResult(priority="none")
+        # Long text → potential personality signal → mark for later
+        if len(user_text) > 80:
+            return FilterResult(
+                update_track_b=True,
+                track_b_tags=[{"name": "topic", "value": user_text[:30], "confidence": 0.3}],
+                priority="track_b",
+                signal_strength=0.2,  # Keep low — let LLM handle if available
+            )
+        return FilterResult(priority="none", signal_strength=0.0)
