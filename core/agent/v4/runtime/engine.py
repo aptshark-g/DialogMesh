@@ -264,8 +264,8 @@ class CognitiveRuntimeEngine:
             else:
                 self._monitor = None
         except Exception as e:
+            logger.warning("InternalMonitor init failed: %s", e, exc_info=True)
             self._monitor = None
-            logger.debug("InternalMonitor skipped: %s", e)
 
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
@@ -557,8 +557,8 @@ class CognitiveRuntimeEngine:
         self._feed_profile(text, llm_response)
         self._feed_trackb(text)  # TrackB: accumulate tags from user input
 
-        # ---- Internal Simulation: evaluate last prediction, simulate next ----
-        if self._simulation_engine and llm_response:
+        # ---- Internal Simulation: evaluate last prediction (even if LLM failed) ----
+        if self._simulation_engine:
             try:
                 # 1. Evaluate previous simulation against actual user question
                 if self._last_simulation and text:
@@ -585,7 +585,8 @@ class CognitiveRuntimeEngine:
                         feedback.similarity,
                     )
 
-                # 2. Run new simulation for next turn
+            # 2. Run new simulation for next turn (only if LLM responded)
+            if llm_response:
                 user_understanding = ""
                 if self._conversation_tracker:
                     topics = self._conversation_tracker.recent_topics(3)
@@ -606,7 +607,7 @@ class CognitiveRuntimeEngine:
                         self._last_simulation.confidence_scores[0] if self._last_simulation.confidence_scores else 0,
                     )
             except Exception as e:
-                logger.debug("Simulation cycle skipped: %s", e)
+                logger.debug("Simulation skipped: %s", e)
         if self._memory_manager is not None and text and llm_response:
             try:
                 turn_num = event.metadata.get("turn_number", 1) if hasattr(event, "metadata") else 1
