@@ -608,6 +608,14 @@ class CognitiveRuntimeEngine:
             from core.agent.v4.state.state_object import Transition, TransitionReason, StateDelta, StateObject
             # INFER: LLM reasoning result
             post_state = self._trace_v3.states[-1] if self._trace_v3.states else StateObject()
+            # Dynamic confidence from response quality
+            dyn_conf = 0.7
+            if len(llm_response) < 30 and any(w in llm_response.lower() for w in ['unsure','guessing','not sure']):
+                dyn_conf = 0.35
+            elif len(llm_response) < 50:
+                dyn_conf = 0.55
+            elif len(llm_response) > 500:
+                dyn_conf = 0.80
             self._trace_v3.record_transition(
                 reason=TransitionReason.INFER,
                 from_state=pre_state, to_state=post_state,
@@ -616,8 +624,22 @@ class CognitiveRuntimeEngine:
                     StateDelta(key="turn", operation="inc", value=1),
                     StateDelta(key="response_length", operation="set", value=len(llm_response)),
                 ],
-                confidence=0.7,
+                confidence=dyn_conf,
             )
+
+            # REJECT: detect if response indicates disagreement/correction
+            reject_signals = ['wrong', 'incorrect', 're-read', 'you are', 'you\'re wrong', 'still wrong', 'not correct']
+            if any(s in llm_response.lower() for s in reject_signals):
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.REJECT,
+                    from_state=post_state, to_state=pre_state,
+                    evidence=[f"Rejected: {llm_response[:60]}"],
+                    effects=[StateDelta(key="reject_count", operation="inc", value=1)],
+                    confidence=0.85,
+                )
+                if self._monitor:
+                    self._monitor.record_transition(self._turn_counter, "reject",
+                        f"Rejected input: {llm_response[:50]}", [])
 
             # Monitor: record INFER transition
             if self._monitor:
