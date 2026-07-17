@@ -544,7 +544,6 @@ class CognitiveRuntimeEngine:
             reject_signals = ['wrong', 'incorrect', 're-read', 'you are wrong', "you're wrong",
                             'still wrong', 'not correct', 'no,', 'try again']
             if text and any(s in text.lower() for s in reject_signals):
-                logger.info(f"REJECT detected: text contains rejection signal")
                 self._trace_v3.record_transition(
                     reason=TransitionReason.REJECT,
                     from_state=pre_state, to_state=pre_state,
@@ -555,10 +554,6 @@ class CognitiveRuntimeEngine:
                 if self._monitor:
                     self._monitor.record_transition(self._turn_counter, "reject",
                         f"User rejected: {text[:50]}", [])
-            else:
-                logger.debug("No REJECT: text=%s signals_match=%s",
-                    text[:80] if text else 'EMPTY',
-                    any(s in (text or '').lower() for s in ['wrong','incorrect']))
 
             # ACTIVATE: DiscourseTree block activated
             sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
