@@ -48,27 +48,29 @@ class LOD:
         return cls(level=float(horizon.depth) if hasattr(horizon, 'depth') else 2.0)
 
 
+from core.agent.v4.state.state_object import StateObject, Lifespan, Transition, TransitionReason, StateDelta
+
+
 @dataclass
-class SemanticObject:
-    """v4 first-class object — pure data.
+class SemanticObject(StateObject):
+    """v4 first-class object — pure data, now with state evolution tracking.
 
-    A concept that:
-      - has internal structure (composition_edges) — expand to zoom in
-      - has multiple projections (projection_resolvers) — different worlds
-      - has horizontal relations (relations) — same level connections
-      - has a position in concept space (semantic_path)
-
-    No rendering logic. No storage access. Just data.
+    Inherits from StateObject: every change has a Transition with reason/evidence.
+    lifespan=SNAPSHOT by default; freeze() promotes to WORKSPACE→MIND→KNOWLEDGE.
     """
-    identity: str
-    name: str
+    identity: str = ""
+    name: str = ""
     composition_edges: List[CompositionEdge] = field(default_factory=list)
     projection_resolvers: Dict[str, str] = field(default_factory=dict)
     semantic_path: List[str] = field(default_factory=list)
     relations: List[dict] = field(default_factory=list)
 
+    def __post_init__(self):
+        if not self.identity:
+            self.identity = self.name or self.id
+
     def __hash__(self):
-        return hash(self.identity)
+        return hash(self.identity or self.id)
 
     def __eq__(self, other):
         return isinstance(other, SemanticObject) and self.identity == other.identity
