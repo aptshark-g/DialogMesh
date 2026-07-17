@@ -90,10 +90,8 @@ class ReasoningPolicy:
         """Apply policy directly to engine components (strong feedback)."""
         # ── Perspective override ──
         if self.perspective:
-            if hasattr(engine, '_last_perspective'):
-                engine._last_perspective = self.perspective
-            if hasattr(engine, '_perspective_planner'):
-                engine._perspective_planner._forced_perspective = self.perspective
+            # Store as policy override (don't overwrite _last_perspective which is a Perspective obj)
+            engine._policy_perspective = self.perspective
 
         # ── Focus objects → attention bias ──
         if self.focus_objects:
