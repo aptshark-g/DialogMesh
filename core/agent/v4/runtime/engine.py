@@ -993,32 +993,34 @@ class CognitiveRuntimeEngine:
             logger.info("TrackB feed failed: %s", e)
 
     def _feed_profile(self, text: str, response: str):
-        """Feed current turn data into cognitive profile."""
+        """LLM-coordinated ProfileSignalFilter. Falls back to BGE."""
         if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
             return
         if not hasattr(self, '_convergence_engine') or self._convergence_engine is None:
             return
         try:
-            snap = self._infer_profile_snapshot(text, response)
-            engine = self._convergence_engine
-
-            # BGE-enriched: use direct values when available
-            if 'cognitive_inertia' in snap:
-                engine.update('cognitive_inertia', snap['cognitive_inertia'], session_weight=0.3)
-            if 'emotional_entropy' in snap:
-                engine.update('emotional_entropy', snap['emotional_entropy'], session_weight=0.3)
-            if 'trust_score' in snap:
-                engine.update('trust_score', snap['trust_score'], session_weight=0.3)
-
-            # Fallback mapping (text statistics only)
-            if 'cognitive_inertia' not in snap:
-                engine.update('cognitive_inertia', snap.get('expertise', 0.5), session_weight=0.3)
-                engine.update('attention_anchor', snap.get('divergence', 0.5), session_weight=0.3)
-                engine.update('stability', snap.get('stability', 0.5), session_weight=0.3)
-                if snap.get('style') == 'analytical':
-                    engine.update('trust_score', 0.6, session_weight=0.3)
+            from core.agent.v4.cognitive.signal_filter import ProfileSignalFilter
+            filt = ProfileSignalFilter(llm_provider=self._llm_provider)
+            result = filt.analyze(text, self._cognitive_profile)
+            eng = self._convergence_engine
+            if result.signal_strength > 0.3:
+                if result.update_track_a and result.track_a_updates:
+                    for dim, val in result.track_a_updates.items():
+                        eng.update(dim, float(val), session_weight=0.3)
+                if result.update_track_b and result.track_b_tags:
+                    from core.agent.v4.cognitive.models import UserTag
+                    for td in result.track_b_tags:
+                        tag = UserTag(name=td.get("name","x"), value=td.get("value",""),
+                                     confidence=td.get("confidence",0.5), source="LLM_filter")
+                        self._cognitive_profile.track_b[tag.name] = tag
+            else:
+                snap = self._infer_profile_snapshot(text, response)
+                if snap:
+                    for dim in ('cognitive_inertia','emotional_entropy','trust_score'):
+                        if dim in snap:
+                            eng.update(dim, snap[dim], session_weight=0.3)
         except Exception as e:
-            logger.debug("Profile feed failed: %s", e)
+            logger.debug("Profile feed skipped: %s", e)
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""
