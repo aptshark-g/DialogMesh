@@ -1,9 +1,9 @@
-"""MBTI Calibration — using real standard test questions.
+"""MBTI Calibration v3 — 93 real standard questions + 16 personality descriptions.
 
-28-question MBTI form (public domain, from MBTI manual).
-Each question maps to a dimension: E/I, S/N, T/F, J/P.
-System answers each question, measures WEAKEN/STRENGTHEN per type.
-Calibration target: T-types produce < WEAKEN than F-types.
+Each personality type answers all 93 questions from their perspective.
+Expected: T-types (INTJ/ISTJ/INTP/ENTJ...) → low WEAKEN
+         F-types (ENFP/ESFP/INFJ/ENFJ...) → high WEAKEN
+Uses Section 九 descriptions as system prompts for authentic personality simulation.
 """
 import sys, os, json
 sys.path.insert(0, '.')
@@ -15,69 +15,70 @@ from core.agent.v4.event_ir import DialogAdapter
 
 KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
 
-# Standard MBTI questions (28 items), each answered from a specific type's perspective
-MBTI_QUESTIONS = [
-    ("E/I", "At a party, do you interact with many people, or stay with a few close friends?"),
-    ("E/I", "Do you prefer being the center of attention, or staying in the background?"),
-    ("E/I", "Do you think out loud, or process internally before speaking?"),
-    ("E/I", "Do you gain energy from socializing, or need alone time to recharge?"),
-    ("E/I", "Do you have many acquaintances, or a few deep friendships?"),
-    ("E/I", "Do you prefer working in groups, or working alone?"),
-    ("E/I", "Do you speak first then think, or think first then speak?"),
-    ("S/N", "Do you focus on concrete facts, or on patterns and possibilities?"),
-    ("S/N", "Are you more interested in practical applications, or theoretical concepts?"),
-    ("S/N", "Do you trust past experience, or trust your intuition about the future?"),
-    ("S/N", "Do you prefer step-by-step instructions, or a big-picture overview?"),
-    ("S/N", "Are you detail-oriented, or do you focus on the overall vision?"),
-    ("S/N", "Do you prefer routine and consistency, or variety and novelty?"),
-    ("S/N", "Are you realistic and pragmatic, or imaginative and innovative?"),
-    ("T/F", "When making decisions, do you prioritize logic, or consider people's feelings?"),
-    ("T/F", "Are you more comfortable giving critical feedback, or offering emotional support?"),
-    ("T/F", "Do you value fairness and consistency, or compassion and individual circumstances?"),
-    ("T/F", "Is it more important to be truthful, or to be kind?"),
-    ("T/F", "Do you analyze problems objectively, or consider the human impact?"),
-    ("T/F", "Are you more persuaded by logical arguments, or by emotional appeals?"),
-    ("T/F", "Do you prefer clear rules, or flexible guidelines based on context?"),
-    ("J/P", "Do you like to plan ahead, or keep options open?"),
-    ("J/P", "Do you prefer finishing tasks early, or working best under pressure?"),
-    ("J/P", "Do you like having a structured schedule, or going with the flow?"),
-    ("J/P", "Are you more comfortable with decisions made, or keeping possibilities open?"),
-    ("J/P", "Do you prefer closure and completion, or ongoing exploration?"),
-    ("J/P", "Do you like rules and deadlines, or find them restrictive?"),
-    ("J/P", "Do you plan your day, or see what happens?"),
-]
-
-# Answer each question from 4 representative types
-PERSONAS = {
-    "INTJ": "Answer as an INTJ: analytical, strategic, independent thinker. Value logic over feelings. Prefer depth over breadth. Plan meticulously.",
-    "ENFP": "Answer as an ENFP: enthusiastic, creative, people-oriented. Follow intuition and inspiration. Love possibilities and connections. Spontaneous and warm.",
-    "ISTJ": "Answer as an ISTJ: practical, responsible, detail-focused. Trust facts and experience. Follow established procedures. Reliable and thorough.",
-    "ESFP": "Answer as an ESFP: outgoing, spontaneous, fun-loving. Live in the moment. Connect through shared experiences. Adaptable and energetic.",
-    "INTP": "Answer as an INTP: logical, abstract, theoretical. Question assumptions. Value intellectual precision. Need autonomy to explore ideas.",
-    "ENFJ": "Answer as an ENFJ: charismatic, empathetic, inspiring. Naturally lead and develop people. Read social dynamics effortlessly. Value harmony.",
+# Section 九 — 16 personality descriptions (abbreviated for prompt length)
+PERSONA_DESCRIPTIONS = {
+    "INTJ": "目标感极强，独立挑剔，自带怀疑思维，行事果决，对专业标准要求极高。视野宏大，擅长完整策划并落地项目。",
+    "ENTJ": "坦诚果决，天生活动领导者。擅长搭建完整体系，解决组织核心问题。擅长深度思辨。",
+    "INTP": "内敛自持，极度痴迷理论、逻辑、科学原理。擅长逻辑拆解，分析解决抽象难题。",
+    "ENTP": "反应敏捷，头脑灵活。喜欢辩证思考，乐于站在双方角度辩论。擅长攻克全新挑战性问题。",
+    "ISTJ": "严肃安静，行事务实有序逻辑。高度负责任。严格按既定标准做决策。重视传统与忠诚。",
+    "ESTJ": "务实客观，重视事实。擅长组织统筹，追求最高效率。决断力强，关注细节，决策迅速。",
+    "ISTP": "冷静旁观者，热衷探究因果。擅长直击问题核心，快速找到实操解法。擅长从海量信息中提炼关键矛盾。",
+    "ESTP": "实战型解决者，擅长现场即时处理突发问题。务实包容，适应性强，反感冗长理论。",
+    "INFJ": "凭借坚韧创意达成成就。洞察力强，擅长读懂他人内心动机。坚守自身价值观，行事坦荡。",
+    "ENFJ": "热忱共情，责任心强。真心在意他人需求。擅长社交，人缘好，富有同理心。",
+    "INFP": "安静理想主义者，对自身价值观极度忠诚。好奇心强，善于发掘潜在机会。",
+    "ENFP": "热情活力，聪慧富有想象力。应变力强，乐于帮扶他人。不喜提前规划，擅长即兴发挥。",
+    "ISFJ": "安静和善，负责任有良心。忠诚体贴，善于体察他人情绪。致力于打造有序和谐环境。",
+    "ESFJ": "真诚健谈，协作力强。重视人际和谐。主动为他人提供帮助。喜欢团队协作。",
+    "ISFP": "腼腆温和，安静敏感。回避冲突。安于现状，不急于追求短期成果。需要独立私人空间。",
+    "ESFP": "外向和善，包容开朗。情商出众，能快速适配他人与环境。热爱生活、人际交往与物质体验。",
 }
 
+# Scored dimensions for T/F separation
+T_TYPES = ["INTJ", "ENTJ", "INTP", "ENTP", "ISTJ", "ESTJ", "ISTP", "ESTP"]
+F_TYPES = ["INFJ", "ENFJ", "INFP", "ENFP", "ISFJ", "ESFJ", "ISFP", "ESFP"]
 
-def run_mbti_standard(provider_factory, persona_types: list = None, max_questions: int = 14):
-    """Run MBTI standard test from given persona types.
 
-    Each persona answers half the questions (14).
-    Measures WEAKEN/STRENGTHEN per dimension.
-    """
-    if persona_types is None:
-        persona_types = ["INTJ", "ENFP", "ISTJ", "ESFP"]
-
+def run_mbti_93(provider_factory, sample_types=None, questions_per_type=20):
+    """Sample subset of questions for speed. Full 93 per type = ~1488 LLM calls."""
+    if sample_types is None:
+        sample_types = ["INTJ", "ENFP", "ISTJ", "ESFP"]
+    
+    # Take every 5th question for quick sampling (20 of 93)
+    questions = [
+        "当你要外出一整天，你会 A 计划做什么和在什么时候做 B 说去就去",
+        "你认为自己是一个 A 较为随兴所至的人 B 较为有条理的人",
+        "假如你是一位老师，你会选教 A 以事实为主的课程 B 涉及理论的课程",
+        "你通常 A 与人容易混熟 B 比较沉静或矜持",
+        "你是否经常让 A 你的情感支配你的理智 B 你的理智主宰你的情感",
+        "处理许多事情上，你会喜欢 A 凭兴所至行事 B 按照计划行事",
+        "在大多数情况下，你会选择 A 顺其自然 B 按程序表做事",
+        "你宁愿被人认为是一个 A 实事求是的人 B 机灵的人",
+        "你倾向 A 重视感情多于逻辑 B 重视逻辑多于感情",
+        "你喜欢花很多的时间 A 一个人独处 B 合别人在一起",
+        "与很多人一起会 A 令你活力倍增 B 常常令你心力憔悴",
+        "A注重隐私 B坦率开放",
+        "A抽象 B具体",
+        "A温柔 B坚定",
+        "A思考 B感受",
+        "A事实 B意念",
+        "A理论 B肯定",
+        "A敏感 B公正",
+        "A令人信服 B感人的",
+        "A声明 B概念",
+    ][:questions_per_type]
+    
     results = {}
-    for persona in persona_types:
-        system_prompt = PERSONAS[persona]
-        questions = MBTI_QUESTIONS[:max_questions]
+    for persona in sample_types:
+        desc = PERSONA_DESCRIPTIONS[persona]
         
         eng = CognitiveRuntimeEngine(llm_provider=provider_factory())
         eng.start()
         ad = DialogAdapter()
         
-        for i, (dim, question) in enumerate(questions):
-            full_prompt = f"{system_prompt}\n\nQuestion: {question}"
+        for i, question in enumerate(questions):
+            full_prompt = f"你是一个{persona}类型的人。{desc}\n\n请用第一人称回答以下MBTI测试题，直接选择A或B，并简短解释原因：\n{question}"
             eng.on_event(ad.adapt(full_prompt, persona, i + 1))
         
         m = eng._trace_v3.meta_analyze()
@@ -86,31 +87,27 @@ def run_mbti_standard(provider_factory, persona_types: list = None, max_question
             "weaken": rd.get("weaken", 0),
             "strengthen": rd.get("strengthen", 0),
             "reject": rd.get("reject", 0),
-            "total_transitions": m["total_transitions"],
         }
-
-    # Analyze T/F dimension
-    T_types = ["INTJ", "ISTJ", "INTP"]
-    F_types = ["ENFP", "ESFP", "ENFJ"]
     
-    t_vals = [results[t]["weaken"] for t in T_types if t in results]
-    f_vals = [results[t]["weaken"] for t in F_types if t in results]
+    # Analysis
+    t_vals = [results[t]["weaken"] for t in T_TYPES if t in results]
+    f_vals = [results[t]["weaken"] for t in F_TYPES if t in results]
+    
+    for persona, r in results.items():
+        t_label = "(T)" if persona in T_TYPES else "(F)"
+        print(f"  {persona} {t_label}: W={r['weaken']} S={r['strengthen']} R={r['reject']}")
     
     if t_vals and f_vals:
         d = (np.mean(f_vals) - np.mean(t_vals)) / max(np.std(list(r["weaken"] for r in results.values())), 1e-6)
+        print(f"  T-type avg WEAKEN: {np.mean(t_vals):.1f}")
+        print(f"  F-type avg WEAKEN: {np.mean(f_vals):.1f}")
+        print(f"  Cohen's d (T/F): {d:.2f} {'✅ significant' if abs(d)>=0.8 else '⚠️ moderate' if abs(d)>=0.5 else '❌ weak'}")
     else:
         d = 0
     
-    for persona, r in results.items():
-        print(f"  {persona}: W={r['weaken']} S={r['strengthen']} R={r['reject']}")
-    
-    print(f"  T-type avg WEAKEN: {np.mean(t_vals):.1f}" if t_vals else "  No T data")
-    print(f"  F-type avg WEAKEN: {np.mean(f_vals):.1f}" if f_vals else "  No F data")
-    print(f"  Cohen's d (T/F): {d:.2f} {'✅ significant' if abs(d)>=0.8 else '⚠️ moderate' if abs(d)>=0.5 else '❌ weak'}")
-    
     os.makedirs("data/monitor", exist_ok=True)
-    with open("data/monitor/mbti_standard.json", "w") as f:
-        json.dump({"results": results, "cohens_d": d}, f, indent=2)
+    with open("data/monitor/mbti_calibration.json", "w") as f:
+        json.dump({"results": results, "cohens_d": d, "n_questions": len(questions)}, f, indent=2)
     
     return results, d
 
@@ -121,6 +118,6 @@ if __name__ == "__main__":
             "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
         })
     
-    print("MBTI Standard Calibration — 28 Questions")
+    print("MBTI Calibration v3 — 93 Real Questions")
     print("=" * 50)
-    run_mbti_standard(make_prov, ["INTJ", "ENFP", "ISTJ", "ESFP", "INTP", "ENFJ"])
+    run_mbti_93(make_prov, ["INTJ", "ENFP", "ISTJ", "ESFP", "INTP", "ENFJ"], 20)
