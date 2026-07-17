@@ -1273,14 +1273,39 @@ class CognitiveRuntimeEngine:
         return results
 
     def _build_bge_index(self, objects: dict):
+        import numpy as np
+        cache_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "vectors")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, "bge_index.npz")
+        names_path = os.path.join(cache_dir, "bge_names.json")
+
+        # Try loading from cache
         try:
-            import numpy as np
+            if os.path.exists(cache_path) and os.path.exists(names_path):
+                import json
+                cached = np.load(cache_path)
+                self._bge_index = {'vectors': cached['vectors'], 'names': json.load(open(names_path))}
+                if len(self._bge_index['names']) == len(objects):
+                    logger.info("BGE index loaded from cache: %d vectors (skip re-encode)", 
+                               len(self._bge_index['names']))
+                    return
+        except Exception as e:
+            logger.debug("BGE cache load skip: %s", e)
+
+        # Build from scratch
+        try:
             from core.agent.compiler.semantic_encoder import SemanticEncoder
             enc = SemanticEncoder()
             names = list(objects.keys())
             vecs = enc.encode(names)
             self._bge_index = {'vectors': np.array(vecs), 'names': names}
             logger.info("BGE index built: %d vectors", len(names))
+
+            # Save to cache
+            np.savez_compressed(cache_path, vectors=np.array(vecs))
+            import json
+            json.dump(names, open(names_path, 'w'))
+            logger.info("BGE index cached: %s (%d KB)", cache_path, os.path.getsize(cache_path)//1024)
         except Exception as e:
             logger.warning("BGE index build failed: %s", e)
             self._bge_index = None

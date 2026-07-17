@@ -353,10 +353,30 @@ class DiscourseBlock:
             cls.SWITCH_SIGNALS = ["switch", "切换"]
             cls._METACOGNITION_SIGNALS = ["元认知", "对话树"]
 
-    def compute_importance(self):
-        """Auto-score block importance from content signals (soft_config)."""
-        self._ensure_signals()
+    def compute_importance(self, encoder=None):
+        """Auto-score block importance using BGE semantic similarity.
+
+        Falls back to signal matching if no encoder available.
+        """
         text = " ".join(getattr(e, 'raw_text', '') for e in self.edus)
+        if not text.strip():
+            self.importance = 0.3
+            return
+
+        # Try BGE semantic first
+        try:
+            from core.agent.v4.compiler.lsh_index import bge_importance_score
+            self.importance = bge_importance_score(text, {
+                "correction": "用户纠正了系统的错误理解 否定了之前的回答 澄清了身份",
+                "metacognition": "讨论元认知 对话树设计 系统架构反思 颗粒度控制",
+                "switch": "话题切换 换个方向 跳跃式提问",
+            })
+            return
+        except Exception:
+            pass
+
+        # Fallback: string matching
+        self._ensure_signals()
         if any(sig in text for sig in (self.CORRECTION_SIGNALS or [])):
             self.importance = 0.9
         elif any(sig in text for sig in (self._METACOGNITION_SIGNALS or [])):
