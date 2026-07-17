@@ -1546,8 +1546,11 @@ class CognitiveRuntimeEngine:
         self._world_provider = provider
         self._bge_index = None  # invalidate BGE cache on new objects
 
-    def _bge_retrieve(self, text: str, objects: dict) -> set:
-        """Build BGE index once, reuse for all queries."""
+    def _bge_retrieve(self, text: str, objects: dict, candidate_set: set = None) -> set:
+        """Build BGE index once, reuse for all queries.
+        
+        If candidate_set provided, only score those objects (LSH-pruned subset).
+        """
         if not hasattr(self, '_bge_index') or self._bge_index is None:
             self._build_bge_index(objects)
         if self._bge_index is None or not self._bge_index.get('vectors'):
@@ -1558,6 +1561,23 @@ class CognitiveRuntimeEngine:
         q_vec = enc.encode(text)
         vecs = self._bge_index['vectors']
         names = self._bge_index['names']
+        # If LSH provided a candidate subset, only score those
+        if candidate_set:
+            indices = [i for i, n in enumerate(names) if n in candidate_set]
+            if not indices:
+                return set()
+            cvecs = vecs[indices]
+            cnames = [names[i] for i in indices]
+            sims = np.dot(cvecs, q_vec)
+            top_k = min(5, len(sims))
+            top_idx = np.argpartition(sims, -top_k)[-top_k:]
+            top_idx = top_idx[np.argsort(sims[top_idx])[::-1]]
+            results = set()
+            for idx in top_idx:
+                if sims[idx] > 0.30:
+                    results.add(cnames[idx])
+            return results
+        # Full search (fallback for small graphs)
         sims = np.dot(vecs, q_vec)
         top_k = min(5, len(sims))
         top_idx = np.argpartition(sims, -top_k)[-top_k:]
@@ -1632,18 +1652,32 @@ class CognitiveRuntimeEngine:
         return []
 
     def _find_targets_semantic(self, text: str, objects: dict) -> list:
-        """BGE semantic retrieval + jieba heading backtracking.
+        """BGE semantic retrieval + jieba heading backtracking + LSH pruning.
 
-        Hybrid: BGE encodes query → cosine similarity to object names
-        + jieba keywords → heading_path lookup → objects.
-        Works across languages (Chinese, Japanese, English).
+        Hybrid: LSH candidate pruning → BGE cosine similarity → jieba heading lookup.
+        LSH reduces search space from O(N) to O(k×bands) when N > 1000.
         """
         targets = set()
+
+        # ---- Tier 0: LSH candidate pruning (large graph) ----
+        candidate_set = None  # None = all objects, set = pruned
+        if len(objects) > 1000:
+            try:
+                import numpy as np
+                from core.agent.v4.compiler.lsh_index import LSHIndex
+                lsh = LSHIndex()
+                for name in objects:
+                    lsh.insert(name, name)
+                lsh_candidates = lsh.query(text, top_k=100)
+                candidate_set = set(lsh_candidates) if lsh_candidates else None
+                logger.debug("LSH pruned %d→%d candidates", len(objects), len(candidate_set) if candidate_set else len(objects))
+            except Exception as e:
+                logger.debug("LSH pruning skipped: %s", e)
 
         # ---- BGE semantic retrieval (cross-language) ----
         try:
             import numpy as np
-            targets |= self._bge_retrieve(text, objects)
+            targets |= self._bge_retrieve(text, objects, candidate_set)
         except Exception as e:
             logger.debug("BGE retrieval skipped: %s", e)
 
