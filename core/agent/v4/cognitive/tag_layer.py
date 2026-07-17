@@ -6,9 +6,11 @@ Design: docs/v3.0/design_cognitive_profile_v2.md §2.3, §4.2
   g-factor: LLM-based ability assessment
 """
 from __future__ import annotations
-import re, math, time
+import re, math, time, logging
 from typing import Dict, List, Optional, Tuple
 from collections import Counter
+
+logger = logging.getLogger(__name__)
 
 from .models import UserTag, CognitiveProfileV2
 
@@ -136,16 +138,50 @@ class TagAcquisitionEngine:
             if word.lower() in user_text.lower():
                 self._self_affirm_count += 1
 
-        # Personality trait detection
-        for trait, keywords in self.PERSONALITY_TRAITS.items():
-            matches = sum(1 for kw in keywords if kw.lower() in user_text.lower())
-            if matches >= 2:
-                tags[f"personality_{trait}"] = UserTag(
-                    name=f"personality_{trait}",
-                    value="high" if matches >= 4 else "moderate" if matches >= 2 else "low",
-                    confidence=min(0.9, 0.5 + matches * 0.1),
-                    source="L2",
-                )
+        # Personality trait detection (BGE semantic → no new keywords needed)
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            import numpy as np
+            bge = SemanticEncoder()
+            tv = bge.encode(user_text[:500])
+            scored = []
+
+            trait_descs = {
+                "introvert": "preferring solitude, deep thinking, quiet analysis, working alone, internal focus",
+                "extrovert": "team collaboration, social energy, presenting, brainstorming, group interaction",
+                "analytical": "logical reasoning, data-driven, systematic thinking, evidence-based analysis",
+                "emotional": "intuitive feeling, empathy, harmony-focused, people-oriented, value-driven",
+                "planner": "organized, scheduled, structured, deadline-driven, systematic preparation",
+                "explorer": "curious, wondering, exploring possibilities, open-ended, discovering new ideas",
+            }
+            for trait, description in trait_descs.items():
+                dv = bge.encode(description)
+                a = tv.flatten() if len(tv.shape) > 1 else tv
+                b = dv.flatten() if len(dv.shape) > 1 else dv
+                cos = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
+                scored.append((trait, cos))
+            # Keep only top-2 traits (relative ranking, not absolute threshold)
+            scored.sort(key=lambda x: x[1], reverse=True)
+            for trait, cos in scored[:2]:
+                if cos > 0.55:
+                    tags[f"personality_{trait}"] = UserTag(
+                        name=f"personality_{trait}",
+                        value="high" if cos > 0.72 else "moderate",
+                        confidence=min(0.9, cos * 1.1),
+                        source="L2_BGE",
+                    )
+        except Exception as e:
+            # Fallback: keyword matching
+            logger.debug("BGE personality skip, falling back to keywords (%s)", e)
+            for trait, keywords in self.PERSONALITY_TRAITS.items():
+                matches = sum(1 for kw in keywords if kw.lower() in user_text.lower())
+                if matches >= 2:
+                    tags[f"personality_{trait}"] = UserTag(
+                        name=f"personality_{trait}",
+                        value="high" if matches >= 4 else "moderate" if matches >= 2 else "low",
+                        confidence=min(0.9, 0.5 + matches * 0.1),
+                        source="L2",
+                    )
 
         return tags
 
