@@ -257,8 +257,12 @@ class CognitiveRuntimeEngine:
         # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
         try:
             from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
-            self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
-            logger.info("InternalMonitor initialized → %s", self._monitor._log_path)
+            # Enable with env: DIALOGMESH_MONITOR=1 or explicitly
+            if os.environ.get("DIALOGMESH_MONITOR", "1") == "1":
+                self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
+                logger.info("InternalMonitor ON → %s", self._monitor._log_path)
+            else:
+                self._monitor = None
         except Exception as e:
             self._monitor = None
             logger.debug("InternalMonitor skipped: %s", e)
