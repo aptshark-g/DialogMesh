@@ -232,7 +232,12 @@ class CognitiveRuntimeEngine:
             except Exception:
                 self._llm_policy_generator = None
             self._active_policy: Optional[object] = None
-            logger.info("MetaConsumer + PolicyGenerator initialized")
+            # Mind: relation prior learner
+            from core.agent.v4.cognitive.mind_relation import MindRelation
+            self._mind = MindRelation()
+            if self._mind.load():
+                logger.info("Mind prior relations loaded")
+            logger.info("MetaConsumer + PolicyGenerator + MindRelation initialized")
         except Exception as e:
             self._meta_consumer = None
             self._policy_generator = None
@@ -732,6 +737,10 @@ class CognitiveRuntimeEngine:
                     # Persist learned patterns
                     if self._policy_generator:
                         self._policy_generator._pattern_learner.save()
+                    # Mind: learn relation priorities from trace
+                    if self._mind and self._trace_v3:
+                        self._mind.learn(self._trace_v3.transitions[-10:])
+                        self._mind.apply(self._interaction_graph) if self._interaction_graph else None
                     logger.info(
                         "Policy: perspective=%s mode=%s depth=%d",
                         self._active_policy.perspective or '-',
