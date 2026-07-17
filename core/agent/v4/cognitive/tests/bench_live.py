@@ -32,7 +32,7 @@ def create_engine():
     return CognitiveRuntimeEngine(llm_provider=prov)
 
 
-def run_scenario(name: str, turns: list, label: str = ""):
+def run_scenario(name: str, turns: list, label: str = "", report=None):
     """Run a benchmark scenario and return monitor summary."""
     print(f"\n{'='*60}")
     print(f"  {name}")
@@ -63,6 +63,10 @@ def run_scenario(name: str, turns: list, label: str = ""):
             m = trace.meta_analyze()
             summary["trace_transitions"] = m["total_transitions"]
             summary["trace_reasons"] = m["reason_distribution"]
+        # Collect into benchmark report
+        if report:
+            report.collect(eng)
+            report.record("scenario_done", summary, name)
         print(f"\n  Monitor: {summary}")
         return summary
     return {}
@@ -110,10 +114,10 @@ if __name__ == "__main__":
 
     print("DialogMesh v6 Benchmark Suite")
 
-    results["persona_intj"] = run_scenario("Persona: INTJ", PERSONA_INTJ)
-    results["persona_enfp"] = run_scenario("Persona: ENFP", PERSONA_ENFP)
-    results["multi_hop"] = run_scenario("Multi-Hop Reasoning", MULTI_HOP)
-    results["topic_switch"] = run_scenario("Topic Switch Detection", TOPIC_SWITCH)
+    results["persona_intj"] = run_scenario("Persona: INTJ", PERSONA_INTJ, report=report)
+    results["persona_enfp"] = run_scenario("Persona: ENFP", PERSONA_ENFP, report=report)
+    results["multi_hop"] = run_scenario("Multi-Hop Reasoning", MULTI_HOP, report=report)
+    results["topic_switch"] = run_scenario("Topic Switch Detection", TOPIC_SWITCH, report=report)
 
     # Save aggregate results
     os.makedirs("data/monitor", exist_ok=True)
