@@ -43,6 +43,22 @@ class TagAcquisitionEngine:
         "汇编", "内核", "协议", "抽象", "编译器",
     ]
 
+    # Personality trait keywords (L2 inference)
+    PERSONALITY_TRAITS = {
+        "introvert": ["alone", "solitary", "quiet", "focus", "deep thinking", "avoid",
+                      "独自", "安静", "深度思考", "不喜欢社交", "独处", "内向"],
+        "extrovert": ["team", "collaborate", "present", "brainstorm", "energy", "people",
+                      "团队", "合作", "交流", "分享", "外向", "社交"],
+        "analytical": ["analysis", "systematic", "data", "logic", "evidence", "prove",
+                       "分析", "系统化", "数据驱动", "逻辑", "证明"],
+        "emotional": ["feel", "intuition", "heart", "harmony", "empathy", "value",
+                      "感觉", "直觉", "内心", "和谐", "共情", "重视"],
+        "planner": ["plan", "schedule", "organize", "deadline", "structure",
+                    "计划", "安排", "组织", "截止", "结构"],
+        "explorer": ["curious", "wonder", "maybe", "explore", "discover",
+                     "好奇", "探索", "发现", "或许", "试试"],
+    }
+
     SELF_AFFIRM_WORDS = [
         "我知道", "我做过", "我实现", "我解决了", "我理解", "我发现了",
         "i did", "i know", "i built", "i solved",
@@ -119,6 +135,17 @@ class TagAcquisitionEngine:
         for word in self.SELF_AFFIRM_WORDS:
             if word.lower() in user_text.lower():
                 self._self_affirm_count += 1
+
+        # Personality trait detection
+        for trait, keywords in self.PERSONALITY_TRAITS.items():
+            matches = sum(1 for kw in keywords if kw.lower() in user_text.lower())
+            if matches >= 2:
+                tags[f"personality_{trait}"] = UserTag(
+                    name=f"personality_{trait}",
+                    value="high" if matches >= 4 else "moderate" if matches >= 2 else "low",
+                    confidence=min(0.9, 0.5 + matches * 0.1),
+                    source="L2",
+                )
 
         return tags
 

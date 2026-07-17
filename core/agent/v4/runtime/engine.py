@@ -971,9 +971,11 @@ class CognitiveRuntimeEngine:
             engine = TagAcquisitionEngine()
             # Use acquire_all for full L1+L2 tag acquisition
             result = engine.acquire_all(text)
-            tags = list(result.values()) if isinstance(result, dict) else []
+            tag_dict = result[0] if isinstance(result, tuple) and len(result) == 2 else result
+            tags = list(tag_dict.values()) if isinstance(tag_dict, dict) else []
             for tag in tags:
-                self._cognitive_profile.track_b[tag.key] = tag
+                tag_name = getattr(tag, 'name', str(tag))
+                self._cognitive_profile.track_b[tag_name] = tag
             if tags:
                 stored = 0
                 for tag in tags[:10]:
