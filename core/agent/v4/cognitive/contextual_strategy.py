@@ -43,7 +43,7 @@ class StrategyContext:
 
         discussion_mode = "new_topic"
         if hasattr(engine, '_conversation_tracker'):
-            patterns = engine._conversation_tracker.behavior_pattern()
+            patterns = engine._conversation_tracker.behavior_pattern
             if "drill_down" in patterns:
                 discussion_mode = "continuous"
             elif "topic_switch" in patterns:

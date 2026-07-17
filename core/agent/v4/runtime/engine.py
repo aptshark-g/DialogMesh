@@ -219,6 +219,15 @@ class CognitiveRuntimeEngine:
             self._strategy_engine = None
             logger.debug("ContextualStrategy skipped: %s", e)
 
+        # ---- v6 Meta-Cognition Consumer (closes the learning loop) ----
+        try:
+            from core.agent.v4.cognitive.meta_consumer import MetaConsumer
+            self._meta_consumer = MetaConsumer(strategy_engine=self._strategy_engine)
+            logger.info("MetaConsumer initialized")
+        except Exception as e:
+            self._meta_consumer = None
+            logger.debug("MetaConsumer skipped: %s", e)
+
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
             auto_save=True,
@@ -635,6 +644,20 @@ class CognitiveRuntimeEngine:
                 self._topic_tree_source.feed_turn(turn_index=int(turn_num), text=text)
             except Exception as e:
                 logger.debug('TopicTree feed skipped: %s', e)
+
+        # ---- v6 MetaConsumer: close the learning loop (every 5 turns) ----
+        if self._meta_consumer and self._trace_v3 and self._turn_counter % 5 == 0:
+            advice = self._meta_consumer.consume(self._trace_v3, self._turn_counter)
+            if advice.get("adjust"):
+                logger.info(
+                    "Meta: %d warnings, conf_mod=%.2f — %s",
+                    len(advice.get("warnings", [])),
+                    advice.get("confidence_mod", 0),
+                    "; ".join(advice.get("suggestions", [])[:2]),
+                )
+                # Apply confidence adjustment to next LLM call
+                if advice.get("confidence_mod", 0) != 0:
+                    self._llm_confidence_bias = advice["confidence_mod"]
 
         return llm_response
 
