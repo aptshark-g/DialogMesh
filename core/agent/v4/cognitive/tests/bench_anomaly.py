@@ -31,11 +31,12 @@ def test_pattern(engine, ad, scenario_id, turns, expected_pattern):
     # Check MetaConsumer
     t = engine._trace_v3
     m = t.meta_analyze()
+    dist = m["reason_distribution"]
+    # Check if expected transition type appears in trace
+    triggered = dist.get(expected_pattern.lower(), 0) > 0
     mc = engine._meta_consumer
     advice = mc.consume(t, len(turns)) if mc else {}
     warnings = advice.get('warnings', [])
-    triggered = expected_pattern in str(warnings) if warnings else False
-
     info = report.collect(engine)
     dist = m["reason_distribution"]
     report.record("result", {

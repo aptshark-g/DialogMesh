@@ -47,10 +47,10 @@ class MetaConsumer:
         advice = {"adjust": False, "warnings": [], "suggestions": [], "confidence_mod": 0.0}
         reason_dist = m.get("reason_distribution", {})
 
-        # ── Pattern 1: Consecutive rejects ──
-        max_rejects = m.get("max_consecutive_rejects", 0)
-        if max_rejects >= 3:
-            advice["warnings"].append(f"连续 {max_rejects} 次 REJECT — 假设基础可能不稳")
+        # ── Pattern 1: Total rejects (not just consecutive) ──
+        total_rejects = reason_dist.get("reject", 0)
+        if total_rejects >= 2:
+            advice["warnings"].append(f"共 {total_rejects} 次 REJECT——用户反复纠正")
             advice["suggestions"].append("回溯到 REJECT 前的状态, 尝试替代假设")
             advice["confidence_mod"] -= 0.15
             advice["adjust"] = True
