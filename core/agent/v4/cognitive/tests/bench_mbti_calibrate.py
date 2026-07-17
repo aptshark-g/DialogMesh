@@ -81,12 +81,12 @@ def run_mbti_93(provider_factory, sample_types=None, questions_per_type=20):
                   "I seek harmony and meaningful connection in all relationships."],
     }
 
-    prompt_list = statements.get(persona, statements["INTJ"])[:questions_per_type]
 
     
     results = {}
     for persona in sample_types:
         desc = PERSONA_DESCRIPTIONS[persona]
+        prompt_list = statements.get(persona, statements["INTJ"])[:questions_per_type]
         
         eng = CognitiveRuntimeEngine(llm_provider=provider_factory())
         eng.start()
