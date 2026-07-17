@@ -255,17 +255,9 @@ class CognitiveRuntimeEngine:
             logger.debug("InteractionGraph skipped: %s", e)
 
         # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
-        try:
-            from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
-            # Enable with env: DIALOGMESH_MONITOR=1 or explicitly
-            if os.environ.get("DIALOGMESH_MONITOR", "1") != "0":  # Default ON
-                self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
-                logger.info("InternalMonitor ON → %s", self._monitor._log_path)
-            else:
-                self._monitor = None
-        except Exception as e:
-            logger.warning("InternalMonitor init failed: %s", e, exc_info=True)
-            self._monitor = None
+        from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
+        self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
+        logger.info("InternalMonitor ON → %s", self._monitor._log_path)
 
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
