@@ -78,6 +78,14 @@ class MetaConsumer:
             advice["suggestions"].append("强制插入反思步骤")
             advice["adjust"] = True
 
+        # Pattern 5: Rapid topic switching (many WEAKEN)
+        weaken_count = reason_dist.get("weaken", 0)
+        if weaken_count >= 2:
+            advice["warnings"].append(f"连续 {weaken_count} 次 WEAKEN——话题切换或观点冲突")
+            advice["suggestions"].append("稳定当前视角")
+            advice["confidence_mod"] -= 0.1
+            advice["adjust"] = True
+
         # ── Feed patterns to ContextualStrategy ──
         if advice["adjust"] and self._strategy_engine:
             from core.agent.v4.cognitive.contextual_strategy import StrategyContext
