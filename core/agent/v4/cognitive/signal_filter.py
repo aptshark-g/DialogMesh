@@ -131,15 +131,24 @@ class ProfileSignalFilter:
         return "\n".join(lines)
 
     def _fallback(self, user_text: str) -> FilterResult:
-        """Fast keyword fallback when LLM unavailable. No BGE — keep it fast."""
-        # Detect correction signals (highest priority)
-        if any(s in user_text for s in ['不是', '不对', '我才是', '你搞错了']):
-            return FilterResult(
-                update_track_a=True,
-                track_a_updates={"trust_score": -0.05, "attention_anchor": 0.1},
-                priority="track_a",
-                signal_strength=0.7,
-            )
+        """BGE semantic correction detection + keyword fallback."""
+        # BGE semantic: correction detection (not vulnerable to injection)
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            import numpy as np
+            bge = SemanticEncoder()
+            tv = bge.encode(user_text[:200]).flatten()
+            dd = bge.encode("user correcting system, clarifying identity, rejecting wrong answer").flatten()
+            cos = float(np.dot(tv, dd)/(np.linalg.norm(tv)*np.linalg.norm(dd)+1e-8))
+            if cos > 0.6:
+                return FilterResult(
+                    update_track_a=True,
+                    track_a_updates={"trust_score": -0.05, "attention_anchor": 0.1},
+                    priority="track_a",
+                    signal_strength=min(0.9, cos),
+                )
+        except Exception:
+            pass  # fall through to keyword
         # Long text → potential personality signal → mark for later
         if len(user_text) > 80:
             return FilterResult(
