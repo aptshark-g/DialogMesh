@@ -254,6 +254,15 @@ class CognitiveRuntimeEngine:
             self._interaction_graph = None
             logger.debug("InteractionGraph skipped: %s", e)
 
+        # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
+        try:
+            from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
+            self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
+            logger.info("InternalMonitor initialized → %s", self._monitor._log_path)
+        except Exception as e:
+            self._monitor = None
+            logger.debug("InternalMonitor skipped: %s", e)
+
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
             auto_save=True,
@@ -604,6 +613,12 @@ class CognitiveRuntimeEngine:
                 ],
                 confidence=0.7,
             )
+
+            # Monitor: record INFER transition
+            if self._monitor:
+                self._monitor.record_transition(self._turn_counter, "infer",
+                    f"Answer: {llm_response[:60]}",
+                    [{"response_len": len(llm_response)}])
 
         # ---- v6 Trace: reflect after profile update ----
         if self._trace_v3 and llm_response and pre_state:
