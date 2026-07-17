@@ -210,6 +210,15 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("ExecutionTraceV3 skipped: %s", e)
 
+        # ---- v6 Contextual Strategy Learning ----
+        try:
+            from core.agent.v4.cognitive.contextual_strategy import ContextualStrategyEngine
+            self._strategy_engine = ContextualStrategyEngine()
+            logger.info("ContextualStrategy engine initialized")
+        except Exception as e:
+            self._strategy_engine = None
+            logger.debug("ContextualStrategy skipped: %s", e)
+
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
             auto_save=True,
@@ -561,6 +570,19 @@ class CognitiveRuntimeEngine:
                         StateDelta(key="profile.trust", operation="set", value=getattr(ta,'trust_score',0)),
                     ],
                     confidence=0.6,
+                )
+
+            # ---- v6 Contextual Strategy: record what worked ----
+            if hasattr(self, '_strategy_engine') and self._strategy_engine:
+                from core.agent.v4.cognitive.contextual_strategy import StrategyContext
+                ctx = StrategyContext.from_engine(self)
+                # Record the explanation strategy effectiveness (inferred from profile delta)
+                trust_delta = getattr(ta, 'trust_score', 0.5) - 0.5
+                self._strategy_engine.record(
+                    "explain_answer",
+                    ctx,
+                    effectiveness=0.5 + trust_delta * 0.5,
+                    confidence_gain=trust_delta,
                 )
 
         # ---- Behavior chain: feed conversation patterns to CausalPlanner ----
