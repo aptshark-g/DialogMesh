@@ -237,39 +237,31 @@ class CognitiveRuntimeEngine:
             self._policy_generator = None
             logger.debug("MetaConsumer skipped: %s", e)
 
-        # ---- v6 Mind: relation + attention + mistake prior learners ----
-            try:
-                from core.agent.v4.cognitive.mind import Mind
-                self._mind = Mind(persist_dir="data")
-                if self._mind.load():
-                    logger.info("Mind loaded: %s", self._mind.stats())
-                else:
-                    # ---- v6 Mind: initialize workspace with learned priors ----
-                    if self._mind:
-                        try:
-                            init = self._mind.initialize_workspace(self)
-                            logger.info("Mind workspace initialized: attention=%d relations=%d rules=%d",
-                                len(init["attention_prior"]), len(init["relation_prior"]), len(init["avoidance_rules"]))
-                        except Exception as e:
-                            logger.debug("Mind workspace init skipped: %s", e)
-
-                    logger.info("Engine started")
-            except Exception as e:
-                self._mind = None
-                logger.debug("Mind skipped: %s", e)
+        # ---- v6 Mind: unified cognitive structure ----
+        try:
+            from core.agent.v4.cognitive.mind import Mind
+            self._mind = Mind(persist_dir="data")
+            if self._mind.load():
+                logger.info("Mind loaded: %s", self._mind.stats())
+            else:
+                logger.info("Mind fresh start")
+        except Exception as e:
+            self._mind = None
+            logger.debug("Mind skipped: %s", e)
+            logger.debug("MetaConsumer skipped: %s", e)
 
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:
             from core.agent.v4.state.interaction_graph import InteractionGraph, InteractionType
             self._interaction_graph = InteractionGraph()
-            # Seed core architectural edges (fallback if no RelationSubstrate)
+            # Seed core architectural edges
             self._interaction_graph.add_edge("EventIR", "Observer", InteractionType.DEPENDS_ON, 0.8)
             self._interaction_graph.add_edge("Observer", "Workspace", InteractionType.CAUSAL, 0.7)
             self._interaction_graph.add_edge("Workspace", "ReasoningTree", InteractionType.CONTAINS, 0.9)
             self._interaction_graph.add_edge("ReasoningTree", "Hypothesis", InteractionType.SUPPORTS, 0.6)
             self._interaction_graph.add_edge("Hypothesis", "Conflict", InteractionType.CONTRADICTS, 0.4)
             self._interaction_graph.add_edge("Reflection", "Hypothesis", InteractionType.STRENGTHEN, 0.7)
-            logger.info("InteractionGraph initialized (%d seed edges)", self._interaction_graph._edge_count)
+            logger.info("InteractionGraph initialized (%d edges)", self._interaction_graph._edge_count)
         except Exception as e:
             self._interaction_graph = None
             logger.debug("InteractionGraph skipped: %s", e)
