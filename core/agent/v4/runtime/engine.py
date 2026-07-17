@@ -225,7 +225,13 @@ class CognitiveRuntimeEngine:
             from core.agent.v4.cognitive.reasoning_policy import PolicyGenerator
             self._meta_consumer = MetaConsumer(strategy_engine=self._strategy_engine)
             self._policy_generator = PolicyGenerator()
-            self._active_policy: Optional[object] = None  # ReasoningPolicy for current turn
+            # LLM-driven policy generator (uses DeepSeek for dynamic policy selection)
+            try:
+                from core.agent.v4.cognitive.policy_prompt import LLMPolicyGenerator
+                self._llm_policy_generator = LLMPolicyGenerator(llm_provider=self._llm_provider)
+            except Exception:
+                self._llm_policy_generator = None
+            self._active_policy: Optional[object] = None
             logger.info("MetaConsumer + PolicyGenerator initialized")
         except Exception as e:
             self._meta_consumer = None
@@ -684,9 +690,16 @@ class CognitiveRuntimeEngine:
                     len(advice.get("warnings", [])),
                     "; ".join(advice.get("suggestions", [])[:2]),
                 )
-                # Generate structured ReasoningPolicy instead of raw bias
+                # Generate structured ReasoningPolicy (LLM-driven or rule fallback)
                 if self._policy_generator:
-                    self._active_policy = self._policy_generator.generate(advice)
+                    # Use LLM-driven generator if available
+                    if hasattr(self, '_llm_policy_generator') and self._llm_policy_generator:
+                        trace_text = self._trace_v3.reasoning_path if self._trace_v3 else ""
+                        self._active_policy = self._llm_policy_generator.generate(
+                            advice, trace_summary=trace_text, turn_count=self._turn_counter
+                        )
+                    else:
+                        self._active_policy = self._policy_generator.generate(advice)
                     logger.info(
                         "Policy: perspective=%s mode=%s depth=%d",
                         self._active_policy.perspective or '-',

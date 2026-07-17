@@ -86,6 +86,33 @@ class ReasoningPolicy:
             return system_instruction + "\n[Reasoning Policy] " + "; ".join(hints)
         return system_instruction
 
+    def apply(self, engine):
+        """Apply policy directly to engine components (strong feedback)."""
+        # ── Perspective override ──
+        if self.perspective:
+            if hasattr(engine, '_last_perspective'):
+                engine._last_perspective = self.perspective
+            if hasattr(engine, '_perspective_planner'):
+                engine._perspective_planner._forced_perspective = self.perspective
+
+        # ── Focus objects → attention bias ──
+        if self.focus_objects:
+            if hasattr(engine, '_world_objects'):
+                for obj_name in engine._world_objects:
+                    obj = engine._world_objects.get(obj_name)
+                    if obj and hasattr(obj, 'data'):
+                        obj.data["attention_bias"] = (
+                            0.8 if obj_name in self.focus_objects else 0.2
+                        )
+
+        # ── Relation expansion → graph query filter ──
+        if self.expand_relations and hasattr(engine, '_content_provider'):
+            engine._relation_filter = self.expand_relations
+
+        # ── Explanation mode → set on context compiler ──
+        if self.explanation_mode and hasattr(engine, '_world_params'):
+            engine._world_params.explanation_mode = self.explanation_mode
+
     def apply_to_context(self, compiler_params: Dict[str, Any]) -> Dict[str, Any]:
         """Adjust context compiler parameters based on policy."""
         params = dict(compiler_params)
@@ -98,17 +125,13 @@ class ReasoningPolicy:
         return params
 
 
+from core.agent.v4.cognitive.pattern_learner import PatternLearner
+
+
 # ═══════════════════════ PolicyGenerator ═══════════════════════
 
 class PolicyGenerator:
-    """Generates ReasoningPolicy from MetaConsumer analysis.
-
-    Maps detected patterns to actionable policy changes:
-      consecutive_rejects → switch perspective, lower depth
-      no_observe → force shallow + expand relations
-      low_confidence → switch explanation_mode to concrete
-      high_infer_no_reflect → force reflect cycle
-    """
+    """Generates ReasoningPolicy from MetaConsumer analysis + learned patterns."""
 
     PERSPECTIVE_ROTATION = ["architecture", "engineering", "evolution", "execution"]
     EXPLANATION_MODES = ["via_relation", "step_by_step", "analogy", "top_down"]
@@ -116,6 +139,8 @@ class PolicyGenerator:
     def __init__(self):
         self._last_perspective_idx = 0
         self._last_mode_idx = 0
+        self._pattern_learner = PatternLearner()
+        self._turn_patterns: Dict[str, int] = {}  # pattern_id → count this session
 
     def generate(self, meta_advice: Dict[str, Any], current_context: Dict[str, Any] = None) -> ReasoningPolicy:
         """Generate policy from meta-analysis advice.
@@ -126,6 +151,19 @@ class PolicyGenerator:
         """
         policy = ReasoningPolicy()
         warnings = meta_advice.get("warnings", [])
+
+        # ── Check learned patterns first (override if-else) ──
+        pattern_desc = " + ".join(warnings[:2]) if warnings else "generic"
+        pid = self._pattern_learner.register_pattern(pattern_desc, meta_advice)
+        learned = self._pattern_learner.suggest_policy(pid)
+        if learned:
+            policy.perspective = learned.get("perspective")
+            policy.explanation_mode = learned.get("explanation_mode")
+            policy.depth_adjust = learned.get("depth_adjust", 0)
+            policy.focus_objects = learned.get("focus_objects", [])
+            policy.reason = f"Learned pattern {pid} (effectiveness: {self._pattern_learner._patterns[pid].policy_effectiveness:.2f})"
+            policy.source = "pattern_learner"
+            return policy
 
         # ── Pattern 1: Consecutive rejects → rotate perspective ──
         if any("REJECT" in w for w in warnings):
