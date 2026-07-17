@@ -248,6 +248,71 @@ class InteractionGraph:
             frontier = next_frontier
         return subgraph
 
+    # ── Dynamic construction from RelationSubstrate ──
+
+    def build_from_substrate(self, substrate, max_edges: int = 200) -> int:
+        """Dynamically build InteractionGraph from RelationSubstrate.
+
+        Reads typed edges from RelationSubstrate and converts them to
+        InteractionEdges with propagation rules. Replaces hardcoded seed edges.
+
+        Mapping:
+          substrate 'depends_on' → InteractionType.DEPENDS_ON (influence=0.8)
+          substrate 'calls'      → InteractionType.CAUSAL (influence=0.6)
+          substrate 'contains'   → InteractionType.CONTAINS (influence=0.9)
+          substrate 'implements' → InteractionType.STRENGTHEN (influence=0.5)
+          substrate 'refines'    → InteractionType.REFINES (influence=0.4)
+          substrate 'extends'    → InteractionType.SUPPORTS (influence=0.3)
+        """
+        if substrate is None:
+            return 0
+
+        type_map = {
+            'depends_on': InteractionType.DEPENDS_ON,
+            'depended_by': InteractionType.DEPENDS_ON,
+            'calls': InteractionType.CAUSAL,
+            'called_by': InteractionType.CAUSAL,
+            'contains': InteractionType.CONTAINS,
+            'produces': InteractionType.SUPPORTS,
+            'implements': InteractionType.STRENGTHEN,
+            'extends': InteractionType.SUPPORTS,
+            'refines': InteractionType.REFINES,
+        }
+        influence_map = {
+            'contains': 0.9,
+            'depends_on': 0.8,
+            'calls': 0.6,
+            'implements': 0.5,
+            'produces': 0.5,
+            'refines': 0.4,
+            'extends': 0.3,
+        }
+
+        built = 0
+        # Access edges from substrate (RelationSubstrate stores edges differently)
+        edges = []
+        if hasattr(substrate, '_edges'):
+            edges = list(substrate._edges.values())
+        elif hasattr(substrate, 'edges'):
+            edges = substrate.edges
+
+        for edge in edges[:max_edges]:
+            source = getattr(edge, 'source', '') or getattr(edge, 'source_id', '')
+            target = getattr(edge, 'target', '') or getattr(edge, 'target_id', '')
+            pred = getattr(edge, 'predicate', '') or getattr(edge, 'relation_type', '')
+
+            if not source or not target:
+                continue
+
+            itype = type_map.get(pred, InteractionType.RELATES_TO)
+            influence = influence_map.get(pred, 0.3)
+            conf = getattr(edge, 'confidence', 0.5)
+
+            self.add_edge(source, target, itype, influence * conf)
+            built += 1
+
+        return built
+
     # ── Stats ──
 
     def stats(self) -> Dict[str, Any]:

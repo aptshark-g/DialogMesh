@@ -238,39 +238,38 @@ class CognitiveRuntimeEngine:
             logger.debug("MetaConsumer skipped: %s", e)
 
         # ---- v6 Mind: relation + attention + mistake prior learners ----
-        try:
-            from core.agent.v4.cognitive.mind_relation import MindRelation
-            from core.agent.v4.cognitive.mind_attention import MindAttention
-            from core.agent.v4.cognitive.mind_mistakes import MindMistakes
-            self._mind = MindRelation()
-            self._mind_attention = MindAttention()
-            self._mind_mistakes = MindMistakes()
-            if self._mind.load():
-                logger.info("Mind prior relations loaded")
-            if self._mind_attention.load():
-                logger.info("Mind attention anchors loaded")
-            if self._mind_mistakes.load():
-                logger.info("Mind mistake memory loaded")
-            logger.info("Mind initialized")
-        except Exception as e:
-            self._mind = None
-            self._mind_attention = None
-            self._mind_mistakes = None
-            logger.debug("Mind skipped: %s", e)
-            logger.debug("MetaConsumer skipped: %s", e)
+            try:
+                from core.agent.v4.cognitive.mind import Mind
+                self._mind = Mind(persist_dir="data")
+                if self._mind.load():
+                    logger.info("Mind loaded: %s", self._mind.stats())
+                else:
+                    # ---- v6 Mind: initialize workspace with learned priors ----
+                    if self._mind:
+                        try:
+                            init = self._mind.initialize_workspace(self)
+                            logger.info("Mind workspace initialized: attention=%d relations=%d rules=%d",
+                                len(init["attention_prior"]), len(init["relation_prior"]), len(init["avoidance_rules"]))
+                        except Exception as e:
+                            logger.debug("Mind workspace init skipped: %s", e)
+
+                    logger.info("Engine started")
+            except Exception as e:
+                self._mind = None
+                logger.debug("Mind skipped: %s", e)
 
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:
             from core.agent.v4.state.interaction_graph import InteractionGraph, InteractionType
             self._interaction_graph = InteractionGraph()
-            # Seed core architectural edges
+            # Seed core architectural edges (fallback if no RelationSubstrate)
             self._interaction_graph.add_edge("EventIR", "Observer", InteractionType.DEPENDS_ON, 0.8)
             self._interaction_graph.add_edge("Observer", "Workspace", InteractionType.CAUSAL, 0.7)
             self._interaction_graph.add_edge("Workspace", "ReasoningTree", InteractionType.CONTAINS, 0.9)
             self._interaction_graph.add_edge("ReasoningTree", "Hypothesis", InteractionType.SUPPORTS, 0.6)
             self._interaction_graph.add_edge("Hypothesis", "Conflict", InteractionType.CONTRADICTS, 0.4)
             self._interaction_graph.add_edge("Reflection", "Hypothesis", InteractionType.STRENGTHEN, 0.7)
-            logger.info("InteractionGraph initialized (%d edges)", self._interaction_graph._edge_count)
+            logger.info("InteractionGraph initialized (%d seed edges)", self._interaction_graph._edge_count)
         except Exception as e:
             self._interaction_graph = None
             logger.debug("InteractionGraph skipped: %s", e)
@@ -777,15 +776,8 @@ class CognitiveRuntimeEngine:
                     if self._policy_generator:
                         self._policy_generator._pattern_learner.save()
                     # Mind: learn from trace, profile, and MetaConsumer warnings
-                    if self._mind and self._trace_v3 and self._interaction_graph:
-                        self._mind.learn(self._trace_v3.transitions[-10:])
-                        self._mind.apply(self._interaction_graph)
-                    if hasattr(self, '_mind_attention') and self._mind_attention and ta:
-                        self._mind_attention.learn(ta)
-                    if hasattr(self, '_mind_mistakes') and self._mind_mistakes and advice.get('warnings'):
-                        ctx = {'perspective': self._active_policy.perspective or ''} if self._active_policy else {}
-                        self._mind_mistakes.learn(advice['warnings'], advice.get('suggestions', []), ctx)
-                        self._mind_mistakes.apply(self._active_policy, ctx) if self._active_policy else None
+                    if self._mind:
+                        self._mind.learn(self)
                     logger.info(
                         "Policy: perspective=%s mode=%s depth=%d",
                         self._active_policy.perspective or '-',
