@@ -21,6 +21,8 @@ DEEPSEEK_KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
 
 
 def create_engine():
+    import os
+    os.environ["DIALOGMESH_MONITOR"] = "1"  # force ON
     prov = OpenAIProvider("deepseek", {
         "api_key": DEEPSEEK_KEY,
         "base_url": "https://api.deepseek.com/v1",
@@ -52,8 +54,14 @@ def run_scenario(name: str, turns: list, label: str = ""):
             monitor.save()
 
     if monitor:
-        monitor.flush()
+        monitor.save()  # don't flush — save keeps events
         summary = monitor.summary()
+        # Also capture from trace
+        trace = eng._trace_v3
+        if trace:
+            m = trace.meta_analyze()
+            summary["trace_transitions"] = m["total_transitions"]
+            summary["trace_reasons"] = m["reason_distribution"]
         print(f"\n  Monitor: {summary}")
         return summary
     return {}
