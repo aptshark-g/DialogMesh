@@ -228,6 +228,22 @@ class CognitiveRuntimeEngine:
             self._meta_consumer = None
             logger.debug("MetaConsumer skipped: %s", e)
 
+        # ---- v6 Interaction Graph (dynamic state propagation) ----
+        try:
+            from core.agent.v4.state.interaction_graph import InteractionGraph, InteractionType
+            self._interaction_graph = InteractionGraph()
+            # Seed core architectural edges
+            self._interaction_graph.add_edge("EventIR", "Observer", InteractionType.DEPENDS_ON, 0.8)
+            self._interaction_graph.add_edge("Observer", "Workspace", InteractionType.CAUSAL, 0.7)
+            self._interaction_graph.add_edge("Workspace", "ReasoningTree", InteractionType.CONTAINS, 0.9)
+            self._interaction_graph.add_edge("ReasoningTree", "Hypothesis", InteractionType.SUPPORTS, 0.6)
+            self._interaction_graph.add_edge("Hypothesis", "Conflict", InteractionType.CONTRADICTS, 0.4)
+            self._interaction_graph.add_edge("Reflection", "Hypothesis", InteractionType.STRENGTHEN, 0.7)
+            logger.info("InteractionGraph initialized (%d edges)", self._interaction_graph._edge_count)
+        except Exception as e:
+            self._interaction_graph = None
+            logger.debug("InteractionGraph skipped: %s", e)
+
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
             auto_save=True,
@@ -593,6 +609,16 @@ class CognitiveRuntimeEngine:
                     effectiveness=0.5 + trust_delta * 0.5,
                     confidence_gain=trust_delta,
                 )
+
+            # ---- v6 InteractionGraph: propagate state through architecture ----
+            if hasattr(self, '_interaction_graph') and self._interaction_graph and ta:
+                trust = getattr(ta, 'trust_score', 0.5)
+                deltas = self._interaction_graph.propagate(
+                    "Observer",
+                    {"confidence": trust, "attention": 0.5 + trust * 0.3},
+                )
+                if deltas:
+                    logger.debug("InteractionGraph: %d deltas from Observer propagation", len(deltas))
 
         # ---- Behavior chain: feed conversation patterns to CausalPlanner ----
         if self._causal_planner is not None and text:
@@ -1758,6 +1784,17 @@ class CognitiveRuntimeEngine:
         # Build system instruction from world params
         system_instruction = self._build_system_instruction()
 
+        # Inject ContextualStrategy recommendation
+        if hasattr(self, '_strategy_engine') and self._strategy_engine:
+            from core.agent.v4.cognitive.contextual_strategy import StrategyContext
+            ctx = StrategyContext.from_engine(self)
+            best_name, best_score = self._strategy_engine.best_for(ctx)
+            if best_name and best_score > 0.5:
+                system_instruction += (
+                    f"\n[Strategy Hint] Preferred explanation style: {best_name} "
+                    f"(effectiveness: {best_score:.2f} in this context)"
+                )
+
         # Serialize IR to prompt
         prompt = self._last_context.to_prompt(
             system_instruction=system_instruction,
@@ -1769,13 +1806,22 @@ class CognitiveRuntimeEngine:
         if user_text:
             prompt += f"\n[User]\n{user_text}\n"
 
-        # Call LLM
+        # Call LLM — with MetaConsumer confidence adjustment
         try:
+            temperature = 0.7
+            # Apply MetaConsumer confidence bias if set
+            if hasattr(self, '_llm_confidence_bias') and self._llm_confidence_bias:
+                bias = self._llm_confidence_bias
+                temperature = max(0.3, min(1.0, 0.7 + bias))  # lower=bias negative
+                logger.debug("LLM temperature adjusted: %.2f → %.2f (bias=%.2f)",
+                           0.7, temperature, bias)
+                self._llm_confidence_bias = 0.0  # reset after use
+
             request = GenerateRequest(
                 prompt=prompt,
                 system_prompt=system_instruction,
                 max_tokens=min(self._world_params.compiler_token_budget // 2, 1024),
-                temperature=0.7,
+                temperature=temperature,
                 timeout_ms=30000,
             )
             result: GenerateResult = self._llm_provider.generate(request)
