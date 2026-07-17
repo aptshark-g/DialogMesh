@@ -145,6 +145,11 @@ class CognitiveRuntimeEngine:
 
         # Cognitive Runtime (Phase 2): LLM-driven reasoning loop
         self._use_cognitive_runtime = False
+
+        # Internal Simulation Engine: LLM simulates user cognitive state
+        self._simulation_engine = None  # Initialized in start()
+        self._last_simulation: Optional[object] = None  # SimulationResult from previous turn
+        self._simulation_stats = {"matches": 0, "total": 0}
         self._cognitive_observer = None  # Observer set when enabled
         self._cognitive_trace: Optional[object] = None  # ExecutionTrace for last run
 
@@ -185,6 +190,14 @@ class CognitiveRuntimeEngine:
 
         # ---- Extraction Orchestrator (regex → jieba → stanza → LMStudio → DeepSeek) ----
         self._init_extraction_orchestrator()
+
+        # ---- Internal Simulation Engine (LLM simulates user cognitive state) ----
+        try:
+            from core.agent.v4.cognitive.simulation_engine import InternalSimulationEngine
+            self._simulation_engine = InternalSimulationEngine(llm_provider=self._llm_provider)
+            logger.info("Simulation engine initialized")
+        except Exception as e:
+            logger.debug("Simulation engine skipped: %s", e)
 
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
@@ -434,6 +447,49 @@ class CognitiveRuntimeEngine:
         # ---- Feed cognitive profile from current turn ----
         self._feed_profile(text, llm_response)
         self._feed_trackb(text)  # TrackB: accumulate tags from user input
+
+        # ---- Internal Simulation: evaluate last prediction, simulate next ----
+        if self._simulation_engine and llm_response:
+            try:
+                # 1. Evaluate previous simulation against actual user question
+                if self._last_simulation and text:
+                    feedback = self._simulation_engine.evaluate(
+                        self._last_simulation, text
+                    )
+                    if feedback.matched:
+                        self._simulation_stats["matches"] += 1
+                    self._simulation_stats["total"] += 1
+                    self._simulation_engine.learn(feedback)
+                    logger.debug(
+                        "Simulation %s: predicted='%s' actual='%s' sim=%.2f",
+                        "✓" if feedback.matched else "✗",
+                        feedback.predicted_question[:50],
+                        text[:50],
+                        feedback.similarity,
+                    )
+
+                # 2. Run new simulation for next turn
+                user_understanding = ""
+                if self._conversation_tracker:
+                    topics = self._conversation_tracker.recent_topics(3)
+                    user_understanding = "; ".join(topics) if topics else ""
+                profile_summary = ""
+                if self._cognitive_profile:
+                    profile_summary = str(self._cognitive_profile.track_b)[:200]
+
+                self._last_simulation = self._simulation_engine.simulate(
+                    last_answer=llm_response,
+                    user_understanding=user_understanding,
+                    user_profile=profile_summary,
+                )
+                if self._last_simulation and self._last_simulation.simulated_questions:
+                    logger.debug(
+                        "Simulated next: %s (conf=%.2f)",
+                        self._last_simulation.simulated_questions[0][:60],
+                        self._last_simulation.confidence_scores[0] if self._last_simulation.confidence_scores else 0,
+                    )
+            except Exception as e:
+                logger.debug("Simulation cycle skipped: %s", e)
         if self._memory_manager is not None and text and llm_response:
             try:
                 turn_num = event.metadata.get("turn_number", 1) if hasattr(event, "metadata") else 1
