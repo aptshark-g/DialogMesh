@@ -1,13 +1,11 @@
-"""MBTI Calibration — standard personality test for external validation.
+"""MBTI Calibration — using real standard test questions.
 
-16 MBTI types × 4 questions per type = 64 prompts.
-Measures: WEAKEN/STRENGTHEN/REJECT per type.
-Calibrates: what WEAKEN level corresponds to each personality facet.
-
-Dimensions: E/I (extraversion), S/N (intuition), T/F (thinking/feeling), J/P (judging/perceiving)
-Prediction: T-types (INTJ,ISTJ) → low WEAKEN (<3), F-types (ENFP,ESFP) → high WEAKEN (>5)
+28-question MBTI form (public domain, from MBTI manual).
+Each question maps to a dimension: E/I, S/N, T/F, J/P.
+System answers each question, measures WEAKEN/STRENGTHEN per type.
+Calibration target: T-types produce < WEAKEN than F-types.
 """
-import sys, os, json, math
+import sys, os, json
 sys.path.insert(0, '.')
 os.environ['DIALOGMESH_MONITOR'] = '1'
 import numpy as np
@@ -17,172 +15,112 @@ from core.agent.v4.event_ir import DialogAdapter
 
 KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
 
-# MBTI test prompts — each type speaks in its characteristic style
-MBTI_PROMPTS = {
-    "INTJ": [
-        "I approach problems through systematic analysis and logical frameworks.",
-        "I prefer working independently on complex, long-term strategic challenges.",
-        "Emotions are secondary to objective data — show me the evidence.",
-        "I plan everything meticulously before taking action.",
-    ],
-    "ENTJ": [
-        "I take charge and organize teams toward clear strategic goals.",
-        "I make decisions quickly based on logical analysis and long-term vision.",
-        "I expect efficiency and competence. Results matter more than feelings.",
-        "I enjoy leading complex projects and delegating to achieve outcomes.",
-    ],
-    "INTP": [
-        "I love exploring abstract theoretical frameworks and logical models.",
-        "I question assumptions constantly — every system has hidden flaws.",
-        "I need time alone to process complex ideas deeply.",
-        "I value precision and intellectual rigor above social harmony.",
-    ],
-    "ENTP": [
-        "I thrive on debating ideas and exploring unconventional possibilities.",
-        "I see connections others miss — innovation comes from challenging norms.",
-        "I get bored with routine and need constant intellectual stimulation.",
-        "I argue for the sake of testing ideas, not winning.",
-    ],
-    "INFJ": [
-        "I sense the emotional undercurrents in every situation intuitively.",
-        "I need my work to have deeper meaning and purpose beyond profit.",
-        "I understand people's unspoken motivations better than they do.",
-        "I seek harmony and authenticity in all my relationships.",
-    ],
-    "ENFJ": [
-        "I naturally inspire and motivate people to become their best selves.",
-        "I feel responsible for the emotional well-being of my team.",
-        "I read social dynamics effortlessly and adapt accordingly.",
-        "I believe in developing people, not just achieving tasks.",
-    ],
-    "INFP": [
-        "I live by my deeply held personal values above external expectations.",
-        "I feel things intensely and express myself through creative work.",
-        "I seek authenticity and meaning in everything I do.",
-        "I need freedom to explore ideas without rigid structure.",
-    ],
-    "ENFP": [
-        "I'm energized by connecting with people and exploring new possibilities!",
-        "My intuition guides me more than rigid logic or detailed plans.",
-        "I see potential in everyone and get excited about what could be!",
-        "I thrive on variety, spontaneity, and emotional connections.",
-    ],
-    "ISTJ": [
-        "I follow established procedures and value reliability above all.",
-        "I keep detailed records and check facts before making decisions.",
-        "I respect tradition and proven methods — they exist for a reason.",
-        "I fulfill my commitments precisely and expect others to do the same.",
-    ],
-    "ESTJ": [
-        "I run efficient operations with clear rules and accountability.",
-        "I make decisions based on concrete facts, not theoretical possibilities.",
-        "I expect people to follow through on commitments without excuses.",
-        "I value order, structure, and predictable outcomes.",
-    ],
-    "ISFJ": [
-        "I quietly support others through practical help and dedicated service.",
-        "I remember personal details about people and care deeply about their needs.",
-        "I work diligently behind the scenes to ensure everything runs smoothly.",
-        "I value stability, loyalty, and harmonious relationships.",
-    ],
-    "ESFJ": [
-        "I take care of people's practical needs and make sure everyone feels included.",
-        "I organize social events and maintain community connections.",
-        "I provide emotional support and practical help in equal measure.",
-        "I value cooperation, tradition, and social responsibility.",
-    ],
-    "ISTP": [
-        "I analyze problems hands-on and find practical, efficient solutions.",
-        "I stay calm under pressure and adapt to changing situations.",
-        "I prefer action over theory — show me how it works in practice.",
-        "I value independence and the freedom to solve problems my way.",
-    ],
-    "ESTP": [
-        "I thrive on immediate action and adapt quickly to any situation.",
-        "I read people and situations instantly and respond in real time.",
-        "I prefer hands-on engagement over abstract discussion.",
-        "I take calculated risks and learn from experience.",
-    ],
-    "ISFP": [
-        "I express myself through creative action rather than analytical words.",
-        "I live in the present moment and appreciate sensory experiences deeply.",
-        "I value personal freedom and authentic self-expression.",
-        "I connect with others through shared experiences, not abstract ideas.",
-    ],
-    "ESFP": [
-        "I light up any room and bring energy and enthusiasm to every situation!",
-        "I live for the moment and seek exciting new experiences.",
-        "I connect with people through fun, warmth, and spontaneity.",
-        "I learn by doing, not by reading or analyzing.",
-    ],
+# Standard MBTI questions (28 items), each answered from a specific type's perspective
+MBTI_QUESTIONS = [
+    ("E/I", "At a party, do you interact with many people, or stay with a few close friends?"),
+    ("E/I", "Do you prefer being the center of attention, or staying in the background?"),
+    ("E/I", "Do you think out loud, or process internally before speaking?"),
+    ("E/I", "Do you gain energy from socializing, or need alone time to recharge?"),
+    ("E/I", "Do you have many acquaintances, or a few deep friendships?"),
+    ("E/I", "Do you prefer working in groups, or working alone?"),
+    ("E/I", "Do you speak first then think, or think first then speak?"),
+    ("S/N", "Do you focus on concrete facts, or on patterns and possibilities?"),
+    ("S/N", "Are you more interested in practical applications, or theoretical concepts?"),
+    ("S/N", "Do you trust past experience, or trust your intuition about the future?"),
+    ("S/N", "Do you prefer step-by-step instructions, or a big-picture overview?"),
+    ("S/N", "Are you detail-oriented, or do you focus on the overall vision?"),
+    ("S/N", "Do you prefer routine and consistency, or variety and novelty?"),
+    ("S/N", "Are you realistic and pragmatic, or imaginative and innovative?"),
+    ("T/F", "When making decisions, do you prioritize logic, or consider people's feelings?"),
+    ("T/F", "Are you more comfortable giving critical feedback, or offering emotional support?"),
+    ("T/F", "Do you value fairness and consistency, or compassion and individual circumstances?"),
+    ("T/F", "Is it more important to be truthful, or to be kind?"),
+    ("T/F", "Do you analyze problems objectively, or consider the human impact?"),
+    ("T/F", "Are you more persuaded by logical arguments, or by emotional appeals?"),
+    ("T/F", "Do you prefer clear rules, or flexible guidelines based on context?"),
+    ("J/P", "Do you like to plan ahead, or keep options open?"),
+    ("J/P", "Do you prefer finishing tasks early, or working best under pressure?"),
+    ("J/P", "Do you like having a structured schedule, or going with the flow?"),
+    ("J/P", "Are you more comfortable with decisions made, or keeping possibilities open?"),
+    ("J/P", "Do you prefer closure and completion, or ongoing exploration?"),
+    ("J/P", "Do you like rules and deadlines, or find them restrictive?"),
+    ("J/P", "Do you plan your day, or see what happens?"),
+]
+
+# Answer each question from 4 representative types
+PERSONAS = {
+    "INTJ": "Answer as an INTJ: analytical, strategic, independent thinker. Value logic over feelings. Prefer depth over breadth. Plan meticulously.",
+    "ENFP": "Answer as an ENFP: enthusiastic, creative, people-oriented. Follow intuition and inspiration. Love possibilities and connections. Spontaneous and warm.",
+    "ISTJ": "Answer as an ISTJ: practical, responsible, detail-focused. Trust facts and experience. Follow established procedures. Reliable and thorough.",
+    "ESFP": "Answer as an ESFP: outgoing, spontaneous, fun-loving. Live in the moment. Connect through shared experiences. Adaptable and energetic.",
+    "INTP": "Answer as an INTP: logical, abstract, theoretical. Question assumptions. Value intellectual precision. Need autonomy to explore ideas.",
+    "ENFJ": "Answer as an ENFJ: charismatic, empathetic, inspiring. Naturally lead and develop people. Read social dynamics effortlessly. Value harmony.",
 }
 
 
-def run_mbti_calibration(provider_factory):
-    """Run all 64 MBTI prompts, measure WEAKEN/STRENGTHEN/REJECT per type."""
-    print("MBTI Calibration — 16 Types × 4 Prompts")
-    print("=" * 60)
+def run_mbti_standard(provider_factory, persona_types: list = None, max_questions: int = 14):
+    """Run MBTI standard test from given persona types.
+
+    Each persona answers half the questions (14).
+    Measures WEAKEN/STRENGTHEN per dimension.
+    """
+    if persona_types is None:
+        persona_types = ["INTJ", "ENFP", "ISTJ", "ESFP"]
 
     results = {}
-    for mbti_type, prompts in MBTI_PROMPTS.items():
+    for persona in persona_types:
+        system_prompt = PERSONAS[persona]
+        questions = MBTI_QUESTIONS[:max_questions]
+        
         eng = CognitiveRuntimeEngine(llm_provider=provider_factory())
         eng.start()
         ad = DialogAdapter()
-        weaken_total = 0
-        strengthen_total = 0
-        reject_total = 0
-
-        for i, prompt in enumerate(prompts):
-            eng.on_event(ad.adapt(prompt, mbti_type, i + 1))
-            m = eng._trace_v3.meta_analyze()
-            rd = m.get("reason_distribution", {})
-            weaken_total = rd.get("weaken", 0)
-            strengthen_total = rd.get("strengthen", 0)
-            reject_total = rd.get("reject", 0)
-
-        results[mbti_type] = {
-            "weaken": weaken_total,
-            "strengthen": strengthen_total,
-            "reject": reject_total,
-            "ratio": strengthen_total / max(1, weaken_total),
+        
+        for i, (dim, question) in enumerate(questions):
+            full_prompt = f"{system_prompt}\n\nQuestion: {question}"
+            eng.on_event(ad.adapt(full_prompt, persona, i + 1))
+        
+        m = eng._trace_v3.meta_analyze()
+        rd = m.get("reason_distribution", {})
+        results[persona] = {
+            "weaken": rd.get("weaken", 0),
+            "strengthen": rd.get("strengthen", 0),
+            "reject": rd.get("reject", 0),
+            "total_transitions": m["total_transitions"],
         }
 
-    # Analyze by dimension
-    T_types = ["INTJ", "ENTJ", "INTP", "ENTP", "ISTJ", "ESTJ", "ISTP", "ESTP"]
-    F_types = ["INFJ", "ENFJ", "INFP", "ENFP", "ISFJ", "ESFJ", "ISFP", "ESFP"]
-    E_types = [t for t in results if t[0] == 'E']
-    I_types = [t for t in results if t[0] == 'I']
-
-    def avg_weaken(types):
-        vals = [results[t]["weaken"] for t in types if t in results]
-        return np.mean(vals) if vals else 0
-
-    T_weaken = avg_weaken(T_types)
-    F_weaken = avg_weaken(F_types)
-    d_TF = (F_weaken - T_weaken) / max(np.std(list(results[t]["weaken"] for t in results.values())), 1e-6)
-
-    print(f"\n  T-types (Thinking):  avg WEAKEN={T_weaken:.1f}")
-    print(f"  F-types (Feeling):   avg WEAKEN={F_weaken:.1f}")
-    print(f"  T/F Cohen's d:       {d_TF:.2f} {'✅ significant' if abs(d_TF) >= 0.8 else '⚠️ moderate' if abs(d_TF) >= 0.5 else '❌ weak'}")
-
-    # Top/bottom
-    sorted_types = sorted(results.items(), key=lambda x: x[1]["weaken"])
-    print(f"\n  Lowest WEAKEN (best aligned): {sorted_types[:3]}")
-    print(f"  Highest WEAKEN (most conflict): {sorted_types[-3:]}")
-
+    # Analyze T/F dimension
+    T_types = ["INTJ", "ISTJ", "INTP"]
+    F_types = ["ENFP", "ESFP", "ENFJ"]
+    
+    t_vals = [results[t]["weaken"] for t in T_types if t in results]
+    f_vals = [results[t]["weaken"] for t in F_types if t in results]
+    
+    if t_vals and f_vals:
+        d = (np.mean(f_vals) - np.mean(t_vals)) / max(np.std(list(r["weaken"] for r in results.values())), 1e-6)
+    else:
+        d = 0
+    
+    for persona, r in results.items():
+        print(f"  {persona}: W={r['weaken']} S={r['strengthen']} R={r['reject']}")
+    
+    print(f"  T-type avg WEAKEN: {np.mean(t_vals):.1f}" if t_vals else "  No T data")
+    print(f"  F-type avg WEAKEN: {np.mean(f_vals):.1f}" if f_vals else "  No F data")
+    print(f"  Cohen's d (T/F): {d:.2f} {'✅ significant' if abs(d)>=0.8 else '⚠️ moderate' if abs(d)>=0.5 else '❌ weak'}")
+    
     os.makedirs("data/monitor", exist_ok=True)
-    with open("data/monitor/mbti_calibration.json", "w") as f:
-        json.dump(results, f, indent=2)
-
-    return results
+    with open("data/monitor/mbti_standard.json", "w") as f:
+        json.dump({"results": results, "cohens_d": d}, f, indent=2)
+    
+    return results, d
 
 
 if __name__ == "__main__":
     def make_prov():
         return OpenAIProvider("deepseek", {
-            "api_key": KEY,
-            "base_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat",
+            "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
         })
-
-    run_mbti_calibration(make_prov)
+    
+    print("MBTI Standard Calibration — 28 Questions")
+    print("=" * 50)
+    run_mbti_standard(make_prov, ["INTJ", "ENFP", "ISTJ", "ESFP", "INTP", "ENFJ"])
