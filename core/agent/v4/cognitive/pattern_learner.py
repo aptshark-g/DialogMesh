@@ -39,9 +39,11 @@ class PatternLearner:
         policy = learner.suggest_policy(pattern_id)
     """
 
-    def __init__(self, max_patterns: int = 50):
+    def __init__(self, max_patterns: int = 50, persist_path: str = ""):
         self._patterns: Dict[str, Pattern] = {}
         self._max_patterns = max_patterns
+        self._persist_path = persist_path or "data/pattern_learner.json"
+        self._load()
 
     def register_pattern(
         self,
@@ -135,3 +137,47 @@ class PatternLearner:
         if len(self._patterns) >= self._max_patterns:
             oldest = min(self._patterns.values(), key=lambda p: p.last_seen)
             del self._patterns[oldest.id]
+
+    def save(self):
+        """Persist patterns to JSON."""
+        import json, os
+        try:
+            os.makedirs(os.path.dirname(self._persist_path), exist_ok=True)
+            data = {
+                pid: {
+                    "description": p.description,
+                    "occurrence_count": p.occurrence_count,
+                    "last_seen": p.last_seen,
+                    "best_policy_response": p.best_policy_response,
+                    "policy_effectiveness": p.policy_effectiveness,
+                    "policy_trials": p.policy_trials,
+                    "policy_successes": p.policy_successes,
+                }
+                for pid, p in self._patterns.items()
+            }
+            with open(self._persist_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _load(self):
+        """Load patterns from JSON if exists."""
+        import json, os
+        try:
+            if not os.path.exists(self._persist_path):
+                return
+            with open(self._persist_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            for pid, d in data.items():
+                self._patterns[pid] = Pattern(
+                    id=pid,
+                    description=d.get("description", ""),
+                    occurrence_count=d.get("occurrence_count", 0),
+                    last_seen=d.get("last_seen", 0),
+                    best_policy_response=d.get("best_policy_response", {}),
+                    policy_effectiveness=d.get("policy_effectiveness", 0.5),
+                    policy_trials=d.get("policy_trials", 0),
+                    policy_successes=d.get("policy_successes", 0),
+                )
+        except Exception:
+            pass

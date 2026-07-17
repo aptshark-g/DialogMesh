@@ -146,6 +146,7 @@ class TransitionReason(Enum):
     # ── 视角驱动 ──
     CHANGE_PERSPECTIVE = "change_perspective"
     SHIFT_ATTENTION = "shift_attention"
+    ACTIVATE = "activate"           # block/concept/node activated
 
 
 @dataclass

@@ -507,6 +507,18 @@ class CognitiveRuntimeEngine:
                 confidence=0.85,
             )
 
+            # ACTIVATE: DiscourseTree block activated
+            sid = event.payload.get('session_id', 'default') if hasattr(event, 'payload') else 'default'
+            tree = self._discourse_tree._trees.get(sid) if hasattr(self._discourse_tree, '_trees') else None
+            if tree:
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.ACTIVATE,
+                    from_state=pre_state, to_state=pre_state,
+                    evidence=[f"Blocks: {len(tree.blocks)}", f"Active: {len(tree.active_blocks())}"],
+                    effects=[StateDelta(key="tree.block_count", operation="set", value=len(tree.blocks))],
+                    confidence=0.75,
+                )
+
         llm_response = self._call_llm(event)
         if llm_response:
             self._last_llm_response = llm_response
@@ -620,6 +632,17 @@ class CognitiveRuntimeEngine:
                     confidence_gain=trust_delta,
                 )
 
+            # STRENGTHEN: confidence changed — record direction and magnitude
+            if self._trace_v3 and ta and abs(trust_delta) > 0.01:
+                reason = TransitionReason.STRENGTHEN if trust_delta > 0 else TransitionReason.WEAKEN
+                self._trace_v3.record_transition(
+                    reason=reason,
+                    from_state=pre_state, to_state=post_state or pre_state,
+                    evidence=[f"Trust delta: {trust_delta:+.3f}"],
+                    effects=[StateDelta(key="trust", operation="set", value=getattr(ta,'trust_score',0.5))],
+                    confidence=0.65,
+                )
+
             # ---- v6 InteractionGraph: propagate state through architecture ----
             if hasattr(self, '_interaction_graph') and self._interaction_graph and ta:
                 trust = getattr(ta, 'trust_score', 0.5)
@@ -700,6 +723,9 @@ class CognitiveRuntimeEngine:
                         )
                     else:
                         self._active_policy = self._policy_generator.generate(advice)
+                    # Persist learned patterns
+                    if self._policy_generator:
+                        self._policy_generator._pattern_learner.save()
                     logger.info(
                         "Policy: perspective=%s mode=%s depth=%d",
                         self._active_policy.perspective or '-',
