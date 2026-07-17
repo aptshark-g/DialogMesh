@@ -25,7 +25,7 @@ class MonitorReport:
     def __init__(self, benchmark_name: str, log_dir: str = "data/monitor"):
         self.benchmark = benchmark_name
         self.log_dir = log_dir
-        self.session_id = f"{benchmark}_{int(time.time())}"
+        self.session_id = f"{benchmark_name}_{int(time.time())}"
         self.events: List[dict] = []
         self.scenarios: Dict[str, dict] = {}
         self._start_time = time.time()
