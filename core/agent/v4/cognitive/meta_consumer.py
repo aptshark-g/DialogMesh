@@ -63,10 +63,10 @@ class MetaConsumer:
             advice["suggestions"].append("在下一轮强制检索更多 SemanticObject")
             advice["adjust"] = True
 
-        # ── Pattern 3: Low confidence trend ──
+        # ── Pattern 3: Low confidence trend (relaxed for small models) ──
         avg_conf = m.get("avg_confidence", 0.5)
-        if avg_conf < 0.4 and turn_count > 5:
-            advice["warnings"].append(f"平均置信度 {avg_conf:.2f} 过低")
+        if avg_conf < 0.80 and turn_count > 3:
+            advice["warnings"].append(f"平均置信度 {avg_conf:.2f} 偏低")
             advice["suggestions"].append("降低回答的断言性, 标记为'低置信'")
             advice["confidence_mod"] -= 0.1
             advice["adjust"] = True
@@ -78,7 +78,7 @@ class MetaConsumer:
             advice["suggestions"].append("强制插入反思步骤")
             advice["adjust"] = True
 
-        # Pattern 5: Rapid topic switching (many WEAKEN)
+        # Pattern 5: Rapid topic switching (many WEAKEN or tree forks)
         weaken_count = reason_dist.get("weaken", 0)
         if weaken_count >= 2:
             advice["warnings"].append(f"连续 {weaken_count} 次 WEAKEN——话题切换或观点冲突")
