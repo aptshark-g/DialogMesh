@@ -334,22 +334,35 @@ class DiscourseBlock:
     temperature: str = "active"  # active | paused | cold | frozen
     importance: float = 0.3      # 0-1: LOW(0.3), MEDIUM(0.6), HIGH(0.9)
 
-    CORRECTION_SIGNALS = ["不是", "不对", "我才是", "你搞错了", "这是用户画像", "你才是系统"]
-    SWITCH_SIGNALS = ["switch", "切换", "换个话题"]
+    CORRECTION_SIGNALS = None  # loaded from soft_config
+    SWITCH_SIGNALS = None
+
+    @classmethod
+    def _ensure_signals(cls):
+        """Lazy-load importance signals from soft_config."""
+        if cls.CORRECTION_SIGNALS is not None:
+            return
+        try:
+            from core.agent.v4.compiler.soft_config import load_importance_config
+            cfg = load_importance_config()
+            cls.CORRECTION_SIGNALS = [s["pattern"] for s in cfg.get("correction_signals", [])]
+            cls.SWITCH_SIGNALS = [s["pattern"] for s in cfg.get("switch_signals", [])]
+            cls._METACOGNITION_SIGNALS = [s["pattern"] for s in cfg.get("metacognition_signals", [])]
+        except Exception:
+            cls.CORRECTION_SIGNALS = ["不是", "不对", "我才是", "你搞错了"]
+            cls.SWITCH_SIGNALS = ["switch", "切换"]
+            cls._METACOGNITION_SIGNALS = ["元认知", "对话树"]
 
     def compute_importance(self):
-        """Auto-score block importance from content signals."""
+        """Auto-score block importance from content signals (soft_config)."""
+        self._ensure_signals()
         text = " ".join(getattr(e, 'raw_text', '') for e in self.edus)
-        # HIGH: user correction
-        if any(sig in text for sig in self.CORRECTION_SIGNALS):
+        if any(sig in text for sig in (self.CORRECTION_SIGNALS or [])):
             self.importance = 0.9
-        # HIGH: meta-cognition discussion
-        elif any(sig in text for sig in ["元认知", "对话树", "设计不足", "颗粒度"]):
+        elif any(sig in text for sig in (self._METACOGNITION_SIGNALS or [])):
             self.importance = 0.85
-        # MEDIUM: topic switch
-        elif any(sig in text for sig in self.SWITCH_SIGNALS):
+        elif any(sig in text for sig in (self.SWITCH_SIGNALS or [])):
             self.importance = 0.6
-        # DEFAULT: normal conversation
         else:
             self.importance = 0.3
 

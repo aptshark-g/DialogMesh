@@ -77,16 +77,30 @@ class PerspectivePlanner:
     ]
 
     # BGE strategy descriptions for semantic matching
-    _STRATEGY_DESCRIPTIONS = {
-        "architecture": "系统架构设计、整体结构、模块关系、设计原则",
-        "evolution":   "历史演变、设计决策的原因、为什么这么设计、背景与动机",
-        "engineering": "代码实现、函数定义、技术细节、源码分析",
-        "execution":   "运行流程、执行步骤、调度逻辑、操作过程",
-    }
+    _STRATEGY_DESCRIPTIONS = None  # loaded from soft_config
 
     def __init__(self):
         self._bge = None
         self._meta = None
+
+
+    def _ensure_descriptions(self):
+        """Lazy-load strategy descriptions from soft_config."""
+        if PerspectivePlanner._STRATEGY_DESCRIPTIONS is not None:
+            return
+        try:
+            from core.agent.v4.compiler.soft_config import load_perspective_config
+            cfg = load_perspective_config()
+            PerspectivePlanner._STRATEGY_DESCRIPTIONS = {
+                k: v.get("description", k) for k, v in cfg.items()
+            }
+        except Exception:
+            PerspectivePlanner._STRATEGY_DESCRIPTIONS = {
+                "architecture": "系统架构设计",
+                "evolution": "历史演变原因",
+                "engineering": "代码实现细节",
+                "execution": "运行流程步骤",
+            }
 
 
     def set_metacognition(self, mc):
@@ -108,6 +122,7 @@ class PerspectivePlanner:
         """BGE semantic strategy selection (replaces keyword fallback)."""
         import numpy as np
         self._ensure_bge()
+        self._ensure_descriptions()
         if not self._bge or self._bge is False:
             return self._select_strategy(text)  # fallback to keywords
 
