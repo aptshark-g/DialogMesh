@@ -150,6 +150,18 @@ class ConversationTracker:
             })
         return entries
 
+    def recent_topics(self, n: int = 3) -> List[str]:
+        """Return the most recent N distinct topics from conversation history."""
+        topics = []
+        for turn in reversed(self._turns):
+            if turn.concepts:
+                for c in turn.concepts:
+                    if c not in topics:
+                        topics.append(c)
+            if len(topics) >= n:
+                break
+        return topics[:n]
+
     def get_current_topic(self) -> Optional[str]:
         return self._current_topic
 
