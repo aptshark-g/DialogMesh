@@ -129,16 +129,16 @@ class PerspectivePlanner:
 
         # Quick PCR: detect command/action patterns (from soft_config)
         try:
-        from core.agent.v4.compiler.soft_config import SoftConfig
-        cfg = SoftConfig("intent_patterns.json", {}).load()
-        cmd_pats = cfg.get("command_patterns", {}).get("patterns", [])
-        q_pats = cfg.get("question_patterns", {}).get("patterns", [])
-        if any(text.lower().startswith(p) for p in cmd_pats):
-            return "engineering"
-        if any(text.lower().startswith(p) for p in q_pats):
-            return "evolution"
+            from core.agent.v4.compiler.soft_config import SoftConfig
+            cfg = SoftConfig("intent_patterns.json", {}).load()
+            cmd_pats = cfg.get("command_patterns", {}).get("patterns", [])
+            q_pats = cfg.get("question_patterns", {}).get("patterns", [])
+            if any(text.lower().startswith(p) for p in cmd_pats):
+                return "engineering"
+            if any(text.lower().startswith(p) for p in q_pats):
+                return "evolution"
         except Exception:
-        pass  # fall through to BGE
+            pass  # fall through to BGE
 
         if not self._bge or self._bge is False:
             return self._select_strategy(text)  # fallback to keywords
