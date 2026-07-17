@@ -724,7 +724,7 @@ class CognitiveRuntimeEngine:
         return self._conversation_tracker.enrich(current_text)
 
     def _inject_conversation_history(self, current_event: EventIR) -> None:
-        """Hierarchical context: flat history → DiscourseTree → persistent sessions."""
+        """Hierarchical context: flat history -> DiscourseTree -> persistent sessions."""
         if self._last_context is None:
             return
         from core.agent.v4.context.cross_domain_ir import IREntry
@@ -733,35 +733,32 @@ class CognitiveRuntimeEngine:
         history = self._conversation_tracker.get_history_entries(
             max_entries=self._get_param("conversation.max_history_entries", 10))
         for entry in history:
-            self._last_context.add_entry(
-                domain="C", type="conversation_history",
-                content=entry, confidence=0.8, estimated_tokens=len(entry)//4)
+            ct = entry if isinstance(entry, str) else f"[User T{entry.get('turn','?')}] {entry.get('text','')}"
+            self._last_context.add_entry("C", IREntry(domain="C", type="conversation_history", content=ct))
 
-        # Layer 2: DiscourseTree blocks
+        # Layer 2: DiscourseTree
         try:
             sid = current_event.payload.get('session_id','default') if hasattr(current_event,'payload') else 'default'
             tree = self._discourse_tree._trees.get(sid)
             if tree:
                 for blk in tree.active_blocks()[:5]:
                     if blk.block_id == tree.current_branch: continue
-                    content = blk.serialize_edus_summary()
-                    if content:
-                        self._last_context.add_entry(domain="C",type="tree_block",
-                            content=f"[Block {blk.block_id[:8]} ({blk.temperature})] {content[:200]}",
-                            confidence=0.7,estimated_tokens=100)
+                    ct = blk.serialize_edus_summary()
+                    if ct:
+                        self._last_context.add_entry("C", IREntry(domain="C", type="tree_block",
+                            content=f"[Block {blk.block_id[:8]} ({blk.temperature})] {ct[:200]}"))
                 for blk in [b for b in tree.blocks.values() if b.temperature=="cold"][:3]:
-                    content = blk.serialize_edus_summary()[:100]
-                    if content:
-                        self._last_context.add_entry(domain="C",type="tree_block_summary",
-                            content=f"[Cold:{blk.block_id[:8]}] {content}",
-                            confidence=0.3,estimated_tokens=50)
+                    ct = blk.serialize_edus_summary()[:100]
+                    if ct:
+                        self._last_context.add_entry("C", IREntry(domain="C", type="tree_block_summary",
+                            content=f"[Cold:{blk.block_id[:8]}] {ct}"))
         except Exception: pass
 
-        # Layer 3: BGE semantic persistent session search
+        # Layer 3: BGE persistent session search
         try:
             text = current_event.payload.get('text','') if hasattr(current_event,'payload') else ''
             if text:
-                import glob,json,os
+                import glob, json, os
                 for sf in sorted(glob.glob("data/chat_session_*.jsonl"),key=os.path.getmtime,reverse=True)[:2]:
                     with open(sf,'r',encoding='utf-8') as f:
                         for line in f:
@@ -772,11 +769,9 @@ class CognitiveRuntimeEngine:
                                     from core.agent.compiler.semantic_encoder import SemanticEncoder
                                     import numpy as np
                                     bge=SemanticEncoder(); qv=bge.encode(text); cv=bge.encode(ut)
-                                    cos=float(np.dot(qv,cv)/(np.linalg.norm(qv)*np.linalg.norm(cv)+1e-8))
-                                    if cos>0.5:
-                                        self._last_context.add_entry(domain="C",type="past_session",
-                                            content=f"[Past {rec.get('timestamp','')[:10]}] {ut[:120]}",
-                                            confidence=cos*0.4,estimated_tokens=50)
+                                    if float(np.dot(qv,cv)/(np.linalg.norm(qv)*np.linalg.norm(cv)+1e-8))>0.5:
+                                        self._last_context.add_entry("C", IREntry(domain="C", type="past_session",
+                                            content=f"[Past {rec.get('timestamp','')[:10]}] {ut[:120]}"))
                                     break
                             except: pass
         except Exception: pass
@@ -908,16 +903,65 @@ class CognitiveRuntimeEngine:
         return "ADVISOR"
 
     def _infer_profile_snapshot(self, text: str, response: str) -> dict:
+        """Infer profile signals using BGE semantic similarity.
+
+        Replaces pure text statistics with semantic personality trait inference.
+        """
+        # Fallback: fast stats when BGE unavailable
         import re
         tech_terms = len(re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', text))
         expertise = min(1.0, tech_terms / max(1, len(text) / 20))
-        has_analysis = any(k in text for k in ['分析','解释','为什么','怎么看','是什么'])
-        is_exploration = any(k in text for k in ['你觉得','讨论','聊聊','看法'])
-        style = "analytical" if has_analysis else ("exploratory" if is_exploration else "neutral")
         sentences = re.split(r'[。！？.!?\n]', text)
         lens = [len(s) for s in sentences if len(s) > 3]
         divergence = 0.3 if len(lens) < 2 else min(1.0, max(lens) / max(1, sum(lens) / len(lens)) / 3)
-        return {"expertise": expertise, "divergence": divergence, "stability": 0.5, "style": style}
+        has_analysis = any(k in text for k in ['分析','解释','为什么','怎么看'])
+        is_exploration = any(k in text for k in ['你觉得','讨论','聊聊'])
+        style = "analytical" if has_analysis else ("exploratory" if is_exploration else "neutral")
+
+        # BGE semantic enhancement
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            import numpy as np
+            bge = SemanticEncoder()
+            tv = bge.encode(text[:500])
+
+            traits = {
+                "introvert": "prefer working alone, deep thinking, solitude, internal focus, quiet analysis",
+                "extrovert": "team collaboration, social energy, presenting, brainstorming, group discussion",
+                "analytical": "logical reasoning, data-driven, systematic thinking, precise measurement, evidence-based",
+                "emotional": "feel strongly, ethical concern, harmony, people-focused, intuitive feeling",
+                "confident": "certain, definitive, clear answer, direct statement, strong conviction",
+                "uncertain": "maybe, possibly, not sure, could be, considering alternatives",
+            }
+            scores = {}
+            for trait, desc in traits.items():
+                dv = bge.encode(desc)
+                # Flatten: sentence-transformers returns (1,512) → (512,)
+                a = tv.flatten() if len(tv.shape) > 1 else tv
+                b = dv.flatten() if len(dv.shape) > 1 else dv
+                scores[trait] = float(np.dot(a, b) / (np.linalg.norm(a)*np.linalg.norm(b)+1e-8))
+
+            # BGE-enriched profile values
+            intro_bias = scores.get("introvert", scores.get("extravert", 0.5))
+            extra_bias = scores.get("extrovert", scores.get("extravert", 0.5))
+            if isinstance(extra_bias, (int, float)) and isinstance(intro_bias, (int, float)):
+                extra_diff = (extra_bias - intro_bias) * 0.3
+            else:
+                extra_diff = 0.0
+            cognitive_inertia = 0.5 + (scores.get("introvert", 0.5) - scores.get("extrovert", 0.5)) * 0.2
+
+            return {
+                "expertise": expertise,
+                "divergence": divergence,
+                "stability": 0.5,
+                "style": style,
+                "cognitive_inertia": max(0.1, min(0.9, cognitive_inertia)),
+                "emotional_entropy": 0.5 + (scores["emotional"] - scores["analytical"]) * 0.2,
+                "trust_score": 0.5 + (scores["confident"] - scores["uncertain"]) * 0.2,
+                "extraversion_bias": max(0.1, min(0.9, 0.5 + extra_diff)),
+            }
+        except Exception:
+            return {"expertise": expertise, "divergence": divergence, "stability": 0.5, "style": style}
     def _feed_trackb(self, text: str):
         """Feed TrackB tags from user input using TagAcquisitionEngine."""
         if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
@@ -955,17 +999,22 @@ class CognitiveRuntimeEngine:
         try:
             snap = self._infer_profile_snapshot(text, response)
             engine = self._convergence_engine
-            # Map snapshot dimensions to TrackA attributes
-            mapping = {
-                'expertise': 'cognitive_inertia',
-                'divergence': 'attention_anchor',
-                'stability': 'stability',
-            }
-            for snap_dim, ta_dim in mapping.items():
-                engine.update(ta_dim, snap.get(snap_dim, 0.5), session_weight=0.3)
-            # Also feed trust: higher analysis ratio = higher trust
-            if snap.get('style') == 'analytical':
-                engine.update('trust_score', 0.6, session_weight=0.3)
+
+            # BGE-enriched: use direct values when available
+            if 'cognitive_inertia' in snap:
+                engine.update('cognitive_inertia', snap['cognitive_inertia'], session_weight=0.3)
+            if 'emotional_entropy' in snap:
+                engine.update('emotional_entropy', snap['emotional_entropy'], session_weight=0.3)
+            if 'trust_score' in snap:
+                engine.update('trust_score', snap['trust_score'], session_weight=0.3)
+
+            # Fallback mapping (text statistics only)
+            if 'cognitive_inertia' not in snap:
+                engine.update('cognitive_inertia', snap.get('expertise', 0.5), session_weight=0.3)
+                engine.update('attention_anchor', snap.get('divergence', 0.5), session_weight=0.3)
+                engine.update('stability', snap.get('stability', 0.5), session_weight=0.3)
+                if snap.get('style') == 'analytical':
+                    engine.update('trust_score', 0.6, session_weight=0.3)
         except Exception as e:
             logger.debug("Profile feed failed: %s", e)
 
@@ -1456,7 +1505,6 @@ class CognitiveRuntimeEngine:
                     self._last_context.add_entry(domain="K", entry=IREntry(
                         domain="K", type=f"world_view_{primary.strategy}",
                         content=f"[{primary.strategy.upper()}] {obj.name}\n{design[:500]}",
-                        confidence=0.7, estimated_tokens=200,
                     ))
             except Exception as e:
                 logger.debug("Primary render failed %s: %s", obj.name, e)
@@ -1476,7 +1524,6 @@ class CognitiveRuntimeEngine:
                         self._last_context.add_entry(domain="K", entry=IREntry(
                             domain="K", type="world_view_aux",
                             content=f"[{secondary.strategy.upper()}] {obj.name}\n{design[:300]}",
-                            confidence=0.5, estimated_tokens=120,
                         ))
                 except Exception as e:
                     logger.debug("Secondary render failed %s: %s", obj.name, e)
@@ -1491,7 +1538,6 @@ class CognitiveRuntimeEngine:
                         self._last_context.add_entry(domain="K", entry=IREntry(
                             domain="K", type="world_relation",
                             content=f"[RELATIONS]\n" + "\n".join(rel_lines),
-                            confidence=0.5, estimated_tokens=80,
                         ))
 
         logger.debug("Semantic world injected: %d objects x %d perspectives", len(targets), len(perspectives))
@@ -1513,7 +1559,6 @@ class CognitiveRuntimeEngine:
                         self._last_context.add_entry(domain="K", entry=IREntry(
                             domain="K", type="world_view_architecture",
                             content=f"[ARCHITECTURE] {obj.name}\n{design[:600]}",
-                            confidence=0.6, estimated_tokens=200,
                         ))
                         has_world = True
                 except Exception:
@@ -1790,8 +1835,6 @@ class CognitiveRuntimeEngine:
                         "横切关注点: 认知画像系统、记忆系统、可观测性。"
                         "核心数据契约: EventIR → ObservationBundle → HypothesisNode → KnowledgeNode → CrossDomainContextIR。"
                     ),
-                    confidence=0.9,
-                    estimated_tokens=100,
                 ),
             )
 
