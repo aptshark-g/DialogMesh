@@ -93,7 +93,6 @@ def run_mbti_93(provider_factory, sample_types=None, questions_per_type=20):
         ad = DialogAdapter()
         
         for i, prompt in enumerate(prompt_list):
-            full_prompt = f"你是一个{persona}类型的人。{desc}\n\n请用第一人称回答以下MBTI测试题，直接选择A或B，并简短解释原因：\n{question}"
             eng.on_event(ad.adapt(prompt, persona, i + 1))
         
         m = eng._trace_v3.meta_analyze()
