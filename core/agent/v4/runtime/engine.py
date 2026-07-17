@@ -255,9 +255,11 @@ class CognitiveRuntimeEngine:
             logger.debug("InteractionGraph skipped: %s", e)
 
         # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
-        from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
-        self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
-        logger.info("InternalMonitor ON → %s", self._monitor._log_path)
+        try:
+            from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
+            self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
+        except Exception:
+            self._monitor = None
 
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
@@ -577,20 +579,20 @@ class CognitiveRuntimeEngine:
                         feedback.similarity,
                     )
 
-            # 2. Run new simulation for next turn (only if LLM responded)
-            if llm_response:
-                user_understanding = ""
-                if self._conversation_tracker:
-                    topics = self._conversation_tracker.recent_topics(3)
-                    user_understanding = "; ".join(topics) if topics else ""
-                profile_summary = ""
-                if self._cognitive_profile:
-                    profile_summary = str(self._cognitive_profile.track_b)[:200]
+                # 2. Run new simulation for next turn (only if LLM responded)
+                if llm_response:
+                    user_understanding = ""
+                    if self._conversation_tracker:
+                        topics = self._conversation_tracker.recent_topics(3)
+                        user_understanding = "; ".join(topics) if topics else ""
+                    profile_summary = ""
+                    if self._cognitive_profile:
+                        profile_summary = str(self._cognitive_profile.track_b)[:200]
 
-                self._last_simulation = self._simulation_engine.simulate(
-                    last_answer=llm_response,
-                    user_understanding=user_understanding,
-                    user_profile=profile_summary,
+                    self._last_simulation = self._simulation_engine.simulate(
+                        last_answer=llm_response,
+                        user_understanding=user_understanding,
+                        user_profile=profile_summary,
                 )
                 if self._last_simulation and self._last_simulation.simulated_questions:
                     logger.debug(
