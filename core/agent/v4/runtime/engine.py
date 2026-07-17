@@ -447,13 +447,21 @@ class CognitiveRuntimeEngine:
         # v6 Trace: snapshot state before reasoning
         pre_state = None
         if self._trace_v3:
-            from core.agent.v4.state.state_object import StateObject
+            from core.agent.v4.state.state_object import StateObject, TransitionReason, StateDelta
             pre_state = StateObject(data={
                 "turn": self._turn_counter,
                 "user_text": text[:200],
-                "profile_trust": getattr(getattr(self, '_cognitive_profile', None), 'track_a', None),
             })
             pre_state = self._trace_v3.snapshot(pre_state)
+
+            # OBSERVE: concepts extracted, tree updated
+            self._trace_v3.record_transition(
+                reason=TransitionReason.OBSERVE,
+                from_state=pre_state, to_state=pre_state,
+                evidence=[f"Concepts: {concepts[:5] if concepts else []}", f"Text: {text[:60]}"],
+                effects=[StateDelta(key="concept_count", operation="set", value=len(concepts))],
+                confidence=0.85,
+            )
 
         llm_response = self._call_llm(event)
         if llm_response:
@@ -525,13 +533,14 @@ class CognitiveRuntimeEngine:
                 logger.debug("MemoryPoint extraction skipped: %s", e)
 
         # ---- v6 Trace: record post-reasoning transition ----
+        post_state = None
         if self._trace_v3 and llm_response and pre_state:
             from core.agent.v4.state.state_object import Transition, TransitionReason, StateDelta, StateObject
+            # INFER: LLM reasoning result
             post_state = self._trace_v3.states[-1] if self._trace_v3.states else StateObject()
-            transition = self._trace_v3.record_transition(
+            self._trace_v3.record_transition(
                 reason=TransitionReason.INFER,
-                from_state=pre_state,
-                to_state=post_state,
+                from_state=pre_state, to_state=post_state,
                 evidence=[f"Answer: {llm_response[:80]}"],
                 effects=[
                     StateDelta(key="turn", operation="inc", value=1),
@@ -539,6 +548,20 @@ class CognitiveRuntimeEngine:
                 ],
                 confidence=0.7,
             )
+
+        # ---- v6 Trace: reflect after profile update ----
+        if self._trace_v3 and llm_response and pre_state:
+            ta = getattr(getattr(self, '_cognitive_profile', None), 'track_a', None)
+            if ta:
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.REFLECT,
+                    from_state=pre_state, to_state=post_state or pre_state,
+                    evidence=[f"Profile updated: inertia={getattr(ta,'cognitive_inertia',0):.2f}"],
+                    effects=[
+                        StateDelta(key="profile.trust", operation="set", value=getattr(ta,'trust_score',0)),
+                    ],
+                    confidence=0.6,
+                )
 
         # ---- Behavior chain: feed conversation patterns to CausalPlanner ----
         if self._causal_planner is not None and text:
