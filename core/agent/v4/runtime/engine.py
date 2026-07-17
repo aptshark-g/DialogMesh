@@ -153,6 +153,9 @@ class CognitiveRuntimeEngine:
         self._cognitive_observer = None  # Observer set when enabled
         self._cognitive_trace: Optional[object] = None  # ExecutionTrace for last run
 
+        # v6: State evolution tracking (ExecutionTraceV3)
+        self._trace_v3: Optional[object] = None  # ExecutionTraceV3 per session
+
         # Behavior tracking: record user navigation edges in RelationSubstrate
         self._last_concept: Optional[str] = None
         self._content_provider = None  # set by _create_context_assembler
@@ -198,6 +201,14 @@ class CognitiveRuntimeEngine:
             logger.info("Simulation engine initialized")
         except Exception as e:
             logger.debug("Simulation engine skipped: %s", e)
+
+        # ---- v6 State Evolution Tracking ----
+        try:
+            from core.agent.v4.state.execution_trace import ExecutionTraceV3
+            self._trace_v3 = ExecutionTraceV3(session_id=str(time.time()))
+            logger.info("ExecutionTraceV3 initialized")
+        except Exception as e:
+            logger.debug("ExecutionTraceV3 skipped: %s", e)
 
         self._behavior_graph_adapter = BehaviorGraphAdapter(
             graph_path="data/behavior_graph.json",
@@ -432,6 +443,18 @@ class CognitiveRuntimeEngine:
                 logger.debug("CausalSubstrate trigger failed: %s", e)
 
         # ---- LLM Generation: compile context → prompt → LLM → response ----
+
+        # v6 Trace: snapshot state before reasoning
+        pre_state = None
+        if self._trace_v3:
+            from core.agent.v4.state.state_object import StateObject
+            pre_state = StateObject(data={
+                "turn": self._turn_counter,
+                "user_text": text[:200],
+                "profile_trust": getattr(getattr(self, '_cognitive_profile', None), 'track_a', None),
+            })
+            pre_state = self._trace_v3.snapshot(pre_state)
+
         llm_response = self._call_llm(event)
         if llm_response:
             self._last_llm_response = llm_response
@@ -500,6 +523,22 @@ class CognitiveRuntimeEngine:
                 )
             except Exception as e:
                 logger.debug("MemoryPoint extraction skipped: %s", e)
+
+        # ---- v6 Trace: record post-reasoning transition ----
+        if self._trace_v3 and llm_response and pre_state:
+            from core.agent.v4.state.state_object import Transition, TransitionReason, StateDelta, StateObject
+            post_state = self._trace_v3.states[-1] if self._trace_v3.states else StateObject()
+            transition = self._trace_v3.record_transition(
+                reason=TransitionReason.INFER,
+                from_state=pre_state,
+                to_state=post_state,
+                evidence=[f"Answer: {llm_response[:80]}"],
+                effects=[
+                    StateDelta(key="turn", operation="inc", value=1),
+                    StateDelta(key="response_length", operation="set", value=len(llm_response)),
+                ],
+                confidence=0.7,
+            )
 
         # ---- Behavior chain: feed conversation patterns to CausalPlanner ----
         if self._causal_planner is not None and text:
