@@ -519,6 +519,11 @@ class CognitiveRuntimeEngine:
                 effects=[StateDelta(key="concept_count", operation="set", value=len(concepts))],
                 confidence=0.85,
             )
+            # Monitor
+            if self._monitor:
+                self._monitor.record_transition(self._turn_counter, "observe",
+                    text[:60],
+                    [{"concepts": concepts[:3] if concepts else []}])
 
             # ACTIVATE: DiscourseTree block activated
             sid = event.payload.get('session_id', 'default') if hasattr(event, 'payload') else 'default'
@@ -531,6 +536,10 @@ class CognitiveRuntimeEngine:
                     effects=[StateDelta(key="tree.block_count", operation="set", value=len(tree.blocks))],
                     confidence=0.75,
                 )
+                # Monitor ACTIVATE
+                if self._monitor:
+                    self._monitor.record_tree(self._turn_counter, len(tree.blocks),
+                        len(tree.active_blocks()), len(tree.blocks) - 1)
 
         llm_response = self._call_llm(event)
         if llm_response:
@@ -560,6 +569,11 @@ class CognitiveRuntimeEngine:
                         self._simulation_stats["matches"] += 1
                     self._simulation_stats["total"] += 1
                     self._simulation_engine.learn(feedback)
+                    # Monitor simulation
+                    if self._monitor:
+                        self._monitor.record_simulation(self._turn_counter,
+                            feedback.predicted_question, text,
+                            feedback.matched, feedback.similarity)
                     logger.debug(
                         "Simulation %s: predicted='%s' actual='%s' sim=%.2f",
                         "✓" if feedback.matched else "✗",
@@ -661,6 +675,10 @@ class CognitiveRuntimeEngine:
                     effects=[StateDelta(key="trust", operation="set", value=getattr(ta,'trust_score',0.5))],
                     confidence=0.65,
                 )
+            # Monitor profile
+            if self._monitor and ta:
+                self._monitor.record_profile(self._turn_counter, ta,
+                    {k: v.value for k, v in getattr(self._cognitive_profile, 'track_b', {}).items()})
 
             # ---- v6 InteractionGraph: propagate state through architecture ----
             if hasattr(self, '_interaction_graph') and self._interaction_graph and ta:
@@ -742,6 +760,9 @@ class CognitiveRuntimeEngine:
                         )
                     else:
                         self._active_policy = self._policy_generator.generate(advice)
+                    # Monitor policy
+                    if self._monitor and self._active_policy:
+                        self._monitor.record_policy(self._turn_counter, self._active_policy)
                     # Persist learned patterns
                     if self._policy_generator:
                         self._policy_generator._pattern_learner.save()
