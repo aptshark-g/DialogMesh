@@ -95,12 +95,22 @@ class RuleEngine:
     def _extract_state(self, engine) -> Dict[str, Any]:
         """Extract relevant state from engine."""
         state = {}
-        # From TraceV3
+        # From TraceV3 — per-turn delta (last 3 turns window, not cumulative)
+        window = 3
         if hasattr(engine, '_trace_v3') and engine._trace_v3:
             m = engine._trace_v3.meta_analyze()
-            state["strengthen"] = m.get("reason_distribution", {}).get("strengthen", 0)
-            state["weaken"] = m.get("reason_distribution", {}).get("weaken", 0)
-            state["reject"] = m.get("reason_distribution", {}).get("reject", 0)
+            rd = m.get("reason_distribution", {})
+            # Cumulative state (all-time)
+            state["total_strengthen"] = rd.get("strengthen", 0)
+            state["total_weaken"] = rd.get("weaken", 0)
+            state["total_reject"] = rd.get("reject", 0)
+            # Window state (last N turns) — better for personality detection
+            all_transitions = getattr(engine._trace_v3, 'transitions', [])
+            recent = all_transitions[-window*4:] if len(all_transitions) > window*4 else all_transitions
+            from core.agent.v4.state.state_object import TransitionReason
+            state["strengthen"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.STRENGTHEN)
+            state["weaken"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.WEAKEN)
+            state["reject"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.REJECT)
             state["avg_confidence"] = m.get("avg_confidence", 0.7)
 
         # From Mind
