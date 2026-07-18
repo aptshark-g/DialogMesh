@@ -105,6 +105,7 @@ class CognitiveRuntimeEngine:
             self._config = build_default_config()
 
         self._world_params = world_params or get_world_params()
+        self._world_objects: Dict[str, Any] = {}  # P0: SemanticObject store (lazy init)
         self._adapters: Dict[str, RuntimeAdapter] = {}
         self._stats: Dict[str, PathStats] = {}
         self._event_buffer: List[EventIR] = []
