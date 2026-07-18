@@ -962,42 +962,80 @@ async def v6_parameters_edit(req: ParamEditRequest):
 
 @app.get("/v6/router/modes")
 async def v6_router_modes():
-    """Get all routing modes, history, and allow mode override."""
+    """Get all routing modes with complexity ranges, stats, and current state."""
     if not _engine:
         raise HTTPException(503, "Engine not started")
-    
+
     router = getattr(_engine, '_mode_router', None)
     if not router:
-        return {"modes": [], "active": "unknown", "history": []}
-    
-    modes = []
-    for m in getattr(router, 'ProcessingMode', type('E',(),{'__members__':{}})).__members__:
-        modes.append({"name": m, "value": str(getattr(router.ProcessingMode, m))})
-    
+        return {"available": False, "modes": []}
+
+    # Mode definitions with complexity ranges
+    modes = [
+        {"name": "rule", "complexity": "0-3", "cost": "free", "latency": "<1ms",
+         "desc": "纯规则引擎,本地计算,零API成本"},
+        {"name": "small_model", "complexity": "4-7", "cost": "free", "latency": "~20-100ms",
+         "desc": "本地小模型(LMStudio),零API成本"},
+        {"name": "remote_llm", "complexity": "8-10", "cost": "API", "latency": "~200ms-2s",
+         "desc": "远程大模型(DeepSeek),按量计费"},
+    ]
+
     return {
-        "modes": [str(m) for m in getattr(type(router), 'ProcessingMode', type('E',(),{'__members__':{}})).__members__],
-        "active": str(getattr(router, '_active', 'unknown')),
-        "history": getattr(router, '_history', [])[-20:],
-        "stats": router.get_stats() if hasattr(router, 'get_stats') else {},
+        "available": True,
+        "modes": modes,
+        "active": str(getattr(router, '_active', getattr(router, 'force_mode', None) or 'remote_llm')),
+        "force_mode": getattr(router, 'force_mode', None),
+        "disabled": {
+            "remote": getattr(router, 'disable_remote', False),
+            "small_model": getattr(router, 'disable_small_model', False),
+        },
+        "cost_budget": getattr(router, 'cost_budget', 'standard'),
+        "route_stats": getattr(router, '_route_stats', {}),
+        "complexity": {
+            "evaluator_available": getattr(router, 'evaluator', None) is not None,
+            "last_score": getattr(getattr(router, 'evaluator', None), '_last_score', None),
+        },
+        "degradation_chain": ["remote_llm → small_model → rule (自动降级)"],
     }
 
 
 class ModeOverrideRequest(BaseModel):
-    mode: str
+    mode: str = ""
+    disable_remote: bool = False
+    disable_small_model: bool = False
+    cost_budget: str = ""
 
 
 @app.put("/v6/router/modes")
 async def v6_router_override(req: ModeOverrideRequest):
-    """Force a processing mode."""
+    """Force mode, toggle model availability, or set budget."""
     if not _engine:
         raise HTTPException(503, "Engine not started")
-    
+
     router = getattr(_engine, '_mode_router', None)
     if not router:
         raise HTTPException(404, "Router not found")
-    
-    router._active = req.mode
-    return {"active": req.mode, "overridden": True}
+
+    result = {"updated": []}
+
+    if req.mode and req.mode in ["rule", "small_model", "remote_llm"]:
+        router.force_mode = req.mode
+        result["updated"].append(f"mode={req.mode}")
+
+    if req.disable_remote:
+        router.disable_remote = True
+        result["updated"].append("remote_disabled")
+
+    if req.disable_small_model:
+        router.disable_small_model = True
+        result["updated"].append("small_model_disabled")
+
+    if req.cost_budget in ["free", "standard", "premium"]:
+        router.cost_budget = req.cost_budget
+        result["updated"].append(f"budget={req.cost_budget}")
+
+    result["count"] = len(result["updated"])
+    return result
 
 
 # ── Context (last assembled) ──
