@@ -23,40 +23,40 @@ class P3Resolver:
         status = {}
         # 1. RuleEngine — conflict resolution
         try:
-            from core.agent.v4.tiered.rule_engine import RuleEngine
-            engine._rule_engine = RuleEngine(model_registry=getattr(engine, '_models', {}))
+            from core.agent.v4.tiered.rule_engine import TieredRuleEngine
+            engine._rule_engine = TieredRuleEngine(llm_provider=getattr(engine, '_llm_provider', None))
             status["rule_engine"] = "wired"
-            logger.info("P3: RuleEngine wired")
+            logger.info("P3: TieredRuleEngine wired")
         except Exception as e:
             engine._rule_engine = None
             status["rule_engine"] = f"skipped: {e}"
 
         # 2. NegativeKB — bad pattern knowledge
         try:
-            from core.agent.v4.tiered.negative_kb import NegativeKnowledgeBase
-            engine._negative_kb = NegativeKnowledgeBase()
+            from core.agent.v4.tiered.negative_kb import TieredNegativeKB
+            engine._negative_kb = TieredNegativeKB()
             status["negative_kb"] = "wired"
-            logger.info("P3: NegativeKB wired")
+            logger.info("P3: TieredNegativeKB wired")
         except Exception as e:
             engine._negative_kb = None
             status["negative_kb"] = f"skipped: {e}"
 
         # 3. TieredFusion — already partially integrated
         try:
-            from core.agent.v4.tiered.fusion import TieredFusion
-            engine._tiered_fusion = TieredFusion()
+            from core.agent.v4.tiered.fusion import TieredFusionEngine
+            engine._tiered_fusion = TieredFusionEngine()
             status["tiered_fusion"] = "wired"
-            logger.info("P3: TieredFusion wired")
+            logger.info("P3: TieredFusionEngine wired")
         except Exception as e:
             engine._tiered_fusion = None
             status["tiered_fusion"] = f"skipped: {e}"
 
         # 4. CognitiveCompiler — fallback compilation
         try:
-            from core.agent.v4.tiered.cognitive_compiler import CognitiveCompiler
-            engine._cognitive_compiler = CognitiveCompiler()
+            from core.agent.v4.tiered.cognitive_compiler import TieredCognitiveCompiler
+            engine._cognitive_compiler = TieredCognitiveCompiler(llm_provider=getattr(engine, '_llm_provider', None))
             status["cognitive_compiler"] = "wired"
-            logger.info("P3: CognitiveCompiler wired")
+            logger.info("P3: TieredCognitiveCompiler wired")
         except Exception as e:
             engine._cognitive_compiler = None
             status["cognitive_compiler"] = f"skipped: {e}"
