@@ -13,6 +13,9 @@ import {
   Activity,
   Zap,
   Plus,
+  Shield,
+  Workflow,
+  GitBranch,
 } from 'lucide-react';
 import { useHealth } from '../hooks/useHealth.ts';
 
@@ -27,6 +30,9 @@ const navItems: NavItem[] = [
   { to: '/graph', label: '图谱', icon: Network },
   { to: '/profile', label: '画像', icon: UserCircle },
   { to: '/tasks', label: '任务', icon: CheckSquare },
+  { to: '/gateway', label: '网关', icon: Shield },
+  { to: '/pipeline', label: '管道', icon: Workflow },
+  { to: '/deepchain', label: '深层链', icon: GitBranch },
   { to: '/settings', label: '设置', icon: Settings },
 ];
 
@@ -112,7 +118,7 @@ export function Sidebar() {
                 <span className="font-semibold text-primary text-lg truncate">
                   DialogMesh
                 </span>
-                <span className="text-xs text-text-muted">v3.0</span>
+                <span className="text-xs text-text-muted">v6.0</span>
               </motion.div>
             )}
           </AnimatePresence>

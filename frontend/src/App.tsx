@@ -12,6 +12,9 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage.tsx').then((m) => (
 const ConversationGraphPage = lazy(() => import('./pages/ConversationGraphPage.tsx').then((m) => ({ default: m.ConversationGraphPage })));
 const CognitiveProfilePage = lazy(() => import('./pages/CognitiveProfilePage.tsx').then((m) => ({ default: m.CognitiveProfilePage })));
 const TaskPlanningPage = lazy(() => import('./pages/TaskPlanningPage.tsx').then((m) => ({ default: m.TaskPlanningPage })));
+const GatewayPage = lazy(() => import('./pages/GatewayPage.tsx').then((m) => ({ default: m.GatewayPage })));
+const PipelinePage = lazy(() => import('./pages/PipelinePage.tsx').then((m) => ({ default: m.PipelinePage })));
+const DeepChainPage = lazy(() => import('./pages/DeepChainPage.tsx').then((m) => ({ default: m.DeepChainPage })));
 
 export default function App() {
   return (
@@ -24,6 +27,9 @@ export default function App() {
           <Route path="graph" element={<ConversationGraphPage />} />
           <Route path="profile" element={<CognitiveProfilePage />} />
           <Route path="tasks" element={<TaskPlanningPage />} />
+          <Route path="gateway" element={<GatewayPage />} />
+          <Route path="pipeline" element={<PipelinePage />} />
+          <Route path="deepchain" element={<DeepChainPage />} />
           <Route path="sessions" element={<SessionsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />

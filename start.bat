@@ -35,9 +35,9 @@ timeout /t 3 /nobreak >nul
 :skip_backend
 
 :: Start frontend
-echo [2/2] Starting frontend ... http://localhost:8080
+echo [2/2] Starting frontend preview ... http://localhost:8080
 cd frontend
-start /min "DialogMesh GUI" cmd /c "npm run dev -- --port 8080 --host"
+start /min "DialogMesh GUI" cmd /c "npm run preview -- --port 8080 --host"
 
 :skip_frontend
 

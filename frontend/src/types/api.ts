@@ -559,4 +559,160 @@ export interface V4WebSocketMessage {
   client_timestamp?: number;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 NEW — Providers & Ops
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6ProviderInfo {
+  name: string;
+  model: string;
+  healthy: boolean;
+  stats?: Record<string, unknown>;
+}
+
+export interface V6ProvidersResponse {
+  active: V6ProviderInfo;
+  failover: {
+    primary: string;
+    fallback: string;
+    active_idx: number;
+    failures: number;
+  };
+}
+
+export interface V6ProviderSwitchRequest {
+  provider?: string;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+}
+
+export interface V6ProviderSwitchResponse {
+  switched: string;
+  model: string;
+  healthy: boolean;
+}
+
+export interface V6TokensResponse {
+  current: { turns: number; est_tokens: number };
+  all_sessions: { count: number; est_tokens: number };
+  rate: Record<string, string>;
+}
+
+export interface V6MetricsResponse {
+  [key: string]: unknown;
+}
+
+export interface V6ContextConfigRequest {
+  token_budget?: number;
+  domain_P?: number;
+  domain_C?: number;
+  domain_K?: number;
+  domain_E?: number;
+  domain_B?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 NEW — Router / Switch (Gateway)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6RouterMode {
+  name: string;
+  complexity: string;
+  cost: string;
+  latency: string;
+}
+
+export interface V6RouterModesResponse {
+  available: boolean;
+  modes: V6RouterMode[];
+  active: string;
+  force_mode: string | null;
+  disabled: { remote: boolean; small_model: boolean };
+  cost_budget: string;
+  route_stats: Record<string, number>;
+  complexity: { evaluator_available: boolean; last_score: number | null };
+  degradation_chain: string[];
+}
+
+export interface V6RouterModesRequest {
+  mode?: string;
+  disable_remote?: boolean;
+  disable_small_model?: boolean;
+  cost_budget?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 NEW — Deep Chain
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6RelationsResponse {
+  [key: string]: unknown;
+}
+
+export interface V6CausalResponse {
+  [key: string]: unknown;
+}
+
+export interface V6BehaviorResponse {
+  [key: string]: unknown;
+}
+
+export interface V6EngineeringResponse {
+  [key: string]: unknown;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 NEW — Pipeline
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6PipelineResponse {
+  [key: string]: unknown;
+}
+
+export interface V6ExtractionResponse {
+  [key: string]: unknown;
+}
+
+export interface V6PerspectivesResponse {
+  [key: string]: unknown;
+}
+
+export interface V6ParameterItem {
+  name: string;
+  value: number | string | boolean;
+  description?: string;
+  range?: [number, number];
+  editable: boolean;
+}
+
+export interface V6ParametersResponse {
+  parameters: V6ParameterItem[];
+  total: number;
+}
+
+export interface V6ParameterEditRequest {
+  parameters: Record<string, number | string | boolean>;
+}
+
+export interface V6ContextResponse {
+  intent_category?: string;
+  entries?: { domain: string; type: string; content: string; confidence: number; estimated_tokens: number }[];
+  total_tokens?: number;
+  [key: string]: unknown;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 NEW — Mind Full / Persistence Graphs
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6MindFullResponse {
+  [key: string]: unknown;
+}
+
+export interface V6PersistenceGraphsResponse {
+  graphs: { name: string; node_count: number; edge_count: number; updated_at: string }[];
+}
+
+
 

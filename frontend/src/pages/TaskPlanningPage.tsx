@@ -444,7 +444,7 @@ export function TaskPlanningPage() {
       </div>
       <div className="flex items-center justify-between px-3 lg:px-4 py-2 border-t border-subtle text-[10px] text-muted">
         <span>React Flow DAG · {stats.total} nodes · {edges.length} edges</span>
-        <span>DialogMesh v3.0</span>
+        <span>DialogMesh v6.0</span>
       </div>
     </div>
   );

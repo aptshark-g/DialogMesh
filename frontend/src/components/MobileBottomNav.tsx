@@ -6,6 +6,9 @@ import {
   UserCircle,
   CheckSquare,
   Settings,
+  Shield,
+  Workflow,
+  GitBranch,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
@@ -20,6 +23,9 @@ const navItems: NavItem[] = [
   { to: '/graph', label: '图谱', icon: Network },
   { to: '/profile', label: '画像', icon: UserCircle },
   { to: '/tasks', label: '任务', icon: CheckSquare },
+  { to: '/gateway', label: '网关', icon: Shield },
+  { to: '/pipeline', label: '管道', icon: Workflow },
+  { to: '/deepchain', label: '链', icon: GitBranch },
   { to: '/settings', label: '设置', icon: Settings },
 ];
 

@@ -19,13 +19,17 @@ import uvicorn
 from core.agent.v4.event_ir import EventIR
 from core.agent.v4.api_event_log import EventLog
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
 
 logger = logging.getLogger(__name__)
 
 # ---- Global state ----
-app = FastAPI(title="DialogMesh v4 API", version="1.0")
+app = FastAPI(title="DialogMesh v6 API", version="1.0")
 _engine: Optional[CognitiveRuntimeEngine] = None
 _event_log: Optional[EventLog] = None
+
+# Register gateway router
+app.include_router(gateway_router)
 
 
 # ---- Models ----
@@ -63,6 +67,9 @@ def init_api(db_path: str = "data/event_log.db",
 
     _engine = CognitiveRuntimeEngine(config_path=config_path)
     _engine.start()
+
+    # Initialize gateway (provider management)
+    gateway_init(_engine)
 
     # Replay unconsumed events from crash
     unconsumed = _event_log.replay_unconsumed(limit=200)
