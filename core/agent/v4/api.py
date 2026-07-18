@@ -821,6 +821,213 @@ async def v6_persistence_graphs():
     return result
 
 
+# ══════════ v6 Business Logic APIs ══════════
+
+
+# ── Pipeline (tier stats, pass rates) ──
+
+@app.get("/v6/pipeline")
+async def v6_pipeline():
+    """Get processing pipeline tier statistics."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    tiers = {}
+    # Check extraction orchestrator
+    if hasattr(_engine, '_extraction_orchestrator') and _engine._extraction_orchestrator:
+        eo = _engine._extraction_orchestrator
+        for name in ['regex', 'jieba', 'stanza', 'lmstudio', 'deepseek']:
+            provider = getattr(eo, f'_{name}', None)
+            if provider:
+                tiers[name] = {"available": provider.available() if hasattr(provider, 'available') else True}
+    
+    # Tiered pipeline
+    pipeline = getattr(_engine, '_tiered_pipeline', None)
+    if pipeline and hasattr(pipeline, 'tiers'):
+        for t in pipeline.tiers:
+            tiers[t.name] = {
+                "level": t.level,
+                "pass_rate": t.stats.pass_rate() if hasattr(t, 'stats') else 0,
+                "correction_rate": getattr(t.stats, 'correction_count', 0),
+                "avg_latency_ms": t.stats.avg_latency_ms() if hasattr(t, 'stats') else 0,
+            }
+    
+    return {"tiers": tiers, "total": len(tiers)}
+
+
+# ── Extraction (blueprint results) ──
+
+@app.get("/v6/extraction")
+async def v6_extraction():
+    """Get extraction blueprint status and last results."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    eo = getattr(_engine, '_extraction_orchestrator', None)
+    if not eo:
+        return {"providers": [], "last_result": None}
+    
+    providers = []
+    for name in ['regex', 'jieba', 'stanza', 'lmstudio', 'deepseek']:
+        p = getattr(eo, f'_{name}', None)
+        if p:
+            providers.append({
+                "name": name,
+                "available": p.available() if hasattr(p, 'available') else True,
+                "type": str(type(p).__name__),
+            })
+    
+    last = getattr(eo, '_last_result', None)
+    last_data = None
+    if last:
+        last_data = {
+            "definitions": len(getattr(last, 'definitions', [])),
+            "relations": len(getattr(last, 'relations', [])),
+            "concepts": getattr(last, 'concepts', [])[:10],
+        }
+    
+    return {"providers": providers, "tier_chain": providers, "last_result": last_data}
+
+
+# ── Perspectives (horizon, active view) ──
+
+@app.get("/v6/perspectives")
+async def v6_perspectives():
+    """Get perspective planner state — horizons, active views."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    pp = getattr(_engine, '_perspective_planner', None)
+    vm = getattr(_engine, '_view_manager', None)
+    
+    result = {"perspectives": [], "active_view": None}
+    
+    if pp:
+        if hasattr(pp, 'perspectives'):
+            for p in pp.perspectives[:10]:
+                result["perspectives"].append({
+                    "name": str(getattr(p, 'name', '?')),
+                    "horizon": str(getattr(p, 'horizon', '?')),
+                    "targets": getattr(p, 'targets', [])[:5],
+                })
+    
+    if vm and hasattr(vm, 'current_view'):
+        v = vm.current_view()
+        if v:
+            result["active_view"] = {
+                "depth": getattr(v, 'depth', 2),
+                "visible": getattr(v, 'visible', [])[:10],
+            }
+    
+    return result
+
+
+# ── Parameters (tunable config) ──
+
+@app.get("/v6/parameters")
+async def v6_parameters(prefix: str = ""):
+    """Get all tunable parameters."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    pr = getattr(_engine, '_parameter_registry', None)
+    if not pr:
+        return {"params": {}, "total": 0}
+    
+    params = pr.all(prefix=prefix or "")
+    return {"params": params, "total": len(params)}
+
+
+class ParamEditRequest(BaseModel):
+    key: str
+    value: str = ""
+
+
+@app.put("/v6/parameters")
+async def v6_parameters_edit(req: ParamEditRequest):
+    """Edit a parameter value."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    pr = getattr(_engine, '_parameter_registry', None)
+    if not pr:
+        raise HTTPException(404, "Parameter registry not found")
+    
+    old = pr.get(req.key)
+    pr.set(req.key, req.value)
+    return {"key": req.key, "old": str(old), "new": req.value, "updated": True}
+
+
+# ── Switch/Router (full) ──
+
+@app.get("/v6/router/modes")
+async def v6_router_modes():
+    """Get all routing modes, history, and allow mode override."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    router = getattr(_engine, '_mode_router', None)
+    if not router:
+        return {"modes": [], "active": "unknown", "history": []}
+    
+    modes = []
+    for m in getattr(router, 'ProcessingMode', type('E',(),{'__members__':{}})).__members__:
+        modes.append({"name": m, "value": str(getattr(router.ProcessingMode, m))})
+    
+    return {
+        "modes": [str(m) for m in getattr(type(router), 'ProcessingMode', type('E',(),{'__members__':{}})).__members__],
+        "active": str(getattr(router, '_active', 'unknown')),
+        "history": getattr(router, '_history', [])[-20:],
+        "stats": router.get_stats() if hasattr(router, 'get_stats') else {},
+    }
+
+
+class ModeOverrideRequest(BaseModel):
+    mode: str
+
+
+@app.put("/v6/router/modes")
+async def v6_router_override(req: ModeOverrideRequest):
+    """Force a processing mode."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    router = getattr(_engine, '_mode_router', None)
+    if not router:
+        raise HTTPException(404, "Router not found")
+    
+    router._active = req.mode
+    return {"active": req.mode, "overridden": True}
+
+
+# ── Context (last assembled) ──
+
+@app.get("/v6/context")
+async def v6_context():
+    """Get last assembled context — domain allocation, entry counts."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    lc = getattr(_engine, '_last_context', None)
+    if not lc:
+        return {"entries": {}, "domains": {}}
+    
+    entries = {}
+    if hasattr(lc, '_entries'):
+        for k, v in lc._entries.items():
+            entries[str(k)] = {
+                "domain": getattr(v, 'domain', '?'),
+                "type": getattr(v, 'type', '?'),
+                "confidence": getattr(v, 'confidence', 0),
+            }
+    
+    domains = {}
+    if hasattr(lc, '_domain_allocation'):
+        domains = dict(lc._domain_allocation)
+    
+    return {"entries": entries, "domains": domains, "total_entries": len(entries)}
+
+
 # ══════════ WebSocket — Real-time streaming ══════════
 
 @app.websocket("/v4/ws")
