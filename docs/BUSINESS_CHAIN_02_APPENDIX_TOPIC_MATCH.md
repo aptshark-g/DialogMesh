@@ -224,41 +224,114 @@ def fused_score(topic, sources):
   → 进入递归拆解
 ```
 
-### 5.3 递归拆解
+### 5.3 递归拆解（致命漏洞已修复）
 
 ```
-Step 1: 行为↔对象拆解
-  原 Query: "这个模块的延迟飙升，之前没加监控是吗"
-  → 拆解为:
-    行为1: [询问状态] 对象: [延迟飙升] → 拆出主题: performance_issue
-    行为2: [确认缺失] 对象: [监控]     → 拆出主题: monitoring_gap
-    行为3: [建议行动] 对象: [加监控]   → 拆出主题: add_monitoring
+⚠ v1 漏洞: 递归拆解指向自己, 下一次循环输入还是原 Query
+   → 增益永远相同 → 死循环到 depth=3 → 浪费全部递归步骤
 
-Step 2: 属性补全
-  对每个拆出的对象, 检索内部知识补全:
-  "监控" → 相关概念: observer, metric, alert, dashboard
-  → 找到完整上下文 → 提高该主题得分
-
-Step 3: NMI 增益判定
-  递归一层后的 NMI 增益:
-  if NMI_gain > β (0.03): 继续递归
-  if NMI_gain ≤ β: 触发强制收敛
-
-Step 4: 强制收敛
-  取当前最佳候选, 即使 conf < 理想值
-  标记为 "force_converged" → 后续 Slow Path 会重新检查
+✅ v2 修复: 每次递归须插入 "子查询生成器" —— 缩小信息缺口
 ```
 
-### 5.4 主题指纹缓存
+```mermaid
+graph TD
+    INPUT["原Query:<br/>'延迟飙升,没加监控?'"]
+    FUSE["融合: 峭度=0.3(低)"]
+    
+    INPUT --> FUSE
+    FUSE -->|"H≥α"| DECOMP["行为↔对象拆解"]
+    
+    DECOMP -->|"拆出"| FRAG["行为1:归因 对象:延迟<br/>行为2:确认 对象:监控缺失"]
+    
+    FRAG --> GAP["信息缺口分析<br/>Gap=1-(已知/总维度)<br/>=0.65"]
+    
+    GAP -->|"Gap>β"| SUBGEN["子查询生成器<br/>⭐ 关键修复"]
+    
+    SUBGEN -->|"递归1"| SQ1["新Query:<br/>'延迟根因是什么?<br/>监控缺失占比多少?'"]
+    SQ1 --> FUSE
+    
+    SUBGEN -->|"递归2(如果还发散)"| SQ2["新Query:<br/>'定位根因缺哪些<br/>关键埋点数据?'"]
+    SQ2 --> FUSE
+    
+    GAP -->|"Gap≤β or D=3"| FORCED["强制收敛 + 指纹固化"]
+```
+
+**子查询生成器的工作**:
 
 ```
-递归链上所有中间态的向量轨迹取交集:
-  v_avg = mean(v0, v1, v2, ...)
-  存入缓存: {query_hash → (topic, conf, fingerprint_vector)}
+输入: 原始 Query + 当前 SVO + 已知信息 + 缺口维度
+输出: 更精确的新 Query
 
-下次相似 query → 单次向量匹配即可命中
-(这就是"上次递归的结果成为下次的快匹配")
+例:
+  Step 0: "延迟飙升,没加监控?"
+    已知: {延迟存在, 监控缺失}
+    缺口: {根因, 监控与延迟的关系, 补监控的方法}
+    → 生成: "延迟根因是什么? 监控缺失在根因中占比多少?"
+    
+  Step 1: 重新融合 → 峭度仍低(0.5)
+    新已知: {根因=待定位, 监控=关键因子}
+    新缺口: {定位数据, 埋点, 监控方案}
+    → 生成: "要定位延迟根因, 当前系统缺少哪些关键埋点数据?"
+
+  Step 2: 重新融合 → 峭度升高(0.8) → 收敛!
+    topic="performance_diagnostics"
+    action="suggest_add_instrumentation"
 ```
+
+**核心差异**:
+- v1: 同 Query 递归 → 死循环 → 浪费
+- v2: 每次缩小信息缺口 → 有意义的递归 → 每层都在逼近收敛
+
+### 5.4 强制收敛 + 指纹固化
+
+```
+强制收敛后立即执行:
+
+1. 压缩递归链上所有中间态:
+   fingerprint = compress(
+     SVO_triplets[0..D],      # 每层的 SVO
+     bm25_scores[0..D],        # 每层的检索结果
+     profile_bias,             # 不变的画像偏置
+     anchor_matches,           # 命中的锚点
+     final_topic,              # 最终收敛主题
+     convergence_depth         # 收敛时的深度 (0=直接, 1/2/3=递归)
+   )
+
+2. 写回稳定主题对象库:
+   Mind.attention.upsert(
+     key=fingerprint.hash(),
+     topic=final_topic,
+     confidence=final_conf,
+     fingerprint_vector=fingerprint.vector(),
+     creation_depth=convergence_depth  
+     # 递归收敛的指纹比直接命中的权重更高!
+   )
+
+3. 效果:
+   - 下次 "模块卡顿跟监控有关吗?"
+   - 锚点直接命中 fingerprint → 峭度拉满 → 瞬间收敛
+   - 语法树、BM25 都不需要跑
+```
+
+### 5.5 越用越快——自加速循环
+
+```mermaid
+graph LR
+    Q1["首次: 递归D=2<br/>→ 指纹写入"] 
+    --> Q2["二次: 锚点命中<br/>→ D=0 瞬间收敛"]
+    --> Q3["三次: 指纹强化<br/>→ 同族query全命中"]
+    --> Q4["N次: 稳定锚点层<br/>→ 覆盖90%+场景"]
+    
+    Q1 -.->|"指纹权重+0.1"| CACHE["稳定主题对象库"]
+    Q2 -.->|"指纹权重+0.05"| CACHE
+    Q3 -.->|"权重饱和0.95"| CACHE
+```
+
+**权重机制**:
+- 直接收敛的指纹: base_weight=0.7 (一次命中, 可能是偶然)
+- 递归收敛的指纹: base_weight=0.85 (经历验证, 更可靠)
+- 重复命中: weight = min(0.95, weight + 0.05 × hit_count)
+- 长期未命中: weight = weight × exp(-λ × days) (衰减, λ=0.01/天)
 
 ---
 
