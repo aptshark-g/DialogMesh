@@ -21,6 +21,7 @@ from core.agent.v4.api_event_log import EventLog
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
 from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
 from core.agent.v4.api_viz_edit import router as viz_edit_router, init as viz_edit_init
+from core.agent.v4.api_annotate import router as annotate_router, init as annotate_init
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ _event_log: Optional[EventLog] = None
 app.include_router(gateway_router)
 # Register visualization edit router
 app.include_router(viz_edit_router)
+# Register annotation router
+app.include_router(annotate_router)
 
 
 # ---- Models ----
@@ -75,6 +78,8 @@ def init_api(db_path: str = "data/event_log.db",
     gateway_init(_engine)
     # Initialize visualization edit (白盒化)
     viz_edit_init(_engine)
+    # Initialize annotation system
+    annotate_init(_engine)
 
     # Replay unconsumed events from crash
     unconsumed = _event_log.replay_unconsumed(limit=200)
