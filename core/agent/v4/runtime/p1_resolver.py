@@ -20,11 +20,14 @@ class P1Resolver:
         try:
             from core.agent.v4.compiler.view_manager import ViewManager
             engine._view_manager = ViewManager()
-            # Store current camera position for context injection
-            if hasattr(engine, '_perspectives') and engine._perspectives:
-                for p in engine._perspectives:
-                    if hasattr(p, 'path'):
+            # Check if perspectives exist before trying to reframe
+            if hasattr(engine, '_perspectives') and engine._perspectives and hasattr(engine._view_manager, 'reframe'):
+                try:
+                    p = engine._perspectives[0] if hasattr(engine._perspectives[0], 'path') else None
+                    if p:
                         engine._view_manager.reframe(p.path, depth=2)
+                except Exception:
+                    pass  # No perspectives yet — that's fine
             logger.info("ViewManager wired: persistent camera active")
         except Exception as e:
             engine._view_manager = None
