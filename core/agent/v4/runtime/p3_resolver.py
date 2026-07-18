@@ -63,19 +63,23 @@ class P3Resolver:
         if not engine._last_context:
             return events
 
-        # RuleEngine: evaluate text for conflicts
+        # RuleEngine: check constraints (use resolve_all bridge)
         if hasattr(engine, '_rule_engine') and engine._rule_engine:
             try:
-                ok, conf, warnings = engine._rule_engine.evaluate(getattr(event, 'text', ''))
-                events["rule_engine"] = {"ok": ok, "conf": conf, "warnings": str(warnings)[:100]}
-                if warnings:
-                    from core.agent.v4.context.cross_domain_ir import IREntry
-                    for w in (warnings if isinstance(warnings, list) else [str(warnings)])[:2]:
-                        engine._last_context.add_entry(domain="W", entry=IREntry(
-                            domain="W", type="rule_warning",
-                            content=f"[WARN:v3] {w}"[:200], confidence=0.5))
+                re_engine = engine._rule_engine
+                if hasattr(re_engine, 'resolve_all'):
+                    from core.agent.v3_2.compiler.models import ParseContext
+                    result = re_engine.resolve_all({"text": getattr(event, 'text', '')}, ParseContext())
+                    events["rule_engine"] = {"resolved": len(result) if result else 0}
+                elif hasattr(re_engine, '_rule_evaluate'):
+                    # Fallback: use bridge's internal method
+                    ctx={'input_text': getattr(event, 'text', '')}
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore'); import asyncio
+                    re_result = re_engine._rule_evaluate(ctx, {})
+                    events["rule_engine"] = {"ok": re_result.get('ok', True)}
             except Exception as e:
-                events["rule_engine"] = {"error": str(e)[:100]}
+                events["rule_engine"] = {"error": str(e)[:80]}
 
         # NegativeKB: check for bad patterns
         if hasattr(engine, '_negative_kb') and engine._negative_kb:
@@ -90,23 +94,25 @@ class P3Resolver:
             except Exception as e:
                 events["negative_kb"] = {"error": str(e)[:100]}
 
-        # TieredFusion: fuse context (light: only when both track0 and track_p present)
+        # TieredFusion: bridge sync wrapper around async fuse
         if hasattr(engine, '_tiered_fusion') and engine._tiered_fusion:
             try:
                 track_p = getattr(getattr(engine, '_cognitive_profile', None), 'track_a', None)
-                if track_p:
-                    result = engine._tiered_fusion.fuse(track_p=track_p)
-                    events["tiered_fusion"] = {"fused": True} if result else {"fused": False}
+                if track_p and hasattr(engine._tiered_fusion, '_run_stage1'):
+                    result = engine._tiered_fusion._run_stage1({}, {})
+                    events["tiered_fusion"] = {"fused": bool(result)}
             except Exception as e:
-                events["tiered_fusion"] = {"error": str(e)[:100]}
+                events["tiered_fusion"] = {"error": str(e)[:80]}
 
-        # CognitiveCompiler: process sentence for structured parsing
+        # CognitiveCompiler: bridge sync wrapper around async process
         if hasattr(engine, '_cognitive_compiler') and engine._cognitive_compiler:
             try:
-                result = engine._cognitive_compiler.process(getattr(event, 'text', ''))
-                events["cognitive_compiler"] = {"ok": getattr(result, 'ok', True)}
+                if hasattr(engine._cognitive_compiler, '_run_rule_only'):
+                    result = engine._cognitive_compiler._run_rule_only(
+                        {'sentence': getattr(event, 'text', '')}, {})
+                    events["cognitive_compiler"] = {"ok": bool(result)}
             except Exception as e:
-                events["cognitive_compiler"] = {"error": str(e)[:100]}
+                events["cognitive_compiler"] = {"error": str(e)[:80]}
 
         # Monitor: record P3 events
         if engine._monitor and events:
