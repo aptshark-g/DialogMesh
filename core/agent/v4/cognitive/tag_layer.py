@@ -213,12 +213,10 @@ class TagAcquisitionEngine:
         total = max(1, sum(rd.values()))
         tags = {}
         if s >= 3:
-            tags["personality_analytical"] = UserTag("personality_analytical",
-                confidence=min(0.9, s/total*3), source="trace_strengthen")
+            tags["personality_analytical"] = {"name":"personality_analytical","confidence":min(0.9,s/total*3),"source":"trace_strengthen"}
         if w >= 3:
-            tags["personality_emotional"] = UserTag("personality_emotional",
-                confidence=min(0.9, w/total*3), source="trace_weaken")
-        if profile:
+            tags["personality_emotional"] = {"name":"personality_emotional","confidence":min(0.9,w/total*3),"source":"trace_weaken"}
+        if profile and hasattr(profile, 'track_b'):
             for k, v in tags.items():
                 profile.track_b[k] = v
         return tags
