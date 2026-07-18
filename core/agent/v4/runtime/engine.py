@@ -245,7 +245,17 @@ class CognitiveRuntimeEngine:
             if self._mind.load():
                 logger.info("Mind loaded: %s", self._mind.stats())
             else:
-                logger.info("Mind fresh start")
+                # ---- Build InteractionGraph from RelationSubstrate if available ----
+                if self._interaction_graph and hasattr(self, '_world_provider') and self._world_provider:
+                    try:
+                        rs = getattr(self._world_provider, 'relation_substrate', None)
+                        if rs:
+                            n = self._interaction_graph.build_from_substrate(rs)
+                            if n > 0: logger.info("InteractionGraph: %d dynamic edges", n)
+                    except Exception as e:
+                        logger.debug("Dynamic graph skipped: %s", e)
+
+                logger.info("Engine started")
         except Exception as e:
             self._mind = None
             logger.debug("Mind skipped: %s", e)
@@ -262,10 +272,17 @@ class CognitiveRuntimeEngine:
             self._interaction_graph.add_edge("ReasoningTree", "Hypothesis", InteractionType.SUPPORTS, 0.6)
             self._interaction_graph.add_edge("Hypothesis", "Conflict", InteractionType.CONTRADICTS, 0.4)
             self._interaction_graph.add_edge("Reflection", "Hypothesis", InteractionType.STRENGTHEN, 0.7)
-            logger.info("InteractionGraph initialized (%d edges)", self._interaction_graph._edge_count)
+            logger.info("InteractionGraph initialized (%d seed edges)", self._interaction_graph._edge_count)
         except Exception as e:
             self._interaction_graph = None
             logger.debug("InteractionGraph skipped: %s", e)
+
+        # ---- v6 Mind workspace initialization ----
+        if self._mind:
+            try:
+                self._mind.initialize_workspace(self)
+            except Exception as e:
+                logger.debug("Mind workspace init skipped: %s", e)
 
         # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
         try:
@@ -1321,6 +1338,14 @@ class CognitiveRuntimeEngine:
                             eng.update(dim, snap[dim], session_weight=0.3)
         except Exception as e:
             logger.debug("Profile feed skipped: %s", e)
+
+        # Trace-based personality (runs after filter to avoid overwrite)
+        if hasattr(self, '_trace_v3') and self._trace_v3 and hasattr(self._cognitive_profile, 'track_b'):
+            try:
+                from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
+                TagAcquisitionEngine().infer_from_trace(self._trace_v3, self._cognitive_profile)
+            except Exception as e:
+                logger.debug("Trace profile skipped: %s", e)
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""
