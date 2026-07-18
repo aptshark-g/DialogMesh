@@ -697,7 +697,8 @@ class CognitiveRuntimeEngine:
             # Monitor profile
             if self._monitor and ta:
                 self._monitor.record_profile(self._turn_counter, ta,
-                    {k: v.value for k, v in getattr(self._cognitive_profile, 'track_b', {}).items()})
+                    {k: v.get('confidence', v.value) if isinstance(v, dict) else v.value
+                     for k, v in getattr(self._cognitive_profile, 'track_b', {}).items()})
 
             # ---- v6 InteractionGraph: propagate state through architecture ----
             if hasattr(self, '_interaction_graph') and self._interaction_graph and ta:
