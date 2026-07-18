@@ -1,261 +1,222 @@
 # DialogMesh v6 — 网状业务链设计 · 第一章：对话树主线
 
-> 版本: v2.0 (修正版) | 2026-07-18
+> 版本: v3.0 (设计对照修正) | 2026-07-18
 >
-> **v1→v2 修正**: 意图识别三层分工修正, 子图弹性加载+水波展开, 持久化未命中处理, 剪枝策略, LLM触发补充
+> **v2→v3 修正**:
+> - C/B 层不在同一路径: C∈Fast(<50ms), B∈Async(5s), C用上一轮的B结果
+> - 模块不直接调用: 通过 ObservationPool + UnifiedGraphStore 交换
+> - 子图编译集成到 Context Compiler, 非独立步骤
+> - HCWA 是持久化归档分层, 非运行时缓存缺失处理
+> - 剪枝策略 → 标记为设计建议 (非已有设计)
 
 ---
 
-## 1. 总览：一条消息的全生命周期
+## 1. 总览：四路径调度下的对话树主线
 
 ```mermaid
 sequenceDiagram
     participant UI as 前端
-    participant API as REST API
-    participant IR as EventIR 解构
-    participant ABC as ABC三层<br/>C→规则 B→LLM A→回退
-    participant DT as 对话树<br/>内存+
-    participant BHV as 行为链
-    participant REL as 关联链
-    participant ENG as 工程链
-    participant PROF as 用户画像
-    participant CTX as 上下文编译器
-    participant DISK as 持久化层
+    participant FAST as Fast Path<br/>(<50ms 阻塞)
+    participant ASYNC as Async Path<br/>(<5s 不阻塞)
+    participant SLOW as Slow/Deep<br/>(后台)
+    participant MEM as ObservationPool<br/>+ UnifiedGraphStore
     participant LLM as LLM
     
-    UI->>API: POST /v4/event {text}
-    API->>IR: 解构为 EDUs
-    IR->>ABC: 语义+规则→意图
+    UI->>FAST: 用户输入
     
-    ABC->>CTX: 意图+子图需求比例
+    Note over FAST: C层规则: 确定性检测<br/>用上轮B层缓存的意图
     
-    par 并行子图获取
-        CTX->>DT: 水波展开:从锚点向外
-        DT-->>DISK: 未命中→持久化查找<br/>(相关度>频率>最近)
-        DISK-->>DT: 候选节点
-        DT-->>CTX: 弹性大小(非硬编码)
+    FAST->>MEM: 写入 Observation
+    
+    FAST->>LLM: 组装上下文 → LLM推理
+    LLM-->>UI: 回复 (不等待 Async)
+    
+    par 并行后台
+        ASYNC->>MEM: 读取 Observation
+        Note over ASYNC: B层LLM: 深层意图分析<br/>对话树区块更新<br/>行为修正检测<br/>关联强度更新
+        ASYNC->>MEM: 写回 Observation + 更新图
     and
-        CTX->>BHV: 修正检测+需求匹配
-        BHV-->>CTX: 行为边+建议标签
-    and
-        CTX->>REL: 关联对象查找
-        REL-->>CTX: 关联边+强度
-    and
-        CTX->>ENG: 约束+模式匹配
-        ENG-->>CTX: 约束列表
-    and
-        CTX->>PROF: 偏好+风格
-        PROF-->>CTX: 画像摘要
+        SLOW->>SLOW: Checkpoint触发<br/>对话树→图持久化<br/>Mind 学习<br/>规则沉淀
     end
     
-    CTX->>CTX: 去重+令牌预算
-    CTX->>LLM: CrossDomainContextIR
-    
-    LLM-->>UI: response
-    
-    alt LLM提到新概念
-        UI->>DT: 触发子图扩展
-        DT->>CTX: 补充相关节点
-    end
-    
-    LLM-->>DT: LLM等待间隙→剪枝<br/>低频×旧→持久化
-    LLM-->>MIND: 学习信号
+    Note over FAST: 下一轮: C层用 Async 刚更新的结果
 ```
 
 ---
 
-## 2. 第一阶段：事件解构 + 意图识别
+## 2. 路径归属 (修正核心)
 
-### 2.1 事件到达与解构
+**所有模块有明确路径归属,跨路径通信通过共享存储。**
 
-```
-用户输入 "这个模块的延迟飙升，之前没加监控是吗？我们自己加一下"
-     ↓
-POST /v4/event → EventIR {
-    text: "这个模块的延迟飙升...",
-    event_id: "msg-042",
-    kind: "dialog.message"
-}
-     ↓
-Observer → decompose → EDUs (Elementary Discourse Units):
-  ["这个模块的延迟飙升", "之前没加监控是吗", "我们自己加一下"]
-```
-
-### 2.2 意图识别：ABC 三层分工（修正）
-
-**C 层不是意图识别器——它是模式过滤器。**
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 语义分析 (SemanticPath + BGE)                                │
-│   → EDUs → 语义向量 → 概念提取                                │
-│   → 关键概念: [延迟, 监控, 模块, 自己加]                       │
-├──────────────────────────────────────────────────────────────┤
-│ C层: 神经符号规则 (确定性的模式匹配)                           │
-│   ✓ 能做: 字符串匹配 / 阈值判断 / 简单if-then                 │
-│   ✓ 例: confidence < 0.3 → reject_detected                  │
-│   ✓ 例: strengthen_count >= 2 → personality_analytical       │
-│   ✗ 不能做: 复杂意图识别 (需要语义理解)                        │
-├──────────────────────────────────────────────────────────────┤
-│ B层: LLM 意图分析 (处理需要语义理解的内容)                     │
-│   输入: EDUs + 关键概念 + 对话历史                            │
-│   → LLM: "用户在讨论工程问题: 延迟+监控缺失, 意图是补充监控"    │
-│   → 生成意图标签: intent="monitor_integration"               │
-│   → 输出子图需求比例: {K:0.5, D:0.3, B:0.1, P:0.1}          │
-│   同时: 生成新规则 → C层 (如果此模式重复出现)                  │
-├──────────────────────────────────────────────────────────────┤
-│ A层: JSON 回退                                               │
-│   B层 LLM 失败时 → 从 soft_config.json 取默认值               │
-│   {default_intent: "query", domain_weights: {K:0.3,D:0.3,...}}│
-└──────────────────────────────────────────────────────────────┘
-```
-
-**修正点**: C 层不负责复杂意图识别——那是 B 层的职责。C 层只处理**确定性规则**(阈值、字符串匹配)。复杂语义理解必须经过 LLM。
+| 操作 | 路径 | 延迟 | 说明 |
+|------|------|------|------|
+| EventIR 解构 | Fast | <5ms | 纯文本操作, 无 LLM |
+| C层规则匹配 | Fast | <1ms | 确定性规则: 阈值/关键词 |
+| B层缓存读取 | Fast | <1ms | 上轮 Async 写入的结果 |
+| 上下文组装 | Fast | <20ms | 从 ObservationPool 取已编译的子图 |
+| LLM 调用 | Fast | 2-5s | 唯一阻塞操作 |
+| B层 LLM 意图分析 | Async | <5s | 不阻塞回复,后台执行 |
+| 对话树子图重新编译 | Async | 50-200ms | B层结果触发的子图更新 |
+| 行为修正检测 | Async | 10-50ms | 基于新 Observation |
+| 关联强度更新 | Async | 5-20ms | 边权重 EMA 衰减 |
+| 对话树→图持久化 | Slow | 分钟级 | Checkpoint 触发 |
+| Mind 学习 | Slow | 100ms-2s | 每5轮 |
+| 规则学习/沉淀 | Deep | 1-10s | N次同类 Pattern 后 |
 
 ---
 
-## 3. 第二阶段：弹性子图获取（修正）
+## 3. 意图识别：两层异步
 
-### 3.1 核心原则
+```
+┌──────────────────────────────────────────────────────────┐
+│ Round N — Fast Path (阻塞用户看到回复)                     │
+│                                                          │
+│ 1. C-layer 规则匹配 (确定性, <1ms)                        │
+│    → 从内存取 "上轮 B-layer 缓存" 的 intent              │
+│    → 如果没有 → 取 soft_config.json 默认值              │
+│                                                          │
+│ 2. 上下文编译器:                                          │
+│    从 ObservationPool 取 Async Path 上轮编译好的子图      │
+│    (这些子图在 Round N-1 的 Async 阶段已准备好)          │
+│                                                          │
+│ 3. LLM 调用 → 回复                                       │
+└──────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────┐
+│ Round N — Async Path (不阻塞, 为 Round N+1 准备)          │
+│                                                          │
+│ B-layer LLM: 分析当前轮次的深层意图                       │
+│   → 更新意图缓存 (C-layer 下轮使用)                       │
+│   → 重新计算子图需求比例                                  │
+│   → 触发 SubgraphCompiler 重新编译                       │
+│   → 如果模式重复出现 → 生成新 C-layer 规则 → Slow 持久化  │
+│                                                          │
+│ 所有模块→写入 ObservationPool / UnifiedGraphStore         │
+│ (非直接函数调用, 通过共享存储交换)                         │
+└──────────────────────────────────────────────────────────┘
+```
 
-**没有硬编码字数限制。** 所有子图大小由以下因素弹性决定：
+**关键**:
+- C 层不等待 B 层——C 用 ROUND N-1 的结果
+- 第一轮没有缓存→用 A 层 JSON 默认值
+- B 层分析当前轮→为下一轮准备数据
 
-| 因素 | 权重 | 说明 |
-|------|------|------|
-| 意图相关度 | 0.40 | 该节点与当前意图的语义距离 |
-| 使用频率 | 0.25 | 该节点在历史上被引用的频率 |
-| 最近使用 | 0.20 | 上次被访问的时间 (衰减函数) |
-| 令牌预算剩余 | 0.15 | 当前上下文的令牌空间 |
+---
 
-### 3.2 对话树子图：水波展开
+## 4. 子图编译：统一在 ContextCompiler, 非独立步骤
+
+```
+DESIGN_CROSS_DOMAIN_CONTEXT.md §9.2:
+
+当前: 扁平历史 → 窗口过滤 → PCR → LLM
+
+目标: Event Chain → IntentParser → DomainSelector →
+      CrossDomainExpander → CrossRefBuilder →
+      BudgetAllocator → ContextSerializer → LLM
+
+对话树、行为图、因果链、工程链、用户画像
+全部作为 Context Compiler 的数据源。
+```
+
+**子图获取不是一个独立步骤——是 ContextCompiler 内部的 DomainSelector + CrossDomainExpander 阶段。**
 
 ```mermaid
 graph TD
-    A["锚点: blk_a1 (延迟飙升)"] -->|"强度0.9"| B1["blk_a3 (架构讨论)"]
-    A -->|"强度0.7"| B2["blk_b2 (性能优化)"]
-    A -->|"强度0.5"| B3["blk_z9 (其他模块)"]
+    EVENT["Event Chain<br/>(ObservationPool)"]
     
-    B1 -->|"次级展开"| C1["blk_a4 (依赖关系)"]
-    B1 -->|"次级展开"| C2["blk_x1 (日志方案)"]
+    EVENT --> INTENT["IntentParser<br/>C层缓存+B层Async更新"]
+    INTENT --> DOMAIN["DomainSelector<br/>根据intent选域:<br/>{D:0.4, K:0.3, B:0.15, R:0.1, P:0.05}"]
     
-    B2 -->|"次级展开"| C3["blk_b3 (缓存策略)"]
-    B3 -->|"终止"| END["强度<0.4: 停止展开"]
+    DOMAIN --> EXPAND["CrossDomainExpander<br/>从UnifiedGraphStore取<br/>各域的子图(已编译)"]
     
-    style A fill:#f96,stroke:#333
-    style B1 fill:#fc6,stroke:#333
-    style B2 fill:#ff9,stroke:#333
-    style B3 fill:#eee,stroke:#333
+    EXPAND --> XREF["CrossRefBuilder<br/>跨域引用编织"]
+    XREF --> BUDGET["BudgetAllocator<br/>令牌预算分配"]
+    BUDGET --> SERIAL["ContextSerializer<br/>→ CrossDomainContextIR"]
 ```
 
-**算法**:
-```
-1. 定位锚点 (与意图语义最相关的 block)
-2. 以锚点为圆心, 向外辐射
-3. 每条边: 强度 = 语义距离 + 频率 × 衰减
-4. 强度 < 阈值 (动态: 0.4 初始, 令牌紧张时上调到 0.6)
-5. 每层展开后检查令牌预算:
-   - 预算 > 30%: 继续下一层
-   - 预算 10-30%: 仅取下一层中强度 > 0.7 的节点
-   - 预算 < 10%: 停止, 当前层仅保留摘要
-```
-
-### 3.3 内存未命中 → 持久化查找
-
-```mermaid
-sequenceDiagram
-    participant CTX as 上下文编译器
-    participant MEM as 内存对话树
-    participant DISK as 持久化层
-    participant HCWA as HCWA 索引
-    
-    CTX->>MEM: 查找 topic="监控"
-    MEM-->>CTX: ❌ 未命中 (当前会话无此主题)
-    
-    CTX->>DISK: 从持久化查找
-    DISK->>HCWA: 三级索引查询
-    Note over HCWA: ①最相关: topic语义距离<br/>②最常用: 引用频率 Top-N<br/>③最近: 时间衰减排序
-    
-    HCWA-->>DISK: 候选节点列表
-    DISK-->>CTX: top-5 节点 (含摘要)
-    
-    CTX->>CTX: 按强度排序加入子图
-```
-
-**HCWA 分级** (UnifiedGraphStore):
-- **H (Hot)**: 当前会话活跃, 全量加载
-- **C (Warm)**: 近期会话, 按需加载
-- **W (Cold)**: 历史会话, 仅加载强相关节点
-- **A (Archive)**: 压缩存储, 仅元数据+摘要
-
-### 3.4 LLM 触发的子图扩展
-
-**这是一个实时补充机制**:
-
-```
-LLM 回复中提到: "这个监控方案可以参考之前的 Observer 模式..."
-     ↓
-系统检测到 LLM 提到了不在当前子图中的概念 "Observer模式"
-     ↓
-触发子图扩展: 从持久化拉取 Observer 相关节点
-     ↓
-补充到下一轮上下文中
-     ↓
-用户看到: 系统"自己想起来"之前讨论过的内容
-```
-
-### 3.5 剪枝策略：利用 LLM 等待时间
-
-```mermaid
-graph LR
-    CTX["上下文已发送给 LLM"]
-    CTX -->|"LLM 推理中<br/>(2-5秒窗口)"| PRUNE[剪枝引擎]
-    
-    PRUNE -->|"检查: 访问频率×时间衰减"| KEEP["高频+最近 → 保留"]
-    PRUNE -->|"检查: 访问频率×时间衰减"| CUT["低频+旧 → 持久化"]
-    
-    CUT -->|"写入"| DISK[(持久化层)]
-    CUT -->|"释放"| FREE[内存释放]
-```
-
-**剪枝条件**:
-- `score = frequency × exp(-λ × days_since_access)`
-- `score < threshold` → 移出内存, 存入持久化
-- 保证内存中对话树节点数 < `max_nodes` 参数 (可配置: 默认 200)
-- **不在加载前剪——在发送后、LLM 推理间隙剪**
-
-### 3.6 其他链的相同模式
-
-行为链、关联链、工程链均遵循同一套内存→持久化→水波展开→剪枝机制:
-
-| 链 | 内存态 | 持久化态 | 锚点 | 展开方式 |
-|----|--------|---------|------|---------|
-| 对话树 | DiscourseBlockTree | HCWA图节点 | 话题块 | 语义距离展开 |
-| 行为链 | BehaviorGraph | 行为边图 | 当前行为 | 因果链展开 |
-| 关联链 | RelationSubstrate | 关联边图 | 关键概念 | 关联强度展开 |
-| 工程链 | KnowledgeGraph | 约束图 | 匹配约束 | 依赖链展开 |
+**SubgraphCompiler 的职责**: 在 Async 阶段根据 B-layer 新意图重新编译各域子图, 写入 UnifiedGraphStore。Fast Path 的 ContextCompiler 直接从 Store 取——不实时编译。
 
 ---
 
-## 4. 关键修正对照表
+## 5. 持久化与节点标注 (修正)
 
-| v1 错误 | v2 修正 | 原因 |
-|---------|---------|------|
-| C层识别 "monitor_integration" | B层 LLM 负责复杂意图 | C层只能做确定性规则, 语义理解需LLM |
-| 硬编码 100 字摘要 | 弹性大小, 由相关度+频率+预算决定 | 硬编码无视上下文需求 |
-| 无持久化未命中处理 | HCWA 三级查找 (相关/频率/最近) | 内存未命中不能丢失信息 |
-| 无 LLM 触发补充 | LLM 提到新概念 → 自动拉取子图 | 利用 LLM 的发现能力 |
-| 无剪枝策略 | LLM等待间隙剪枝, 非加载前 | 不影响当前轮回复 |
-| 对话树独有 | 四条链均遵循同一模式 | 系统一致性 |
+### 5.1 修正网关 — 非缓存缺失, 是持久化时修正
+
+```
+DESIGN_DIALOGUE_TREE_PERSISTENCE_ADAPTER:
+
+持久化时做的事情:
+  1. 取 NodeAnnotationStore 最新标注 (可能触发重分类)
+  2. 结构校验 (合并/拆分/跨节点引用 — 仅追加元数据边)
+  3. 转换为图节点 + 边 → UnifiedGraphStore
+
+原则:
+  - 不合并节点, 不删除边, 不改变树拓扑
+  - 只追加元数据边
+  - 标注值与节点本体分离存储 (NodeAnnotationStore)
+```
+
+### 5.2 HCWA: 持久化归档分层
+
+```
+H (Hot):  当前 Session 对话树 → 全量在内存
+C (Warm): 近期 Session → 已持久化为图, 可按需加载
+W (Cold): 历史 Session → 图节点带衰减权重
+A (Archive): 压缩 → 仅 metadata + 摘要, 极少访问
+```
+
+**HCWA 主要用于归档, 不是运行时缓存缺失处理。** 运行时内存未命中走 ObservationPool → UnifiedGraphStore 的通用查询路径。
 
 ---
 
-## 5. 与设计文档的对照
+## 6. 设计违规修正对照
 
-| 设计文档 | 相关概念 | 本文位置 |
-|----------|---------|---------|
-| DESIGN_COGNITIVE_DYNAMICS_V6 | State→Transition, Mind(t)→Mind(t+1) | §3.6 学习 |
-| DESIGN_STATE_EVOLUTION_SYSTEM | Mind 驱动 Workspace 初始化 | §2.2 B层 |
-| DESIGN_INTERACTION_MODEL | 多层投影 (对话/操作/工程) | §3.6 |
-| DESIGN_DIALOGUE_TREE_PERSISTENCE_ADAPTER | 树→图, 修正网关, HCWA | §3.3-3.5 |
-| DESIGN_CROSS_DOMAIN_CONTEXT | 域分配+令牌预算 | §3.2 |
-| DESIGN_RELATION_SUBSTRATE | 双向学习, 边衰减 | §3.6 |
+| v2 文档 | 问题 | v3 修正 |
+|---------|------|---------|
+| C层识别复杂意图 | C层<1ms, 不可能做语义理解 | C层只做确定性规则, 用上轮B缓存 |
+| CTX→DT 直接调用 | 违反模块隔离原则 | 通过 ObservationPool + Store 间接通信 |
+| B层在Fast Path内 | LLM调用>50ms 不可能 | B层在Async Path, 不阻塞 |
+| 子图获取是独立阶段 | 设计是ContextCompiler内部阶段 | DomainSelector + CrossDomainExpander ∈ ContextCompiler |
+| "缓存缺失→持久化查找" | HCWA是归档分层, 非缓存机制 | ObservationPool→UnifiedGraphStore通用查询 |
+| "LLM等待间隙剪枝" | 设计文档无此概念 | 标记为 [设计建议] 非已有设计 |
+| 硬编码100字摘要 | 本身就不合理 | 弹性: 令牌预算×相关度 |
+
+---
+
+## 7. 剪枝策略 — 设计建议 (非现有设计)
+
+以下为建议补充到设计文档的内容:
+
+```
+设计建议: WorkspaceGC
+────────────────────
+时机: Slow Path (Checkpoint 触发), 非 LLM 等待间隙
+策略: score = frequency × exp(-λ × days_since_access)
+       score < threshold → 移至 C/W/A 层
+范围: 对话树节点/行为边/关联边 统一处理
+保障: 不影响当前 Session 的 Hot 数据
+```
+
+---
+
+## 8. 完整路径归属表
+
+| 操作 | Fast | Async | Slow | Deep |
+|------|:----:|:-----:|:----:|:----:|
+| EventIR 解构 | ✅ | | | |
+| C层规则 | ✅ | | | |
+| B层缓存读取 | ✅ | | | |
+| ContextCompiler(从Store取) | ✅ | | | |
+| LLM调用 | ✅ | | | |
+| B层LLM意图分析 | | ✅ | | |
+| SubgraphCompiler(重新编译) | | ✅ | | |
+| 行为修正检测 | | ✅ | | |
+| 关联强度更新 | | ✅ | | |
+| 对话树区块更新 | | ✅ | | |
+| 对话树→图持久化 | | | ✅ | |
+| 节点重分类(修正网关) | | | ✅ | |
+| HCWA归档降级 | | | ✅ | |
+| Mind学习 | | | ✅ | |
+| 规则学习/沉淀 | | | | ✅ |
+| Pattern分析 | | | | ✅ |
