@@ -207,27 +207,31 @@ STEP 3 — Rate each dimension 0-1:
 
     def analyze_with_bfi_override(self, engine, turn_text: str, llm_response: str,
                                    bfi_scores: Dict = None) -> Dict[str, Any]:
-        """OCEAN analysis with BFI-10 calibration override.
+        """OCEAN analysis with BFI-10 calibration.
 
-        If BFI-10 diverges from OCEAN on a dimension > 0.3:
-          → Use BFI-10 value (literature-validated instrument wins)
+        BFI corrects the per-turn rating BEFORE EMA, not after.
+        divergence > 0.25 → BFI value wins as THIS turn's rating.
+        EMA still smooths normally, just with corrected input.
         """
         result = self.analyze(engine, turn_text, llm_response)
-        dims = dict(result.get("dimensions", {}))
+        dims = result.get("this_turn", {})
 
         if bfi_scores:
             from core.agent.v4.cognitive.bfi_calibrator import bfi_to_ocean
             self._last_bfi_scores = bfi_scores
             overrides = 0
+            corrected = dict(dims)
             for factor, score in bfi_scores.items():
                 if factor in dims:
                     bfi_val = bfi_to_ocean(score, factor)
-                    oceAN_val = dims[factor]
-                    if abs(bfi_val - oceAN_val) > 0.25:  # Significant divergence
-                        dims[factor] = bfi_val  # BFI wins
+                    if abs(bfi_val - dims[factor]) > 0.25:
+                        corrected[factor] = bfi_val  # BFI corrects this turn's rating
                         overrides += 1
             if overrides:
-                self.profile.dims.update(dims)
+                # Re-apply EMA with corrected ratings
+                self.profile.update(corrected)
+                result["this_turn"] = corrected
+                result["dimensions"] = dict(self.profile.dims)
                 result["bfi_overrides"] = overrides
 
         return result
