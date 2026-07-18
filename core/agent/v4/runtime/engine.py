@@ -1627,6 +1627,35 @@ class CognitiveRuntimeEngine:
                 results.add(names[idx])
         return results
 
+    def _auto_build_objects(self):
+        """P1: build SemanticObject graph from pool + graph + index."""
+        try:
+            pool = getattr(self, '_observation_pool', None)
+            if pool is None:
+                return
+            if hasattr(self, '_object_runtime') and self._object_runtime is not None:
+                return  # already built
+            # Try to get graph and index from content provider
+            graph = None
+            idx = None
+            if hasattr(self, '_world_provider') and self._world_provider:
+                graph = getattr(self._world_provider, 'graph', None)
+                idx = getattr(self._world_provider, 'index', None)
+            if graph is None or idx is None:
+                return
+            from core.agent.v4.compiler.object_builder import build_object_graph
+            from core.agent.v4.compiler.object_runtime import ObjectRuntime
+            objects = build_object_graph(pool, graph, idx)
+            if objects:
+                ort = ObjectRuntime(provider=self._world_provider)
+                ort.set_store(objects)
+                self._object_runtime = ort
+                self._world_objects = objects
+                self._bge_index = None  # invalidate BGE cache
+                logger.info("Auto-built: %d SemanticObjects from pool", len(objects))
+        except Exception as e:
+            logger.debug("Auto-build objects skipped: %s", e)
+
     def _build_bge_index(self, objects: dict):
         import numpy as np
         cache_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "vectors")
@@ -2350,6 +2379,8 @@ class CognitiveRuntimeEngine:
         """Replace the ObservationPool and rebuild ContextAssembler."""
         self._observation_pool = pool
         self._context_assembler = self._create_context_assembler()
+        # P1: Auto-build SemanticObject graph from pool + graph
+        self._auto_build_objects()
         logger.info(
             "ObservationPool replaced + ContextAssembler rebuilt — pool: %s, sources: %d",
             pool.stats() if pool else "None",
