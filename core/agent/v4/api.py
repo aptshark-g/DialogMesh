@@ -1028,6 +1028,134 @@ async def v6_context():
     return {"entries": entries, "domains": domains, "total_entries": len(entries)}
 
 
+
+# ══════════ v6 Provider & Operations APIs ══════════
+
+
+@app.get("/v6/providers")
+async def v6_providers():
+    """List all LLM providers with status, model, health, failover chain."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    result = {"active": {}, "failover": {}, "available": []}
+    prov = getattr(_engine, '_llm_provider', None)
+    if prov:
+        cfg = getattr(prov, '_config', {}) if hasattr(prov, '_config') else {}
+        result["active"] = {
+            "name": getattr(prov, 'name', '?'),
+            "type": type(prov).__name__,
+            "model": cfg.get('model', '?'),
+            "base_url": cfg.get('base_url', '?'),
+            "healthy": prov.health_check() if hasattr(prov, 'health_check') else None,
+            "stats": prov.get_recent_stats(10) if hasattr(prov, 'get_recent_stats') else {},
+        }
+    fo = getattr(_engine, '_failover_provider', None)
+    if fo:
+        result["failover"] = {
+            "primary": getattr(fo._primary, 'name', '?') if hasattr(fo, '_primary') else None,
+            "fallback": getattr(fo._fallback, 'name', '?') if hasattr(fo, '_fallback') else None,
+            "active_idx": getattr(fo, '_active_idx', 0),
+            "failures": getattr(fo, '_failure_count', 0),
+        }
+    return result
+
+
+class ProviderSwitch(BaseModel):
+    provider: str = "deepseek"
+    model: str = ""
+    api_key: str = ""
+    base_url: str = ""
+
+
+@app.put("/v6/providers")
+async def v6_providers_switch(req: ProviderSwitch):
+    """Switch provider/model/key at runtime."""
+    if not _engine: raise HTTPException(503)
+    try:
+        from core.agent.llm_providers.openai_provider import OpenAIProvider
+        old_cfg = getattr(getattr(_engine, '_llm_provider', None), '_config', {}) if _engine._llm_provider else {}
+        new = OpenAIProvider(req.provider, {
+            "api_key": req.api_key or old_cfg.get('api_key', ''),
+            "base_url": req.base_url or old_cfg.get('base_url', ''),
+            "model": req.model or old_cfg.get('model', 'deepseek-chat'),
+        })
+        _engine._llm_provider = new
+        return {"switched": req.provider, "model": req.model or 'unchanged',
+                "healthy": new.health_check() if hasattr(new, 'health_check') else None}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/v6/providers/tokens")
+async def v6_providers_tokens():
+    """Token usage: current session + all sessions estimate."""
+    d = "data/monitor"
+    files = sorted([f for f in os.listdir(d) if f.startswith("chat_") and f.endswith(".jsonl")], reverse=True) if os.path.exists(d) else []
+    cur = {"turns": 0, "chars": 0, "est_tokens": 0}
+    if files:
+        with open(os.path.join(d, files[0])) as f:
+            rows = [json.loads(l) for l in f]
+        cur["turns"] = len(rows)
+        cur["chars"] = sum(r.get("response_len", 0) for r in rows)
+        cur["est_tokens"] = int(cur["chars"] * 3.5)
+    total = 0
+    for cf in files[:50]:
+        try:
+            with open(os.path.join(d, cf)) as f:
+                total += sum(json.loads(l).get("response_len", 0) for l in f)
+        except: pass
+    return {"current": cur, "all_sessions": {"count": len(files), "est_tokens": int(total * 3.5)},
+            "rate": {"deepseek": "$0.14/M in, $0.28/M out"}}
+
+
+class ContextTune(BaseModel):
+    token_budget: int = 0
+    domain_P: float = 0
+    domain_C: float = 0
+    domain_K: float = 0
+
+
+@app.put("/v6/context/config")
+async def v6_context_tune(req: ContextTune):
+    """Adjust context budget and domain weights."""
+    if not _engine: raise HTTPException(503)
+    updated = []
+    if req.token_budget > 0 and hasattr(_engine, '_world_params'):
+        _engine._world_params.compiler_token_budget = req.token_budget
+        updated.append(f"budget={req.token_budget}")
+    lc = getattr(_engine, '_last_context', None)
+    if lc and hasattr(lc, '_domain_allocation'):
+        for d, v in [("P", req.domain_P), ("C", req.domain_C), ("K", req.domain_K)]:
+            if v > 0:
+                lc._domain_allocation[d] = v; updated.append(f"{d}={v:.2f}")
+    return {"updated": updated, "count": len(updated)}
+
+
+@app.get("/v6/metrics")
+async def v6_metrics():
+    """System metrics: uptime, LLM stats, turn count."""
+    if not _engine: raise HTTPException(503)
+    prov = getattr(_engine, '_llm_provider', None)
+    stats = prov.get_recent_stats(50) if prov and hasattr(prov, 'get_recent_stats') else {}
+    return {"uptime_s": time.time() - getattr(_engine, '_start_time', time.time()),
+            "turns": getattr(_engine, '_turn_counter', 0),
+            "llm_latency_ms": stats.get("avg_latency_ms", 0),
+            "llm_error_rate": stats.get("error_rate", 0)}
+
+
+@app.post("/v6/providers/test")
+async def v6_providers_test():
+    """Quick connectivity test for active provider."""
+    if not _engine or not _engine._llm_provider: raise HTTPException(503)
+    p = _engine._llm_provider
+    try:
+        h = p.health_check() if hasattr(p, 'health_check') else None
+        l = p.estimate_latency_ms(50, 20) if hasattr(p, 'estimate_latency_ms') else 0
+        return {"healthy": h, "latency_50tok_ms": l, "provider": p.name}
+    except Exception as e:
+        return {"healthy": False, "error": str(e)[:200]}
+
+
 # ══════════ WebSocket — Real-time streaming ══════════
 
 @app.websocket("/v4/ws")
