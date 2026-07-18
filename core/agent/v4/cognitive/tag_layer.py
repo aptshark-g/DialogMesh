@@ -205,24 +205,17 @@ class TagAcquisitionEngine:
             "self_affirmation_count": self._self_affirm_count,
             "total_turns": self._response_count,
         }
-
-
-# ═══════════════════ g-Factor Inference ═══════════════════
-
     def infer_from_trace(self, trace, profile=None):
         """Infer personality from ExecutionTrace transition signals."""
         if trace is None: return {}
-        m = trace.meta_analyze()
-        rd = m.get("reason_distribution", {})
+        m = trace.meta_analyze(); rd = m.get("reason_distribution", {})
         s, w = rd.get("strengthen", 0), rd.get("weaken", 0)
         total = max(1, sum(rd.values()))
         tags = {}
         if s >= 3:
-            from .models import UserTag
             tags["personality_analytical"] = UserTag("personality_analytical",
                 confidence=min(0.9, s/total*3), source="trace_strengthen")
         if w >= 3:
-            from .models import UserTag
             tags["personality_emotional"] = UserTag("personality_emotional",
                 confidence=min(0.9, w/total*3), source="trace_weaken")
         if profile:
@@ -231,31 +224,10 @@ class TagAcquisitionEngine:
         return tags
 
 
-class GFactorInferencer:
-    """g-factor (general cognitive ability) inference.
 
-    Design: design_cognitive_profile_v2.md §2.3.2
-    Three methods: indirect inference, embedded task, LLM assessment.
-    Phase 1: LLM assessment from dialogue history.
-    """
 
-    ASSESSMENT_PROMPT = """Based on the following user dialogue history, assess the user's
-cognitive ability level. Consider:
+# ═══════════════════ g-Factor Inference ═══════════════════
 
-1. Abstract reasoning: does the user understand abstract concepts?
-2. Domain transfer: does the user connect ideas across domains?
-3. Problem complexity: how complex are the problems they raise?
-4. Learning speed: how quickly does the user pick up new concepts?
-
-Return a JSON with:
-  - level: one of "low", "medium", "high", "expert"
-  - score: float 0.0-1.0
-  - reasoning: brief explanation (max 100 chars)
-
-History:
-{history}
-
-Return ONLY the JSON, no other text."""
 
     def __init__(self, llm_provider=None):
         self._provider = llm_provider
