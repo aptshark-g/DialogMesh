@@ -515,13 +515,14 @@ class ProfileEditRequest(BaseModel):
 
 @app.put("/v6/profile")
 async def v6_profile_edit(req: ProfileEditRequest):
-    """Edit OCEAN profile. User corrections feed back to Mind + ABC rules."""
+    """Edit OCEAN profile. All corrections journaled → drift detection."""
     if not _engine:
         raise HTTPException(503, "Engine not started")
-    
-    result = {"updated": [], "feedback": []}
+
+    result = {"updated": [], "journal": [], "drift_alert": None}
     ocean = getattr(getattr(_engine, '_ocean_analyst', None), 'profile', None)
-    
+    journal = getattr(_engine, '_correction_journal', None)
+
     # Update OCEAN dimension
     if req.dim and ocean:
         dims = getattr(ocean, 'dims', {})
@@ -529,24 +530,39 @@ async def v6_profile_edit(req: ProfileEditRequest):
             old = dims[req.dim]
             dims[req.dim] = req.value
             result["updated"].append(f"{req.dim}: {old:.2f} → {req.value:.2f}")
-    
-    # Update MBTI → feed back to ABC rules
-    if req.mbti and hasattr(_engine, '_abc') and _engine._abc:
-        try:
+            # Journal the correction
+            if journal:
+                journal.record(req.dim, old, req.value, reason="user_edit", turn=getattr(_engine, '_turn_counter', 0))
+                result["journal"].append(req.dim)
+
+    # Update MBTI → feed back to ABC rules + journal
+    if req.mbti and ocean:
+        old_mbti = ocean.to_mbti()
+        if old_mbti != req.mbti and journal:
+            journal.record("mbti", old_mbti, req.mbti, reason="user_edit", turn=getattr(_engine, '_turn_counter', 0))
+            result["journal"].append("mbti")
+
+        if hasattr(_engine, '_abc') and _engine._abc:
             from core.agent.v4.cognitive.neuro_symbolic import Rule
-            # Create correction rule from user feedback
             _engine._abc._rule_engine.register(Rule(
-                name=f"user_correction_mbti",
+                name="user_correction_mbti",
                 premise={"profile_tags": {"contains": "personality"}},
                 conclusion={"mbti": req.mbti, "action": "user_override"},
-                source="user_feedback",
-                confidence=0.9,
+                source="user_feedback", confidence=0.9,
             ))
             _engine._abc._rule_engine.save()
-            result["feedback"].append(f"Rule: MBTI→{req.mbti} (conf=0.9)")
-        except Exception as e:
-            result["feedback"].append(f"Rule save failed: {e}")
-    
+            result["updated"].append(f"MBTI rule: →{req.mbti} (conf=0.9)")
+
+    # Check for drift
+    if journal and ocean:
+        drifts = []
+        for dim, val in ocean.dims.items():
+            d = journal.check_drift(dim, val)
+            if d: drifts.append(d)
+        if drifts:
+            result["drift_alert"] = {"affected": len(drifts), "details": drifts}
+
+    return result
     return result
 
 
