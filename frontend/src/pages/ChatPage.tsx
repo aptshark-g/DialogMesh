@@ -1,31 +1,23 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
 import ChatPanel from '../components/ChatPanel';
-import { useSession } from '../hooks/useSession';
 import { useChat } from '../hooks/useChat';
 import type { ConnectionState } from '../types/ui';
-import type { WebSocketServerEvent } from '../types/api';
+import type { V4WebSocketEvent } from '../types/api';
+import { getV4WsUrl } from '../api/v4';
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
+const WS_URL = getV4WsUrl();
 
 export function ChatPage() {
-  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
-  const { session, initSession } = useSession();
-  const [reconnectCounter, setReconnectCounter] = useState(0);
-
-  const effectiveSessionId = urlSessionId ?? session?.session_id ?? null;
-
   const {
     messages,
     isThinking,
     thinkingSteps,
-    pendingClarification,
     error,
     handleUserMessage,
-    handleClarificationSubmit,
     handleWebSocketEvent,
     clearError,
-  } = useChat(effectiveSessionId);
+    clearMessages,
+  } = useChat();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'closed',
@@ -33,21 +25,21 @@ export function ChatPage() {
     lastError: null,
   });
 
+  const [reconnectCounter, setReconnectCounter] = useState(0);
+
   const connectWs = useCallback(() => {
-    if (!effectiveSessionId) return;
-    const wsUrl = `${WS_BASE_URL}/v3/ws/${effectiveSessionId}`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
       setConnectionState({ status: 'open', latencyMs: null, lastError: null });
     };
 
     ws.onclose = () => {
-      setConnectionState((prev) => ({ ...prev, status: 'closed' }));
+      setConnectionState(prev => ({ ...prev, status: 'closed' }));
     };
 
     ws.onerror = () => {
-      setConnectionState((prev) => ({
+      setConnectionState(prev => ({
         ...prev,
         status: 'error',
         lastError: 'WebSocket 连接错误',
@@ -56,34 +48,28 @@ export function ChatPage() {
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as WebSocketServerEvent;
+        const data = JSON.parse(event.data) as V4WebSocketEvent;
         if (data.event_type !== 'HEARTBEAT') {
           handleWebSocketEvent(data);
         }
       } catch {
-        // 忽略非 JSON 消息
+        // ignore non-JSON
       }
     };
 
     return () => {
       ws.close();
     };
-  }, [effectiveSessionId, handleWebSocketEvent, reconnectCounter]);
+  }, [handleWebSocketEvent]);
 
   useEffect(() => {
     const cleanup = connectWs();
     return cleanup;
-  }, [connectWs]);
-
-  useEffect(() => {
-    if (!urlSessionId && !session) {
-      initSession().catch(() => {});
-    }
-  }, [urlSessionId, session, initSession]);
+  }, [connectWs, reconnectCounter]);
 
   const handleReconnect = useCallback(() => {
     setConnectionState({ status: 'connecting', latencyMs: null, lastError: null });
-    setReconnectCounter((c) => c + 1);
+    setReconnectCounter(c => c + 1);
   }, []);
 
   return (
@@ -92,13 +78,12 @@ export function ChatPage() {
         messages={messages}
         isThinking={isThinking}
         thinkingSteps={thinkingSteps}
-        pendingClarification={pendingClarification}
         error={error}
         connectionState={connectionState}
         onSendMessage={handleUserMessage}
-        onClarificationSubmit={handleClarificationSubmit}
         onClearError={clearError}
         onReconnect={handleReconnect}
+        onClearMessages={clearMessages}
       />
     </div>
   );

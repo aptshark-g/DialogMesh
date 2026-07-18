@@ -42,7 +42,7 @@ export function ChatOverlay() {
 
   useEffect(() => {
     if (!sessionId || !isOpen) return;
-    const wsUrl = `${WS_BASE_URL}/v3/ws/${sessionId}`;
+    const wsUrl = `${WS_BASE_URL}/v4/ws`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

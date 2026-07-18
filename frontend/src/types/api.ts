@@ -341,13 +341,222 @@ export interface ClientWebSocketMessage {
 export type WebSocketClientType = ClientMessageType;
 export type WebSocketEventType = ServerEventType;
 
-export interface Session {
-  session_id: string;
-  created_at: string;
-  state: string;
-  current_turn: number;
-  pending_clarification: boolean;
-  last_activity_at: string;
-  expires_at: string;
+// ==================== v4 API 类型 ====================
+
+export interface EventRequest {
+  event_id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  trace_id: string;
 }
+
+export interface EventResponse {
+  status: string;
+  event_id: string;
+  response: string;
+  llm_metrics?: Record<string, unknown>;
+}
+
+export interface IngestResponse {
+  status: string;
+  source_path: string;
+  observation_count: number;
+  type_distribution: Record<string, unknown>;
+}
+
+export interface StatusResponse {
+  async: Record<string, unknown>;
+  slow: Record<string, unknown>;
+  deep: Record<string, unknown>;
+}
+
+export interface InspectResponse {
+  module: string;
+  count?: number;
+  items?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface CheckpointResponse {
+  status: string;
+  results: { adapter: string; ok: boolean }[];
+}
+
+// ==================== v6 API 类型 ====================
+
+// Profile
+export interface V6ProfileResponse {
+  oceAN_dims: Record<string, number>;
+  mbti: string;
+  turn_count: number;
+  top_dimensions: string[];
+  bfi_history: number;
+  bfi_latest: Record<string, number>;
+}
+
+export interface V6ProfileEditRequest {
+  dim?: string;
+  value?: number;
+  mbti?: string;
+}
+
+export interface V6ProfileEditResponse {
+  updated: string[];
+  feedback: string[];
+}
+
+// Trace
+export interface V6TraceResponse {
+  reason_distribution: Record<string, number>;
+  avg_confidence: number;
+  total: number;
+}
+
+// ABC
+export interface V6AbcResponse {
+  [key: string]: unknown;
+}
+
+// Mind
+export interface V6MindResponse {
+  [key: string]: unknown;
+}
+
+// Graph
+export interface V6GraphNode {
+  id: string;
+  state: Record<string, unknown>;
+}
+
+export interface V6GraphEdge {
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+}
+
+export interface V6GraphResponse {
+  nodes: V6GraphNode[];
+  edges: V6GraphEdge[];
+  subgraph_nodes: string[];
+}
+
+// Discourse Tree
+export interface V6DiscourseBlock {
+  id: string;
+  tree_id: string;
+  topic: string;
+  temperature: string;
+  edus: number;
+  children: string[];
+  parent: string | null;
+}
+
+export interface V6DiscourseTreeResponse {
+  blocks: V6DiscourseBlock[];
+  total: number;
+}
+
+// Objects
+export interface V6ObjectNode {
+  id: string;
+  lifespan: string;
+  relations: string[];
+}
+
+export interface V6ObjectEdge {
+  source: string;
+  target: string;
+  type: string;
+}
+
+export interface V6ObjectsResponse {
+  nodes: V6ObjectNode[];
+  edges: V6ObjectEdge[];
+  total_objects: number;
+}
+
+// Rules
+export interface V6Rule {
+  name: string;
+  premise: Record<string, unknown>;
+  conclusion: Record<string, unknown>;
+  confidence: number;
+  hits: number;
+  misses: number;
+  source: string;
+}
+
+export interface V6RulesResponse {
+  rules: V6Rule[];
+  total: number;
+}
+
+export interface V6RuleEditRequest {
+  name: string;
+  conclusion?: Record<string, unknown>;
+  confidence?: number;
+}
+
+export interface V6RuleEditResponse {
+  updated: string;
+  conclusion: Record<string, unknown>;
+  confidence: number;
+}
+
+// Feedback
+export interface V6FeedbackRequest {
+  turn: number;
+  correct: boolean;
+  rule_name: string;
+}
+
+export interface V6FeedbackResponse {
+  updated: boolean;
+  rule?: string;
+  hit?: boolean;
+  mind_updated?: boolean;
+  error?: string;
+}
+
+// Persistence
+export interface V6PersistenceResponse {
+  annotation_store: unknown;
+  unified_store: unknown;
+  oceAN_saved: boolean;
+  rules_saved: boolean;
+}
+
+// Sessions
+export interface V6SessionListItem {
+  name: string;
+  size: number;
+}
+
+export type V6SessionData = unknown[];
+
+// ==================== v4 WebSocket 类型 ====================
+
+export type V4ServerEventType =
+  | 'MESSAGE'
+  | 'THINKING_START'
+  | 'THINKING_STEP'
+  | 'THINKING_END'
+  | 'ERROR'
+  | 'HEARTBEAT'
+  | 'STATUS_UPDATE';
+
+export interface V4WebSocketEvent {
+  event_type: V4ServerEventType;
+  payload: Record<string, unknown>;
+  server_timestamp: number;
+  request_id?: string;
+}
+
+export interface V4WebSocketMessage {
+  type: 'message' | 'ping' | 'heartbeat';
+  payload: Record<string, unknown>;
+  client_timestamp?: number;
+}
+
 

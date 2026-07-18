@@ -1,45 +1,18 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GraphToolbar, GraphLegend, ConversationGraph } from '@/components/graph';
-import { useGraphStore } from '@/stores/graphStore';
-import type { GraphNode, GraphEdge, ViewMode } from '@/types/graph';
-import { getIntentColor } from '@/types/graph';
-import { formatTimestamp } from '@/lib/utils';
+import { GraphToolbar, GraphLegend, ConversationGraph } from '../components/graph';
+import { useGraphStore } from '../stores/graphStore';
+import type { GraphNode, GraphEdge, ViewMode } from '../types/graph';
+import { getIntentColor } from '../types/graph';
+import { formatTimestamp } from '../lib/utils';
 import { RefreshCw, Info } from 'lucide-react';
-import { Tooltip } from '@/components/ui/Tooltip';
-
-// ==================== Mock Data ====================
-
-const MOCK_NODES: GraphNode[] = [
-  { id: 'turn_1', label: '如何设计记忆存储', type: 'ai', intent: 'EXPLAIN', x: 0, y: 0 },
-  { id: 'turn_2', label: '存储设计需要考虑', type: 'ai', intent: 'SCAN_MEMORY', x: 50, y: -30 },
-  { id: 'turn_3', label: '记忆冲突如何解决', type: 'ai', intent: 'READ_MEMORY', x: 100, y: 0 },
-  { id: 'turn_4', label: '短期记忆用于当前', type: 'ai', intent: 'WRITE_MEMORY', x: 150, y: -30 },
-  { id: 'turn_5', label: '能否修改某个值', type: 'ai', intent: 'HACK_VALUE', x: 80, y: 50 },
-  { id: 'turn_6', label: '提供代码示例', type: 'ai', intent: 'PROVIDE_CODE', x: 120, y: 60 },
-  { id: 'turn_7', label: '冲突解决相关', type: 'cluster', intent: 'UNKNOWN', x: 60, y: -60 },
-  { id: 'turn_8', label: '记忆类型对比', type: 'cluster', intent: 'UNKNOWN', x: 140, y: -60 },
-  { id: 'turn_9', label: '检索增强方案', type: 'ai', intent: 'EXPLAIN', x: 20, y: 40 },
-  { id: 'turn_10', label: '向量数据库选型', type: 'ai', intent: 'SCAN_MEMORY', x: 60, y: 30 },
-];
-
-const MOCK_EDGES: GraphEdge[] = [
-  { id: 'e1', source: 'turn_1', target: 'turn_2', type: 'dependency' },
-  { id: 'e2', source: 'turn_2', target: 'turn_3', type: 'causal' },
-  { id: 'e3', source: 'turn_3', target: 'turn_4', type: 'dependency' },
-  { id: 'e4', source: 'turn_1', target: 'turn_5', type: 'similarity' },
-  { id: 'e5', source: 'turn_5', target: 'turn_6', type: 'causal' },
-  { id: 'e6', source: 'turn_2', target: 'turn_7', type: 'hierarchical' },
-  { id: 'e7', source: 'turn_4', target: 'turn_8', type: 'hierarchical' },
-  { id: 'e8', source: 'turn_1', target: 'turn_9', type: 'reference' },
-  { id: 'e9', source: 'turn_9', target: 'turn_10', type: 'dependency' },
-];
-
-// ==================== Component ====================
+import { Tooltip } from '../components/ui/Tooltip';
+import { useV6Graph } from '../hooks/useV6Graph';
 
 export function ConversationGraphPage() {
   const navigate = useNavigate();
+  const { graph, loading, error, refresh } = useV6Graph();
 
   // Local state for graph page
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,13 +23,26 @@ export function ConversationGraphPage() {
   const [legendVisible, setLegendVisible] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  // Use graph store for nodes/edges (initialize with mock data)
+  // Use graph store for nodes/edges (initialize from API)
   const graphStore = useGraphStore();
 
   useEffect(() => {
-    graphStore.setNodes(MOCK_NODES);
-    graphStore.setEdges(MOCK_EDGES);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!graph) return;
+    const apiNodes: GraphNode[] = graph.nodes.map((node) => ({
+      id: node.id,
+      label: node.id,
+      type: 'ai',
+      intent: (node.state?.intent as string) || 'UNKNOWN',
+    }));
+    const apiEdges: GraphEdge[] = graph.edges.map((edge) => ({
+      id: `${edge.source}-${edge.target}`,
+      source: edge.source,
+      target: edge.target,
+      type: edge.type,
+    }));
+    graphStore.setNodes(apiNodes);
+    graphStore.setEdges(apiEdges);
+  }, [graph]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nodes = graphStore.nodes;
   const edges = graphStore.edges;
@@ -84,6 +70,13 @@ export function ConversationGraphPage() {
       return matchesQuery && matchesFilter;
     }).length;
   }, [nodes, searchQuery, activeFilters]);
+
+  // Look up original node state from API graph
+  const selectedNodeState = useMemo(() => {
+    if (!selectedNodeId || !graph) return null;
+    const originalNode = graph.nodes.find((n) => n.id === selectedNodeId);
+    return originalNode?.state ?? null;
+  }, [selectedNodeId, graph]);
 
   // Handlers
   const handleSearchChange = useCallback((query: string) => {
@@ -128,14 +121,13 @@ export function ConversationGraphPage() {
   );
 
   const handleRefresh = useCallback(() => {
+    refresh();
     setLastUpdated(new Date());
-  }, []);
+  }, [refresh]);
 
   const handleNavigateToChat = useCallback(() => {
-    if (selectedNodeId) {
-      navigate(`/chat/${selectedNodeId}`);
-    }
-  }, [navigate, selectedNodeId]);
+    navigate('/chat');
+  }, [navigate]);
 
   // Selected node details
   const selectedNode = useMemo(
@@ -159,10 +151,11 @@ export function ConversationGraphPage() {
               <button
                 type="button"
                 onClick={handleRefresh}
-                className="p-2 rounded-lg bg-surface-card border border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-card-hover transition-colors"
+                disabled={loading}
+                className="p-2 rounded-lg bg-surface-card border border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-card-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="刷新"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </Tooltip>
             <div className="text-xs text-text-muted">
@@ -212,6 +205,43 @@ export function ConversationGraphPage() {
           filteredNodes={filteredNodeCount}
         />
 
+        {/* Loading overlay */}
+        <AnimatePresence>
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 flex items-center justify-center bg-surface/60 z-20"
+            >
+              <div className="bg-surface-card border border-subtle rounded-xl px-6 py-4 shadow-card text-center">
+                <RefreshCw className="w-6 h-6 text-primary mx-auto mb-2 animate-spin" />
+                <p className="text-sm text-text-secondary">加载中…</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Error overlay */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 flex items-center justify-center bg-surface/60 z-20"
+            >
+              <div className="bg-surface-card border border-red-200 dark:border-red-900 rounded-xl px-6 py-4 shadow-card text-center max-w-sm mx-4">
+                <Info className="w-6 h-6 text-red-500 mx-auto mb-2" />
+                <p className="text-sm text-text-secondary">加载失败</p>
+                <p className="text-xs text-text-muted mt-1">{error.message}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Selected Node Info Panel (bottom-left overlay) */}
         <AnimatePresence>
           {selectedNode && (
@@ -220,7 +250,7 @@ export function ConversationGraphPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.98 }}
               transition={{ duration: 0.25 }}
-              className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-64 z-10 rounded-xl bg-surface-card border border-subtle shadow-card overflow-hidden"
+              className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 z-10 rounded-xl bg-surface-card border border-subtle shadow-card overflow-hidden"
             >
               <div className="px-3 py-2.5 border-b border-subtle flex items-center justify-between">
                 <span className="text-xs font-semibold text-text-primary">节点详情</span>
@@ -261,6 +291,22 @@ export function ConversationGraphPage() {
                     </span>
                   </div>
                 </div>
+                {/* Node state from API */}
+                {selectedNodeState && Object.keys(selectedNodeState).length > 0 && (
+                  <div className="border-t border-subtle pt-2 mt-2">
+                    <span className="text-[10px] font-semibold text-text-primary">State</span>
+                    <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
+                      {Object.entries(selectedNodeState).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-[10px]">
+                          <span className="text-text-muted">{key}</span>
+                          <span className="text-text-secondary font-mono truncate max-w-[140px]">
+                            {typeof value === 'string' ? value : JSON.stringify(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={handleNavigateToChat}
@@ -273,9 +319,9 @@ export function ConversationGraphPage() {
           )}
         </AnimatePresence>
 
-        {/* Empty state hint when no filters match */}
+        {/* Empty state hint when no data or no filters match */}
         <AnimatePresence>
-          {filteredNodeCount === 0 && nodes.length > 0 && (
+          {!loading && !error && filteredNodeCount === 0 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -285,9 +331,11 @@ export function ConversationGraphPage() {
             >
               <div className="bg-surface-card border border-subtle rounded-xl px-6 py-4 shadow-card text-center">
                 <Info className="w-6 h-6 text-text-muted mx-auto mb-2" />
-                <p className="text-sm text-text-secondary">没有匹配的节点</p>
+                <p className="text-sm text-text-secondary">
+                  {nodes.length === 0 ? '暂无数据' : '没有匹配的节点'}
+                </p>
                 <p className="text-xs text-text-muted mt-1">
-                  尝试清除搜索或调整过滤器
+                  {nodes.length === 0 ? '对话图谱为空，请尝试刷新' : '尝试清除搜索或调整过滤器'}
                 </p>
               </div>
             </motion.div>

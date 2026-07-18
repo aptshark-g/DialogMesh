@@ -1,4 +1,4 @@
-# DialogMesh v6 — GUI API 完整文档
+# DialogMesh v6 — GUI API 完整文档 (v3)
 
 ## 启动
 
@@ -13,51 +13,60 @@ serve(host='127.0.0.1', port=8000)
 
 ---
 
-## 端点总览 (21个)
+## 端点总览 (29个)
 
 ### 对话
-
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/v4/event` | 发送消息 |
 | `WS` | `/v4/ws` | WebSocket 实时流 |
 
-### 画像 & 状态
-
+### 画像 & 信号
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v6/profile` | OCEAN 10维 + MBTI |
-| `PUT` | `/v6/profile` | **编辑画像** (用户纠正→反馈) |
+| `PUT` | `/v6/profile` | 编辑画像 (用户纠正→反馈) |
 | `GET` | `/v6/trace` | S/W/R 信号 |
 | `GET` | `/v6/abc` | ABC 层统计 |
-| `GET` | `/v6/mind` | Mind 学习状态 |
 
-### 可视化 (Graph/Tree/Object)
-
+### 可视化: 图/树/对象
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/v6/graph` | **交互图** (节点+边) |
-| `GET` | `/v6/discourse-tree` | **对话树** (branch/fork) |
-| `GET` | `/v6/objects` | **语义对象图** (概念关系) |
+| `GET` | `/v6/graph` | 交互图 (节点+边) |
+| `GET` | `/v6/discourse-tree` | 对话树 (branch/fork) |
+| `GET` | `/v6/objects` | 语义对象图 (概念关系) |
+
+### 可视化: 深层链/图 (新增)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/v6/relations` | **关系底物** (typed edges: depends_on/causal/...) |
+| `GET` | `/v6/causal` | **因果链** (causal substrate chains) |
+| `GET` | `/v6/behavior` | **行为图** (behavioral edges + stats) |
+| `GET` | `/v6/engineering` | **工程链** (constraints + patterns) |
+
+### Mind & 路由
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/v6/mind` | Mind 统计摘要 |
+| `GET` | `/v6/mind/full` | **心智空间全量** (relations/anchors/mistakes) |
+| `GET` | `/v6/router` | **Switch 路由状态** |
 
 ### 规则 & 反馈
-
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/v6/rules` | **规则列表** (查看) |
-| `PUT` | `/v6/rules` | **编辑规则** (前提/结论/置信度) |
-| `POST` | `/v6/feedback` | **用户反馈** (正确/错误→更新规则) |
+| `GET` | `/v6/rules` | 规则列表 |
+| `PUT` | `/v6/rules` | 编辑规则 |
+| `POST` | `/v6/feedback` | 用户反馈 (✓/✗→更新规则) |
 
 ### 持久化 & 会话
-
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v6/persistence` | 持久化状态 |
+| `GET` | `/v6/persistence/graphs` | **已持久化图数据清单** |
 | `GET` | `/v6/sessions` | 会话列表 |
-| `GET` | `/v6/session/{filename}` | 会话数据 |
+| `GET` | `/v6/session/{f}` | 会话数据 |
 
 ### 管理
-
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v4/health` | 健康检查 |
@@ -67,165 +76,101 @@ serve(host='127.0.0.1', port=8000)
 
 ---
 
-## 交互端点详解
+## 深层链/图端点详解
 
-### GET /v6/graph — 交互图可视化
+### GET /v6/relations — 关系底物
 
 ```json
 {
-  "nodes": [
-    {"id": "EventIR", "state": {}},
-    {"id": "Observer", "state": {}},
-    {"id": "Workspace", "state": {}}
-  ],
   "edges": [
-    {"source": "EventIR", "target": "Observer", "type": "DEPENDS_ON", "weight": 0.8},
-    {"source": "Observer", "target": "Workspace", "type": "CAUSAL", "weight": 0.7}
-  ],
-  "subgraph_nodes": ["MemoryManager", "ContextCompiler", ...]
-}
-```
-
-**GUI**: 力导向图 (D3/vis.js), 边粗细=weight, 颜色=type
-
-### GET /v6/discourse-tree — 对话树
-
-```json
-{
-  "blocks": [
     {
-      "id": "blk_a1b2",
-      "tree_id": "session-1",
-      "topic": "记忆功能讨论",
-      "temperature": "hot",
-      "edus": 3,
-      "children": ["blk_c3d4"],
-      "parent": null
+      "source": "ContextCompiler",
+      "target": "Workspace",
+      "kind": "depends_on",
+      "strength": 0.85,
+      "evidence": "from heading hierarchy"
     }
   ],
-  "total": 5
+  "total": 512
 }
 ```
+**GUI**: Sankey 图, 边粗细=strength, 颜色=kind
 
-**GUI**: 树形图 (缩进/连线), hot=红色, warm=黄色, cold=蓝色
-
-### GET /v6/objects — 语义对象
+### GET /v6/causal — 因果链
 
 ```json
 {
-  "nodes": [
-    {"id": "ContextCompiler", "lifespan": "stable", "relations": ["depends_on"]}
+  "chains": [
+    {"key": "Observer→Workspace→ReasoningTree", "weight": 0.72}
   ],
-  "edges": [
-    {"source": "ContextCompiler", "target": "Workspace", "type": "depends_on"}
-  ],
-  "total_objects": 5000
+  "total": 24
 }
 ```
+**GUI**: 因果链条, 横向流程图
 
-**GUI**: 概念关系图, lifespan=颜色
-
-### PUT /v6/profile — 用户纠正画像
-
-```json
-// 请求
-{
-  "dim": "C",
-  "value": 0.85,
-  "mbti": "INTJ"
-}
-
-// 响应
-{
-  "updated": ["C: 0.46 → 0.85"],
-  "feedback": ["Rule: MBTI→INTJ (conf=0.9)"]
-}
-```
-
-**行为**: 纠正后写入 ABC 规则库, 后续自动优先使用用户值。
-
-### POST /v6/feedback — 回复评价
-
-```json
-// 请求: 标记第5轮回复错误
-{
-  "turn": 5,
-  "correct": false,
-  "rule_name": "personality_t_type"
-}
-
-// 响应
-{
-  "updated": true,
-  "rule": "personality_t_type",
-  "hit": false,
-  "mind_updated": true
-}
-```
-
-**行为**: 规则 confidence 下降, Mind 记录错误模式。
-
-### GET /v6/rules — 规则浏览
+### GET /v6/behavior — 行为图
 
 ```json
 {
-  "rules": [
-    {
-      "name": "personality_t_type",
-      "premise": {"strengthen": {">=": 2}},
-      "conclusion": {"tag": "personality_analytical"},
-      "confidence": 0.5,
-      "hits": 3, "misses": 1,
-      "source": "manual"
-    }
-  ],
-  "total": 6
+  "edges": [{"source": "user_query", "target": "Observer", "type": "trigger", "weight": 0.9}],
+  "nodes": 15,
+  "stats": {"cold_starts": 3, "corrections": 1}
+}
+```
+**GUI**: 行为序列时间线
+
+### GET /v6/engineering — 工程知识图
+
+```json
+{
+  "constraints": [{"name": "token_limit_4096", "type": "constraint"}],
+  "patterns": [{"name": "observer_pattern", "type": "pattern"}]
 }
 ```
 
-**GUI**: 规则卡片列表, 每张显示前提→结论, hits/misses 条形图
-
-### PUT /v6/rules — 编辑规则
+### GET /v6/mind/full — 心智空间
 
 ```json
-// 请求
 {
-  "name": "personality_t_type",
-  "conclusion": {"tag": "personality_analytical", "threshold": 3},
-  "confidence": 0.8
+  "stats": {"active_relations": 3, "active_anchors": 2, "active_rules": 1},
+  "relations": {"Observer→Workspace": {"confidence": 0.85}},
+  "anchors": {"architecture": {"weight": 0.72}},
+  "mistakes": ["turn_5: user_correction"]
+}
+```
+
+### GET /v6/router — Switch 状态
+
+```json
+{
+  "active_mode": "ANALYTICAL",
+  "stats": {"mode_switches": 3, "current_confidence": 0.8}
 }
 ```
 
 ---
 
-## GUI 组件映射
+## GUI 组件映射 (更新)
 
-| GUI 组件 | API | 刷新频率 |
-|----------|-----|---------|
+| GUI 组件 | API | 频率 |
+|----------|-----|------|
 | 聊天窗口 | POST /v4/event + WS | 实时 |
 | OCEAN 雷达图 | GET /v6/profile | 每次回复后 |
-| MBTI 标签 | GET /v6/profile → .mbti | 每次回复后 |
-| 交互图 | GET /v6/graph | 会话开始 + 手动 |
+| MBTI 标签 | GET /v6/profile | 每次回复后 |
+| 交互图 | GET /v6/graph | 启动+手动 |
 | 对话树 | GET /v6/discourse-tree | 每5轮 |
-| 语义对象图 | GET /v6/objects | 手动刷新 |
+| 语义对象图 | GET /v6/objects | 手动 |
+| **关系底物图** | GET /v6/relations | 手动 |
+| **因果链图** | GET /v6/causal | 手动 |
+| **行为序列图** | GET /v6/behavior | 手动 |
+| **工程约束面板** | GET /v6/engineering | 手动 |
+| **心智空间面板** | GET /v6/mind/full | 每5轮 |
+| **路由状态** | GET /v6/router | 手动 |
 | S/W/R 指示灯 | GET /v6/trace | 每次回复后 |
 | ABC 层叠图 | GET /v6/abc | 每5轮 |
 | 学习曲线 | GET /v6/session/{f} | 会话结束时 |
 | 规则编辑器 | GET/PUT /v6/rules | 手动 |
-| 反馈按钮 (👍/👎) | POST /v6/feedback | 用户点击时 |
+| 反馈按钮 | POST /v6/feedback | 用户点击时 |
 | 画像编辑器 | PUT /v6/profile | 用户修改时 |
-| 历史面板 | GET /v6/sessions | 打开面板时 |
-| 历史重放 | GET /v6/session/{f} | 选中会话时 |
-
----
-
-## 用户反馈闭环
-
-```
-GUI 操作 → API → 引擎 → 持久化
-───────────────────────────────
-点赞/踩     → POST /v6/feedback   → ABC rule.hits/misses ±1
-编辑 MBTI   → PUT /v6/profile     → 新 Rule(source=user_feedback, conf=0.9)
-编辑 OCEAN  → PUT /v6/profile     → profile.dims 直接修改
-编辑规则    → PUT /v6/rules       → 持久化到 neuro_symbolic_rules.json
-```
+| 历史面板 | GET /v6/sessions | 打开时 |
+| 持久化状态 | GET /v6/persistence/graphs | 启动时 |

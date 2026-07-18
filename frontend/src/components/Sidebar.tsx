@@ -23,7 +23,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/chat/default', label: '聊天', icon: MessageSquare },
+  { to: '/chat', label: '聊天', icon: MessageSquare },
   { to: '/graph', label: '图谱', icon: Network },
   { to: '/profile', label: '画像', icon: UserCircle },
   { to: '/tasks', label: '任务', icon: CheckSquare },
@@ -41,7 +41,7 @@ export function Sidebar() {
   const checkIsActive = (to: string) => {
     if (location.pathname === to) return true;
     // Special handling for chat routes with dynamic session IDs
-    if (to === '/chat/default' && location.pathname.startsWith('/chat/')) return true;
+    if (to === '/chat' && location.pathname.startsWith('/chat')) return true;
     return false;
   };
 

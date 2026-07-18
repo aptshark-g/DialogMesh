@@ -20,7 +20,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
-          <Route path="chat/:sessionId" element={<ChatPage />} />
+          <Route path="chat" element={<ChatPage />} />
           <Route path="graph" element={<ConversationGraphPage />} />
           <Route path="profile" element={<CognitiveProfilePage />} />
           <Route path="tasks" element={<TaskPlanningPage />} />

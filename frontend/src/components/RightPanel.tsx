@@ -8,7 +8,8 @@ import {
 import { CognitiveRadarChart } from './CognitiveRadarChart';
 import { MetricCards } from './MetricCards';
 import { StatusProgress } from './StatusProgress';
-import { useUIStore } from '@/stores/uiStore';
+import { useV6Profile } from '../hooks/useV6Profile';
+import { useUIStore } from '../stores/uiStore';
 
 export interface RightPanelProps {
   lastUpdated?: string;
@@ -21,12 +22,32 @@ export const RightPanel: FC<RightPanelProps> = ({
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const closeSidePanel = useUIStore((s) => s.closeSidePanel);
+  const { profile, loading } = useV6Profile(true, 5000);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     onRefresh?.();
     setTimeout(() => setIsRefreshing(false), 800);
   };
+
+  const radarData = profile
+    ? Object.entries(profile.oceAN_dims).map(([k, v]) => ({
+        dimension: k,
+        value: Math.round(v * 100),
+        fullMark: 100,
+      }))
+    : undefined;
+
+  const metricCards = profile
+    ? Object.entries(profile.oceAN_dims)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([k, v]) => ({
+          label: k,
+          value: Math.round(v * 100),
+          trend: 0,
+        }))
+    : undefined;
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -59,11 +80,11 @@ export const RightPanel: FC<RightPanelProps> = ({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scrollbar-hide">
         {/* Cognitive Radar Chart */}
         <div className="flex flex-col items-center">
-          <CognitiveRadarChart size={200} />
+          <CognitiveRadarChart data={radarData} size={200} />
         </div>
 
         {/* Metric Cards */}
-        <MetricCards />
+        <MetricCards metrics={metricCards} />
 
         {/* Status Progress */}
         <StatusProgress />
@@ -82,7 +103,7 @@ export const RightPanel: FC<RightPanelProps> = ({
         >
           <RefreshCw
             className={`w-3.5 h-3.5 text-text-muted ${
-              isRefreshing ? 'animate-spin' : ''
+              isRefreshing || loading ? 'animate-spin' : ''
             }`}
           />
         </button>

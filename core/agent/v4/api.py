@@ -12,7 +12,7 @@ from __future__ import annotations
 import time, logging, os, json
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel
 import uvicorn
 
@@ -626,6 +626,260 @@ async def v6_rules_edit(req: RuleEditRequest):
     rule.confidence = req.confidence
     reng.save()
     return {"updated": req.name, "conclusion": rule.conclusion, "confidence": rule.confidence}
+
+
+# ══════════ v6 Deep Graph/Chain APIs ══════════
+
+
+# ── Relation Substrate (typed concept edges) ──
+
+@app.get("/v6/relations")
+async def v6_relations(source: str = "", target: str = ""):
+    """Get typed relations between concepts."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    rs = None
+    if hasattr(_engine, '_world_provider') and _engine._world_provider:
+        rs = getattr(_engine._world_provider, 'relation_substrate', None)
+    
+    if not rs:
+        return {"edges": [], "total": 0}
+    
+    edges = rs.query(source=source or None, target=target or None)
+    result = []
+    for e in edges[:200]:
+        result.append({
+            "source": getattr(e, 'source', '?'),
+            "target": getattr(e, 'target', '?'),
+            "kind": str(getattr(e, 'relation_kind', '?')),
+            "strength": getattr(e, 'semantic_strength', 0.5),
+            "evidence": str(getattr(e, 'evidence', ''))[:100],
+        })
+    return {"edges": result, "total": len(edges)}
+
+
+# ── Causal chains ──
+
+@app.get("/v6/causal")
+async def v6_causal():
+    """Get causal dependency chains."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    # Try causal substrate adapter
+    cs = getattr(_engine, '_causal_substrate_adapter', None)
+    chains = []
+    
+    if cs and hasattr(cs, 'get_chains'):
+        chains = cs.get_chains()
+    elif hasattr(_engine, '_world_provider') and _engine._world_provider:
+        # Try causal_substrate directly
+        causal = getattr(_engine._world_provider, 'causal_substrate', None)
+        if causal and hasattr(causal, 'edges'):
+            for k, v in list(getattr(causal, 'edges', {}).items())[:50]:
+                chains.append({
+                    "key": str(k),
+                    "weight": getattr(v, 'weight', 0.5) if hasattr(v, 'weight') else 0.5,
+                })
+    
+    return {"chains": chains[:50], "total": len(chains)}
+
+
+# ── Behavior graph ──
+
+@app.get("/v6/behavior")
+async def v6_behavior():
+    """Get behavior graph edges and statistics."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    bg = getattr(_engine, '_behavior_graph_adapter', None)
+    if not bg:
+        return {"edges": [], "nodes": 0, "stats": {}}
+    
+    edges = []
+    g = getattr(bg, 'graph', None) if hasattr(bg, 'graph') else bg
+    if hasattr(g, '_graph'):
+        g = g._graph
+    
+    if hasattr(g, 'edges'):
+        for e in list(getattr(g, 'edges', []))[:100]:
+            edges.append({
+                "source": str(getattr(e, 'source', '?')),
+                "target": str(getattr(e, 'target', '?')),
+                "type": str(getattr(e, 'edge_type', 'behavioral')),
+                "weight": getattr(e, 'weight', 0.5),
+            })
+    
+    return {
+        "edges": edges,
+        "nodes": bg.node_count() if hasattr(bg, 'node_count') else 0,
+        "stats": getattr(bg, 'stats', lambda: {})(),
+    }
+
+
+# ── Engineering knowledge graph ──
+
+@app.get("/v6/engineering")
+async def v6_engineering():
+    """Get engineering chain knowledge graph (constraints, patterns)."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    ek = getattr(_engine, '_engineering_knowledge', None)
+    if not ek:
+        return {"nodes": [], "constraints": [], "patterns": []}
+    
+    nodes = []
+    if hasattr(ek, 'get_by_type'):
+        for ktype_name in ['constraint', 'pattern', 'architecture']:
+            try:
+                from core.agent.v3_2.engineering_chain.models import KnowledgeType
+                kt = getattr(KnowledgeType, ktype_name.upper(), None)
+                if kt:
+                    for n in ek.get_by_type(kt)[:20]:
+                        nodes.append({"name": getattr(n, 'name', '?'), "type": ktype_name})
+            except Exception:
+                pass
+    
+    constraints = [n for n in nodes if n['type'] == 'constraint']
+    patterns = [n for n in nodes if n['type'] == 'pattern']
+    
+    return {"nodes": nodes, "constraints": constraints, "patterns": patterns}
+
+
+# ── Mind space (full introspection) ──
+
+@app.get("/v6/mind/full")
+async def v6_mind_full():
+    """Full Mind introspection — all components with history."""
+    if not _engine or not hasattr(_engine, '_mind'):
+        raise HTTPException(503, "Mind not available")
+    
+    mind = _engine._mind
+    result = {"stats": mind.stats()}
+    
+    # Relations
+    if hasattr(mind, 'relations') and mind.relations:
+        rels = getattr(mind.relations, '_relations', {})
+        result["relations"] = {str(k): {"confidence": getattr(v, 'confidence', 0.5)} 
+                               for k, v in list(rels.items())[:20]}
+    
+    # Attention anchors
+    if hasattr(mind, 'attention') and mind.attention:
+        anchors = getattr(mind.attention, '_anchors', {})
+        result["anchors"] = {str(k): {"weight": getattr(v, 'weight', 0.5)}
+                            for k, v in list(anchors.items())[:20]}
+    
+    # Mistakes
+    if hasattr(mind, 'mistakes') and mind.mistakes:
+        errs = getattr(mind.mistakes, '_errors', [])
+        result["mistakes"] = [str(e)[:100] for e in errs[-10:]]
+    
+    return result
+
+
+# ── Mode router (switch state) ──
+
+@app.get("/v6/router")
+async def v6_router():
+    """Get mode router state — which processing path is active."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    router = getattr(_engine, '_mode_router', None)
+    if not router:
+        return {"active_mode": "unknown", "stats": {}}
+    
+    return {
+        "active_mode": str(getattr(router, 'active_mode', 'unknown')),
+        "stats": router.get_stats() if hasattr(router, 'get_stats') else {},
+    }
+
+
+# ── Persisted graphs ──
+
+@app.get("/v6/persistence/graphs")
+async def v6_persistence_graphs():
+    """List all persisted graph data."""
+    paths = {
+        "mind_relations": "data/mind_relation.json",
+        "mind_attention": "data/mind_attention.json",
+        "mind_mistakes": "data/mind_mistakes.json",
+        "neuro_symbolic_rules": "data/neuro_symbolic_rules.json",
+        "ocean_profile": "data/profile/ocean_profile.json",
+        "pattern_learner": "data/pattern_learner.json",
+    }
+    result = {}
+    for name, path in paths.items():
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            result[name] = {"size": size, "exists": True}
+        else:
+            result[name] = {"exists": False}
+    return result
+
+
+# ══════════ WebSocket — Real-time streaming ══════════
+
+@app.websocket("/v4/ws")
+async def ws_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time event streaming.
+
+    Messages from client:
+        { "type": "message", "payload": { "content": "..." } }
+    Messages to client:
+        { "event_type": "MESSAGE", "payload": { "content": "..." }, "server_timestamp": ... }
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type", "")
+            payload = data.get("payload", {})
+
+            if msg_type == "message":
+                content = payload.get("content", "")
+                if content and _engine and _event_log:
+                    event_id = f"ws_{int(time.time() * 1000)}"
+                    # Persist
+                    _event_log.put_event(
+                        event_id=event_id,
+                        kind="dialog.message",
+                        payload={"text": content},
+                        trace_id="",
+                    )
+                    # Process through engine
+                    event_ir = EventIR(
+                        id=event_id,
+                        kind="dialog.message",
+                        payload={"text": content},
+                    )
+                    response_text = _engine.on_event(event_ir)
+                    _event_log.ack_event(event_id)
+                    # Send response back
+                    await websocket.send_json({
+                        "event_type": "MESSAGE",
+                        "payload": {
+                            "content": response_text,
+                            "event_id": event_id,
+                        },
+                        "server_timestamp": int(time.time() * 1000),
+                    })
+            elif msg_type == "ping":
+                await websocket.send_json({
+                    "event_type": "HEARTBEAT",
+                    "payload": {"echo": "pong"},
+                    "server_timestamp": int(time.time() * 1000),
+                })
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # ---- Entry point ----

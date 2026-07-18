@@ -12,15 +12,16 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   isThinking: boolean;
   thinkingSteps: ThinkingStep[];
-  pendingClarification: {
+  pendingClarification?: {
     clarificationId: string;
     questions: { id: string; question: string; type: string; options?: string[]; required: boolean }[];
   } | null;
   error: string | null;
   connectionState: ConnectionState;
   onSendMessage: (content: string) => void;
-  onClarificationSubmit: (answers: Record<string, unknown>) => void;
+  onClarificationSubmit?: (answers: Record<string, unknown>) => void;
   onClearError: () => void;
+  onClearMessages?: () => void;
   onReconnect: () => void;
 }
 
@@ -34,6 +35,7 @@ export default function ChatPanel({
   onSendMessage,
   onClarificationSubmit,
   onClearError,
+  onClearMessages,
   onReconnect,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -50,7 +52,7 @@ export default function ChatPanel({
   }, []);
 
   const handleClarificationSubmitLocal = useCallback(() => {
-    if (!pendingClarification) return;
+    if (!pendingClarification || !onClarificationSubmit) return;
     const missing = pendingClarification.questions.filter(q => q.required && !clarificationAnswers[q.id]);
     if (missing.length > 0) return;
     onClarificationSubmit(clarificationAnswers);
