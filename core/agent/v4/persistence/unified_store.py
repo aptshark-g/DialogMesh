@@ -37,6 +37,7 @@ class AnnotationStore:
     def __init__(self, base_dir: str = "data/annotations"):
         self._base = Path(base_dir)
         self._version = 1
+        self._write_log: list = []  # P2 monitor: write audit trail
         self._load_version()
 
     def _load_version(self):
@@ -48,6 +49,30 @@ class AnnotationStore:
         self._base.mkdir(parents=True, exist_ok=True)
         (self._base / "version.txt").write_text(str(self._version))
 
+    def _record_write(self, namespace: str, key: str, size: int, ts: float) -> None:
+        self._write_log.append({"ns": namespace, "key": key, "size": size, "ts": ts})
+        if len(self._write_log) > 1000:
+            self._write_log = self._write_log[-500:]
+
+    def get_write_log(self) -> list:
+        return self._write_log
+
+    def verify_integrity(self) -> dict:
+        """Verify all stored data is readable. Returns integrity report."""
+        errors = 0
+        total = 0
+        for ns_dir in self._base.iterdir():
+            if not ns_dir.is_dir() or ns_dir.name == 'version.txt':
+                continue
+            for f in ns_dir.glob("*.json"):
+                total += 1
+                try:
+                    with open(f) as fp:
+                        json.load(fp)
+                except Exception:
+                    errors += 1
+        return {"total_files": total, "errors": errors, "healthy": errors == 0}
+
     def put(self, namespace: str, key: str, value: Any) -> None:
         """Store any JSON-serializable value under namespace/key."""
         ns_dir = self._base / namespace
@@ -55,10 +80,17 @@ class AnnotationStore:
         path = ns_dir / f"{key}.json"
         # Atomic write
         tmp = path.with_suffix(".tmp")
+        ts = time.time()
+        sz = 0
         try:
-            with open(tmp, "w") as f:
-                json.dump({"value": value, "updated": time.time(), "version": self._version}, f)
+            payload = {"value": value, "updated": ts, "version": self._version}
+            encoded = json.dumps(payload, ensure_ascii=False)
+            sz = len(encoded)
+            with open(tmp, "w", encoding='utf-8') as f:
+                f.write(encoded)
             tmp.replace(path)
+            # P2 monitor: record write event
+            self._record_write(namespace, key, sz, ts)
         except Exception:
             if tmp.exists():
                 tmp.unlink()
@@ -110,7 +142,8 @@ class AnnotationStore:
                 size = sum(f.stat().st_size for f in files)
                 namespaces[ns_dir.name] = {"files": len(files), "size_kb": size // 1024}
                 total_size += size
-        return {"namespaces": namespaces, "total_kb": total_size // 1024, "version": self._version}
+        return {"namespaces": namespaces, "total_kb": total_size // 1024, "version": self._version,
+                "write_count": len(self._write_log), "integrity": self.verify_integrity()}
 
 
 class UnifiedStore:
