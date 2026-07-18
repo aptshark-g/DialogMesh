@@ -1280,14 +1280,6 @@ class CognitiveRuntimeEngine:
         if not hasattr(self, '_convergence_engine') or self._convergence_engine is None:
             return
 
-        # Primary: infer personality from ExecutionTrace signals
-        if hasattr(self, '_trace_v3') and self._trace_v3:
-            try:
-                from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
-                tag_engine = TagAcquisitionEngine()
-                tag_engine.infer_from_trace(self._trace_v3, self._cognitive_profile)
-            except Exception as e:
-                logger.debug("Trace-based profile skipped: %s", e)
         try:
             from core.agent.v4.cognitive.signal_filter import ProfileSignalFilter
             filt = ProfileSignalFilter(llm_provider=self._llm_provider)
