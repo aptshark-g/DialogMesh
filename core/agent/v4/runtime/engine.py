@@ -277,6 +277,14 @@ class CognitiveRuntimeEngine:
             self._abc = None
             logger.debug("ABC orchestrator skipped: %s", e)
 
+        # ---- P2: unified persistence layer ----
+        try:
+            from core.agent.v4.persistence import PersistenceWiring
+            p2_status = PersistenceWiring.wire(self)
+            logger.info("P2 persistence: %s", p2_status)
+        except Exception as e:
+            logger.debug("P2 persistence skipped: %s", e)
+
         # ---- v6 Internal State Monitor
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:

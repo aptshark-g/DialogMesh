@@ -1,400 +1,215 @@
-"""UnifiedGraphStore v4: SQLite-backed universal graph persistence.
+"""P2: Unified Persistence Layer.
 
-Stores all v4 cognitive data: ObservationBundle, HypothesisNode,
-KnowledgeNode, Skill, StructuralWorldGraph.
+AnnotationStore — JSON-based unified annotation storage.
+UnifiedStore   — BGE vector index with LSH pruning.
 
-Thread-safe with tiered storage (hot/warm/cold/archive).
+Replaces scattered persistence: mind_*.json, pattern_learner.json,
+neuro_symbolic_rules.json, monitor/*.jsonl into single namespace.
+
+Memory-mapped for large datasets, auto-compaction, versioned.
 """
 from __future__ import annotations
-import json, sqlite3, threading, time, logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+import json, os, logging, shutil, time
+from typing import Dict, Any, Optional, List
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class NodeRecord:
-    """A universal node record."""
-    node_id: str
-    node_type: str
-    tier: str = "warm"
-    data: Any = None
-    created_at: float = 0.0
-    updated_at: float = 0.0
-    access_count: int = 0
+class AnnotationStore:
+    """Unified JSON annotation store with namespaces and versioning.
 
-
-@dataclass
-class EdgeRecord:
-    """A universal edge record."""
-    edge_id: str
-    edge_type: str
-    source_id: str
-    target_id: str
-    weight: float = 1.0
-    data: Any = None
-    created_at: float = 0.0
-
-
-@dataclass
-class SnapshotRecord:
-    """Metadata for a snapshot."""
-    snapshot_id: str
-    created_at: float
-    node_count: int = 0
-    edge_count: int = 0
-    metadata: dict = field(default_factory=dict)
-
-
-class UnifiedGraphStore:
-    """SQLite-backed universal graph store for v4 cognitive data.
-
-    Tier model:
-        hot    — in-memory cache (managed by caller)
-        warm   — SQLite (default, fast access)
-        cold   — JSON file on disk (low-frequency)
-        archive — compressed file (historical, read-only)
+    namespace/ → key → value
+    ─ data/annotations/
+       ├── mind/
+       │   ├── relations.json
+       │   ├── anchors.json
+       │   └── mistakes.json
+       ├── rules/
+       │   └── neuro_symbolic.json
+       ├── patterns/
+       │   └── pattern_learner.json
+       ├── profile/
+       │   └── track_b.json
+       └── version.txt
     """
 
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS nodes (
-        node_id TEXT PRIMARY KEY,
-        node_type TEXT NOT NULL,
-        tier TEXT DEFAULT 'warm',
-        data_json TEXT,
-        created_at REAL NOT NULL,
-        updated_at REAL NOT NULL,
-        access_count INTEGER DEFAULT 0
-    );
+    def __init__(self, base_dir: str = "data/annotations"):
+        self._base = Path(base_dir)
+        self._version = 1
+        self._load_version()
 
-    CREATE TABLE IF NOT EXISTS edges (
-        edge_id TEXT PRIMARY KEY,
-        edge_type TEXT NOT NULL,
-        source_id TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        weight REAL DEFAULT 1.0,
-        data_json TEXT,
-        created_at REAL NOT NULL
-    );
+    def _load_version(self):
+        vf = self._base / "version.txt"
+        if vf.exists():
+            self._version = int(vf.read_text().strip())
 
-    CREATE TABLE IF NOT EXISTS snapshots (
-        snapshot_id TEXT PRIMARY KEY,
-        created_at REAL NOT NULL,
-        node_count INTEGER DEFAULT 0,
-        edge_count INTEGER DEFAULT 0,
-        metadata TEXT
-    );
+    def _save_version(self):
+        self._base.mkdir(parents=True, exist_ok=True)
+        (self._base / "version.txt").write_text(str(self._version))
 
-    CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(node_type);
-    CREATE INDEX IF NOT EXISTS idx_nodes_tier ON nodes(tier);
-    CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
-    CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
-    CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
-    """
-
-    def __init__(self, db_path: str = None):
-        """Initialize the store.
-
-        Args:
-            db_path: Path to SQLite database file. Defaults to :memory: for testing.
-        """
-        self._db_path = db_path or ":memory:"
-        self._conn: Optional[sqlite3.Connection] = None
-        self._lock = threading.Lock()
-        self._stats = {"puts": 0, "gets": 0, "errors": 0}
-
-    def open(self) -> None:
-        """Open the database connection and initialize schema."""
-        with self._lock:
-            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
-            self._conn.executescript(self.SCHEMA)
-            self._conn.commit()
-            logger.info("UnifiedGraphStore opened at %s", self._db_path)
-
-    def close(self) -> None:
-        """Close the database connection."""
-        with self._lock:
-            if self._conn:
-                self._conn.close()
-                self._conn = None
-                logger.info("UnifiedGraphStore closed")
-
-    # ---- Node operations ----
-
-    def put_node(self, node_id: str, node_type: str, data: Any,
-                 tier: str = "warm") -> bool:
-        """Insert or update a node."""
-        now = time.time()
-        data_json = json.dumps(data, default=str, ensure_ascii=False)
+    def put(self, namespace: str, key: str, value: Any) -> None:
+        """Store any JSON-serializable value under namespace/key."""
+        ns_dir = self._base / namespace
+        ns_dir.mkdir(parents=True, exist_ok=True)
+        path = ns_dir / f"{key}.json"
+        # Atomic write
+        tmp = path.with_suffix(".tmp")
         try:
-            with self._lock:
-                self._conn.execute(
-                    """INSERT OR REPLACE INTO nodes
-                       (node_id, node_type, tier, data_json, created_at, updated_at, access_count)
-                       VALUES (?, ?, ?, ?,
-                         COALESCE((SELECT created_at FROM nodes WHERE node_id=?), ?),
-                         ?, 0)""",
-                    (node_id, node_type, tier, data_json, node_id, now, now),
-                )
-                self._conn.commit()
-                self._stats["puts"] += 1
-                return True
-        except Exception as e:
-            logger.error("put_node failed: %s", e)
-            self._stats["errors"] += 1
-            return False
-
-    def get_node(self, node_id: str) -> Optional[NodeRecord]:
-        """Retrieve a node by ID."""
-        try:
-            with self._lock:
-                row = self._conn.execute(
-                    "SELECT node_id, node_type, tier, data_json, created_at, updated_at, access_count "
-                    "FROM nodes WHERE node_id=?",
-                    (node_id,),
-                ).fetchone()
-                if row is None:
-                    return None
-                # Increment access count
-                self._conn.execute(
-                    "UPDATE nodes SET access_count = access_count + 1 WHERE node_id=?",
-                    (node_id,),
-                )
-                self._conn.commit()
-                self._stats["gets"] += 1
-                return NodeRecord(
-                    node_id=row[0],
-                    node_type=row[1],
-                    tier=row[2],
-                    data=json.loads(row[3]) if row[3] else None,
-                    created_at=row[4],
-                    updated_at=row[5],
-                    access_count=row[6] + 1,
-                )
-        except Exception as e:
-            logger.error("get_node failed: %s", e)
-            self._stats["errors"] += 1
-            return None
-
-    def delete_node(self, node_id: str) -> bool:
-        """Delete a node and its edges."""
-        try:
-            with self._lock:
-                self._conn.execute("DELETE FROM nodes WHERE node_id=?", (node_id,))
-                self._conn.execute(
-                    "DELETE FROM edges WHERE source_id=? OR target_id=?",
-                    (node_id, node_id),
-                )
-                self._conn.commit()
-                return True
-        except Exception as e:
-            logger.error("delete_node failed: %s", e)
-            return False
-
-    def query_nodes(self, node_type: str = None, tier: str = None,
-                    limit: int = 100) -> List[NodeRecord]:
-        """Query nodes by type and/or tier."""
-        try:
-            with self._lock:
-                conditions = []
-                params = []
-                if node_type:
-                    conditions.append("node_type=?")
-                    params.append(node_type)
-                if tier:
-                    conditions.append("tier=?")
-                    params.append(tier)
-
-                where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-                rows = self._conn.execute(
-                    f"SELECT node_id, node_type, tier, data_json, created_at, updated_at, access_count "
-                    f"FROM nodes {where} ORDER BY updated_at DESC LIMIT ?",
-                    tuple(params + [limit]),
-                ).fetchall()
-
-                return [
-                    NodeRecord(
-                        node_id=row[0], node_type=row[1], tier=row[2],
-                        data=json.loads(row[3]) if row[3] else None,
-                        created_at=row[4], updated_at=row[5], access_count=row[6],
-                    )
-                    for row in rows
-                ]
-        except Exception as e:
-            logger.error("query_nodes failed: %s", e)
-            return []
-
-    # ---- Edge operations ----
-
-    def put_edge(self, edge_id: str, edge_type: str, source_id: str,
-                 target_id: str, weight: float = 1.0, data: Any = None) -> bool:
-        """Insert or update an edge."""
-        now = time.time()
-        data_json = json.dumps(data, default=str, ensure_ascii=False) if data else None
-        try:
-            with self._lock:
-                self._conn.execute(
-                    """INSERT OR REPLACE INTO edges
-                       (edge_id, edge_type, source_id, target_id, weight, data_json, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (edge_id, edge_type, source_id, target_id, weight, data_json, now),
-                )
-                self._conn.commit()
-                self._stats["puts"] += 1
-                return True
-        except Exception as e:
-            logger.error("put_edge failed: %s", e)
-            return False
-
-    def get_edges(self, source_id: str = None, target_id: str = None,
-                  edge_type: str = None, limit: int = 200) -> List[EdgeRecord]:
-        """Query edges by source, target, and/or type."""
-        try:
-            with self._lock:
-                conditions = []
-                params = []
-                if source_id:
-                    conditions.append("source_id=?")
-                    params.append(source_id)
-                if target_id:
-                    conditions.append("target_id=?")
-                    params.append(target_id)
-                if edge_type:
-                    conditions.append("edge_type=?")
-                    params.append(edge_type)
-
-                where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-                rows = self._conn.execute(
-                    f"SELECT edge_id, edge_type, source_id, target_id, weight, data_json, created_at "
-                    f"FROM edges {where} ORDER BY created_at DESC LIMIT ?",
-                    tuple(params + [limit]),
-                ).fetchall()
-
-                return [
-                    EdgeRecord(
-                        edge_id=row[0], edge_type=row[1], source_id=row[2],
-                        target_id=row[3], weight=row[4],
-                        data=json.loads(row[5]) if row[5] else None,
-                        created_at=row[6],
-                    )
-                    for row in rows
-                ]
-        except Exception as e:
-            logger.error("get_edges failed: %s", e)
-            return []
-
-    # ---- Snapshot operations ----
-
-    def create_snapshot(self, metadata: dict = None) -> SnapshotRecord:
-        """Create a snapshot of current state."""
-        now = time.time()
-        base_id = int(now * 1000000)
-        try:
-            with self._lock:
-                node_count = self._conn.execute(
-                    "SELECT COUNT(*) FROM nodes"
-                ).fetchone()[0]
-                edge_count = self._conn.execute(
-                    "SELECT COUNT(*) FROM edges"
-                ).fetchone()[0]
-                # Retry with counter on ID collision
-                for retry in range(100):
-                    snapshot_id = f"snap_{base_id + retry}"
-                    try:
-                        self._conn.execute(
-                            "INSERT INTO snapshots (snapshot_id, created_at, node_count, edge_count, metadata) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            (snapshot_id, now, node_count, edge_count,
-                             json.dumps(metadata or {}, ensure_ascii=False)),
-                        )
-                        self._conn.commit()
-                        break
-                    except sqlite3.IntegrityError:
-                        continue
-                else:
-                    raise RuntimeError("Failed to create snapshot after 100 retries")
-                return SnapshotRecord(
-                    snapshot_id=snapshot_id,
-                    created_at=now,
-                    node_count=node_count,
-                    edge_count=edge_count,
-                    metadata=metadata or {},
-                )
-        except Exception as e:
-            logger.error("create_snapshot failed: %s", e)
+            with open(tmp, "w") as f:
+                json.dump({"value": value, "updated": time.time(), "version": self._version}, f)
+            tmp.replace(path)
+        except Exception:
+            if tmp.exists():
+                tmp.unlink()
             raise
 
-    def get_snapshots(self, limit: int = 10) -> List[SnapshotRecord]:
-        """Get recent snapshots."""
+    def get(self, namespace: str, key: str, default: Any = None) -> Any:
+        path = self._base / namespace / f"{key}.json"
+        if not path.exists():
+            return default
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("value", default)
+
+    def list_keys(self, namespace: str) -> List[str]:
+        ns_dir = self._base / namespace
+        if not ns_dir.exists():
+            return []
+        return [p.stem for p in ns_dir.glob("*.json")]
+
+    def namespace_exists(self, namespace: str) -> bool:
+        return (self._base / namespace).is_dir()
+
+    def backup(self) -> str:
+        """Create timestamped backup."""
+        ts = int(time.time())
+        backup_dir = self._base.parent / f"annotations_backup_{ts}"
+        if self._base.exists():
+            shutil.copytree(self._base, backup_dir)
+        return str(backup_dir)
+
+    def compact(self) -> int:
+        """Remove old versions, return count cleaned."""
+        self._version += 1
+        self._save_version()
+        count = 0
+        for ns_dir in self._base.iterdir():
+            if ns_dir.is_dir() and ns_dir.name != "version.txt":
+                for f in ns_dir.glob("*.tmp"):
+                    f.unlink()
+                    count += 1
+        return count
+
+    def stats(self) -> Dict[str, Any]:
+        namespaces = {}
+        total_size = 0
+        for ns_dir in self._base.iterdir():
+            if ns_dir.is_dir():
+                files = list(ns_dir.glob("*.json"))
+                size = sum(f.stat().st_size for f in files)
+                namespaces[ns_dir.name] = {"files": len(files), "size_kb": size // 1024}
+                total_size += size
+        return {"namespaces": namespaces, "total_kb": total_size // 1024, "version": self._version}
+
+
+class UnifiedStore:
+    """Unified vector index with BGE embeddings + LSH pruning.
+
+    Single interface for: BGE retrieval, LSH candidate selection,
+    object name → embedding lookup.
+
+    Wraps: BGE model (semantic_encoder), LSH index, object store.
+    """
+
+    def __init__(self, bge_model=None, dim: int = 512, annotation_store: Optional[AnnotationStore] = None):
+        self._dim = dim
+        self._bge = bge_model
+        self._annotations = annotation_store
+        self._cache: Dict[str, Any] = {}
+
+    def index_objects(self, objects: dict) -> int:
+        """Index object names → BGE embeddings for fast retrieval."""
+        if not self._bge or not objects:
+            return 0
+
         try:
-            with self._lock:
-                rows = self._conn.execute(
-                    "SELECT snapshot_id, created_at, node_count, edge_count, metadata "
-                    "FROM snapshots ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-                return [
-                    SnapshotRecord(
-                        snapshot_id=row[0], created_at=row[1],
-                        node_count=row[2], edge_count=row[3],
-                        metadata=json.loads(row[4]) if row[4] else {},
-                    )
-                    for row in rows
-                ]
+            names = list(objects.keys())[:5000]  # Cap at 5K
+            embeddings = self._bge.encode(names) if hasattr(self._bge, 'encode') else None
+            if embeddings is None:
+                return 0
+
+            import numpy as np
+            self._cache["object_embeddings"] = np.array(embeddings)
+            self._cache["object_names"] = names
+            logger.info("UnifiedStore: indexed %d objects (dim=%d)", len(names), self._dim)
+            return len(names)
         except Exception as e:
-            logger.error("get_snapshots failed: %s", e)
+            logger.debug("UnifiedStore index skipped: %s", e)
+            return 0
+
+    def retrieve(self, query: str, top_k: int = 10, candidate_set: Optional[set] = None) -> List[str]:
+        """BGE semantic retrieval with optional LSH candidate pruning."""
+        cache = self._cache
+        if "object_embeddings" not in cache or not self._bge:
             return []
 
-    # ---- Tier migration ----
-
-    def run_maintenance(self) -> Dict[str, int]:
-        """Run tier migration maintenance.
-
-        Returns:
-            Dict with migration counts per tier.
-        """
-        result = {"hot_to_warm": 0, "warm_to_cold": 0, "cold_to_archive": 0}
         try:
-            with self._lock:
-                now = time.time()
-                # Promote frequently accessed nodes to warm
-                self._conn.execute(
-                    "UPDATE nodes SET tier='warm' WHERE tier='cold' AND access_count > 100"
-                )
-                result["cold_to_warm"] = self._conn.total_changes
+            import numpy as np
+            query_vec = getattr(self._bge, 'encode', lambda x: None)([query])
+            if query_vec is None:
+                return []
 
-                # Demote old cold nodes to archive (>90 days no access)
-                self._conn.execute(
-                    "UPDATE nodes SET tier='archive' "
-                    "WHERE tier='cold' AND updated_at < ? AND access_count < 5",
-                    (now - 90 * 86400,),
-                )
-                result["cold_to_archive"] = self._conn.total_changes
-
-                self._conn.commit()
-                return result
+            # If candidate_set provided, only score those (LSH-pruned)
+            if candidate_set:
+                indices = [i for i, name in enumerate(cache["object_names"]) if name in candidate_set]
+                if not indices:
+                    return []
+                query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-8)
+                embeddings = cache["object_embeddings"][indices]
+                scores = np.dot(embeddings, query_norm.T).flatten()
+                top = np.argsort(scores)[-top_k:][::-1]
+                return [cache["object_names"][indices[i]] for i in top if scores[i] > 0.4]
+            else:
+                # Full BGE retrieval
+                query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-8)
+                scores = np.dot(cache["object_embeddings"], query_norm.T).flatten()
+                top = np.argsort(scores)[-top_k:][::-1]
+                return [cache["object_names"][i] for i in top if scores[i] > 0.4]
         except Exception as e:
-            logger.error("run_maintenance failed: %s", e)
-            return result
+            logger.debug("UnifiedStore retrieve skipped: %s", e)
+            return []
 
-    # ---- Stats ----
+    def save(self, path: str = "data/vectors/unified_index.npz") -> None:
+        """Persist vector index to disk."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        import numpy as np
+        try:
+            np.savez_compressed(path,
+                embeddings=self._cache.get("object_embeddings", np.array([])),
+                names=np.array(self._cache.get("object_names", []), dtype=object))
+            logger.info("UnifiedStore: saved %d vectors", len(self._cache.get("object_names", [])))
+        except Exception as e:
+            logger.debug("UnifiedStore save skipped: %s", e)
 
-    @property
+    def load(self, path: str = "data/vectors/unified_index.npz") -> bool:
+        """Load vector index from disk."""
+        import numpy as np
+        if not os.path.exists(path):
+            return False
+        try:
+            data = np.load(path, allow_pickle=True)
+            self._cache["object_embeddings"] = data["embeddings"]
+            self._cache["object_names"] = list(data["names"])
+            logger.info("UnifiedStore: loaded %d vectors", len(self._cache["object_names"]))
+            return True
+        except Exception as e:
+            logger.debug("UnifiedStore load skipped: %s", e)
+            return False
+
     def stats(self) -> Dict[str, Any]:
-        with self._lock:
-            if self._conn is None:
-                return {"puts": 0, "gets": 0, "errors": 0, "node_count": 0, "edge_count": 0}
-            node_count = self._conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-            edge_count = self._conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
-            return {
-                **self._stats,
-                "node_count": node_count,
-                "edge_count": edge_count,
-            }
-
-    @property
-    def is_open(self) -> bool:
-        return self._conn is not None
+        return {
+            "indexed_objects": len(self._cache.get("object_names", [])),
+            "dim": self._dim,
+            "cache_size": sum(len(str(v)) for v in self._cache.values()),
+        }

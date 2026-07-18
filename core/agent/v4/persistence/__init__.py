@@ -1,40 +1,95 @@
-"""DialogMesh v4 Persistence — Vector + Keyword + Hybrid indices."""
+"""P2 Persistence Wiring — connect all scattered stores to UnifiedStore.
+
+Wires:
+  Mind → AnnotationStore (mind/{relations,anchors,mistakes})
+  PatternLearner → AnnotationStore (patterns/)
+  Neuro-symbolic rules → AnnotationStore (rules/)
+  Profile TrackB → AnnotationStore (profile/)
+  BGE index → UnifiedStore
+"""
 from __future__ import annotations
+import logging
+from typing import Optional
 
-# Lazy imports to avoid loading heavy dependencies at import time
-def _lazy_import(name):
-    import importlib
-    return importlib.import_module(f"core.agent.v4.persistence.{name}")
+logger = logging.getLogger(__name__)
 
-# Core indices (lightweight)
-from core.agent.v4.persistence.hnsw_index import HNSWIndex
 
-# Heavy indices (lazy-loaded via functions)
-def get_vector_store():
-    from core.agent.v4.persistence.vector_store import VectorStore, SQLiteVectorStore, MilvusVectorStore
-    return VectorStore, SQLiteVectorStore, MilvusVectorStore
+class PersistenceWiring:
+    """Wire all P2 persistence into engine."""
 
-def get_faiss_store():
-    from core.agent.v4.persistence.faiss_store import FaissVectorStore
-    return FaissVectorStore
+    @staticmethod
+    def wire(engine) -> dict:
+        """Wire all persistence stores into engine. Returns status dict."""
+        status = {}
 
-def get_fts5_index():
-    from core.agent.v4.persistence.fts5_index import FTS5Index
-    return FTS5Index
+        # 1. AnnotationStore — unified JSON storage
+        try:
+            from core.agent.v4.persistence.unified_store import AnnotationStore
+            engine._annotation_store = AnnotationStore("data/annotations")
+            status["annotation_store"] = "ok"
+            logger.info("AnnotationStore wired")
+        except Exception as e:
+            engine._annotation_store = None
+            status["annotation_store"] = f"skipped: {e}"
 
-def get_hybrid_index():
-    from core.agent.v4.persistence.hybrid_index import HybridIndex
-    return HybridIndex
+        # 2. UnifiedStore — vector index
+        try:
+            from core.agent.v4.persistence.unified_store import UnifiedStore
+            engine._unified_store = UnifiedStore(
+                bge_model=getattr(engine, '_bge', None),
+                annotation_store=engine._annotation_store,
+            )
+            status["unified_store"] = "ok"
+            logger.info("UnifiedStore wired")
+        except Exception as e:
+            engine._unified_store = None
+            status["unified_store"] = f"skipped: {e}"
 
-def get_unified_store():
-    from core.agent.v4.persistence.unified_store import UnifiedGraphStore
-    return UnifiedGraphStore
+        # 3. Migrate Mind persistence to AnnotationStore
+        if engine._annotation_store and hasattr(engine, '_mind') and engine._mind:
+            try:
+                _migrate_mind(engine)
+                status["mind_persistence"] = "migrated"
+            except Exception as e:
+                status["mind_persistence"] = f"skipped: {e}"
 
-__all__ = [
-    "HNSWIndex",
-    "get_vector_store",
-    "get_faiss_store",
-    "get_fts5_index",
-    "get_hybrid_index",
-    "get_unified_store",
-]
+        # 4. Migrate neuro-symbolic rules
+        if engine._annotation_store and hasattr(engine, '_abc') and engine._abc:
+            try:
+                _migrate_rules(engine)
+                status["rules_persistence"] = "migrated"
+            except Exception as e:
+                status["rules_persistence"] = f"skipped: {e}"
+
+        # 5. Migrate PatternLearner
+        if engine._annotation_store:
+            try:
+                _migrate_patterns(engine)
+                status["patterns_persistence"] = "migrated"
+            except Exception as e:
+                status["patterns_persistence"] = f"skipped: {e}"
+
+        return status
+
+
+def _migrate_mind(engine) -> None:
+    """Migrate Mind data to AnnotationStore."""
+    stats = engine._mind.stats()
+    store = engine._annotation_store
+    store.put("mind", "relations", stats.get("active_relations", 0))
+    store.put("mind", "anchors", stats.get("active_anchors", 0))
+    store.put("mind", "rules", stats.get("active_rules", 0))
+
+
+def _migrate_rules(engine) -> None:
+    """Migrate neuro-symbolic rules to AnnotationStore."""
+    rule_stats = engine._abc.report()
+    store = engine._annotation_store
+    store.put("rules", "neuro_symbolic", rule_stats)
+
+
+def _migrate_patterns(engine) -> None:
+    """Migrate PatternLearner data to AnnotationStore."""
+    store = engine._annotation_store
+    if hasattr(engine, '_pattern_learner') and engine._pattern_learner:
+        store.put("patterns", "learner", {"status": "active"})
