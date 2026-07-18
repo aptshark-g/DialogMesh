@@ -1378,17 +1378,29 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("Profile feed skipped: %s", e)
 
-        # ABC: neuro-symbolic personality detection (replaces infer_from_trace)
-        if hasattr(self, '_abc') and self._abc:
+        # LLM-driven profile fusion: LLM sees all three sources
+        if hasattr(self, '_llm_provider') and self._llm_provider:
             try:
-                decision = self._abc.decide(self)
-                if decision.get("conclusion", {}).get("tag"):
-                    tag = decision["conclusion"]["tag"]
-                    conf = decision.get("confidence", 0.5)
-                    self._cognitive_profile.track_b[tag] = {"name": tag, "confidence": conf,
-                        "source": decision.get("source", "L1_default")}
+                from core.agent.v4.cognitive.llm_profile_analyst import fuse_profile
+                fusion = fuse_profile(self, text, response, self._llm_provider)
+                # Inject subgraph into context for next turn
+                if fusion.get("subgraph") and self._last_context:
+                    from core.agent.v4.context.cross_domain_ir import IREntry
+                    for i, node in enumerate(fusion["subgraph"][:5]):
+                        self._last_context.add_entry(domain="F", entry=IREntry(
+                            domain="F", type="fusion_node",
+                            content=node[:300], confidence=0.7))
             except Exception as e:
-                logger.debug("ABC personality skipped: %s", e)
+                logger.debug("LLM fusion skipped: %s", e)
+                # Fallback: signal-only (ABC Layer A)
+                if hasattr(self, '_abc') and self._abc:
+                    decision = self._abc.decide(self)
+                    if decision.get("conclusion", {}).get("tag"):
+                        self._cognitive_profile.track_b[decision["conclusion"]["tag"]] = {
+                            "name": decision["conclusion"]["tag"],
+                            "confidence": decision.get("confidence", 0.5),
+                            "source": "signal_fallback"
+                        }
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""
