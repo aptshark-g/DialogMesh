@@ -917,6 +917,23 @@ class CognitiveRuntimeEngine:
 
             # ---- Semantic World Model additional context ----
             self._inject_semantic_world(event, text, perspectives)
+            # P1: SubgraphCompiler water-wave expansion from targets
+            if self._world_objects and self._world_provider:
+                try:
+                    from core.agent.v4.compiler.subgraph_compiler import SubgraphCompiler
+                    compiler = SubgraphCompiler(graph=getattr(self._world_provider,'graph',None),
+                                               semantic_index=getattr(self._world_provider,'index',None))
+                    targets = self._find_targets_semantic(text, self._world_objects)
+                    if targets:
+                        subgraph = compiler.expand(list(targets)[:3], max_depth=2, max_nodes=50)
+                        if subgraph:
+                            from core.agent.v4.context.cross_domain_ir import IREntry
+                            for node in subgraph[:5]:
+                                self._last_context.add_entry(domain="G", entry=IREntry(
+                                    domain="G", type="subgraph_node",
+                                    content=f"[CONCEPT] {node}"[:300], confidence=0.6))
+                except Exception as e:
+                    logger.debug("SubgraphCompiler skipped: %s", e)
 
         elif self._behavior_graph_adapter is not None and self._last_context is not None:
             try:
