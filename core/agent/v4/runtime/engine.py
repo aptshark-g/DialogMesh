@@ -284,6 +284,13 @@ class CognitiveRuntimeEngine:
             logger.info("P2 persistence: %s", p2_status)
         except Exception as e:
             logger.debug("P2 persistence skipped: %s", e)
+        # ---- P3: v3 legacy modules via v4 wrappers ----
+        try:
+            from core.agent.v4.runtime.p3_resolver import P3Resolver
+            p3_status = P3Resolver.wire(self)
+            logger.info("P3 legacy: %s", p3_status)
+        except Exception as e:
+            logger.debug("P3 legacy skipped: %s", e)
 
         # ---- v6 Internal State Monitor
         # ---- v6 Interaction Graph (dynamic state propagation) ----
@@ -961,6 +968,12 @@ class CognitiveRuntimeEngine:
 
             # ---- Semantic World Model additional context ----
             self._inject_semantic_world(event, text, perspectives)
+            # P3: v3 legacy module injection
+            try:
+                from core.agent.v4.runtime.p3_resolver import P3Resolver
+                P3Resolver.inject_in_context(self, event)
+            except Exception:
+                pass
             # P1: SubgraphCompiler water-wave expansion from targets
             if self._world_objects and self._world_provider:
                 try:
