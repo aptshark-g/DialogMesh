@@ -59,10 +59,17 @@ class FusionContext:
 
         parts = ["[Tags — Track B]"]
         # Sort by confidence
-        sorted_tags = sorted(tags.values(), key=lambda t: t.confidence, reverse=True)
+        sorted_tags = sorted(tags.values(), key=lambda t: (t.get('confidence', getattr(t, 'confidence', 0.5)) if isinstance(t, dict) else t.confidence), reverse=True)
         for tag in sorted_tags[:10]:
-            conf_bar = "█" * int(tag.confidence * 10) + "░" * (10 - int(tag.confidence * 10))
-            parts.append(f"  {tag.name}: {tag.value} |{conf_bar}| {tag.confidence:.2f} ({tag.source})")
+            if isinstance(tag, dict):
+                name = tag.get('name', '?')
+                val = tag.get('value', tag.get('confidence', 0.5))
+                conf = tag.get('confidence', 0.5)
+                src = tag.get('source', '?')
+            else:
+                name = tag.name; val = tag.value; conf = tag.confidence; src = tag.source
+            conf_bar = "█" * int(conf * 10) + "░" * (10 - int(conf * 10))
+            parts.append(f"  {name}: {val} |{conf_bar}| {conf:.2f} ({src})")
 
         return "\n".join(parts)
 
