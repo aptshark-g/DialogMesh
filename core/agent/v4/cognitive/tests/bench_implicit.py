@@ -61,7 +61,9 @@ def run_implicit_test(provider_factory):
         for i, prompt in enumerate(prompts):
             eng.on_event(ad.adapt(prompt, style_name, i + 1))
 
-        # Collect TrackB tags
+        # Collect TrackB tags — explicitly call infer_from_trace
+        from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
+        TagAcquisitionEngine().infer_from_trace(eng._trace_v3, eng._cognitive_profile)
         profile = eng._cognitive_profile
         track_b = getattr(profile, 'track_b', {}) if profile else {}
         tags = list(track_b.keys())
