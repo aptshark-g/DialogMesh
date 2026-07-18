@@ -259,8 +259,16 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             self._mind = None
             logger.debug("Mind skipped: %s", e)
-            logger.debug("MetaConsumer skipped: %s", e)
 
+        # ---- P1: wire remaining islands ----
+        try:
+            from core.agent.v4.runtime.p1_resolver import wire_p1
+            p1_count = wire_p1(self)
+            logger.info("P1 islands: %d modules wired", p1_count)
+        except Exception as e:
+            logger.debug("P1 wiring skipped: %s", e)
+
+        # ---- v6 Internal State Monitor
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:
             from core.agent.v4.state.interaction_graph import InteractionGraph, InteractionType
