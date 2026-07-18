@@ -566,6 +566,49 @@ async def v6_profile_edit(req: ProfileEditRequest):
     return result
 
 
+    return result
+
+
+# ── Correction journal ──
+
+@app.get("/v6/profile/corrections")
+async def v6_profile_corrections():
+    """Get correction journal — all user edits with before/after/drift."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    journal = getattr(_engine, '_correction_journal', None)
+    if not journal:
+        return {"entries": [], "total": 0}
+    entries = [{"ts": e.timestamp, "dim": e.dimension, "before": str(e.before),
+                "after": str(e.after), "turn": e.turn, "reason": e.reason}
+               for e in journal._entries[-50:]]
+    return {"entries": entries, "total": len(journal._entries), "stats": journal.stats()}
+
+
+@app.post("/v6/profile/corrections/review")
+async def v6_profile_corrections_review():
+    """Trigger LLM retrospective review of latest corrections and drift."""
+    if not _engine or not _engine._llm_provider: raise HTTPException(503)
+    journal = getattr(_engine, '_correction_journal', None)
+    if not journal or not journal._entries: return {"reviewed": False}
+    ocean = getattr(getattr(_engine, '_ocean_analyst', None), 'profile', None)
+    drifts = []
+    if ocean:
+        for dim, val in ocean.dims.items():
+            d = journal.check_drift(dim, val)
+            if d: drifts.append(d)
+    recent = [getattr(e, 'text', '') for e in getattr(_engine, '_event_buffer', [])[-5:]]
+    prompt = journal.build_retrospective_prompt(drifts, recent)
+    try:
+        from core.agent.llm_providers.base import GenerateRequest
+        req = GenerateRequest(prompt=prompt, max_tokens=300, temperature=0.3)
+        result = _engine._llm_provider.generate(req)
+        text = result.text if hasattr(result, 'text') else str(result)
+        return {"reviewed": True, "drifts": len(drifts), "verdict": text[:500]}
+    except Exception as e:
+        return {"reviewed": False, "error": str(e)[:200]}
+
+
 # ── Response feedback (user marks correct/wrong) ──
 
 class FeedbackRequest(BaseModel):
