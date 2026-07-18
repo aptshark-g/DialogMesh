@@ -1378,21 +1378,33 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("Profile feed skipped: %s", e)
 
-        # OCEAN 10-dim profile: LLM rates all dimensions, EMA aggregation
+        # BFI-10 calibrated OCEAN: literature-anchored personality
         if hasattr(self, '_llm_provider') and self._llm_provider:
             try:
-                if not hasattr(self, '_ocean_analyst'):
+                if not hasattr(self, '_bfi_calibrator'):
+                    from core.agent.v4.cognitive.bfi_calibrator import BFICalibrator
                     from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst
+                    self._bfi_calibrator = BFICalibrator(self._llm_provider)
                     self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
-                result = self._ocean_analyst.analyze(self, text, response)
-                # Store OCEAN profile in track_b
+
+                # BFI-10 calibrated rating + OCEAN direct rating
+                calibrated = self._bfi_calibrator.calibrate(self, text, response)
+                ocean_result = self._ocean_analyst.analyze(self, text, response)
+
+                # Store: BFI serves as anchor, OCEAN as tracking
                 self._cognitive_profile.track_b["_ocean"] = {
-                    "dims": result.get("dimensions", {}),
-                    "mbti": result.get("mbti", ""),
-                    "source": "LLM_OCEAN",
+                    "calibrated": calibrated.get("calibrated_ocean", {}),
+                    "direct": {k: round(v,2) for k,v in ocean_result.get("dimensions",{}).items()},
+                    "bfi10_scores": calibrated.get("bfi10_scores", {}),
+                    "divergence": calibrated.get("divergence", {}),
+                    "mbti_lit": calibrated.get("mbti_literature", ""),
+                    "source": "BFI10_calibrated",
                 }
                 # Inject subgraph
                 subgraph = self._ocean_analyst.get_subgraph()
+                if calibrated.get("divergence", {}).get("diverging_factors"):
+                    subgraph.append(f"[CALI] LLM OCEAN diverges from BFI-10: "
+                        f"{len(calibrated['divergence']['diverging_factors'])} factors")
                 if subgraph and self._last_context:
                     from core.agent.v4.context.cross_domain_ir import IREntry
                     for i, node in enumerate(subgraph[:6]):
@@ -1400,7 +1412,7 @@ class CognitiveRuntimeEngine:
                             domain="F", type="ocean_node",
                             content=node[:300], confidence=0.7))
             except Exception as e:
-                logger.debug("OCEAN profile skipped: %s", e)
+                logger.debug("BFI/OCEAN skipped: %s", e)
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""

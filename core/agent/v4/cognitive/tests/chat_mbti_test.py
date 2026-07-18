@@ -54,10 +54,12 @@ def run_chat_test(turns: int = 10):
         abc_rpt = eng._abc.report() if hasattr(eng, '_abc') and eng._abc else {}
         tb = list(getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).keys())
 
-        # OCEAN result
+        # OCEAN + BFI calibration
         ocean = getattr(getattr(eng, '_ocean_analyst', None), 'profile', None)
         ocean_dims = ocean.dims if ocean else {}
         ocean_mbti = ocean.to_mbti() if ocean else ""
+        cali = getattr(getattr(eng, '_bfi_calibrator', None), '_bfi_history', [])
+        last_cali = cali[-1] if cali else {}
 
         event = {
             "turn": i + 1,
@@ -72,6 +74,8 @@ def run_chat_test(turns: int = 10):
             "trackB_tags": tb,
             "ocean_dims": {k: round(v, 2) for k, v in ocean_dims.items()},
             "ocean_mbti": ocean_mbti,
+            "bfi10_scores": last_cali.get("bfi_scores", {}),
+            "bfi_divergence": last_cali.get("divergence", {}).get("total_divergence", 0),
             "mind_relations": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_relations", 0),
             "mind_anchors": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_anchors", 0),
         }
