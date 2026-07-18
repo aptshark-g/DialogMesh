@@ -114,8 +114,12 @@ class P3Resolver:
             except Exception as e:
                 events["cognitive_compiler"] = {"error": str(e)[:80]}
 
-        # Monitor: record P3 events
+        # Monitor: record P3 events (if monitor supports generic record)
         if engine._monitor and events:
-            engine._monitor.record("p3_legacy", events)
+            try:
+                if hasattr(engine._monitor, 'record_event'):
+                    engine._monitor.record_event("p3_legacy", events)
+            except Exception:
+                pass
 
         return events
