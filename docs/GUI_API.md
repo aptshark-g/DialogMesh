@@ -150,6 +150,87 @@ serve(host='127.0.0.1', port=8000)
 
 ---
 
+
+
+## 业务逻辑端点 (新增)
+
+### GET /v6/pipeline — 处理管道
+
+```json
+{
+  "tiers": {
+    "jieba": {"available": true, "pass_rate": 0.85, "correction_rate": 2, "avg_latency_ms": 12.3},
+    "deepseek": {"level": 4, "pass_rate": 0.92, "correction_rate": 0, "avg_latency_ms": 3420.0}
+  }
+}
+```
+**GUI**: 管道状态面板, 每层通过率/延迟条, 红色=高修正率
+
+### GET /v6/extraction — 提取蓝图
+
+```json
+{
+  "providers": [{"name": "jieba", "available": true}, {"name": "deepseek", "available": true}],
+  "last_result": {"definitions": 3, "relations": 2, "concepts": ["Observer", "Workspace"]}
+}
+```
+
+### GET /v6/perspectives — 视角规划器
+
+```json
+{
+  "perspectives": [{"name": "ARCHITECTURE", "horizon": "depth=2 budget=1800", "targets": ["ContextCompiler"]}],
+  "active_view": {"depth": 2, "visible": ["ContextCompiler", "SemanticPath"]}
+}
+```
+
+### GET /v6/parameters — 可调参数 (ALL)
+
+```json
+{
+  "params": {"slow_path.event_threshold": 5, "relation.min_confidence_edge": 0.15, ...},
+  "total": 19
+}
+```
+**GUI**: 参数编辑表 — 每行可编辑, PUT 保存
+
+### PUT /v6/parameters — 修改参数
+
+```json
+{"key": "slow_path.event_threshold", "value": "3"}
+→ {"key": "...", "old": "5", "new": "3", "updated": true}
+```
+
+### GET /v6/router/modes — 完整路由
+
+```json
+{
+  "modes": ["ANALYTICAL", "CREATIVE", "FAST", "DEEP"],
+  "active": "ANALYTICAL",
+  "history": ["ANALYTICAL", "ANALYTICAL", "DEEP"],
+  "stats": {"mode_switches": 3}
+}
+```
+**GUI**: 模式选择器 dropdown, 历史折线图
+
+### PUT /v6/router/modes — 强制模式
+
+```json
+{"mode": "DEEP"}
+→ {"active": "DEEP", "overridden": true}
+```
+
+### GET /v6/context — 最后组装的上下文
+
+```json
+{
+  "entries": {"k1": {"domain": "P", "type": "cognitive_profile", "confidence": 0.7}},
+  "domains": {"P": 0.6, "C": 0.4},
+  "total_entries": 12
+}
+```
+**GUI**: 上下文检查器 — 每个 domain 的颜色块, 大小=token 分配
+
 ## GUI 组件映射 (更新)
 
 | GUI 组件 | API | 频率 |
