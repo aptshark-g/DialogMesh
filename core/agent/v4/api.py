@@ -9,7 +9,7 @@ Endpoints:
     POST /v4/ingest         Ingest external documents
 """
 from __future__ import annotations
-import time, logging, os
+import time, logging, os, json
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -321,6 +321,85 @@ def _stats_to_dict(stats) -> dict:
         "failure_count": getattr(stats, 'failure_count', 0),
         "total_latency_ms": getattr(stats, 'total_latency_ms', 0.0),
     }
+
+
+# ══════════ v6 Endpoints ══════
+
+
+@app.get("/v6/profile")
+async def v6_profile():
+    """Get OCEAN 10-dimension profile + MBTI."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    ocean = getattr(getattr(_engine, '_ocean_analyst', None), 'profile', None)
+    bfi = getattr(getattr(_engine, '_bfi_calibrator', None), '_bfi_history', [])
+    return {
+        "oceAN_dims": ocean.dims if ocean else {},
+        "mbti": ocean.to_mbti() if ocean else "?",
+        "turn_count": ocean.turn_count if ocean else 0,
+        "top_dimensions": ocean.top_dimensions(5) if ocean else [],
+        "bfi_history": len(bfi),
+        "bfi_latest": bfi[-1]["bfi_scores"] if bfi else {},
+    }
+
+
+@app.get("/v6/trace")
+async def v6_trace():
+    """Get current trace signals."""
+    if not _engine or not hasattr(_engine, '_trace_v3'):
+        raise HTTPException(503, "Engine not started")
+    m = _engine._trace_v3.meta_analyze()
+    return {"reason_distribution": m.get("reason_distribution", {}),
+            "avg_confidence": m.get("avg_confidence", 0), "total": m.get("total_transitions", 0)}
+
+
+@app.get("/v6/abc")
+async def v6_abc():
+    """Get ABC layer stats."""
+    if not _engine or not hasattr(_engine, '_abc'):
+        raise HTTPException(503, "ABC not available")
+    return _engine._abc.report()
+
+
+@app.get("/v6/mind")
+async def v6_mind():
+    """Get Mind stats."""
+    if not _engine or not hasattr(_engine, '_mind'):
+        raise HTTPException(503, "Mind not available")
+    return _engine._mind.stats()
+
+
+@app.get("/v6/persistence")
+async def v6_persistence():
+    """Get persistence status."""
+    store = getattr(_engine, '_annotation_store', None)
+    unified = getattr(_engine, '_unified_store', None)
+    return {
+        "annotation_store": store.stats() if store else None,
+        "unified_store": unified.stats() if unified else None,
+        "oceAN_saved": os.path.exists("data/profile/ocean_profile.json"),
+        "rules_saved": os.path.exists("data/neuro_symbolic_rules.json"),
+    }
+
+
+@app.get("/v6/sessions")
+async def v6_sessions():
+    """List sessions."""
+    d = "data/monitor"
+    if not os.path.exists(d):
+        return []
+    files = sorted([f for f in os.listdir(d) if f.startswith("chat_") and f.endswith(".jsonl")], reverse=True)
+    return [{"name": f, "size": os.path.getsize(os.path.join(d, f))} for f in files[:20]]
+
+
+@app.get("/v6/session/{filename}")
+async def v6_session(filename: str):
+    """Get session data."""
+    path = os.path.join("data/monitor", filename)
+    if not os.path.exists(path):
+        raise HTTPException(404, "Session not found")
+    with open(path) as f:
+        return [json.loads(line) for line in f]
 
 
 # ---- Entry point ----
