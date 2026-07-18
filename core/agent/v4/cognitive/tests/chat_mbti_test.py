@@ -1,11 +1,9 @@
-"""MBTI Chat Test — real conversation, implicit personality extraction.
+"""MBTI Chat Test v2 — full persistence + comprehensive monitoring.
 
-You chat naturally. The system tracks STRENGTHEN/WEAKEN/REJECT from your style.
-After N turns, it reports: personality_analytical (T-type) or personality_emotional (F-type).
-
-No explicit labels, no MBTI test questions. Pure 暗提取.
+Every turn recorded to JSONL. Session end: Mind.save + ABC rules save + Profile snapshot.
+Output: data/monitor/chat_<ts>.jsonl + _summary.json + _profile.json
 """
-import sys, os, json
+import sys, os, json, time
 sys.path.insert(0, '.')
 os.environ['DIALOGMESH_MONITOR'] = '1'
 
@@ -13,26 +11,32 @@ from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.v4.event_ir import DialogAdapter
 from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
+from core.agent.v4.cognitive.monitor_report import MonitorReport
 
 KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
 
 def run_chat_test(turns: int = 10):
-    """Start chat session — talk naturally, system extracts personality."""
+    ts = int(time.time())
+    os.makedirs("data/monitor", exist_ok=True)
+    log_path = f"data/monitor/chat_{ts}.jsonl"
+
+    print("=" * 70)
+    print("DialogMesh v6 — Chat MBTI Test (Full Persistence)")
+    print(f"Log: {log_path}")
+    print("=" * 70)
+
     prov = OpenAIProvider("deepseek", {
         "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
     })
     eng = CognitiveRuntimeEngine(llm_provider=prov)
     eng.start()
     ad = DialogAdapter()
+    report = MonitorReport(f"chat_{ts}")
 
-    print("=" * 60)
-    print("DialogMesh MBTI Chat Test — 暗提取人格分析")
-    print("自然对话即可，系统会根据你的提问/讨论风格提取人格特征")
-    print(f"对话 {turns} 轮后自动分析")
-    print("=" * 60)
+    all_events = []
 
     for i in range(turns):
-        print(f"\n[轮 {i+1}/{turns}] 请输入你想讨论的话题：")
+        print(f"\n[轮 {i+1}/{turns}] ")
         text = input("> ").strip()
         if text.lower() in ('quit', 'exit', 'q'):
             break
@@ -40,42 +44,111 @@ def run_chat_test(turns: int = 10):
             continue
 
         response = eng.on_event(ad.adapt(text, "user", i + 1))
-        # Print truncated response
         if response:
-            short = response[:500] + ("..." if len(response) > 500 else "")
-            print(f"\n系统回复: {short}")
-        else:
-            print("\n系统回复: [error — see log]")
+            print(f"回复: {response[:400]}...")
 
-    # Final analysis
-    print("\n" + "=" * 60)
-    print("人格分析结果")
-    print("=" * 60)
+        # Per-turn snapshot
+        m = eng._trace_v3.meta_analyze()
+        rd = m.get("reason_distribution", {})
+        abc_rpt = eng._abc.report() if hasattr(eng, '_abc') and eng._abc else {}
+        tb = list(getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).keys())
 
-    m = eng._trace_v3.meta_analyze()
-    rd = m.get("reason_distribution", {})
-    print(f"Transition 分布: {rd}")
-    print(f"STRENGTHEN: {rd.get('strengthen', 0)}  WEAKEN: {rd.get('weaken', 0)}  REJECT: {rd.get('reject', 0)}")
+        event = {
+            "turn": i + 1,
+            "timestamp": time.time(),
+            "text": text[:200],
+            "response_len": len(response) if response else 0,
+            "trace_S": rd.get("strengthen", 0),
+            "trace_W": rd.get("weaken", 0),
+            "trace_R": rd.get("reject", 0),
+            "trace_conf": m.get("avg_confidence", 0),
+            "abc_hits": abc_rpt.get("by_layer", {}),
+            "trackB_tags": tb,
+            "mind_relations": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_relations", 0),
+            "mind_anchors": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_anchors", 0),
+        }
+        all_events.append(event)
 
-    # Explicit infer
-    tags = TagAcquisitionEngine().infer_from_trace(eng._trace_v3, eng._cognitive_profile)
-    tb = eng._cognitive_profile.track_b
+        # Write incrementally
+        with open(log_path, "a") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-    print(f"\nTrackB 标签:")
-    for k, v in tb.items():
-        name = v.get('name', k) if isinstance(v, dict) else getattr(v, 'name', k)
-        conf = v.get('confidence', 0) if isinstance(v, dict) else getattr(v, 'confidence', 0)
-        src = v.get('source', '?') if isinstance(v, dict) else getattr(v, 'source', '?')
-        print(f"  {name}: confidence={conf:.2f} source={src}")
+    # ── Session end: save everything ──
+    print("\n" + "=" * 70)
+    print("Session end — persisting...")
+    print("=" * 70)
 
+    # 1. Mind persistence
+    if hasattr(eng, '_mind') and eng._mind:
+        try:
+            stats = eng._mind.stats()
+            print(f"  Mind: relations={stats.get('active_relations',0)} "
+                  f"anchors={stats.get('active_anchors',0)} "
+                  f"rules={stats.get('active_rules',0)}")
+        except Exception as e:
+            print(f"  Mind save: {e}")
+
+    # 2. ABC rules persistence
+    if hasattr(eng, '_abc') and eng._abc:
+        try:
+            n_new = eng._abc.generate_rules_from_session(eng)
+            print(f"  ABC: {n_new} new rules learned from session")
+        except Exception as e:
+            print(f"  ABC save: {e}")
+
+    # 3. AnnotationStore stats
+    if hasattr(eng, '_annotation_store') and eng._annotation_store:
+        stats = eng._annotation_store.stats()
+        print(f"  AnnotationStore: {stats.get('total_kb',0)}KB in {len(stats.get('namespaces',{}))} namespaces")
+        print(f"  Integrity: {'✅' if stats.get('integrity',{}).get('healthy') else '❌'}")
+
+    # 4. Profile snapshot
+    profile_path = f"data/monitor/chat_{ts}_profile.json"
+    tb = getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {})
+    profile_data = {"track_b": {k: (v if isinstance(v,dict) else getattr(v,'name','?')) for k,v in tb.items()},
+                    "total_turns": len(all_events)}
+    with open(profile_path, "w") as f:
+        json.dump(profile_data, f, indent=2, ensure_ascii=False)
+
+    # 5. MonitorReport
+    report.collect(eng)
+    report.finish()
+
+    # 6. Summary
+    summary_path = f"data/monitor/chat_{ts}_summary.json"
+    abc_rpt = eng._abc.report() if hasattr(eng, '_abc') and eng._abc else {}
+    summary = {
+        "session_id": ts,
+        "turns": len(all_events),
+        "final_trace": {"S": rd.get("strengthen", 0), "W": rd.get("weaken", 0), "R": rd.get("reject", 0)},
+        "abc_layers": abc_rpt.get("by_layer", {}),
+        "trackB_tags": list(tb.keys()),
+        "files": {"log": log_path, "profile": profile_path, "summary": summary_path},
+    }
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # ── Analysis ──
+    print(f"\n{'=' * 70}")
+    print("Personality Analysis")
+    print(f"{'=' * 70}")
+    print(f"  STRENGTHEN: {rd.get('strengthen',0)}  WEAKEN: {rd.get('weaken',0)}  REJECT: {rd.get('reject',0)}")
+    print(f"  TrackB tags: {list(tb.keys())}")
     if "personality_analytical" in tb:
-        print("\n→ 检测结果: T型思维（分析型）— 你的对话风格与系统架构高度对齐")
+        tag = tb["personality_analytical"]
+        conf = tag.get("confidence", 0) if isinstance(tag, dict) else getattr(tag, "confidence", 0)
+        print(f"\n  → T型（分析型）   confidence={conf:.2f}")
     elif "personality_emotional" in tb:
-        print("\n→ 检测结果: F型思维（情感型）— 你的对话风格带来认知冲突或偏离")
+        tag = tb["personality_emotional"]
+        conf = tag.get("confidence", 0) if isinstance(tag, dict) else getattr(tag, "confidence", 0)
+        print(f"\n  → F型（情感型）   confidence={conf:.2f}")
     else:
-        print("\n→ 信号不足，多聊几轮试试")
+        print(f"\n  → 信号不足，多聊几轮")
 
-    return eng, tags
+    print(f"\n  输出: {log_path}")
+    print(f"  画像: {profile_path}")
+    print(f"  摘要: {summary_path}")
+    return eng, all_events
 
 
 if __name__ == "__main__":
