@@ -402,6 +402,232 @@ async def v6_session(filename: str):
         return [json.loads(line) for line in f]
 
 
+# ══════════ v6 GUI Interaction Endpoints ══════════
+
+
+# ── Graph visualization ──
+
+@app.get("/v6/graph")
+async def v6_graph():
+    """Get InteractionGraph + SubgraphCompiler state for visualization."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    ig = getattr(_engine, '_interaction_graph', None)
+    nodes = []
+    edges = []
+    if ig and hasattr(ig, '_edges'):
+        edge_list = getattr(ig, '_edges', []) if isinstance(getattr(ig, '_edges', None), list) else list(getattr(ig, '_edges', {}).values())
+        for e in edge_list[:50]:
+            edges.append({
+                "source": getattr(e, 'source', '?'),
+                "target": getattr(e, 'target', '?'),
+                "type": str(getattr(e, 'edge_type', '?')),
+                "weight": getattr(e, 'weight', 0.5),
+            })
+        # Collect unique nodes
+        node_set = set()
+        for e in edges:
+            node_set.add(e["source"])
+            node_set.add(e["target"])
+        for n in sorted(node_set):
+            nodes.append({"id": n, "state": ig.get_node_state(n) if hasattr(ig, 'get_node_state') else {}})
+    
+    # SubgraphCompiler active subgraph
+    subgraph_nodes = []
+    if hasattr(_engine, '_world_objects') and _engine._world_objects:
+        subgraph_nodes = list(_engine._world_objects.keys())[:20]
+    
+    return {"nodes": nodes, "edges": edges, "subgraph_nodes": subgraph_nodes}
+
+
+# ── Discourse Tree visualization ──
+
+@app.get("/v6/discourse-tree")
+async def v6_discourse_tree():
+    """Get DiscourseBlockTree for tree visualization."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    dt = getattr(_engine, '_discourse_tree', None)
+    if not dt:
+        return {"blocks": [], "branches": []}
+    
+    trees = getattr(dt, '_trees', {})
+    blocks = []
+    for tree_id, tree in trees.items():
+        block_list = getattr(tree, 'blocks', {})
+        for bid, block in block_list.items():
+            blocks.append({
+                "id": str(bid),
+                "tree_id": tree_id,
+                "topic": getattr(block, 'topic', '')[:100],
+                "temperature": getattr(block, 'temperature', 'warm'),
+                "edus": len(getattr(block, 'edus', [])),
+                "children": [str(c) for c in getattr(block, 'children', [])],
+                "parent": str(getattr(block, 'parent', '')) if getattr(block, 'parent', None) else None,
+            })
+    
+    return {"blocks": blocks, "total": len(blocks)}
+
+
+# ── Semantic Object graph ──
+
+@app.get("/v6/objects")
+async def v6_objects():
+    """Get SemanticObject graph for concept visualization."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    objects = getattr(_engine, '_world_objects', {})
+    nodes = []
+    edges = []
+    for name, obj in list(objects.items())[:100]:
+        nodes.append({
+            "id": name,
+            "lifespan": str(getattr(obj, 'lifespan', '?')) if hasattr(obj, 'lifespan') else 'stable',
+            "relations": list(getattr(obj, 'relations', {}).keys())[:5] if hasattr(obj, 'relations') else [],
+        })
+        # Extract edges from object relations
+        rels = getattr(obj, 'relations', {})
+        for rel_type, targets in (rels.items() if isinstance(rels, dict) else []):
+            target_list = targets if isinstance(targets, list) else [targets]
+            for target in target_list[:3]:
+                edges.append({"source": name, "target": str(target), "type": str(rel_type)})
+    
+    return {"nodes": nodes[:50], "edges": edges[:100], "total_objects": len(objects)}
+
+
+# ── Profile editing (user correction → feedback) ──
+
+class ProfileEditRequest(BaseModel):
+    dim: str = ""
+    value: float = 0.5
+    mbti: str = ""
+
+
+@app.put("/v6/profile")
+async def v6_profile_edit(req: ProfileEditRequest):
+    """Edit OCEAN profile. User corrections feed back to Mind + ABC rules."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    result = {"updated": [], "feedback": []}
+    ocean = getattr(getattr(_engine, '_ocean_analyst', None), 'profile', None)
+    
+    # Update OCEAN dimension
+    if req.dim and ocean:
+        dims = getattr(ocean, 'dims', {})
+        if req.dim in dims:
+            old = dims[req.dim]
+            dims[req.dim] = req.value
+            result["updated"].append(f"{req.dim}: {old:.2f} → {req.value:.2f}")
+    
+    # Update MBTI → feed back to ABC rules
+    if req.mbti and hasattr(_engine, '_abc') and _engine._abc:
+        try:
+            from core.agent.v4.cognitive.neuro_symbolic import Rule
+            # Create correction rule from user feedback
+            _engine._abc._rule_engine.register(Rule(
+                name=f"user_correction_mbti",
+                premise={"profile_tags": {"contains": "personality"}},
+                conclusion={"mbti": req.mbti, "action": "user_override"},
+                source="user_feedback",
+                confidence=0.9,
+            ))
+            _engine._abc._rule_engine.save()
+            result["feedback"].append(f"Rule: MBTI→{req.mbti} (conf=0.9)")
+        except Exception as e:
+            result["feedback"].append(f"Rule save failed: {e}")
+    
+    return result
+
+
+# ── Response feedback (user marks correct/wrong) ──
+
+class FeedbackRequest(BaseModel):
+    turn: int = 0
+    correct: bool = True
+    rule_name: str = ""
+
+
+@app.post("/v6/feedback")
+async def v6_feedback(req: FeedbackRequest):
+    """User feedback on response quality → updates ABC rule confidence."""
+    if not _engine:
+        raise HTTPException(503, "Engine not started")
+    
+    result = {"updated": False}
+    
+    # Update ABC rule confidence
+    if req.rule_name and hasattr(_engine, '_abc') and _engine._abc:
+        try:
+            _engine._abc.learn_from_feedback(req.rule_name, req.correct)
+            result["updated"] = True
+            result["rule"] = req.rule_name
+            result["hit"] = req.correct
+        except Exception as e:
+            result["error"] = str(e)
+    
+    # Record correction in Mind
+    if hasattr(_engine, '_mind') and _engine._mind and not req.correct:
+        try:
+            if hasattr(_engine._mind, 'mistakes') and _engine._mind.mistakes:
+                _engine._mind.mistakes.record(f"turn_{req.turn}", "user_correction")
+            result["mind_updated"] = True
+        except Exception:
+            pass
+    
+    return result
+
+
+# ── Rule management ──
+
+@app.get("/v6/rules")
+async def v6_rules():
+    """List all neuro-symbolic rules (view/edit)."""
+    if not _engine or not hasattr(_engine, '_abc'):
+        raise HTTPException(503, "ABC not available")
+    reng = getattr(getattr(_engine, '_abc', None), '_rule_engine', None)
+    if not reng:
+        return {"rules": []}
+    rules = []
+    for name, rule in reng._rules.items():
+        rules.append({
+            "name": name,
+            "premise": rule.premise,
+            "conclusion": rule.conclusion,
+            "confidence": rule.confidence,
+            "hits": rule.hits,
+            "misses": rule.misses,
+            "source": rule.source,
+        })
+    return {"rules": rules, "total": len(rules)}
+
+
+class RuleEditRequest(BaseModel):
+    name: str
+    conclusion: dict = {}
+    confidence: float = 0.5
+
+
+@app.put("/v6/rules")
+async def v6_rules_edit(req: RuleEditRequest):
+    """Edit a neuro-symbolic rule."""
+    if not _engine or not hasattr(_engine, '_abc'):
+        raise HTTPException(503, "ABC not available")
+    reng = getattr(getattr(_engine, '_abc', None), '_rule_engine', None)
+    if not reng or req.name not in reng._rules:
+        raise HTTPException(404, f"Rule '{req.name}' not found")
+    
+    rule = reng._rules[req.name]
+    if req.conclusion:
+        rule.conclusion.update(req.conclusion)
+    rule.confidence = req.confidence
+    reng.save()
+    return {"updated": req.name, "conclusion": rule.conclusion, "confidence": rule.confidence}
+
+
 # ---- Entry point ----
 
 def serve(host: str = "0.0.0.0", port: int = 8000, db_path: str = "data/event_log.db"):
