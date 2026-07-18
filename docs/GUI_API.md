@@ -1,5 +1,37 @@
 # DialogMesh v6 — GUI API 完整业务文档 (v6 · 50 endpoints)
 
+
+## 可视化交互编辑 (NEW — 白盒化)
+
+| 端点 | 用途 | 操作 |
+|------|------|------|
+| `PUT /v6/edit/graph` | 编辑交互图 | update_weight / add_edge / set_node |
+| `PUT /v6/edit/discourse-tree` | 编辑对话树 | reclassify / rename / merge |
+| `PUT /v6/edit/objects` | 编辑语义对象 | relate / unrelate |
+| `PUT /v6/edit/relations` | 编辑关系边 | update / add |
+| `PUT /v6/edit/ir` | 直接编辑 IR 上下文 | 增删改 LLM 所见的中间表示 |
+
+**所有修改自动记录到 correction_journal → 馈入 Mind 行为学习**
+
+### PUT /v6/edit/graph
+```json
+{"action": "update_weight", "source": "Observer", "target": "Workspace", "weight": 0.95}
+→ {"edited": "edge", "weight": 0.95}
+```
+
+### PUT /v6/edit/discourse-tree
+```json
+{"action": "reclassify", "block_id": "blk_a1", "temperature": "cold"}
+→ {"edited": "temperature", "before": "hot", "after": "cold"}
+```
+
+### PUT /v6/edit/ir (最深白盒层)
+```json
+{"domain": "K", "entry_type": "user_note", "content": "ContextCompiler is the most critical module"}
+→ LLM 下轮对话将看到此用户注入的上下文
+```
+
+
 ## 业务域划分
 
 ```
