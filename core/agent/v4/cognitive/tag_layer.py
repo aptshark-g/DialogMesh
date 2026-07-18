@@ -209,6 +209,28 @@ class TagAcquisitionEngine:
 
 # ═══════════════════ g-Factor Inference ═══════════════════
 
+    def infer_from_trace(self, trace, profile=None):
+        """Infer personality from ExecutionTrace transition signals."""
+        if trace is None: return {}
+        m = trace.meta_analyze()
+        rd = m.get("reason_distribution", {})
+        s, w = rd.get("strengthen", 0), rd.get("weaken", 0)
+        total = max(1, sum(rd.values()))
+        tags = {}
+        if s >= 3:
+            from .models import UserTag
+            tags["personality_analytical"] = UserTag("personality_analytical",
+                confidence=min(0.9, s/total*3), source="trace_strengthen")
+        if w >= 3:
+            from .models import UserTag
+            tags["personality_emotional"] = UserTag("personality_emotional",
+                confidence=min(0.9, w/total*3), source="trace_weaken")
+        if profile:
+            for k, v in tags.items():
+                profile.track_b[k] = v
+        return tags
+
+
 class GFactorInferencer:
     """g-factor (general cognitive ability) inference.
 
@@ -315,3 +337,13 @@ class TagLayerManager:
     @property
     def engine(self) -> TagAcquisitionEngine:
         return self._engine
+
+    def infer_from_trace(self, trace, profile=None):
+        """Infer personality from ExecutionTrace transition signals.
+        STRENGTHEN=T-type alignment, WEAKEN=F-type mismatch."""
+        if trace is None: return {}
+        m = trace.meta_analyze()
+        rd = m.get("reason_distribution", {})
+        s, w = rd.get("strengthen", 0), rd.get("weaken", 0)
+        total = max(1, sum(rd.values()))
+        tags = {}

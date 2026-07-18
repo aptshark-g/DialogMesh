@@ -1288,7 +1288,6 @@ class CognitiveRuntimeEngine:
                 tag_engine.infer_from_trace(self._trace_v3, self._cognitive_profile)
             except Exception as e:
                 logger.debug("Trace-based profile skipped: %s", e)
-                self._fallback_feed(text, response)
         try:
             from core.agent.v4.cognitive.signal_filter import ProfileSignalFilter
             filt = ProfileSignalFilter(llm_provider=self._llm_provider)
