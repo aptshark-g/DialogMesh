@@ -53,6 +53,11 @@ def run_chat_test(turns: int = 10):
         abc_rpt = eng._abc.report() if hasattr(eng, '_abc') and eng._abc else {}
         tb = list(getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).keys())
 
+        # LLM fusion result
+        fusion_tag = getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).get('_llm_fusion', {})
+        fusion_personality = fusion_tag.get('personality', '') if isinstance(fusion_tag, dict) else ''
+        fusion_tf = fusion_tag.get('T_vs_F', '') if isinstance(fusion_tag, dict) else ''
+
         event = {
             "turn": i + 1,
             "timestamp": time.time(),
@@ -64,6 +69,8 @@ def run_chat_test(turns: int = 10):
             "trace_conf": m.get("avg_confidence", 0),
             "abc_hits": abc_rpt.get("by_layer", {}),
             "trackB_tags": tb,
+            "llm_fusion_tf": fusion_tf,
+            "llm_fusion_personality": fusion_personality[:100],
             "mind_relations": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_relations", 0),
             "mind_anchors": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_anchors", 0),
         }
