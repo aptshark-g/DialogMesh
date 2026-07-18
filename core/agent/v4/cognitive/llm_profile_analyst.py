@@ -46,7 +46,10 @@ class LLMProfileAnalyst:
         )
 
         try:
-            result_text = self._llm.complete(prompt, max_tokens=400)
+            from core.agent.llm_providers.base import GenerateRequest
+            req = GenerateRequest(prompt=prompt, max_tokens=400, temperature=0.3)
+            result = self._llm.generate(req)
+            result_text = result.text if hasattr(result, 'text') else str(result)
             result = self._parse_fusion_result(result_text)
             self._history.append(result)
             return result

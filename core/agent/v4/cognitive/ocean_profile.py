@@ -136,7 +136,10 @@ class OCEANProfileAnalyst:
         prompt = self._build_rating_prompt(turn_text, llm_response, signals, prev)
 
         try:
-            result_text = self._llm.complete(prompt, max_tokens=300)
+            from core.agent.llm_providers.base import GenerateRequest
+            req = GenerateRequest(prompt=prompt, max_tokens=300, temperature=0.3)
+            result = self._llm.generate(req)
+            result_text = result.text if hasattr(result, 'text') else str(result)
             ratings = self._parse_ratings(result_text)
             self.profile.update(ratings)
             return {
