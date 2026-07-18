@@ -97,7 +97,24 @@ class OCEANProfile:
         return f"{ei}{sn}{tf}{jp}"
 
     def to_dict(self) -> dict:
-        return {"dims": self.dims, "turn_count": self.turn_count, "mbti_approx": self.to_mbti()}
+        return {"dims": self.dims, "turn_count": self.turn_count, "mbti_approx": self.to_mbti(),
+                "history_len": len(self.history)}
+
+    def save(self, path: str = "data/profile/ocean_profile.json") -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, path: str = "data/profile/ocean_profile.json", alpha: float = 0.3) -> "OCEANProfile":
+        if not os.path.exists(path):
+            return cls(alpha=alpha)
+        with open(path) as f:
+            data = json.load(f)
+        profile = cls(alpha=alpha)
+        profile.dims = data.get("dims", {k: 0.5 for k in DIMENSIONS})
+        profile.turn_count = data.get("turn_count", 0)
+        return profile
 
     def to_llm_context(self) -> str:
         """Render profile as structured context for LLM injection."""

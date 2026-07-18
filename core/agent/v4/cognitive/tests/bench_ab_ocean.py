@@ -41,6 +41,12 @@ prov = OpenAIProvider("deepseek", {
 })
 eng = CognitiveRuntimeEngine(llm_provider=prov)
 eng.start()
+# Show loaded profile
+ocean = getattr(getattr(eng, '_ocean_analyst', None), 'profile', None)
+if ocean and ocean.turn_count > 0:
+    print(f"  Loaded prior profile: {ocean.to_mbti()} ({ocean.turn_count} turns) {dict(ocean.dims)}")
+else:
+    print("  Fresh profile (no prior session)")
 ad = DialogAdapter()
 
 all_ocean = []

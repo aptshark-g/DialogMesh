@@ -284,6 +284,18 @@ class CognitiveRuntimeEngine:
             logger.info("P2 persistence: %s", p2_status)
         except Exception as e:
             logger.debug("P2 persistence skipped: %s", e)
+
+        # ---- Cross-session: load OCEAN profile from prior session ----
+        if not hasattr(self, '_ocean_analyst'):
+            from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst, OCEANProfile
+            self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
+        try:
+            loaded = OCEANProfile.load("data/profile/ocean_profile.json")
+            if loaded.turn_count > 0:
+                self._ocean_analyst.profile = loaded
+                logger.info("OCEAN loaded: %s (%d turns)", loaded.to_mbti(), loaded.turn_count)
+        except Exception:
+            pass
         # ---- P3: v3 legacy modules via v4 wrappers ----
         try:
             from core.agent.v4.runtime.p3_resolver import P3Resolver
