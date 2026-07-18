@@ -1378,29 +1378,29 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("Profile feed skipped: %s", e)
 
-        # LLM-driven profile fusion: LLM sees all three sources
+        # OCEAN 10-dim profile: LLM rates all dimensions, EMA aggregation
         if hasattr(self, '_llm_provider') and self._llm_provider:
             try:
-                from core.agent.v4.cognitive.llm_profile_analyst import fuse_profile
-                fusion = fuse_profile(self, text, response, self._llm_provider)
-                # Inject subgraph into context for next turn
-                if fusion.get("subgraph") and self._last_context:
+                if not hasattr(self, '_ocean_analyst'):
+                    from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst
+                    self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
+                result = self._ocean_analyst.analyze(self, text, response)
+                # Store OCEAN profile in track_b
+                self._cognitive_profile.track_b["_ocean"] = {
+                    "dims": result.get("dimensions", {}),
+                    "mbti": result.get("mbti", ""),
+                    "source": "LLM_OCEAN",
+                }
+                # Inject subgraph
+                subgraph = self._ocean_analyst.get_subgraph()
+                if subgraph and self._last_context:
                     from core.agent.v4.context.cross_domain_ir import IREntry
-                    for i, node in enumerate(fusion["subgraph"][:5]):
+                    for i, node in enumerate(subgraph[:6]):
                         self._last_context.add_entry(domain="F", entry=IREntry(
-                            domain="F", type="fusion_node",
+                            domain="F", type="ocean_node",
                             content=node[:300], confidence=0.7))
             except Exception as e:
-                logger.debug("LLM fusion skipped: %s", e)
-                # Fallback: signal-only (ABC Layer A)
-                if hasattr(self, '_abc') and self._abc:
-                    decision = self._abc.decide(self)
-                    if decision.get("conclusion", {}).get("tag"):
-                        self._cognitive_profile.track_b[decision["conclusion"]["tag"]] = {
-                            "name": decision["conclusion"]["tag"],
-                            "confidence": decision.get("confidence", 0.5),
-                            "source": "signal_fallback"
-                        }
+                logger.debug("OCEAN profile skipped: %s", e)
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""

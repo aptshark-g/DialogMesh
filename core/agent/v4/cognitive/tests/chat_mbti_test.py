@@ -12,6 +12,7 @@ from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.v4.event_ir import DialogAdapter
 from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
 from core.agent.v4.cognitive.monitor_report import MonitorReport
+from core.agent.v4.cognitive.ocean_profile import DIMENSIONS
 
 KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
 
@@ -53,10 +54,10 @@ def run_chat_test(turns: int = 10):
         abc_rpt = eng._abc.report() if hasattr(eng, '_abc') and eng._abc else {}
         tb = list(getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).keys())
 
-        # LLM fusion result
-        fusion_tag = getattr(getattr(eng, '_cognitive_profile', None), 'track_b', {}).get('_llm_fusion', {})
-        fusion_personality = fusion_tag.get('personality', '') if isinstance(fusion_tag, dict) else ''
-        fusion_tf = fusion_tag.get('T_vs_F', '') if isinstance(fusion_tag, dict) else ''
+        # OCEAN result
+        ocean = getattr(getattr(eng, '_ocean_analyst', None), 'profile', None)
+        ocean_dims = ocean.dims if ocean else {}
+        ocean_mbti = ocean.to_mbti() if ocean else ""
 
         event = {
             "turn": i + 1,
@@ -69,8 +70,8 @@ def run_chat_test(turns: int = 10):
             "trace_conf": m.get("avg_confidence", 0),
             "abc_hits": abc_rpt.get("by_layer", {}),
             "trackB_tags": tb,
-            "llm_fusion_tf": fusion_tf,
-            "llm_fusion_personality": fusion_personality[:100],
+            "ocean_dims": {k: round(v, 2) for k, v in ocean_dims.items()},
+            "ocean_mbti": ocean_mbti,
             "mind_relations": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_relations", 0),
             "mind_anchors": getattr(getattr(eng, '_mind', None), 'stats', lambda: {})().get("active_anchors", 0),
         }
@@ -137,20 +138,18 @@ def run_chat_test(turns: int = 10):
 
     # ── Analysis ──
     print(f"\n{'=' * 70}")
-    print("Personality Analysis")
+    print("Personality Analysis — OCEAN 10-dimension")
     print(f"{'=' * 70}")
-    print(f"  STRENGTHEN: {rd.get('strengthen',0)}  WEAKEN: {rd.get('weaken',0)}  REJECT: {rd.get('reject',0)}")
-    print(f"  TrackB tags: {list(tb.keys())}")
-    if "personality_analytical" in tb:
-        tag = tb["personality_analytical"]
-        conf = tag.get("confidence", 0) if isinstance(tag, dict) else getattr(tag, "confidence", 0)
-        print(f"\n  → T型（分析型）   confidence={conf:.2f}")
-    elif "personality_emotional" in tb:
-        tag = tb["personality_emotional"]
-        conf = tag.get("confidence", 0) if isinstance(tag, dict) else getattr(tag, "confidence", 0)
-        print(f"\n  → F型（情感型）   confidence={conf:.2f}")
-    else:
-        print(f"\n  → 信号不足，多聊几轮")
+    if hasattr(eng, '_ocean_analyst'):
+        p = eng._ocean_analyst.profile
+        print(f"  MBTI(approx): {p.to_mbti()}")
+        print(f"  Top dimensions:")
+        for dim in p.top_dimensions(5):
+            v = p.dims[dim]
+            bar = "█" * int(v * 10) + "░" * (10 - int(v * 10))
+            desc = DIMENSIONS.get(dim, dim)
+            print(f"    {dim}: {v:.2f} {bar}  {desc[:40]}")
+    print(f"\n  STRENGTHEN: {rd.get('strengthen',0)}  WEAKEN: {rd.get('weaken',0)}  REJECT: {rd.get('reject',0)}")
 
     print(f"\n  输出: {log_path}")
     print(f"  画像: {profile_path}")
