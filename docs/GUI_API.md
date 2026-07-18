@@ -1,4 +1,4 @@
-# DialogMesh v6 — GUI API 完整业务文档 (v6 · 50 endpoints)
+# DialogMesh v6 — GUI API 完整业务文档 (v7 · 60 endpoints)
 
 
 ## 可视化交互编辑 (NEW — 白盒化)
@@ -166,6 +166,34 @@
 ```
 
 ---
+
+
+## Monitoring + 用户注释 (NEW)
+
+| 端点 | 用途 | 前端组件 |
+|------|------|---------|
+| `GET /v6/annotate` | 查看所有用户注释(按domain筛选) | 监控面板-注释列表 |
+| `POST /v6/annotate` | 添加注释 → LLM自动深度分析 | 监控面板-"注释"按钮 |
+| `GET /v6/annotate/stats` | 注释统计(domain/severity分布) | 监控面板-统计卡片 |
+
+**POST /v6/annotate — 用户注释→LLM深度解读**:
+```json
+{
+  "domain": "trace",
+  "target": "trace.W",
+  "comment": "WEAKEN一直很高,但这不像是情感冲突",
+  "question": "这是分析型质疑还是情感型冲突?",
+  "severity": "warn",
+  "tags": ["personality", "weaken_signal"]
+}
+→ LLM 自动读取当前 trace/ocean/abc 数据
+→ 返回: "该用户的WEAKEN来源于分析型质疑(T-type skepticism)而非情感冲突。
+   证据: NC=0.75(高认知需求), MS=0.79(高元认知), A=0.41(低宜人/批判型)。
+   建议: 将WEAKEN分为两个子信号: weaken_analytic vs weaken_conflict。"
+→ 保存到 annotations/user_notes.jsonl
+→ 馈入 correction_journal → Mind 行为学习
+```
+
 
 ## 六、Operations — 运维 (8 APIs)
 
