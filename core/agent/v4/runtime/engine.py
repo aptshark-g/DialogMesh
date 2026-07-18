@@ -1387,9 +1387,11 @@ class CognitiveRuntimeEngine:
                     self._bfi_calibrator = BFICalibrator(self._llm_provider)
                     self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
 
-                # BFI-10 calibrated rating + OCEAN direct rating
+                # BFI-10 calibrated rating + OCEAN with BFI override
                 calibrated = self._bfi_calibrator.calibrate(self, text, response)
-                ocean_result = self._ocean_analyst.analyze(self, text, response)
+                bfi_scores = calibrated.get("bfi10_scores", {})
+                ocean_result = self._ocean_analyst.analyze_with_bfi_override(
+                    self, text, response, bfi_scores) if bfi_scores else self._ocean_analyst.analyze(self, text, response)
 
                 # Store: BFI serves as anchor, OCEAN as tracking
                 self._cognitive_profile.track_b["_ocean"] = {

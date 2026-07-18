@@ -161,28 +161,36 @@ class OCEANProfileAnalyst:
 
     def _build_rating_prompt(self, text: str, response: str, signals: Dict, prev: Dict) -> str:
         dim_desc = "\n  ".join(f"{k}: {v}" for k, v in DIMENSIONS.items())
-        return f"""Rate this user on 10 personality dimensions (0-1 continuous, 0.5=neutral):
+        bfi_hint = ""
+        if hasattr(self, '_last_bfi_scores'):
+            bfi = self._last_bfi_scores
+            bfi_hint = f"\nBFI-10 calibrated scores from validated instrument:\n  {json.dumps(bfi)}"
+        return f"""You are a psychometric analyst. Rate this user on 10 dimensions using Chain-of-Thought.
 
 DIMENSIONS:
   {dim_desc}
 
-EVIDENCE:
+EVIDENCE FROM THIS TURN:
   User: "{text[:300]}"
-  System: "{response[:200]}"
-  Signals: S={signals.get('S',0)} W={signals.get('W',0)} R={signals.get('R',0)} conf={signals.get('conf',0.7):.2f}
+  System replied: "{response[:200]}"
+  Trace: S={signals.get('S',0)} W={signals.get('W',0)} R={signals.get('R',0)}
+{bfi_hint}
+Previous EMA estimates: {json.dumps({k: round(v,2) for k,v in prev.items()})}
 
-Previous estimates: {json.dumps({k: round(v,2) for k,v in prev.items()})}
+STEP 1 — Extract evidence:
+  For EACH dimension, quote a specific phrase or behavior from the user's text that supports your rating.
+  If no evidence, say "insufficient data — use prior".
 
-CRITICAL RULES:
-  - WEAKEN from analytical challenge → HIGH NC, LOW A (not emotional)
-  - WEAKEN from emotional investment → HIGH N (not analytical)
-  - STRENGTHEN from agreement → HIGH A (not necessarily low NC)
-  - Short analytical questions → HIGH O, HIGH CS
-  - Meta-questions about the system → HIGH MS
-  - Deep technical questions → HIGH DK
+STEP 2 — Distinguish intent from style:
+  - Topic flexibility ≠ low Conscientiousness (exploring ≠ undisciplined)
+  - Critical questioning ≠ low Agreeableness (analytical ≠ hostile)
+  - Meta-cognitive questions ≠ Neuroticism (self-awareness ≠ anxiety)
+  - Short messages ≠ low Openness (concise ≠ uninterested)
 
-Respond with JSON ONLY:
-{{"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5,"NC":0.5,"CS":0.5,"DK":0.5,"MS":0.5,"CL":0.5}}"""
+STEP 3 — Rate each dimension 0-1:
+  Respond with JSON ONLY after your reasoning:
+{{"reasoning": "brief justification per dimension",
+  "ratings": {{"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5,"NC":0.5,"CS":0.5,"DK":0.5,"MS":0.5,"CL":0.5}}}}"""
 
     def _parse_ratings(self, text: str) -> Dict[str, float]:
         try:
@@ -191,9 +199,38 @@ Respond with JSON ONLY:
             if start < 0:
                 return {}
             data = json.loads(text[start:end])
-            return {k: float(data.get(k, 0.5)) for k in DIMENSIONS}
+            # Handle both formats: {"ratings": {...}} or direct {...}
+            raw = data.get("ratings", data)
+            return {k: float(raw.get(k, 0.5)) for k in DIMENSIONS}
         except Exception:
             return {k: 0.5 for k in DIMENSIONS}
+
+    def analyze_with_bfi_override(self, engine, turn_text: str, llm_response: str,
+                                   bfi_scores: Dict = None) -> Dict[str, Any]:
+        """OCEAN analysis with BFI-10 calibration override.
+
+        If BFI-10 diverges from OCEAN on a dimension > 0.3:
+          → Use BFI-10 value (literature-validated instrument wins)
+        """
+        result = self.analyze(engine, turn_text, llm_response)
+        dims = dict(result.get("dimensions", {}))
+
+        if bfi_scores:
+            from core.agent.v4.cognitive.bfi_calibrator import bfi_to_ocean
+            self._last_bfi_scores = bfi_scores
+            overrides = 0
+            for factor, score in bfi_scores.items():
+                if factor in dims:
+                    bfi_val = bfi_to_ocean(score, factor)
+                    oceAN_val = dims[factor]
+                    if abs(bfi_val - oceAN_val) > 0.25:  # Significant divergence
+                        dims[factor] = bfi_val  # BFI wins
+                        overrides += 1
+            if overrides:
+                self.profile.dims.update(dims)
+                result["bfi_overrides"] = overrides
+
+        return result
 
     def get_subgraph(self) -> List[str]:
         """Generate context subgraph from current profile."""
