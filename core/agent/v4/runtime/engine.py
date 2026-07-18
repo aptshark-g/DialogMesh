@@ -268,6 +268,15 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("P1 wiring skipped: %s", e)
 
+        # ---- v6 ABC: neuro-symbolic orchestration (L3→L2→L1) ----
+        try:
+            from core.agent.v4.cognitive.abc_orchestrator import ABCOrchestrator
+            self._abc = ABCOrchestrator(llm_provider=self._llm_provider, enable_b=True, enable_c=True)
+            logger.info("ABC orchestrator: C(symbolic) + B(LLM) + A(config) active")
+        except Exception as e:
+            self._abc = None
+            logger.debug("ABC orchestrator skipped: %s", e)
+
         # ---- v6 Internal State Monitor
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:
@@ -1348,13 +1357,17 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.debug("Profile feed skipped: %s", e)
 
-        # Trace-based personality (runs after filter to avoid overwrite)
-        if hasattr(self, '_trace_v3') and self._trace_v3 and hasattr(self._cognitive_profile, 'track_b'):
+        # ABC: neuro-symbolic personality detection (replaces infer_from_trace)
+        if hasattr(self, '_abc') and self._abc:
             try:
-                from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
-                TagAcquisitionEngine().infer_from_trace(self._trace_v3, self._cognitive_profile)
+                decision = self._abc.decide(self)
+                if decision.get("conclusion", {}).get("tag"):
+                    tag = decision["conclusion"]["tag"]
+                    conf = decision.get("confidence", 0.5)
+                    self._cognitive_profile.track_b[tag] = {"name": tag, "confidence": conf,
+                        "source": decision.get("source", "L1_default")}
             except Exception as e:
-                logger.debug("Trace profile skipped: %s", e)
+                logger.debug("ABC personality skipped: %s", e)
 
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""
