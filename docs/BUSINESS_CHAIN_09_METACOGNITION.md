@@ -11,31 +11,31 @@
 ## 1. 元认知的定位
 
 ```mermaid
-graph TD
-    subgraph BRAIN1["第一大脑: 算法+业务"]
+flowchart TD
+    subgraph BRAIN1["第一大脑：算法+业务"]
         DT["对话树"]
         BHV["行为链"]
         ASSOC["关联链"]
         ENG["工程链"]
         PROFILE["用户画像"]
     end
-    
-    subgraph BRAIN2["第二大脑: 元认知"]
+
+    subgraph BRAIN2["第二大脑：元认知"]
         RETRO["复盘引擎<br/>对比修改前后"]
         REVIEW["审核队列<br/>被动接收+主动拉取"]
         SELF["自我复盘<br/>操作历史+ReAct"]
         GIT["版本控制<br/>Git式不可变日志"]
         DECIDE["决策引擎<br/>紧急收敛/从容多视角"]
     end
-    
-    BRAIN1 -->|"推送: 修正/异常/漂移/候选"| REVIEW
-    REVIEW -->|"查询: 数据/状态/历史"| BRAIN1
+
+    BRAIN1 -- "推送：修正/异常/漂移/候选" --> REVIEW
+    REVIEW -- "查询：数据/状态/历史" --> BRAIN1
     REVIEW --> GIT
     GIT --> RETRO
     RETRO --> SELF
     SELF --> DECIDE
-    DECIDE -->|"修改建议→回写"| BRAIN1
-    DECIDE -->|"凝练问题→展示"| USER["用户"]
+    DECIDE -- "修改建议+回写" --> BRAIN1
+    DECIDE -- "凝练问题+展示" --> USER["用户"]
 ```
 
 ---
