@@ -27,34 +27,34 @@ DESIGN_ENGINEERING_CHAIN §1:
 ## 2. 递归地图模型——从文件到约束
 
 ```mermaid
-graph TD
+flowchart TD
     FILE["代码文件<br/>Python/Go/Markdown"]
-    
-    FILE -->|"Document Ingestor<br/>tree-sitter 解析"| TREE["文件结构树<br/>import/function/class/constraint"]
-    
-    TREE -->|"颗粒度抽象<br/>逐层向上合并"| MODULE["Module 节点<br/>系统组件"]
-    
-    TREE -->|"颗粒度抽象"| RULE["Rule 节点<br/>管道位置约束"]
-    
-    TREE -->|"颗粒度抽象"| PATTERN["Pattern 节点<br/>从重复实例蒸馏"]
-    
-    MODULE -->|"约束推理"| CONSTRAINT["Constraint<br/>不变量"]
-    PATTERN -->|"衍化"| CONSTRAINT
-    RULE -->|"位置检查"| CONSTRAINT
-    
-    CONSTRAINT -->|"违反检测"| AP["AntiPattern<br/>禁止边"]
-    
+
+    FILE -- "Document Ingestor tree-sitter解析" --> TREE["文件结构树<br/>import/function/class/constraint"]
+
+    TREE -- "颗粒度抽象 逐层向上合并" --> MODULE["Module 节点<br/>系统组件"]
+
+    TREE -- "颗粒度抽象" --> RULE["Rule 节点<br/>管道位置约束"]
+
+    TREE -- "颗粒度抽象" --> PATTERN["Pattern 节点<br/>从重复实例蒸馏"]
+
+    MODULE -- "约束推理" --> CONSTRAINT["Constraint<br/>不变量"]
+    PATTERN -- "衍化" --> CONSTRAINT
+    RULE -- "位置检查" --> CONSTRAINT
+
+    CONSTRAINT -- "违反检测" --> AP["AntiPattern<br/>禁止边"]
+
     subgraph RECURSIVE["递归地图"]
         LEAF["叶节点: import/function"]
         AGG["聚合层: module/class"]
         TOP["顶层: system/architecture"]
-        
-        LEAF -->|"合并"| AGG
-        AGG -->|"合并"| TOP
-        TOP -->|"展开"| AGG
-        AGG -->|"展开"| LEAF
+
+        LEAF -- "合并" --> AGG
+        AGG -- "合并" --> TOP
+        TOP -- "展开" --> AGG
+        AGG -- "展开" --> LEAF
     end
-    
+
     TREE -.-> RECURSIVE
 ```
 
