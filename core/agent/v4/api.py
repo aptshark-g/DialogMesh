@@ -1440,5 +1440,96 @@ async def v6_behavior_feedback(req: BehaviorFeedback):
     return {"pattern": req.pattern, "accepted": req.accepted}
 
 
+
+# ══════════ v6 Gap Fillers ══════════
+
+@app.get("/v6/behavior/predict")
+async def v6_behavior_predict():
+    """Manual trigger: predict next user action."""
+    if not _engine or not hasattr(_engine, '_behavior_discovery'): raise HTTPException(503)
+    bd = _engine._behavior_discovery
+    actions = bd._action_history[-10:]
+    patterns = {k: {"trigger": p.trigger, "predicted": p.predicted, "conf": round(p.confidence,2)}
+                for k, p in bd._patterns.items() if p.confidence > 0.5}
+    return {"recent_actions": actions, "predictions": patterns}
+
+@app.get("/v6/belief")
+async def v6_belief(session_id: str = "default"):
+    """View L2.5 belief accumulator state."""
+    if not _engine or not hasattr(_engine, '_belief_accumulator'): raise HTTPException(503)
+    return _engine._belief_accumulator.stats()
+
+@app.get("/v6/recursive-map")
+async def v6_recursive_map():
+    """View/control engineering recursive map."""
+    if not _engine or not hasattr(_engine, '_recursive_map'): raise HTTPException(503)
+    return _engine._recursive_map.stats()
+
+class MapControl(BaseModel):
+    node: str = ""
+    action: str = ""  # expand | collapse
+
+@app.put("/v6/recursive-map")
+async def v6_recursive_map_control(req: MapControl):
+    """Expand/collapse nodes in recursive map."""
+    if not _engine or not hasattr(_engine, '_recursive_map'): raise HTTPException(503)
+    rm = _engine._recursive_map
+    if req.action == "expand": rm.expand(req.node)
+    elif req.action == "collapse": rm.collapse(req.node)
+    return {"node": req.node, "action": req.action, 
+            "expanded": rm._nodes[req.node].expanded if req.node in rm._nodes else False}
+
+@app.post("/v6/meta/retrospect")
+async def v6_meta_retrospect(target: str = "", category: str = "parameters"):
+    """Manual trigger: retrospection report."""
+    if not _engine or not hasattr(_engine, '_meta'): raise HTTPException(503)
+    report = _engine._meta.retrospect(target, category)
+    if report: return {"target": report.target, "delta": report.delta, "verdict": report.verdict}
+    raise HTTPException(404, "Insufficient history for retrospection")
+
+@app.get("/v6/subgraph/{perspective}")
+async def v6_subgraph(perspective: str = "dialogue"):
+    """View compiled subgraph context."""
+    if not _engine or not hasattr(_engine, '_subgraph'): raise HTTPException(503)
+    if perspective == "dialogue":
+        ctx = _engine._subgraph.compile_dialogue()
+    elif perspective == "meta":
+        ctx = _engine._subgraph.compile_meta()
+    else:
+        raise HTTPException(400, "Unknown perspective")
+    return {"perspective": ctx.perspective, "domains": ctx.domains,
+            "entries": [{"domain": e.domain, "content": e.content[:200]} for e in ctx.entries],
+            "total_tokens": ctx.total_tokens, "budget": ctx.budget}
+
+@app.get("/v6/engineering/modules")
+async def v6_engineering_modules():
+    """List engineering modules with constraints."""
+    if not _engine or not hasattr(_engine, '_engineering_knowledge'): raise HTTPException(503)
+    ek = _engine._engineering_knowledge
+    modules = []
+    if hasattr(ek, 'get_by_type'):
+        try:
+            from core.agent.v3_2.engineering_chain.models import KnowledgeType
+            for n in ek.get_by_type(KnowledgeType.CONSTRAINT)[:20]:
+                modules.append({"name": str(getattr(n, 'name', '?')), "type": "constraint"})
+        except: pass
+    return {"modules": modules}
+
+class EngineeringEdit(BaseModel):
+    name: str = ""
+    action: str = ""  # add_constraint | remove_constraint
+    constraint: str = ""
+
+@app.put("/v6/engineering/constraints")
+async def v6_engineering_constraints_edit(req: EngineeringEdit):
+    """Edit engineering constraints."""
+    if not _engine: raise HTTPException(503)
+    rec_map = getattr(_engine, '_recursive_map', None)
+    if rec_map and req.action == "add_constraint" and req.name and req.constraint:
+        rec_map.bind_constraint(req.name, req.constraint)
+        return {"updated": req.name, "constraint": req.constraint}
+    raise HTTPException(404, "Recursive map not available")
+
+
 if __name__ == "__main__":
     serve()
