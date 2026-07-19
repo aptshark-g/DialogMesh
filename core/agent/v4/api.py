@@ -1342,5 +1342,103 @@ def serve(host: str = "0.0.0.0", port: int = 8000, db_path: str = "data/event_lo
         shutdown_api()
 
 
+
+# ══════════ v6 Meta-Cognition + Version Control APIs ══════════
+
+@app.get("/v6/meta/stats")
+async def v6_meta_stats():
+    """Meta-cognition status: queue, decisions, accuracy."""
+    if not _engine or not hasattr(_engine, '_meta'): raise HTTPException(503)
+    return _engine._meta.stats()
+
+@app.get("/v6/meta/queue")
+async def v6_meta_queue():
+    """Pending review queue."""
+    if not _engine or not hasattr(_engine, '_meta'): raise HTTPException(503)
+    items = [{"id": i.item_id, "source": i.source, "target": i.target,
+              "priority": i.priority.name, "verdict": i.verdict}
+             for i in _engine._meta._queue[-20:]]
+    return {"queue": items, "pending": sum(1 for i in _engine._meta._queue if i.verdict is None)}
+
+@app.post("/v6/meta/scan")
+async def v6_meta_scan():
+    """Trigger active scan."""
+    if not _engine or not hasattr(_engine, '_meta'): raise HTTPException(503)
+    items = _engine._meta.scan(_engine)
+    _engine._meta.process_queue(max_items=3)
+    return {"scanned": len(items), "status": "complete"}
+
+@app.get("/v6/versions/{category}")
+async def v6_versions(category: str, target: str = ""):
+    """Git version history for a data category."""
+    if not _engine or not hasattr(_engine, '_vcs'): raise HTTPException(503)
+    store = _engine._vcs.store(category)
+    if target:
+        commits = store.history(target, 20)
+        return {"target": target, "commits": [{"id": c.commit_id, "ts": c.timestamp,
+                "author": c.author, "before": c.before, "after": c.after,
+                "reason": c.reason, "verify": c.verification} for c in commits]}
+    return {"categories": list(_engine._vcs._stores.keys()), "stats": _engine._vcs.stats()}
+
+@app.post("/v6/versions/{category}/rollback")
+async def v6_versions_rollback(category: str, target: str = "", commit_id: str = ""):
+    """Rollback a target to a previous version."""
+    if not _engine or not hasattr(_engine, '_vcs'): raise HTTPException(503)
+    store = _engine._vcs.store(category)
+    c = store.rollback_to(target, commit_id)
+    if c: return {"rollback": target, "to": c.after, "commit": c.commit_id}
+    raise HTTPException(404, "Commit not found")
+
+@app.get("/v6/inertia")
+async def v6_inertia():
+    """Inertia weight graph status."""
+    if not _engine or not hasattr(_engine, '_inertia'): raise HTTPException(503)
+    return _engine._inertia.stats()
+
+@app.post("/v6/ocean/params")
+async def v6_ocean_params_apply():
+    """Apply OCEAN→parameter auto-mapping."""
+    if not _engine: raise HTTPException(503)
+    ocean = getattr(getattr(_engine, '_ocean_analyst', None), 'profile', None)
+    pr = getattr(_engine, '_parameter_registry', None)
+    if not ocean or not pr: raise HTTPException(404)
+    updates = {}
+    dims = ocean.dims
+    if dims.get("C", 0.5) > 0.7:
+        old = int(pr.get("behavior.min_repeat_count", 3))
+        pr.set("behavior.min_repeat_count", str(max(1, old - 1)))
+        updates["behavior.min_repeat_count"] = f"{old}→{max(1, old - 1)}"
+    if dims.get("NC", 0.5) > 0.7:
+        old = float(pr.get("behavior.min_confidence", 0.75))
+        pr.set("behavior.min_confidence", str(round(old + 0.05, 2)))
+        updates["behavior.min_confidence"] = f"{old}→{round(old + 0.05, 2)}"
+    if dims.get("A", 0.5) < 0.4:
+        old = int(pr.get("behavior.auto_accept_timeout", 10))
+        pr.set("behavior.auto_accept_timeout", str(old + 5))
+        updates["behavior.auto_accept_timeout"] = f"{old}→{old + 5}"
+    return {"applied": updates, "ocean": {k: round(v,2) for k,v in dims.items() if k in "CNCA"}}
+
+@app.get("/v6/behavior/patterns")
+async def v6_behavior_patterns():
+    """Discovered behavior patterns."""
+    if not _engine or not hasattr(_engine, '_behavior_discovery'): raise HTTPException(503)
+    bd = _engine._behavior_discovery
+    return {"patterns": [{"trigger": p.trigger, "predicted": p.predicted,
+            "confidence": round(p.confidence, 2), "support": p.support,
+            "reviewed": p.reviewed, "verdict": p.review_verdict}
+            for p in bd._patterns.values()], "stats": bd.stats()}
+
+class BehaviorFeedback(BaseModel):
+    pattern: str = ""
+    accepted: bool = True
+
+@app.post("/v6/behavior/feedback")
+async def v6_behavior_feedback(req: BehaviorFeedback):
+    """User ✓/✗ on a behavior pattern."""
+    if not _engine or not hasattr(_engine, '_behavior_discovery'): raise HTTPException(503)
+    _engine._behavior_discovery.handle_user_feedback(req.pattern, req.accepted)
+    return {"pattern": req.pattern, "accepted": req.accepted}
+
+
 if __name__ == "__main__":
     serve()
