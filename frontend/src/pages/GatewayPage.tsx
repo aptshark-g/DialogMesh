@@ -23,7 +23,7 @@ import {
   Loader2,
   RotateCcw,
   Layers,
-  Clock,
+  // Clock,  // unused
   ArrowRight,
 } from 'lucide-react';
 import { useV6Gateway } from '../hooks/useV6Gateway';
@@ -34,8 +34,9 @@ export function GatewayPage() {
   const {
     dmStatus, swStatus, statusLoading,
     gatewayProviders, providersLoading,
-    router, routerLoading,
-    providers, tokens, metrics, legacyLoading,
+    router,
+    tokens,
+    metrics,
     config, configLoading,
     usage, usageLoading,
     stats, statsLoading,
@@ -47,9 +48,7 @@ export function GatewayPage() {
     testProvider,
     fetchProviderModels,
     setActive,
-    updateConfig,
     reload,
-    updateRouter,
   } = useV6Gateway(true, 15000);
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);

@@ -35,7 +35,7 @@ import type {
   // v8 Annotations
   V6AnnotationsResponse, V6AnnotationStatsResponse,
   // v8 Corrections
-  V6ProfileCorrectionsResponse,
+  V6ProfileCorrectionsResponse, V6ProfileCorrection,
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -309,12 +309,12 @@ export function reloadGateway(): Promise<{ reloaded: boolean }> {
 // 服务检测 (Service Status)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function checkServiceStatus(url: string, name: string): Promise<V6ServiceStatus> {
+export async function checkServiceStatus(url: string, name: string, path: string = '/v4/health'): Promise<V6ServiceStatus> {
   const start = performance.now();
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(`${url}/v4/health`, {
+    const response = await fetch(`${url}${path}`, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
@@ -334,15 +334,13 @@ export async function checkServiceStatus(url: string, name: string): Promise<V6S
 }
 
 export function checkDialogMeshStatus(): Promise<V6ServiceStatus> {
-  return checkServiceStatus(BASE_URL, 'DialogMesh API');
+  return checkServiceStatus(BASE_URL, 'DialogMesh API', '/v4/health');
 }
 
 export function checkSwitchGatewayStatus(): Promise<V6ServiceStatus> {
-  // Switch Gateway runs on port 8080 by default
   const switchUrl = import.meta.env.VITE_SWITCH_URL || 'http://localhost:8080';
-  return checkServiceStatus(switchUrl, 'Switch Gateway');
+  return checkServiceStatus(switchUrl, 'Switch Gateway', '/v1/health');
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // 元认知 (Meta Cognition)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -426,4 +424,65 @@ export function getProfileCorrections(): Promise<V6ProfileCorrectionsResponse> {
 
 export function reviewProfileCorrections(): Promise<{ reviewed: boolean }> {
   return apiFetch<{ reviewed: boolean }>('/v6/profile/corrections/review', { method: 'POST' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 本地 Provider 模板兜底 (当后端不可用时使用)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const DEFAULT_PROVIDERS: V6GatewayProvidersResponse = {
+  providers: [
+    {
+      name: 'deepseek',
+      display_name: 'DeepSeek',
+      configured: false,
+      healthy: null,
+      base_url: 'https://api.deepseek.com',
+      models: [
+        { id: 'deepseek-v4-flash', display: 'DeepSeek V4 Flash', context: 128000, cost_in: 0.27, cost_out: 1.10 },
+        { id: 'deepseek-v4-pro', display: 'DeepSeek V4 Pro', context: 64000, cost_in: 0.55, cost_out: 2.19 },
+      ],
+    },
+    {
+      name: 'openai',
+      display_name: 'OpenAI',
+      configured: false,
+      healthy: null,
+      base_url: 'https://api.openai.com',
+      models: [
+        { id: 'gpt-4o', display: 'GPT-4o', context: 128000, cost_in: 2.50, cost_out: 10.00 },
+        { id: 'gpt-4o-mini', display: 'GPT-4o Mini', context: 128000, cost_in: 0.15, cost_out: 0.60 },
+      ],
+    },
+    {
+      name: 'lmstudio',
+      display_name: 'LM Studio',
+      configured: false,
+      healthy: null,
+      base_url: 'http://127.0.0.1:1234/v1',
+      models: [
+        { id: 'nvidia/nemotron-3-nano-4b', display: 'Nemotron Nano 4B', context: 4096, cost_in: 0, cost_out: 0 },
+      ],
+    },
+    {
+      name: 'ollama',
+      display_name: 'Ollama',
+      configured: false,
+      healthy: null,
+      base_url: 'http://localhost:11434',
+      models: [
+        { id: 'qwen2.5:7b', display: 'Qwen 2.5 7B', context: 32768, cost_in: 0, cost_out: 0 },
+        { id: 'llama3.1:8b', display: 'Llama 3.1 8B', context: 128000, cost_in: 0, cost_out: 0 },
+      ],
+    },
+  ],
+  active_provider: '',
+  active_model: '',
+};
+
+export function submitProfileCorrections(corrections: V6ProfileCorrection[]): Promise<{ reviewed: boolean }> {
+  return apiFetch<{ reviewed: boolean }>('/v6/profile/corrections/review', {
+    method: 'POST',
+    body: JSON.stringify(corrections),
+  });
 }

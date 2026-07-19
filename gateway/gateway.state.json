@@ -1,7 +1,31 @@
 {
   "version": 1,
-  "saved_at": "2026-07-19T23:37:01.7218132+08:00",
+  "saved_at": "2026-07-19T23:40:31.9610006+08:00",
   "providers": [
+    {
+      "name": "deepseek",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "openai",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
     {
       "name": "gemini",
       "kind": "openai_compatible",
@@ -76,30 +100,6 @@
     },
     {
       "name": "lmstudio",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "deepseek",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "openai",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",

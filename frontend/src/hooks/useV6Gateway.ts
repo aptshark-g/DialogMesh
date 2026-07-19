@@ -6,6 +6,7 @@ import {
   checkDialogMeshStatus,
   checkSwitchGatewayStatus,
   getGatewayProviders,
+  DEFAULT_PROVIDERS,
   configGatewayProvider,
   testGatewayProvider,
   fetchGatewayProviderModels,
@@ -24,7 +25,6 @@ import {
 } from '../api/v6';
 import type {
   V6GatewayProvidersResponse,
-  V6GatewayProvider,
   V6GatewayProviderConfigRequest,
   V6GatewayTestResponse,
   V6GatewayModelsResponse,
@@ -84,12 +84,12 @@ interface GatewayData {
   fetchModelsLoading: string | null; // provider name being fetched
 }
 
-export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 10000) {
+export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 15000) {
   const [data, setData] = useState<GatewayData>({
     dmStatus: null,
     swStatus: null,
     statusLoading: false,
-    gatewayProviders: null,
+    gatewayProviders: DEFAULT_PROVIDERS, // 初始就有默认 Provider 模板
     providersLoading: false,
     router: null,
     routerLoading: false,
@@ -132,11 +132,11 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   const fetchGatewayProviders = useCallback(async () => {
     setData(prev => ({ ...prev, providersLoading: true, error: null }));
     try {
-      const gatewayProviders = await getGatewayProviders().catch(() => null);
+      const gatewayProviders = await getGatewayProviders();
       setData(prev => ({ ...prev, gatewayProviders, providersLoading: false, error: null }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '获取 Provider 失败';
-      setData(prev => ({ ...prev, providersLoading: false, error: msg }));
+    } catch {
+      // API 未实现或后端未启动，使用默认模板兜底
+      setData(prev => ({ ...prev, gatewayProviders: DEFAULT_PROVIDERS, providersLoading: false, error: null }));
     }
   }, []);
 
