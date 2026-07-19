@@ -18,6 +18,24 @@ import type {
   V6MetricsResponse,
   V6PersistenceResponse, V6PersistenceGraphsResponse,
   V6SessionListItem, V6SessionData,
+  // v8 Gateway
+  V6GatewayProvidersResponse, V6GatewayProviderConfigRequest, V6GatewayProviderConfigResponse,
+  V6GatewayTestResponse, V6GatewayModelsResponse,
+  V6GatewayActiveRequest, V6GatewayActiveResponse,
+  V6GatewayConfig, V6GatewayConfigRequest, V6GatewayUsage, V6GatewayStats, V6GatewayHealth,
+  V6ServiceStatus,
+  // v8 Meta
+  V6MetaStatsResponse, V6MetaQueueResponse,
+  // v8 Versions
+  V6VersionsResponse,
+  // v8 Inertia
+  V6InertiaResponse,
+  // v8 Behavior
+  V6BehaviorPatternsResponse, V6BehaviorFeedbackRequest,
+  // v8 Annotations
+  V6AnnotationsResponse, V6AnnotationStatsResponse,
+  // v8 Corrections
+  V6ProfileCorrectionsResponse,
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -221,4 +239,191 @@ export function getSessions(): Promise<V6SessionListItem[]> {
 
 export function getSessionData(filename: string): Promise<V6SessionData> {
   return apiFetch<V6SessionData>(`/v6/session/${encodeURIComponent(filename)}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 网关 (Gateway) — switch 代理
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getGatewayProviders(): Promise<V6GatewayProvidersResponse> {
+  return apiFetch<V6GatewayProvidersResponse>('/v6/gateway/providers');
+}
+
+export function configGatewayProvider(
+  name: string,
+  req: V6GatewayProviderConfigRequest
+): Promise<V6GatewayProviderConfigResponse> {
+  return apiFetch<V6GatewayProviderConfigResponse>(`/v6/gateway/providers/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function testGatewayProvider(name: string): Promise<V6GatewayTestResponse> {
+  return apiFetch<V6GatewayTestResponse>(`/v6/gateway/providers/${encodeURIComponent(name)}/test`, {
+    method: 'POST',
+  });
+}
+
+export function fetchGatewayProviderModels(name: string): Promise<V6GatewayModelsResponse> {
+  return apiFetch<V6GatewayModelsResponse>(`/v6/gateway/providers/${encodeURIComponent(name)}/models`, {
+    method: 'POST',
+  });
+}
+
+export function setGatewayActive(req: V6GatewayActiveRequest): Promise<V6GatewayActiveResponse> {
+  return apiFetch<V6GatewayActiveResponse>('/v6/gateway/active', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function getGatewayConfig(): Promise<V6GatewayConfig> {
+  return apiFetch<V6GatewayConfig>('/v6/gateway/config');
+}
+
+export function updateGatewayConfig(req: V6GatewayConfigRequest): Promise<V6GatewayConfig> {
+  return apiFetch<V6GatewayConfig>('/v6/gateway/config', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function getGatewayUsage(): Promise<V6GatewayUsage> {
+  return apiFetch<V6GatewayUsage>('/v6/gateway/usage');
+}
+
+export function getGatewayStats(): Promise<V6GatewayStats> {
+  return apiFetch<V6GatewayStats>('/v6/gateway/stats');
+}
+
+export function getGatewayHealth(): Promise<V6GatewayHealth> {
+  return apiFetch<V6GatewayHealth>('/v6/gateway/health');
+}
+
+export function reloadGateway(): Promise<{ reloaded: boolean }> {
+  return apiFetch<{ reloaded: boolean }>('/v6/gateway/reload', { method: 'POST' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 服务检测 (Service Status)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function checkServiceStatus(url: string, name: string): Promise<V6ServiceStatus> {
+  const start = performance.now();
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${url}/v4/health`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    clearTimeout(timeout);
+    const latency = Math.round(performance.now() - start);
+    if (response.ok) {
+      const data = await response.json().catch(() => ({ status: 'ok' }));
+      return { name, url, healthy: true, latency_ms: latency, version: data.version || null, error: null };
+    }
+    return { name, url, healthy: false, latency_ms: latency, version: null, error: `HTTP ${response.status}` };
+  } catch (err) {
+    return {
+      name, url, healthy: false, latency_ms: null, version: null,
+      error: err instanceof Error ? err.message : '连接失败',
+    };
+  }
+}
+
+export function checkDialogMeshStatus(): Promise<V6ServiceStatus> {
+  return checkServiceStatus(BASE_URL, 'DialogMesh API');
+}
+
+export function checkSwitchGatewayStatus(): Promise<V6ServiceStatus> {
+  // Switch Gateway runs on port 8080 by default
+  const switchUrl = import.meta.env.VITE_SWITCH_URL || 'http://localhost:8080';
+  return checkServiceStatus(switchUrl, 'Switch Gateway');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 元认知 (Meta Cognition)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getMetaStats(): Promise<V6MetaStatsResponse> {
+  return apiFetch<V6MetaStatsResponse>('/v6/meta/stats');
+}
+
+export function getMetaQueue(): Promise<V6MetaQueueResponse> {
+  return apiFetch<V6MetaQueueResponse>('/v6/meta/queue');
+}
+
+export function triggerMetaScan(): Promise<{ triggered: boolean }> {
+  return apiFetch<{ triggered: boolean }>('/v6/meta/scan', { method: 'POST' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 版本 (Versions)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getVersions(category: string): Promise<V6VersionsResponse> {
+  return apiFetch<V6VersionsResponse>(`/v6/versions/${encodeURIComponent(category)}`);
+}
+
+export function rollbackVersion(category: string, commitId: string): Promise<{ rolled_back: boolean }> {
+  return apiFetch<{ rolled_back: boolean }>(`/v6/versions/${encodeURIComponent(category)}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ commit_id: commitId }),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 惯性 (Inertia)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getInertia(): Promise<V6InertiaResponse> {
+  return apiFetch<V6InertiaResponse>('/v6/inertia');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 行为模式 (Behavior Patterns)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getBehaviorPatterns(): Promise<V6BehaviorPatternsResponse> {
+  return apiFetch<V6BehaviorPatternsResponse>('/v6/behavior/patterns');
+}
+
+export function submitBehaviorFeedback(req: V6BehaviorFeedbackRequest): Promise<{ updated: boolean }> {
+  return apiFetch<{ updated: boolean }>('/v6/behavior/feedback', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 注释 (Annotations)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getAnnotations(): Promise<V6AnnotationsResponse> {
+  return apiFetch<V6AnnotationsResponse>('/v6/annotate');
+}
+
+export function addAnnotation(text: string): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>('/v6/annotate', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function getAnnotationStats(): Promise<V6AnnotationStatsResponse> {
+  return apiFetch<V6AnnotationStatsResponse>('/v6/annotate/stats');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 画像修正 (Profile Corrections)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getProfileCorrections(): Promise<V6ProfileCorrectionsResponse> {
+  return apiFetch<V6ProfileCorrectionsResponse>('/v6/profile/corrections');
+}
+
+export function reviewProfileCorrections(): Promise<{ reviewed: boolean }> {
+  return apiFetch<{ reviewed: boolean }>('/v6/profile/corrections/review', { method: 'POST' });
 }

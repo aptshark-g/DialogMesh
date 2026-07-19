@@ -16,7 +16,7 @@ Flow:
 import subprocess, sys, os, time, urllib.request, json, signal
 
 SWITCH_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                           "..", "switch")
+                           "gateway")
 SWITCH_BIN = os.path.join(SWITCH_DIR, "gateway.exe")
 SWITCH_URL = os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080")
 SWITCH_KEY = os.environ.get("SWITCH_GATEWAY_KEY", "dm-client")

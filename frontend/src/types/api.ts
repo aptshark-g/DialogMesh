@@ -714,5 +714,261 @@ export interface V6PersistenceGraphsResponse {
   graphs: { name: string; node_count: number; edge_count: number; updated_at: string }[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Gateway (switch 代理)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6GatewayModel {
+  id: string;
+  display: string;
+  context: number;
+  cost_in: number;
+  cost_out: number;
+  max_output?: number;
+  capabilities?: string[];
+}
+
+export interface V6GatewayProvider {
+  name: string;
+  display_name: string;
+  configured: boolean;
+  healthy: boolean | null;
+  base_url: string;
+  models: V6GatewayModel[] | null;
+  api_key?: string;
+}
+
+export interface V6GatewayProvidersResponse {
+  providers: V6GatewayProvider[];
+  active_provider: string;
+  active_model: string;
+}
+
+export interface V6GatewayProviderConfigRequest {
+  api_key?: string;
+  base_url?: string;
+}
+
+export interface V6GatewayProviderConfigResponse {
+  name: string;
+  configured: boolean;
+  healthy: boolean;
+  models_fetched: number;
+}
+
+export interface V6GatewayTestResponse {
+  name: string;
+  healthy: boolean;
+  latency_ms: number;
+  models_available: number;
+  error: string | null;
+}
+
+export interface V6GatewayModelsResponse {
+  name: string;
+  models: V6GatewayModel[];
+}
+
+export interface V6GatewayActiveRequest {
+  provider: string;
+  model: string;
+}
+
+export interface V6GatewayActiveResponse {
+  active_provider: string;
+  active_model: string;
+  healthy: boolean;
+  switched_at: string;
+}
+
+export interface V6GatewayConfig {
+  active_provider: string;
+  active_model: string;
+  failover_chain: string[];
+  auto_failover: boolean;
+  max_retries: number;
+  timeout_ms: number;
+  stats: Record<string, {
+    calls: number;
+    errors: number;
+    avg_latency_ms: number;
+    total_tokens: number;
+  }>;
+}
+
+export interface V6GatewayConfigRequest {
+  failover_chain?: string[];
+  auto_failover?: boolean;
+  max_retries?: number;
+  timeout_ms?: number;
+}
+
+export interface V6GatewayUsageSession {
+  provider: string;
+  model: string;
+  turns: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_estimate: string;
+  latency_avg_ms: number;
+}
+
+export interface V6GatewayUsage {
+  current_session: V6GatewayUsageSession;
+  all_sessions: {
+    total_tokens: number;
+    total_cost: string;
+    by_provider: Record<string, { tokens: number; cost: string }>;
+  };
+}
+
+export interface V6GatewayStats {
+  requests: number;
+  tokens: number;
+  latency_p50: number;
+  latency_p95: number;
+  latency_p99: number;
+  cache_hit_rate: number;
+  errors_by_provider: Record<string, number>;
+  requests_by_model: Record<string, number>;
+}
+
+export interface V6GatewayHealth {
+  status: string;
+  providers_total: number;
+  providers_healthy: number;
+  circuits: Record<string, string>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Service Status (前端检测)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6ServiceStatus {
+  name: string;
+  url: string;
+  healthy: boolean;
+  latency_ms: number | null;
+  version: string | null;
+  error: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Meta Cognition
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6MetaStatsResponse {
+  queue_size: number;
+  pending: number;
+  reviewed: number;
+  decisions_total: number;
+  self_audit: {
+    accuracy: number;
+    by_verdict: Record<string, number>;
+  };
+}
+
+export interface V6MetaQueueResponse {
+  [key: string]: unknown;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Versions
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6VersionCommit {
+  id: string;
+  ts: number;
+  author: string;
+  before: string;
+  after: string;
+  reason: string;
+  verify: string;
+}
+
+export interface V6VersionsResponse {
+  target: string;
+  commits: V6VersionCommit[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Inertia
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6InertiaResponse {
+  total_patterns: number;
+  stable: number;
+  confirmed: number;
+  breaking: number;
+  by_weight: Record<string, number>;
+  constraints: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Behavior Patterns
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6BehaviorPattern {
+  trigger: string;
+  predicted: string;
+  confidence: number;
+  support: number;
+  verdict: string;
+}
+
+export interface V6BehaviorPatternsResponse {
+  patterns: V6BehaviorPattern[];
+  stats: {
+    total_patterns: number;
+    user_approved: number;
+  };
+}
+
+export interface V6BehaviorFeedbackRequest {
+  pattern_id: string;
+  correct: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Annotations
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6Annotation {
+  id: string;
+  text: string;
+  timestamp: string;
+  author: string;
+}
+
+export interface V6AnnotationsResponse {
+  annotations: V6Annotation[];
+  total: number;
+}
+
+export interface V6AnnotationStatsResponse {
+  total: number;
+  by_author: Record<string, number>;
+  by_date: Record<string, number>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Profile Corrections
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6ProfileCorrection {
+  id: string;
+  ts: number;
+  author: string;
+  before: string;
+  after: string;
+  reason: string;
+  verify: string;
+}
+
+export interface V6ProfileCorrectionsResponse {
+  corrections: V6ProfileCorrection[];
+  total: number;
+}
+
 
 

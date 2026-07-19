@@ -1,0 +1,185 @@
+﻿# ============================================================
+# Gateway Runtime — Multi-Provider Configuration
+# ============================================================
+# Set the API key env var for a provider to enable it.
+# Leave it empty to keep the provider disabled.
+# Model aliases let you use short names (fast/pro/large/small).
+
+providers:
+  # --- DeepSeek ---
+  - name: deepseek
+    kind: openai_compatible
+    base_url: https://api.deepseek.com
+    api_key: 
+    models:
+      - deepseek-v4-flash
+      - deepseek-v4-pro
+    default_model: deepseek-v4-flash
+    model_aliases:
+      fast: deepseek-v4-flash
+      flash: deepseek-v4-flash
+      pro: deepseek-v4-pro
+    enabled: true
+    max_concurrency: 10
+    rate_limit_rpm: 100
+    timeout_ms: 30000
+    pricing: {input_price: 0.27, output_price: 1.10, currency: CNY}
+
+  # --- OpenAI ---
+  - name: openai
+    kind: openai_compatible
+    base_url: https://api.openai.com
+    api_key: ""
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+      - gpt-4.1
+      - o4-mini
+    default_model: gpt-4o-mini
+    model_aliases:
+      fast: gpt-4o-mini
+      mini: gpt-4o-mini
+      large: gpt-4o
+      pro: gpt-4.1
+      reason: o4-mini
+    enabled: false
+    max_concurrency: 20
+    rate_limit_rpm: 500
+    timeout_ms: 30000
+    pricing: {input_price: 2.50, output_price: 10.00, currency: USD}
+
+  # --- Anthropic ---
+  - name: anthropic
+    kind: openai_compatible
+    base_url: https://api.deepseek.com/anthropic
+    api_key: ""
+    models:
+      - claude-sonnet-4-20250514
+      - claude-haiku-3-5-20250514
+      - claude-opus-4-20250514
+    default_model: claude-haiku-3-5-20250514
+    model_aliases:
+      fast: claude-haiku-3-5-20250514
+      haiku: claude-haiku-3-5-20250514
+      sonnet: claude-sonnet-4-20250514
+      large: claude-sonnet-4-20250514
+      opus: claude-opus-4-20250514
+      pro: claude-opus-4-20250514
+    enabled: false
+    max_concurrency: 10
+    rate_limit_rpm: 100
+    timeout_ms: 60000
+    pricing: {input_price: 3.00, output_price: 15.00, currency: USD}
+
+  # --- Google Gemini ---
+  - name: gemini
+    kind: openai_compatible
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key: ""
+    models:
+      - gemini-2.5-flash
+      - gemini-2.5-pro
+    default_model: gemini-2.5-flash
+    model_aliases:
+      fast: gemini-2.5-flash
+      flash: gemini-2.5-flash
+      pro: gemini-2.5-pro
+    enabled: false
+    max_concurrency: 10
+    rate_limit_rpm: 100
+    timeout_ms: 30000
+    pricing: {input_price: 0.15, output_price: 0.60, currency: USD}
+
+  # --- Kimi (Moonshot) ---
+  - name: kimi
+    kind: openai_compatible
+    base_url: https://api.moonshot.cn/v1
+    api_key: ""
+    models:
+      - moonshot-v1-8k
+      - moonshot-v1-32k
+      - moonshot-v1-128k
+    default_model: moonshot-v1-8k
+    model_aliases:
+      fast: moonshot-v1-8k
+      large: moonshot-v1-128k
+    enabled: false
+    max_concurrency: 10
+    rate_limit_rpm: 100
+    timeout_ms: 30000
+    pricing: {input_price: 0.00, output_price: 0.00, currency: CNY}
+
+  # --- Groq (fast inference) ---
+  - name: groq
+    kind: openai_compatible
+    base_url: https://api.groq.com/openai/v1
+    api_key: ""
+    models:
+      - llama-3.3-70b-versatile
+      - llama-3.1-8b-instant
+      - mixtral-8x7b-32768
+    default_model: llama-3.1-8b-instant
+    model_aliases:
+      fast: llama-3.1-8b-instant
+      large: llama-3.3-70b-versatile
+    enabled: false
+    max_concurrency: 15
+    rate_limit_rpm: 200
+    timeout_ms: 15000
+    pricing: {input_price: 0.00, output_price: 0.00, currency: USD}
+
+  # --- OpenRouter (unified gateway) ---
+  - name: openrouter
+    kind: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key: ""
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4
+      - google/gemini-2.5-flash
+      - deepseek/deepseek-chat
+    default_model: openai/gpt-4o-mini
+    model_aliases:
+      fast: google/gemini-2.5-flash
+      pro: openai/gpt-4o
+      claude: anthropic/claude-sonnet-4
+    enabled: false
+    max_concurrency: 10
+    rate_limit_rpm: 100
+    timeout_ms: 30000
+    pricing: {input_price: 0.50, output_price: 1.50, currency: USD}
+    extra_headers:
+      HTTP-Referer: "https://github.com/aptshark/gateway"
+      X-Title: "Gateway Runtime"
+
+  # --- Ollama (local) ---
+  - name: ollama
+    kind: ollama
+    base_url: http://localhost:11434
+    api_key: ollama
+    models:
+      - qwen2.5:7b
+      - qwen2.5:14b
+      - llama3.1:8b
+      - deepseek-r1:8b
+    default_model: qwen2.5:7b
+    model_aliases:
+      fast: qwen2.5:7b
+      large: qwen2.5:14b
+    enabled: false
+    max_concurrency: 5
+    timeout_ms: 60000
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+defaults:
+  timeout_ms: 30000
+  max_retries: 1
+
+auth:
+  enabled: true
+  api_keys:
+    - -client
+  admin_token: admin-test
