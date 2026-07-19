@@ -25,7 +25,7 @@
 
 ```mermaid
 graph TD
-    subgraph S1["阶段一: 统计发现<br/>(零 LLM 成本)"]
+    subgraph S1["阶段一: 统计发现(零 LLM 成本)"]
         INPUT["行为序列<br/>A→B→C→B→A→B"]
         STATS["频率分析<br/>P(B|A) = 3/3 = 1.0<br/>P(B|within_3turns_of_A) = 1.0"]
         STATS -->|"满足条件:<br/>① P≥0.75<br/>② 关联度≥0.6<br/>③ 时序窗口内重复≥3次"| CANDIDATE["候选行为模式<br/>A→B: 写代码→加测试<br/>conf=0.92"]
@@ -54,11 +54,22 @@ graph TD
 
 ## 3. 阶段一：统计发现——不消耗 LLM
 
-### 3.1 发现条件
+### 3.1 发现条件 (全部可配置)
 
 ```python
-def discover_behavior_patterns(behavior_chain, window_size=5):
-    """纯统计——零 LLM 成本, <1ms"""
+def discover_behavior_patterns(behavior_chain, window_size=None):
+    """纯统计——零 LLM 成本, <1ms
+    
+    所有阈值通过 /v6/parameters 前端可调——不硬编码。
+    """
+    # 从参数注册表读取 (默认值 — 用户可在前端修改)
+    from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+    pr = ParameterRegistry()
+    min_repeat  = int(pr.get("behavior.min_repeat_count", 3))
+    min_conf    = float(pr.get("behavior.min_confidence", 0.75))
+    min_assoc   = float(pr.get("behavior.min_assoc_strength", 0.3))
+    win         = window_size or int(pr.get("behavior.window_size", 5))
+    timeout_s   = int(pr.get("behavior.auto_accept_timeout", 10))
     
     patterns = []
     for action_a in behavior_chain.unique_actions():
@@ -67,18 +78,18 @@ def discover_behavior_patterns(behavior_chain, window_size=5):
             
             # 条件 ①: 时序窗口内共现频率
             cooccurrences = count_cooccurrences(behavior_chain, action_a, action_b, 
-                                                within_turns=window_size)
+                                                within_turns=win)
             p_b_given_a = cooccurrences / count(action_a)
             
             # 条件 ②: 关联度 (关联链已有支撑)
             assoc_strength = association_chain.get_strength(action_a, action_b)
             
-            # 条件 ③: 重复次数 (不是偶然)
+            # 条件 ③: 重复次数 (用户可调——激进用户设1, 保守设5+)
             repeat_count = cooccurrences
             
-            if (p_b_given_a >= 0.75 and 
-                assoc_strength >= 0.3 and  # 关联链有弱支撑即可
-                repeat_count >= 3):        # 至少出现 3 次
+            if (p_b_given_a >= min_conf and 
+                assoc_strength >= min_assoc and
+                repeat_count >= min_repeat):
                 
                 patterns.append(BehaviorPattern(
                     trigger=action_a,
@@ -87,13 +98,71 @@ def discover_behavior_patterns(behavior_chain, window_size=5):
                     support=repeat_count,
                     association=assoc_strength,
                     source="statistical_discovery",
-                    reviewed=False,        # 尚未元认知审核
+                    reviewed=False,
                 ))
     
     return patterns
 ```
 
-### 3.2 时序性 + 关联性 + 重复性
+### 3.2 可配置参数一览
+
+| 参数 | 默认值 | 说明 | 前端组件 |
+|------|:---:|------|---------|
+| `behavior.min_repeat_count` | 3 | 同一模式最少出现次数 | 滑块: 1-10 |
+| `behavior.min_confidence` | 0.75 | 条件概率最低阈值 | 滑块: 0.5-1.0 |
+| `behavior.min_assoc_strength` | 0.3 | 关联链最低强度 | 滑块: 0.0-1.0 |
+| `behavior.window_size` | 5 | 时序窗口(轮) | 数字输入: 2-20 |
+| `behavior.auto_accept_timeout` | 10 | 前端超时默认通过(秒) | 数字输入: 3-60 |
+| `behavior.epsilon_initial` | 0.6 | 冷启动探索率 | 滑块: 0.1-1.0 |
+| `behavior.epsilon_min` | 0.02 | 稳定期最小探索率 | 滑块: 0.0-0.1 |
+
+### 3.3 前端修改方式
+
+```
+设置页面 → 行为链参数:
+  ┌─────────────────────────────────────────┐
+  │ 行为模式发现                              │
+  │                                         │
+  │ 最少重复次数:  [======●====]  3          │
+  │             1              10           │
+  │  注: 出现多少次才视为模式                  │
+  │  激进用户可设为 1-2, 保守设为 5+           │
+  │                                         │
+  │ 最低置信度:    [========●==]  0.75       │
+  │             0.5            1.0          │
+  │                                         │
+  │ 关联链最低强度: [=======●====]  0.30      │
+  │              0.0            1.0         │
+  │  注: 关联链无支撑时不建议发现               │
+  │                                         │
+  │ 时序窗口:      5 轮                       │
+  │  注: A发生后多少轮内出现B算"关联"          │
+  │                                         │
+  │ [保存]  [恢复默认]                        │
+  └─────────────────────────────────────────┘
+
+保存 → PUT /v6/parameters {key:"behavior.min_repeat_count", value:"2"}
+```
+
+### 3.4 用户画像驱动默认值差异
+
+```
+不同 OCEAN 画像 → 不同的默认阈值:
+
+高 Conscientiousness (C>0.7, 结构化偏好):
+  默认 min_repeat=2 (更快发现模式, 喜欢提前建议)
+
+高 Need for Cognition (NC>0.7, 深度分析):
+  默认 min_repeat=4 (更多证据后才建议)
+
+低 Agreeableness (A<0.4, 批判型):
+  默认 min_repeat=3, min_confidence=0.85 (高标准证据)
+
+高 Openness (O>0.7, 探索型):
+  默认 min_repeat=2, min_assoc=0.2 (弱关联也愿意尝试)
+```
+
+### 3.5 时序性 + 关联性 + 重复性
 
 ```
 三个必要条件, 缺一不可:
