@@ -201,24 +201,20 @@ sequenceDiagram
     
     USER->>DT: "我写完了这个模块"
     DT->>BHV: 行为序列: [write_code, test_local]
+
+    BHV->>BHV: 行为决策多维度判定
+    note over BHV: ①预算:通过<br/>②风险:非删除/支付类<br/>③冷启动:否(交互轮次42)<br/>④置信区间0.22(混沌区间)
     
-    BHV->>BHV: 决策树:
-      ① 预算: ✅
-      ② 风险: ❌ (不是 delete/pay)
-      ③ 冷启动: ❌ (turns=42)
-      ④ CI宽度: 0.22 (混沌区!)
-      
     BHV->>LLM: 启用 LLM 黄金区
-    Note over LLM: "用户刚写完模块，历史显示80%会提测试，<br/>且工程链显示该模块缺少测试覆盖，<br/>用户画像高C(结构化)→ 预测: add_test"
+    note over LLM: 用户刚写完模块，历史80%会提测试<br/>工程链模块缺少测试覆盖<br/>用户结构化画像→预测行为add_test
     
     LLM-->>BHV: predict: add_test, conf=0.78
     
-    BHV->>UI: 前端标签: "建议加入单元测试 ✓/✗"
+    BHV->>UI: 前端标签: 建议加入单元测试
+    USER->>UI: 确认接受建议
+    UI->>BHV: 反馈: 本次预测正确
     
-    USER->>UI: ✓ (接受了)
-    UI->>BHV: 反馈: 预测正确
-    
-    BHV->>STATS: 更新贝叶斯: P(test|write_code)+=1
+    BHV->>STATS: 更新贝叶斯概率 P(test|write_code)+=1
     BHV->>BHV: Q(s,a) += α × (1.0 + 0 - Q_old)
 ```
 
