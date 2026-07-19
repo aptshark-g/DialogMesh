@@ -220,22 +220,34 @@ sequenceDiagram
     TREE->>STORE: 写入 NodeEditRecord<br/>{action:"split", original_node:"n42",<br/>new_nodes:["n42_a","n42_b"]}
 ```
 
-#### 3.4.2 二级摘要的级联影响
+#### 3.4.2 四级摘要的级联影响
 
 ```
+四级摘要体系 (design_discourse_block_tree_v2 §7):
+
+  v1 (原文):    EDU 原文, 不作压缩 → 对应 active 温度
+  v2 (一级):    LLM 生成 20-40字, 含核心意思 + 行为链 + 因果链 + 关联链
+               信息丢失 ≤ 20% → 对应 paused 温度
+  v3 (二级):    同主题 5+ 轮 → 50-100字 + 完整行为推演图
+               元信息展开而非压缩 → 对应 cold 温度
+  v4 (归档):    单一主题冻结 → 仅主题标签 + 关键决策 + 索引
+               压缩率 > 50% → 对应 frozen 温度
+
+切分对四级摘要的级联:
+
 切分前:
-  n42 (L1 summary: "延迟与监控的讨论")
-    L2 summary id: "l2_monitoring_007"
+  n42 (v2: "延迟与监控的讨论")
+    v3 id: "v3_monitoring_007"
 
 切分后:
-  n42_a (L1 需重新生成: "监控缺失的确认")
-    → 如果 topic 不变: 仍归属 l2_monitoring_007
-  n42_b (L1 需重新生成: "延迟根因排查")
-    → 如果 topic 变成 "performance": 归属新的 L2
+  n42_a (v2 需重新生成: "监控缺失确认")
+    → 如果 topic 不变: 仍归属 v3_monitoring_007
+  n42_b (v2 需重新生成: "延迟根因排查")
+    → 如果 topic 变: 归属新的 v3, v3_monitoring_007 标记 stale
 
 级联:
-  如果所有子节点 topic 都变 → l2_monitoring_007 标记为 stale
-  → Slow Path: 重新压缩 l2_monitoring_007 的有效部分
+  如果所有子节点 topic 都变 → v3_monitoring_007 需重压缩
+  → Slow Path: 重新生成 v3 (只压缩仍有效的子节点)
 ```
 
 #### 3.4.3 切分后的 L1 生成

@@ -51,6 +51,8 @@ sequenceDiagram
 | 操作 | 路径 | 延迟 | 说明 |
 |------|------|------|------|
 | EventIR 解构 | Fast | <5ms | 纯文本操作, 无 LLM |
+| HeaderInjector 代词消解 | Fast | <2ms | heading 层级查找, EDU 主语补全 |
+| CohesionScorer 9维粘合 | Fast | <3ms | 宏观4维+微观5维, 决定合并/切换 |
 | C层规则匹配 | Fast | <1ms | 确定性规则: 阈值/关键词 |
 | B层缓存读取 | Fast | <1ms | 上轮 Async 写入的结果 |
 | 上下文组装 | Fast | <20ms | 从 ObservationPool 取已编译的子图 |
@@ -120,6 +122,17 @@ DESIGN_CROSS_DOMAIN_CONTEXT.md §9.2:
 ```
 
 **子图获取不是一个独立步骤——是 ContextCompiler 内部的 DomainSelector + CrossDomainExpander 阶段。**
+
+**对话树子图按 4 态温度 + 9 维粘合度 + 水波展开获取：**
+
+| 温度 | 子图策略 | 触发条件 |
+|------|---------|---------|
+| active | 全量 EDU + 上下文 | 当前讨论中 |
+| paused | 完整 EDU + 一级摘要(v2) | 话题切换, 粘合度<0.4 |
+| cold | 二级摘要(v3) + 关键实体 | 10轮未访问 |
+| frozen | 仅元数据 + 索引(v4) | 50轮未访问 |
+
+水波展开强度由 CohesionScorer 的 9 维分决定 (非简单语义距离)：
 
 ```mermaid
 graph TD

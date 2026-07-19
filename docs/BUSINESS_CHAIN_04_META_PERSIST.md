@@ -279,6 +279,21 @@ sequenceDiagram
     GRAPH-->>SESSION: persist_count + tier_distribution
 ```
 
+#### 3.3.1 HCWA ↔ 4 态温度映射
+
+```
+active → H (Hot):   当前 Session, 全量在内存
+paused → C (Warm):  近期 Session, 已持久化, 可按需加载
+cold   → W (Cold):  历史 Session, 带衰减权重
+frozen → A (Archive): 压缩, metadata + 摘要
+
+迁移 (由 CohesionScorer + 访问频率驱动):
+  active ↔ paused: 粘合度阈值 (≥0.7合并, <0.4切换)
+  paused → cold:   10 轮无访问
+  cold → frozen:   50 轮无访问
+  paused/cold → active: BGE 匹配 > 0.8
+```
+
 ### 3.4 加载时的逆过程
 
 ```

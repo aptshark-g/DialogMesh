@@ -83,6 +83,12 @@ DiscourseBlock:
   edus: [...]
   parent: "blk_n40"
   children: ["blk_n44"]
+  temperature: "active"  # active | paused | cold | frozen
+  chains: {  # 缺口⑤: 节点内建行为链/因果链/关联链
+    behavior_chain:   ["用户确认缺失→询问原因→建议方案"],
+    causal_chain:     ["延迟飙升 因为 无监控→无监控 导致 无法定位"],
+    association_chain: ["监控↔Observer↔Metric↔Alert"]
+  }
   # 注意: 没有 topic 字段! 没有 action 字段!
 ```
 
