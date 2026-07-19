@@ -433,6 +433,87 @@ export function submitBehaviorFeedback(req: V6BehaviorFeedbackRequest): Promise<
   });
 }
 
+export function getBehaviorPredictions(): Promise<V6BehaviorPredictResponse> {
+  return apiFetch<V6BehaviorPredictResponse>('/v6/behavior/predict');
+}
+
+export function getBelief(sessionId: string = 'default'): Promise<V6BeliefResponse> {
+  return apiFetch<V6BeliefResponse>(`/v6/belief?session_id=${encodeURIComponent(sessionId)}`);
+}
+
+export function applyOceanParams(): Promise<V6OceanParamsResponse> {
+  return apiFetch<V6OceanParamsResponse>('/v6/ocean/params', { method: 'POST' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 工程链 (Engineering Chain)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getSubgraph(perspective: 'dialogue' | 'meta' = 'dialogue'): Promise<V6SubgraphResponse> {
+  return apiFetch<V6SubgraphResponse>(`/v6/subgraph/${encodeURIComponent(perspective)}`);
+}
+
+export function getRecursiveMap(): Promise<V6RecursiveMapResponse> {
+  return apiFetch<V6RecursiveMapResponse>('/v6/recursive-map');
+}
+
+export function controlRecursiveMap(req: V6RecursiveMapControlRequest): Promise<V6RecursiveMapControlResponse> {
+  return apiFetch<V6RecursiveMapControlResponse>('/v6/recursive-map', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function getEngineeringModules(): Promise<V6EngineeringModulesResponse> {
+  return apiFetch<V6EngineeringModulesResponse>('/v6/engineering/modules');
+}
+
+export function editEngineeringConstraints(req: V6EngineeringConstraintEditRequest): Promise<V6EngineeringConstraintEditResponse> {
+  return apiFetch<V6EngineeringConstraintEditResponse>('/v6/engineering/constraints', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 可视化编辑 (Visualization Edit) — 白盒化
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function editGraph(req: V6GraphEditRequest): Promise<V6GraphEditResponse> {
+  return apiFetch<V6GraphEditResponse>('/v6/edit/graph', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function editDiscourseTree(req: V6DiscourseTreeEditRequest): Promise<V6DiscourseTreeEditResponse> {
+  return apiFetch<V6DiscourseTreeEditResponse>('/v6/edit/discourse-tree', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function editObjects(req: V6ObjectEditRequest): Promise<V6ObjectEditResponse> {
+  return apiFetch<V6ObjectEditResponse>('/v6/edit/objects', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function editRelations(req: V6RelationEditRequest): Promise<V6RelationEditResponse> {
+  return apiFetch<V6RelationEditResponse>('/v6/edit/relations', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function editIr(req: V6IrEditRequest): Promise<V6IrEditResponse> {
+  return apiFetch<V6IrEditResponse>('/v6/edit/ir', {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 注释 (Annotations)
 // ═══════════════════════════════════════════════════════════════════════════

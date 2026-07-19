@@ -5,7 +5,7 @@ import { useSession } from '@/hooks/useSession';
 import { useChat } from '@/hooks/useChat';
 import { useOverlayStore } from '@/stores/overlayStore';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import type { ChatMessage, WebSocketServerEvent } from '@/types/api';
+import type { ChatMessage, V4WebSocketEvent } from '@/types/api';
 
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
 
@@ -59,7 +59,7 @@ export function ChatOverlay() {
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as WebSocketServerEvent;
+        const data = JSON.parse(event.data) as V4WebSocketEvent;
         if (data.event_type !== 'HEARTBEAT') {
           handleWebSocketEvent(data);
         }

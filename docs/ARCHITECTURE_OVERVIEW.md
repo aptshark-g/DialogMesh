@@ -49,15 +49,15 @@
 ## 三、完整事件流
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph TICK["每轮对话 = 1 个 Tick"]
         C1["用户输入 event"] --> DC
         C2["定时器 tick"] --> DC
-        DC["Decider"] -->|"单Event原则"| EVT
+        DC["Decider"] -- "单Event原则" --> EVT
         
         EVT["Event"]
-        EVT -->|"evolve"| STATE
-        STATE -->|"读取"| DC
+        EVT -- "evolve" --> STATE
+        STATE -- "读取" --> DC
     end
 
     subgraph EVENTS["事件类型"]

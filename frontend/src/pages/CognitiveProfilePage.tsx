@@ -10,6 +10,10 @@ import {
   Minus,
   Calendar,
   Hash,
+  SlidersHorizontal,
+  History,
+  Anchor,
+  Brain,
 } from 'lucide-react';
 import { CognitiveRadarChart } from '../components/CognitiveRadarChart';
 import { MetricCards } from '../components/MetricCards';
@@ -17,6 +21,10 @@ import {
   DimensionBreakdown,
   IntentDistributionChart,
   ProfileStatsGrid,
+  ProfileEditPanel,
+  ProfileCorrectionsPanel,
+  ProfileInertiaPanel,
+  MindSpacePanel,
 } from '../components/profile';
 import { useV6Profile } from '../hooks/useV6Profile';
 import { cn, formatTimestamp } from '../lib/utils';
@@ -35,11 +43,24 @@ function confidenceBadge(avgConfidence: number) {
   return { label: '低置信度', color: 'bg-status-error/10 text-status-error', icon: TrendingDown };
 }
 
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+const tabs = [
+  { key: 'overview', label: '画像总览', icon: UserCircle },
+  { key: 'edit', label: '画像纠正', icon: SlidersHorizontal },
+  { key: 'corrections', label: '修正历史', icon: History },
+  { key: 'inertia', label: '惯性权重', icon: Anchor },
+  { key: 'mind', label: 'Mind 空间', icon: Brain },
+] as const;
+
+type TabKey = (typeof tabs)[number]['key'];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function CognitiveProfilePage() {
-  const { profile, trace, loading: apiLoading, error, refresh } = useV6Profile();
+  const { profile, trace, abc, mind, loading: apiLoading, error, refresh } = useV6Profile();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -164,11 +185,36 @@ export function CognitiveProfilePage() {
             刷新
           </button>
         </div>
-        <div className="mt-4 border-b border-border-subtle" />
+        {/* Tab Bar */}
+        <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-border-subtle">
+          {tabs.map((t) => {
+            const TabIcon = t.icon;
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setActiveTab(t.key)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap',
+                  'border-b-2 -mb-px transition-colors',
+                  active
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-text-muted hover:text-text-secondary'
+                )}
+                aria-label={t.label}
+              >
+                <TabIcon className="w-4 h-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
       </header>
 
       {/* Content */}
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 space-y-6">
+        {activeTab === 'overview' && (<>
         {/* Top Row: Score + Radar + Metrics */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Overall Score Card */}
@@ -271,6 +317,15 @@ export function CognitiveProfilePage() {
             <IntentDistributionChart data={currentIntents} />
           </motion.div>
         </div>
+        </>
+        )}
+
+        {activeTab === 'edit' && (
+          <ProfileEditPanel profile={profile} onSaved={refresh} />
+        )}
+        {activeTab === 'corrections' && <ProfileCorrectionsPanel />}
+        {activeTab === 'inertia' && <ProfileInertiaPanel />}
+        {activeTab === 'mind' && <MindSpacePanel mind={mind} abc={abc} />}
       </div>
     </div>
   );

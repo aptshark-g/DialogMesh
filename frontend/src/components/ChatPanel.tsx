@@ -35,7 +35,6 @@ export default function ChatPanel({
   onSendMessage,
   onClarificationSubmit,
   onClearError,
-  onClearMessages,
   onReconnect,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);

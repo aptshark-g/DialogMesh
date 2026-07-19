@@ -10,6 +10,8 @@ import {
   Clock,
   LayoutList,
   Check,
+  Pencil,
+  Plus,
 } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { ViewMode } from '@/types/graph';
@@ -29,6 +31,9 @@ export interface GraphToolbarProps {
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
   nodeCounts?: Record<string, number>;
+  editMode?: boolean;
+  onEditModeChange?: (enabled: boolean) => void;
+  onAddEdge?: () => void;
 }
 
 const VIEW_MODE_OPTIONS: { value: ViewMode; label: string; icon: typeof GitBranch }[] = [
@@ -51,6 +56,9 @@ export function GraphToolbar({
   onToggleFullscreen,
   isFullscreen = false,
   nodeCounts = {},
+  editMode = false,
+  onEditModeChange,
+  onAddEdge,
 }: GraphToolbarProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -126,6 +134,40 @@ export function GraphToolbar({
             );
           })}
         </div>
+
+        {/* Edit mode toggle */}
+        {onEditModeChange && (
+          <div className="flex items-center gap-1 bg-surface-card rounded-md border border-subtle p-0.5 shrink-0">
+            <Tooltip content={editMode ? '退出编辑模式' : '进入编辑模式(点击节点/边进行编辑)'} position="top">
+              <button
+                type="button"
+                onClick={() => onEditModeChange(!editMode)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-sm transition-colors',
+                  editMode
+                    ? 'bg-primary text-white'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-card-hover'
+                )}
+                aria-pressed={editMode}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">编辑模式</span>
+              </button>
+            </Tooltip>
+            {editMode && onAddEdge && (
+              <Tooltip content="添加边" position="top">
+                <button
+                  type="button"
+                  onClick={onAddEdge}
+                  className="p-1.5 rounded-sm text-text-secondary hover:text-text-primary hover:bg-surface-card-hover transition-colors"
+                  aria-label="添加边"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        )}
 
         {/* Zoom controls */}
         <div className="flex items-center gap-1 bg-surface-card rounded-md border border-subtle p-0.5 shrink-0">

@@ -11,6 +11,7 @@ export interface ConversationGraphProps {
   activeFilters: string[];
   selectedNodeId: string | null;
   onNodeClick: (nodeId: string) => void;
+  onEdgeClick?: (edgeId: string) => void;
   zoomLevel?: number;
   onZoomChange?: (zoom: number) => void;
   className?: string;
@@ -41,6 +42,7 @@ export function ConversationGraph({
   activeFilters,
   selectedNodeId,
   onNodeClick,
+  onEdgeClick,
   zoomLevel: _zoomLevel,
   onZoomChange,
   className,
@@ -240,6 +242,25 @@ export function ConversationGraph({
     [onNodeClick]
   );
 
+  // Handle link click (edge id uses the `${source}-${target}` convention)
+  const handleLinkClick = useCallback(
+    (link: { source: unknown; target: unknown }) => {
+      if (!onEdgeClick) return;
+      const sourceId =
+        typeof link.source === 'string'
+          ? link.source
+          : (link.source as { id?: string })?.id;
+      const targetId =
+        typeof link.target === 'string'
+          ? link.target
+          : (link.target as { id?: string })?.id;
+      if (sourceId && targetId) {
+        onEdgeClick(`${sourceId}-${targetId}`);
+      }
+    },
+    [onEdgeClick]
+  );
+
   // Handle zoom
   const handleZoom = useCallback(
     (transform: { k: number }) => {
@@ -273,6 +294,10 @@ export function ConversationGraph({
           linkDirectionalArrowColor={() => '#3A3548'}
           onNodeClick={handleNodeClick as unknown as (
             node: Record<string, unknown>,
+            event: MouseEvent
+          ) => void}
+          onLinkClick={handleLinkClick as unknown as (
+            link: Record<string, unknown>,
             event: MouseEvent
           ) => void}
           onZoom={handleZoom}

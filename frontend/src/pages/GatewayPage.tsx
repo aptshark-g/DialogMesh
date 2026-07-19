@@ -1,7 +1,7 @@
 // FILE: src/pages/GatewayPage.tsx
 // Gateway — 服务检测 + Provider 管理 + 配置 + 用量 + 运维
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield,
@@ -25,10 +25,40 @@ import {
   Layers,
   // Clock,  // unused
   ArrowRight,
+  Plus,
+  Trash2,
+  Cpu,
+  ArrowLeftRight,
+  SlidersHorizontal,
+  FlaskConical,
+  Search,
 } from 'lucide-react';
 import { useV6Gateway } from '../hooks/useV6Gateway';
+import {
+  switchProvider,
+  testProviderConnection,
+  updateContextConfig,
+  getContext,
+  addGatewayProvider,
+  removeGatewayProvider,
+} from '../api/v6';
+import { getStatus, triggerCheckpoint, inspectSystem } from '../api/v4';
 import { cn } from '../lib/utils';
-import type { V6GatewayProvider, V6GatewayModel } from '../types/api';
+import type {
+  V6GatewayProvider,
+  V6GatewayModel,
+  V6ProviderSwitchRequest,
+  V6ProviderSwitchResponse,
+  V6ContextConfigRequest,
+  V6ContextResponse,
+  V6GatewayProviderAddRequest,
+  StatusResponse,
+  CheckpointResponse,
+  InspectResponse,
+} from '../types/api';
+import { Modal } from '../components/ui/Modal';
+import { Toast } from '../components/ui/Toast';
+import { useUIStore } from '../stores/uiStore';
 
 export function GatewayPage() {
   const {
@@ -55,6 +85,235 @@ export function GatewayPage() {
   const [configForms, setConfigForms] = useState<Record<string, { apiKey: string; baseUrl: string }>>({});
   const [testResults, setTestResults] = useState<Record<string, { healthy: boolean; latency: number; error: string | null }>>({});
   const [activeTab, setActiveTab] = useState<'providers' | 'usage' | 'config' | 'monitor'>('providers');
+
+  // ─── 系统运维状态 (引擎 / Provider 切换 / 上下文配置) ───
+  const [engineStatus, setEngineStatus] = useState<StatusResponse | null>(null);
+  const [engineStatusLoading, setEngineStatusLoading] = useState(false);
+  const [checkpointResult, setCheckpointResult] = useState<CheckpointResponse | null>(null);
+  const [checkpointLoading, setCheckpointLoading] = useState(false);
+  const [inspectModule, setInspectModule] = useState('');
+  const [inspectResult, setInspectResult] = useState<InspectResponse | null>(null);
+  const [inspectLoading, setInspectLoading] = useState(false);
+  const [switchTarget, setSwitchTarget] = useState('');
+  const [switchModel, setSwitchModel] = useState('');
+  const [switchResult, setSwitchResult] = useState<V6ProviderSwitchResponse | null>(null);
+  const [switchLoading, setSwitchLoading] = useState(false);
+  const [connTest, setConnTest] = useState<{ healthy: boolean; latency_ms: number } | null>(null);
+  const [connTestLoading, setConnTestLoading] = useState(false);
+  const [contextData, setContextData] = useState<V6ContextResponse | null>(null);
+  const [contextForm, setContextForm] = useState({
+    token_budget: '',
+    domain_P: '',
+    domain_C: '',
+    domain_K: '',
+    domain_E: '',
+    domain_B: '',
+  });
+  const [contextSaving, setContextSaving] = useState(false);
+
+  // ─── 网关 Provider 新增/删除 ───
+  const [addProviderOpen, setAddProviderOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ name: '', base_url: '', api_key: '', kind: '', models: '' });
+  const [addLoading, setAddLoading] = useState(false);
+  const [removingProvider, setRemovingProvider] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const confirm = useUIStore((s) => s.confirm);
+
+  // ─── 系统运维数据加载 (进入监控 tab 时) ───
+  const fetchEngineStatus = useCallback(async () => {
+    setEngineStatusLoading(true);
+    try {
+      setEngineStatus(await getStatus());
+    } catch {
+      setEngineStatus(null);
+    } finally {
+      setEngineStatusLoading(false);
+    }
+  }, []);
+
+  const fetchContext = useCallback(async () => {
+    try {
+      setContextData(await getContext());
+    } catch {
+      setContextData(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'monitor') {
+      fetchEngineStatus();
+      fetchContext();
+    }
+  }, [activeTab, fetchEngineStatus, fetchContext]);
+
+  // ─── 系统运维操作 ───
+  const handleCheckpoint = useCallback(async () => {
+    setCheckpointLoading(true);
+    try {
+      const resp = await triggerCheckpoint();
+      setCheckpointResult(resp);
+      setToast({ type: 'success', message: '深度分析已触发' });
+    } catch (err) {
+      setToast({ type: 'error', message: `触发失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setCheckpointLoading(false);
+    }
+  }, []);
+
+  const handleInspect = useCallback(async () => {
+    const module = inspectModule.trim();
+    if (!module) {
+      setToast({ type: 'error', message: '请输入模块名(如 observations / hypotheses / knowledge)' });
+      return;
+    }
+    setInspectLoading(true);
+    try {
+      setInspectResult(await inspectSystem(module));
+    } catch (err) {
+      setInspectResult(null);
+      setToast({ type: 'error', message: `检查失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setInspectLoading(false);
+    }
+  }, [inspectModule]);
+
+  const handleSwitchProvider = useCallback(async () => {
+    if (!switchTarget) {
+      setToast({ type: 'error', message: '请选择要切换的 Provider' });
+      return;
+    }
+    setSwitchLoading(true);
+    try {
+      const req: V6ProviderSwitchRequest = { provider: switchTarget };
+      if (switchModel.trim()) req.model = switchModel.trim();
+      const resp = await switchProvider(req);
+      setSwitchResult(resp);
+      setToast({
+        type: resp.healthy ? 'success' : 'info',
+        message: `已切换到 ${resp.switched} (${resp.model})${resp.healthy ? '' : ' · 健康检查未通过'}`,
+      });
+    } catch (err) {
+      setSwitchResult(null);
+      setToast({ type: 'error', message: `切换失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setSwitchLoading(false);
+    }
+  }, [switchTarget, switchModel]);
+
+  const handleTestConnection = useCallback(async () => {
+    setConnTestLoading(true);
+    try {
+      setConnTest(await testProviderConnection());
+    } catch (err) {
+      setConnTest(null);
+      setToast({ type: 'error', message: `测试失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setConnTestLoading(false);
+    }
+  }, []);
+
+  const handleSaveContext = useCallback(async () => {
+    const req: V6ContextConfigRequest = {};
+    const fields = [
+      ['token_budget', 'Token 预算'],
+      ['domain_P', 'Domain P 权重'],
+      ['domain_C', 'Domain C 权重'],
+      ['domain_K', 'Domain K 权重'],
+      ['domain_E', 'Domain E 权重'],
+      ['domain_B', 'Domain B 权重'],
+    ] as const;
+    for (const [key, label] of fields) {
+      const raw = contextForm[key].trim();
+      if (raw === '') continue;
+      const value = Number(raw);
+      if (Number.isNaN(value) || value < 0) {
+        setToast({ type: 'error', message: `${label} 需为非负数字` });
+        return;
+      }
+      req[key] = value;
+    }
+    if (Object.keys(req).length === 0) {
+      setToast({ type: 'error', message: '请至少填写一项配置' });
+      return;
+    }
+    setContextSaving(true);
+    try {
+      const resp = await updateContextConfig(req);
+      setToast({ type: 'success', message: `已更新 ${resp.count} 项上下文配置` });
+      fetchContext();
+    } catch (err) {
+      setToast({ type: 'error', message: `保存失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setContextSaving(false);
+    }
+  }, [contextForm, fetchContext]);
+
+  // ─── 网关 Provider 新增/删除 ───
+  const handleAddProvider = useCallback(async () => {
+    const name = addForm.name.trim();
+    const baseUrl = addForm.base_url.trim();
+    if (!name || !baseUrl) {
+      setToast({ type: 'error', message: 'name 与 base_url 为必填项' });
+      return;
+    }
+    let models: V6GatewayModel[] | undefined;
+    if (addForm.models.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(addForm.models);
+        if (!Array.isArray(parsed)) throw new Error('not array');
+        models = parsed as V6GatewayModel[];
+      } catch {
+        setToast({ type: 'error', message: 'models 需为 JSON 数组,如 [{"id":"gpt-4o","display":"GPT-4o","context":128000,"cost_in":2.5,"cost_out":10}]' });
+        return;
+      }
+    }
+    const req: V6GatewayProviderAddRequest = { name, base_url: baseUrl };
+    if (addForm.api_key.trim()) req.api_key = addForm.api_key.trim();
+    if (addForm.kind.trim()) req.kind = addForm.kind.trim();
+    if (models) req.models = models;
+
+    setAddLoading(true);
+    try {
+      const resp = await addGatewayProvider(req);
+      if (resp.error) {
+        setToast({ type: 'error', message: `新增失败: ${String(resp.error)}` });
+      } else {
+        setToast({ type: 'success', message: `Provider ${name} 已添加` });
+        setAddProviderOpen(false);
+        setAddForm({ name: '', base_url: '', api_key: '', kind: '', models: '' });
+        refresh();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: `新增失败: ${err instanceof Error ? err.message : '未知错误'}` });
+    } finally {
+      setAddLoading(false);
+    }
+  }, [addForm, refresh]);
+
+  const handleRemoveProvider = useCallback((name: string) => {
+    confirm({
+      title: '删除 Provider',
+      message: `确定删除网关 Provider「${name}」吗?该操作不可撤销。`,
+      confirmText: '删除',
+      onConfirm: async () => {
+        setRemovingProvider(name);
+        try {
+          const resp = await removeGatewayProvider(name);
+          if (resp.error) {
+            setToast({ type: 'error', message: `删除失败: ${String(resp.error)}` });
+          } else {
+            setToast({ type: 'success', message: `Provider ${name} 已删除` });
+            refresh();
+          }
+        } catch (err) {
+          setToast({ type: 'error', message: `删除失败: ${err instanceof Error ? err.message : '未知错误'}` });
+        } finally {
+          setRemovingProvider(null);
+        }
+      },
+    });
+  }, [confirm, refresh]);
 
   const toggleExpand = (name: string) => {
     setExpandedProvider(prev => prev === name ? null : name);
@@ -263,6 +522,18 @@ export function GatewayPage() {
                       {isFetchingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
                       {isFetchingModels ? '拉取中...' : '拉取模型'}
                     </button>
+                    <button
+                      onClick={() => handleRemoveProvider(provider.name)}
+                      disabled={removingProvider === provider.name}
+                      className="ml-auto flex items-center gap-1 rounded-lg border border-status-error/30 px-3 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"
+                    >
+                      {removingProvider === provider.name ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      删除
+                    </button>
                   </div>
                   {testResult && (
                     <div className={cn(
@@ -455,6 +726,16 @@ export function GatewayPage() {
 
             {/* Gateway Providers */}
             <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-muted">网关 Provider 列表</span>
+                <button
+                  onClick={() => setAddProviderOpen(true)}
+                  className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  新增 Provider
+                </button>
+              </div>
               {providersLoading && !gatewayProviders && (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
@@ -769,9 +1050,351 @@ export function GatewayPage() {
                 </div>
               </div>
             )}
+
+            {/* ─── 系统 (引擎运维) ─── */}
+            <div className="flex items-center gap-2 pt-2">
+              <Cpu className="h-4 w-4 text-text-muted" />
+              <span className="text-xs font-semibold text-text-muted">系统 (引擎)</span>
+              <div className="flex-1 border-t border-gray-200" />
+            </div>
+
+            {/* 引擎状态 (v4/status) */}
+            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-text-muted">
+                  <Cpu className="h-4 w-4" />
+                  <span className="text-xs font-semibold">引擎状态 (v4/status)</span>
+                </div>
+                <button
+                  onClick={fetchEngineStatus}
+                  disabled={engineStatusLoading}
+                  className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={cn('h-3 w-3', engineStatusLoading && 'animate-spin')} />
+                  刷新
+                </button>
+              </div>
+              {engineStatusLoading && !engineStatus ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin text-text-muted" />
+                  <span className="ml-2 text-sm text-text-muted">加载引擎状态...</span>
+                </div>
+              ) : engineStatus ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {(['async', 'slow', 'deep'] as const).map((engine) => (
+                    <div key={engine} className="bg-surface-sidebar rounded-lg p-3">
+                      <span className="text-xs font-semibold text-text-muted">{engine}</span>
+                      <div className="mt-2 space-y-1">
+                        {Object.entries(engineStatus[engine] ?? {}).map(([key, value]) => (
+                          <div key={key} className="flex items-start justify-between gap-2 text-xs">
+                            <span className="text-text-muted shrink-0">{key}</span>
+                            <span className="text-text-primary font-mono text-right break-all">
+                              {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+                            </span>
+                          </div>
+                        ))}
+                        {Object.keys(engineStatus[engine] ?? {}).length === 0 && (
+                          <div className="text-xs text-text-muted">暂无数据</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-text-secondary py-4">暂无数据</div>
+              )}
+            </div>
+
+            {/* 运维操作: 深度分析 + 模块检查 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+                <div className="flex items-center gap-2 text-text-muted mb-4">
+                  <FlaskConical className="h-4 w-4" />
+                  <span className="text-xs font-semibold">深度分析 (Slow Path Checkpoint)</span>
+                </div>
+                <button
+                  onClick={handleCheckpoint}
+                  disabled={checkpointLoading}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-2 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                >
+                  {checkpointLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                  {checkpointLoading ? '触发中...' : '触发深度分析'}
+                </button>
+                {checkpointResult && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-text-muted">状态</span>
+                      <span className="font-medium text-text-primary">{checkpointResult.status}</span>
+                    </div>
+                    {checkpointResult.results && checkpointResult.results.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {checkpointResult.results.map((r) => (
+                          <span
+                            key={r.adapter}
+                            className={cn(
+                              'text-xs font-medium px-2 py-1 rounded',
+                              r.ok ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'
+                            )}
+                          >
+                            {r.adapter}: {r.ok ? 'OK' : 'FAIL'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+                <div className="flex items-center gap-2 text-text-muted mb-4">
+                  <Search className="h-4 w-4" />
+                  <span className="text-xs font-semibold">模块检查 (v4/inspect)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={inspectModule}
+                    onChange={(e) => setInspectModule(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleInspect(); }}
+                    placeholder="observations / hypotheses / knowledge..."
+                    className="flex-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  />
+                  <button
+                    onClick={handleInspect}
+                    disabled={inspectLoading}
+                    className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {inspectLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                    检查
+                  </button>
+                </div>
+                {inspectResult && (
+                  <pre className="mt-3 text-xs text-text-secondary bg-surface-sidebar rounded-lg p-3 overflow-auto max-h-64">
+                    {JSON.stringify(inspectResult, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
+
+            {/* Provider 切换 (引擎) */}
+            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center gap-2 text-text-muted mb-4">
+                <ArrowLeftRight className="h-4 w-4" />
+                <span className="text-xs font-semibold">Provider 切换 (引擎)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={switchTarget}
+                  onChange={(e) => setSwitchTarget(e.target.value)}
+                  className="rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                >
+                  <option value="">选择 Provider</option>
+                  {gatewayProviders?.providers.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.display_name} ({p.name})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={switchModel}
+                  onChange={(e) => setSwitchModel(e.target.value)}
+                  placeholder="模型 (可选)"
+                  className="rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={handleSwitchProvider}
+                  disabled={switchLoading}
+                  className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                >
+                  {switchLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowLeftRight className="h-3.5 w-3.5" />}
+                  {switchLoading ? '切换中...' : '切换'}
+                </button>
+                <button
+                  onClick={handleTestConnection}
+                  disabled={connTestLoading}
+                  className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                >
+                  {connTestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                  {connTestLoading ? '测试中...' : '测试连接'}
+                </button>
+              </div>
+              {switchResult && (
+                <div className={cn(
+                  'mt-3 rounded-lg px-3 py-2 text-xs',
+                  switchResult.healthy ? 'bg-status-success/10 text-status-success' : 'bg-status-warning/10 text-status-warning'
+                )}>
+                  当前: {switchResult.switched} · 模型 {switchResult.model} · {switchResult.healthy ? '健康' : '健康检查未通过'}
+                </div>
+              )}
+              {connTest && (
+                <div className={cn(
+                  'mt-2 rounded-lg px-3 py-2 text-xs',
+                  connTest.healthy ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'
+                )}>
+                  {connTest.healthy ? `✅ 连接正常 · ${connTest.latency_ms}ms` : '❌ 连接异常'}
+                </div>
+              )}
+            </div>
+
+            {/* 上下文配置 */}
+            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-text-muted">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <span className="text-xs font-semibold">上下文配置</span>
+                </div>
+                <button
+                  onClick={fetchContext}
+                  className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  刷新
+                </button>
+              </div>
+              {contextData && (
+                <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
+                  {contextData.intent_category && (
+                    <span>意图分类 <span className="font-medium text-primary">{contextData.intent_category}</span></span>
+                  )}
+                  {contextData.total_tokens !== undefined && (
+                    <span>总 Tokens <span className="font-mono text-text-primary">{contextData.total_tokens.toLocaleString()}</span></span>
+                  )}
+                  {contextData.entries && (
+                    <span>条目 <span className="font-mono text-text-primary">{contextData.entries.length}</span></span>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-text-muted">Token 预算</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={contextForm.token_budget}
+                    onChange={(e) => setContextForm((prev) => ({ ...prev, token_budget: e.target.value }))}
+                    placeholder="如 4096"
+                    className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  />
+                </div>
+                {([
+                  ['domain_P', 'Domain P 权重'],
+                  ['domain_C', 'Domain C 权重'],
+                  ['domain_K', 'Domain K 权重'],
+                  ['domain_E', 'Domain E 权重'],
+                  ['domain_B', 'Domain B 权重'],
+                ] as const).map(([key, label]) => (
+                  <div key={key}>
+                    <label className="text-xs text-text-muted">{label}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.05}
+                      value={contextForm[key]}
+                      onChange={(e) => setContextForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                      placeholder="如 0.2"
+                      className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4">
+                <button
+                  onClick={handleSaveContext}
+                  disabled={contextSaving}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-2 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                >
+                  {contextSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings className="h-3.5 w-3.5" />}
+                  {contextSaving ? '保存中...' : '保存上下文配置'}
+                </button>
+              </div>
+            </div>
           </motion.section>
         )}
       </div>
+
+      {/* 新增 Provider Modal */}
+      <Modal
+        isOpen={addProviderOpen}
+        onClose={() => setAddProviderOpen(false)}
+        title="新增网关 Provider"
+        footer={
+          <>
+            <button
+              onClick={() => setAddProviderOpen(false)}
+              disabled={addLoading}
+              className="rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleAddProvider}
+              disabled={addLoading}
+              className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-2 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              {addLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              {addLoading ? '添加中...' : '添加'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-text-muted">name *</label>
+            <input
+              type="text"
+              value={addForm.name}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="如 deepseek"
+              className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-muted">base_url *</label>
+            <input
+              type="text"
+              value={addForm.base_url}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, base_url: e.target.value }))}
+              placeholder="https://api.example.com/v1"
+              className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-muted">api_key</label>
+            <input
+              type="password"
+              value={addForm.api_key}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, api_key: e.target.value }))}
+              placeholder="sk-..."
+              className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-muted">kind</label>
+            <input
+              type="text"
+              value={addForm.kind}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, kind: e.target.value }))}
+              placeholder="openai / ollama / lmstudio..."
+              className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-muted">models (JSON 数组,可选)</label>
+            <textarea
+              rows={4}
+              value={addForm.models}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, models: e.target.value }))}
+              placeholder='[{"id":"gpt-4o","display":"GPT-4o","context":128000,"cost_in":2.5,"cost_out":10}]'
+              className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-xs font-mono text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {toast && (
+        <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />
+      )}
     </div>
   );
 }

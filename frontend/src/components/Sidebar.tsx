@@ -16,6 +16,11 @@ import {
   Shield,
   Workflow,
   GitBranch,
+  LayoutDashboard,
+  History,
+  Brain,
+  Radar,
+  Wrench,
 } from 'lucide-react';
 import { useHealth } from '../hooks/useHealth.ts';
 
@@ -26,10 +31,15 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { to: '/', label: '总览', icon: LayoutDashboard },
   { to: '/chat', label: '聊天', icon: MessageSquare },
+  { to: '/sessions', label: '会话', icon: History },
   { to: '/graph', label: '图谱', icon: Network },
   { to: '/profile', label: '画像', icon: UserCircle },
   { to: '/tasks', label: '任务', icon: CheckSquare },
+  { to: '/meta', label: '元认知', icon: Brain },
+  { to: '/behavior', label: '行为', icon: Radar },
+  { to: '/engineering', label: '工程', icon: Wrench },
   { to: '/gateway', label: '网关', icon: Shield },
   { to: '/pipeline', label: '管道', icon: Workflow },
   { to: '/deepchain', label: '深层链', icon: GitBranch },

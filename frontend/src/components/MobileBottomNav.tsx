@@ -2,13 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   MessageSquare,
+  History,
+  Brain,
+  Radar,
+  Wrench,
   Network,
-  UserCircle,
   CheckSquare,
   Settings,
-  Shield,
-  Workflow,
-  GitBranch,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
@@ -20,12 +20,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: '/chat/default', label: '聊天', icon: MessageSquare },
+  { to: '/sessions', label: '会话', icon: History },
+  { to: '/meta', label: '元认知', icon: Brain },
+  { to: '/behavior', label: '行为', icon: Radar },
+  { to: '/engineering', label: '工程', icon: Wrench },
   { to: '/graph', label: '图谱', icon: Network },
-  { to: '/profile', label: '画像', icon: UserCircle },
   { to: '/tasks', label: '任务', icon: CheckSquare },
-  { to: '/gateway', label: '网关', icon: Shield },
-  { to: '/pipeline', label: '管道', icon: Workflow },
-  { to: '/deepchain', label: '链', icon: GitBranch },
   { to: '/settings', label: '设置', icon: Settings },
 ];
 

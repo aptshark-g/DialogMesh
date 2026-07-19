@@ -65,10 +65,12 @@ export function useChat(_sessionId?: string | null) {
       }
       case 'THINKING_STEP': {
         const payload = event.payload as { step?: number; description?: string };
-        if (payload.step !== undefined && payload.description) {
+        const step = payload.step;
+        const description = payload.description;
+        if (step !== undefined && description) {
           setThinkingSteps(prev => [
             ...prev,
-            { step: payload.step!, description: payload.description, timestamp: Date.now() },
+            { step, description, timestamp: Date.now() },
           ]);
         }
         break;

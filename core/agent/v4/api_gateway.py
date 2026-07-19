@@ -144,8 +144,14 @@ async def list_providers():
 
 
 class ProviderConfig(BaseModel):
+    name: str = ""
+    kind: str = ""                               # openai | openai_compatible | ollama
     api_key: str = ""
     base_url: str = ""
+    models: list = []
+    max_concurrency: int = 0
+    rate_limit_rpm: int = 0
+    enabled: bool = True
 
 
 @router.put("/providers/{name}")
@@ -153,13 +159,12 @@ async def configure_provider(name: str, req: ProviderConfig):
     """Edit provider via switch admin API (soft-config, no restart)."""
     import urllib.request
     body = json.dumps({
-        "name": name, "kind": getattr(req, 'kind', 'openai_compatible'),
-        "base_url": getattr(req, 'base_url', ''),
-        "api_key": getattr(req, 'api_key', ''),
-        "models": getattr(req, 'models', []),
-        "max_concurrency": getattr(req, 'max_concurrency', 0),
-        "rate_limit_rpm": getattr(req, 'rate_limit_rpm', 0),
-        "enabled": getattr(req, 'enabled', True),
+        "name": name, "kind": req.kind or "openai_compatible",
+        "base_url": req.base_url, "api_key": req.api_key,
+        "models": req.models,
+        "max_concurrency": req.max_concurrency,
+        "rate_limit_rpm": req.rate_limit_rpm,
+        "enabled": req.enabled,
     }).encode()
     r = urllib.request.Request(f"{SWITCH_URL}/v1/admin/providers/{name}", data=body, method="PUT")
     r.add_header("Authorization", f"Bearer {ADMIN_KEY}")
@@ -173,13 +178,13 @@ async def configure_provider(name: str, req: ProviderConfig):
 @router.post("/providers")
 async def add_provider(req: ProviderConfig):
     """Add a new provider via switch admin API."""
-    if not req.name or not getattr(req, 'base_url', ''):
+    if not req.name or not req.base_url:
         raise HTTPException(400, "name and base_url required")
     import urllib.request
     body = json.dumps({
-        "name": req.name, "kind": getattr(req, 'kind', 'openai_compatible'),
-        "base_url": req.base_url, "api_key": getattr(req, 'api_key', ''),
-        "models": getattr(req, 'models', []),
+        "name": req.name, "kind": req.kind or "openai_compatible",
+        "base_url": req.base_url, "api_key": req.api_key,
+        "models": req.models,
     }).encode()
     r = urllib.request.Request(f"{SWITCH_URL}/v1/admin/providers", data=body, method="POST")
     r.add_header("Authorization", f"Bearer {ADMIN_KEY}")

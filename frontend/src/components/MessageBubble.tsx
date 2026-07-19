@@ -1,9 +1,11 @@
 import { memo, useCallback, useState } from 'react';
-import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
 import { cn } from '../lib/utils';
+import { submitFeedback } from '../api/v6';
 import { TaskGraphView } from './TaskGraphView';
+import { Toast } from './ui/Toast';
 
 export interface MessageBubbleProps {
   message: ChatMessage;
@@ -48,6 +50,35 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
 
   const [showThinking, setShowThinking] = useState(false);
 
+  // ─── 消息反馈 (✓/✗) ───
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+  const [feedbackSending, setFeedbackSending] = useState<'up' | 'down' | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  const handleFeedback = useCallback(
+    async (rating: 'up' | 'down') => {
+      if (feedback || feedbackSending) return;
+      setFeedbackSending(rating);
+      setFeedbackError(null);
+      try {
+        const meta = message.metadata as Record<string, unknown> | undefined;
+        const turn = typeof meta?.turn === 'number' ? meta.turn : 0;
+        const ruleName = typeof meta?.rule_name === 'string' ? meta.rule_name : '';
+        const resp = await submitFeedback({ turn, correct: rating === 'up', rule_name: ruleName });
+        if (resp.error) {
+          setFeedbackError(resp.error);
+        } else {
+          setFeedback(rating);
+        }
+      } catch (err) {
+        setFeedbackError(err instanceof Error ? err.message : '反馈提交失败');
+      } finally {
+        setFeedbackSending(null);
+      }
+    },
+    [feedback, feedbackSending, message]
+  );
+
   if (isSystem) {
     return (
       <div className={cn('flex justify-center my-3', className)}>
@@ -60,9 +91,13 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
   }
 
   return (
-    <div
-      className={cn('flex w-full mb-4', isUser ? 'justify-end' : 'justify-start', className)}
-    >
+    <>
+      {feedbackError && (
+        <Toast type="error" message={feedbackError} onClose={() => setFeedbackError(null)} />
+      )}
+      <div
+        className={cn('flex w-full mb-4', isUser ? 'justify-end' : 'justify-start', className)}
+      >
       <div
         className={cn(
           'flex max-w-[92%] sm:max-w-[85%] md:max-w-[75%] gap-2 md:gap-3',
@@ -82,7 +117,7 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
         </motion.div>
 
         {/* Content */}
-        <div className={cn('flex flex-col', isUser ? 'items-end' : 'items-start')}>
+        <div className={cn('group flex flex-col', isUser ? 'items-end' : 'items-start')}>
           <motion.div
             className={cn(
               'relative px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm',
@@ -135,6 +170,56 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
               </div>
             )}
           </motion.div>
+
+          {/* 消息反馈按钮 (助手消息,hover 显示) */}
+          {!isUser && message.status !== 'streaming' && (
+            <div
+              className={cn(
+                'mt-1 flex items-center gap-1 transition-opacity',
+                feedback ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => handleFeedback('up')}
+                disabled={feedbackSending !== null}
+                title="回答正确"
+                className={cn(
+                  'p-1 rounded-md border transition-colors disabled:opacity-50',
+                  feedback === 'up'
+                    ? 'bg-primary text-white border-primary'
+                    : 'border-gray-200 text-text-muted hover:text-primary hover:border-primary/40'
+                )}
+              >
+                {feedbackSending === 'up' ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Check size={12} />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFeedback('down')}
+                disabled={feedbackSending !== null}
+                title="回答有误"
+                className={cn(
+                  'p-1 rounded-md border transition-colors disabled:opacity-50',
+                  feedback === 'down'
+                    ? 'bg-status-error text-white border-status-error'
+                    : 'border-gray-200 text-text-muted hover:text-status-error hover:border-status-error/40'
+                )}
+              >
+                {feedbackSending === 'down' ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <X size={12} />
+                )}
+              </button>
+              {feedback && (
+                <span className="text-xs text-text-muted ml-1">感谢反馈</span>
+              )}
+            </div>
+          )}
 
           {/* Thinking Steps */}
           {thinkingSteps && thinkingSteps.length > 0 && (
@@ -209,7 +294,8 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
           </span>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 });
 
