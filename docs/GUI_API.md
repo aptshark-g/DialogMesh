@@ -1,7 +1,7 @@
-# DialogMesh v6 — GUI API 完整业务文档 (v8 · 72 endpoints)
+# DialogMesh v6 — GUI API 完整业务文档 (v9 · 82 endpoints)
 
-> 版本: v8 | 日期: 2026-07-19
-> 包含: DialogMesh 64 端点 + switch gateway 8 端点
+> 版本: v9 | 日期: 2026-07-19
+> 包含: DialogMesh 74 端点 + switch gateway 8 端点
 
 ---
 
@@ -25,34 +25,54 @@
 | GET | `/v6/mind` | Mind 摘要 |
 | GET | `/v6/mind/full` | 心智空间全量 |
 
-### 元认知 (NEW · 3)
+### 元认知 (4)
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v6/meta/stats` | 元认知状态 (队列/准确率) |
 | GET | `/v6/meta/queue` | 审核队列 |
 | POST | `/v6/meta/scan` | 触发主动扫描 |
+| POST | `/v6/meta/retrospect` | 手动复盘报告 |
 
-### Git 版本控制 (NEW · 2)
+### Git 版本控制 (2)
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v6/versions/{category}` | 版本历史 (8类数据) |
+| GET | `/v6/versions/{category}?target=` | 版本历史 (8类数据) |
 | POST | `/v6/versions/{category}/rollback` | 回滚到历史版本 |
 
-### 惯性权重图 (NEW · 1)
+### 惯性权重图 (1)
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v6/inertia` | 惯性模式状态 |
 
-### 行为发现 (NEW · 2)
+### 行为发现 (3)
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v6/behavior/patterns` | 发现的行为模式 |
 | POST | `/v6/behavior/feedback` | 用户 ✓/✗ 反馈 |
+| GET | `/v6/behavior/predict` | 手动触发行为预测 |
 
-### OCEAN→参数 (NEW · 1)
+### L2.5 信念 (1)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v6/belief?session_id=` | 贝叶斯信念累积器状态 |
+
+### 子图 (1)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v6/subgraph/{perspective}` | 编译后子图 (dialogue/meta) |
+
+### OCEAN→参数 (1)
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/v6/ocean/params` | 画像→参数自动映射 |
+
+### 工程链 (3)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v6/recursive-map` | 递归地图状态 |
+| PUT | `/v6/recursive-map` | 展开/折叠节点 |
+| GET | `/v6/engineering/modules` | 工程模块+约束列表 |
+| PUT | `/v6/engineering/constraints` | 编辑工程约束 |
 
 ### 可视化 (7)
 | 方法 | 路径 | 说明 |
