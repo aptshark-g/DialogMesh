@@ -150,30 +150,57 @@ class ProviderConfig(BaseModel):
 
 @router.put("/providers/{name}")
 async def configure_provider(name: str, req: ProviderConfig):
-    """Save provider API key and base URL."""
-    if name not in BUILTIN_PROVIDERS:
-        raise HTTPException(404, f"Unknown provider: {name}")
-
-    saved = _load_provider_config(name)
-    if req.api_key:
-        saved["api_key"] = req.api_key
-    if req.base_url:
-        saved["base_url"] = req.base_url
-
-    _save_provider_config(name, saved)
-
-    # Quick health check
-    healthy = None
+    """Edit provider via switch admin API (soft-config, no restart)."""
+    import urllib.request
+    body = json.dumps({
+        "name": name, "kind": getattr(req, 'kind', 'openai_compatible'),
+        "base_url": getattr(req, 'base_url', ''),
+        "api_key": getattr(req, 'api_key', ''),
+        "models": getattr(req, 'models', []),
+        "max_concurrency": getattr(req, 'max_concurrency', 0),
+        "rate_limit_rpm": getattr(req, 'rate_limit_rpm', 0),
+        "enabled": getattr(req, 'enabled', True),
+    }).encode()
+    r = urllib.request.Request(f"{SWITCH_URL}/v1/admin/providers/{name}", data=body, method="PUT")
+    r.add_header("Authorization", f"Bearer {ADMIN_KEY}")
+    r.add_header("Content-Type", "application/json")
     try:
-        from core.agent.llm_providers.openai_provider import OpenAIProvider
-        url = req.base_url or saved.get("base_url") or BUILTIN_PROVIDERS[name]["default_base_url"]
-        prov = OpenAIProvider(name, {"api_key": req.api_key or saved.get("api_key", ""),
-                                      "base_url": url, "model": "x"})
-        healthy = prov.health_check() if hasattr(prov, 'health_check') else None
-    except Exception:
-        pass
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": str(e), "fallback": "switch may not be running"}
 
-    return {"name": name, "configured": True, "healthy": healthy}
+@router.post("/providers")
+async def add_provider(req: ProviderConfig):
+    """Add a new provider via switch admin API."""
+    if not req.name or not getattr(req, 'base_url', ''):
+        raise HTTPException(400, "name and base_url required")
+    import urllib.request
+    body = json.dumps({
+        "name": req.name, "kind": getattr(req, 'kind', 'openai_compatible'),
+        "base_url": req.base_url, "api_key": getattr(req, 'api_key', ''),
+        "models": getattr(req, 'models', []),
+    }).encode()
+    r = urllib.request.Request(f"{SWITCH_URL}/v1/admin/providers", data=body, method="POST")
+    r.add_header("Authorization", f"Bearer {ADMIN_KEY}")
+    r.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.delete("/providers/{name}")
+async def remove_provider(name: str):
+    """Remove a provider via switch admin API."""
+    import urllib.request
+    r = urllib.request.Request(f"{SWITCH_URL}/v1/admin/providers/{name}", method="DELETE")
+    r.add_header("Authorization", f"Bearer {ADMIN_KEY}")
+    try:
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.post("/providers/{name}/test")
