@@ -57,7 +57,7 @@ graph TD
   P 域 (画像): 偏好 + 风格
   F 域 (子图反馈): OCEAN + MBTI
 
-令牌分配: D:40%, K:20%, B:15%, R:10%, P:10%, F:5%
+令牌分配: D:35%, K(工程约束):20%, B:15%, R:10%, P:10%, E(工程模块):5%, F:5%
 ```
 
 ---
@@ -139,8 +139,9 @@ class SubgraphCompiler:
     def compile_dialogue_subgraph(self, intent: Intent, budget: int) -> CrossDomainContext:
         """对话树子图: 为回复生成"""
         domains = {
-            "D": self._get_discourse_blocks(intent, budget * 0.40),
-            "K": self._get_engineering_context(intent, budget * 0.20),
+            "D": self._get_discourse_blocks(intent, budget * 0.35),
+            "K": self._get_engineering_context(intent, budget * 0.20),    # 约束+模式
+            "E": self._get_engineering_modules(intent, budget * 0.05),   # 模块状态
             "B": self._get_behavior_signals(intent, budget * 0.15),
             "R": self._get_relation_context(intent, budget * 0.10),
             "P": self._get_profile_summary(budget * 0.10),
