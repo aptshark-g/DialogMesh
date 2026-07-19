@@ -1,223 +1,233 @@
-# DialogMesh v6 — 网状业务链设计 · 第八章：画像消费反哺
+# DialogMesh v6 — 链 08 v2：画像即惯性权重图——多视角共识下的稳定投射
 
-> 版本: v1.0 | 日期: 2026-07-19
+> 版本: v2.0 | 日期: 2026-07-19
 >
-> 参考理论: 认知-行为公理化体系 — 双惯性系统、惯性成本最小化、自我抽象化、元监控阈值
-> 核心命题: 画像是信息压缩——但也是双向引擎。LLM+量化+用户反馈，三者对抗中收敛。
+> v1→v2: 画像不是 OCEAN 10维的被动聚合——是跨链惯性模式的权重图。
+> 核心: 稳定=高权重。多视角共识=证实。打破惯性=最强信号。
+> 惯性不被消除，只被降低权重或掩盖。画像即设计约束。
 
 ---
 
-## 1. 画像的双向性
-
-```mermaid
-graph LR
-    PROFILE["用户画像<br/>OCEAN 10维 + 偏好"]
-    
-    LLM["LLM 内容分析<br/>(语义理解)"] -->|"评分"| PROFILE
-    QUANT["量化信号<br/>(S/W/R, BFI)"] -->|"校准"| PROFILE
-    USER["用户反馈<br/>(修正/确认)"] -->|"标注"| PROFILE
-    
-    PROFILE -->|"消费: 偏好权重"| ASSOC["关联链 L1.5-L3"]
-    PROFILE -->|"消费: 风格偏置"| BHV["行为链 ε 衰减"]
-    PROFILE -->|"消费: 认知风格"| ENGINE["工程链 颗粒度"]
-    PROFILE -->|"消费: 信任倾向"| META["元认知 审核阈值"]
-    
-    LLM -.->|"冲突→升级"| META
-    USER -.->|"修正→学习"| META
-```
-
----
-
-## 2. 理论映射
-
-### 2.1 双惯性系统 → 画像稳定性
+## 1. 画像的本体：惯性权重图
 
 ```
-认知惯性 (Cognitive Inertia):
-  OCEAN 维度的 EMA 聚合 (α=0.3) → 画像天然具有惯性
-  → 单轮波动不会改写画像 (这是对的)
-  → 但惯性过强 → 系统"看不到"真实的行为变化
+旧模型 (链08 v1):
+  画像 = OCEAN 10维浮点数 → 调节各链参数
+  问题: 扁平。无法解释"用户习惯高标准"如何影响系统行为
 
-身体惯性 (Bodily Inertia):
-  用户的行为模式: 对话风格、提问类型、修正频率
-  → 这些构成"行为惯性"
-  → 当用户改变行为时 (如从分析型→叙事型) → 惯性被打破
+新模型 (v2):
+  画像 = 惯性模式的加权图
 
-双惯性互锁:
-  认知惯性 (OCEAN) ↔ 行为惯性 (对话风格)
-  → 任一者变化 → 另一者联动
-  → 这是"用户画像需要多轮对话才稳定"的数学解释
-
-惯性成本 C_inertia:
-  改变画像 = 打破惯性 = 需要支付成本
-  → 用户纠正画像 (PUT /v6/profile) = 用户主动支付惯性成本
-  → 系统漂移回原值 = 惯性拉回 (inertia pullback)
-```
-
-### 2.2 惯性成本最小化 → 用户修正的数学解释
-
-```
-定理14 (惯性成本最小化):
-  主体优先选择惯性成本最低的稳态路径
-  只有当 ΔΠ = E[V_new - V_old] - C_inertia > 0 时才主动切换
-
-映射到画像:
-  用户修正 C=0.46→0.85:
-    旧稳态: "系统认为我是P型 (perceiving)"
-    新稳态: "我是J型 (judging)"
-    C_inertia = 修正认知框架的成本 (否认系统判断)
-    ΔΠ = 自我认知准确性的收益 - C_inertia
-    
-    用户愿意修正 → ΔΠ > 0 → 用户认为准确画像的价值 > 修正成本
-    
-  系统漂移:
-    系统从 C=0.85 漂移回 C=0.62
-    → 这是惯性拉回: 系统基于新对话重新计算
-    → 如果 ΔΠ 不够大, 用户可能不再修正 (修正成本太高)
-    → 需要系统主动检测漂移 → 触发 LLM retrospective review
-```
-
-### 2.3 自我抽象化 → 画像维度权重
-
-```
-内化型 (S ⊇_in O):
-  用户强烈认同某个画像维度 → 该维度权重极高
-  例: 用户说 "我绝对是分析型思维" → NC(Need for Cognition) 锁定
-  → 即使对话中出现反例, 系统不自动降低 NC
-
-外化型 (S ⊇_out O):
-  用户弱认同 → 该维度是"功能评估"而非"自我认同"
-  → 系统可灵活调整
-
-检测方式:
-  用户修正某个维度 → 该维度进入"被用户关注"列表
-  修正次数 > 2 → 标记为 high_self_identification
-  → 该维度的 EMA α 从 0.3 降为 0.1 (更难被新数据改写)
-```
-
-### 2.4 元监控阈值 θ_ref → 自省型用户画像
-
-```
-推论14.1 (自省型个体的惯性成本):
-  强自省型个体 (θ_ref 低)
-  → 频繁打破认知惯性, 支付持续的高惯性成本
-  → 仅当长期自我价值感增益 > 短期惯性成本时才维持
-
-映射:
-  高 MS (Meta-Cognition) + 高 NC (Need for Cognition) 的用户
-  → θ_ref 低 → 频繁自省 → 画像变化频率高
-  → 系统的 EMA α 应调高 (0.3→0.5), 更快响应变化
-  
-  低 MS 用户 → θ_ref 高 → 极少自省
-  → 画像稳定 → EMA α 保持默认
+  ┌──────────────────────────────────────────────────────┐
+  │  惯性模式: "质量高标准 (Quality Centric)"             │
+  │                                                     │
+  │  多视角共识:                                         │
+  │    设计视角: 用户频繁要求白盒化、可审计、可追溯       │
+  │    工程视角: 用户反复提加监控、加测试、加日志         │
+  │    行为视角: 用户倾向结构化方案、拒绝临时补丁         │
+  │    对话视角: 用户对"crash-free≠working"的持续强调   │
+  │    LLM 视角: 回复中多次识别 "quantitative honesty"   │
+  │    元认知: 审核发现用户修正行为集中于"质量"维度       │
+  │                                                     │
+  │  稳定性: 高 (跨 6 个视角, 横跨 30+ 轮对话)          │
+  │  权重: 0.92  (几乎不可动摇)                          │
+  │  投射:                                               │
+  │    → 设计内容: 必须提供量化指标, 不可只给定性结论    │
+  │    → 工程建议: 优先推荐监控/测试/日志方案            │
+  │    → 上下文组装: K域权重+0.2, E域权重+0.15          │
+  │    → 回复风格: 数据结构化, 附带验证步骤              │
+  │    → 元认知阈值: 提高审核标准 (匹配用户高标准)       │
+  └──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. 三者对抗模型
+## 2. 惯性模式的生命周期
 
 ```mermaid
 graph TD
-    LLM["LLM 直接分析<br/>'怀疑型分析者'<br/>CS=0.78, NC=0.75"]
-    QUANT["量化信号<br/>BFI C=4.5<br/>WEAKEN=8"]
-    USER_CORR["用户修正<br/>'我是J型, 不是P型'<br/>C=0.85"]
+    FRAG["碎片信号<br/>单次对话: '加测试吧'"]
+    FRAG -->|"重复≥3次<br/>跨视角≥2个"| CANDIDATE["候选惯性<br/>weight=0.4<br/>tag: quality_concern"]
     
-    LLM -->|"差异检测"| CONFLICT{"三者一致?"}
-    QUANT --> CONFLICT
-    USER_CORR --> CONFLICT
+    CANDIDATE -->|"多视角证实<br/>(设计+工程+行为+LLM)"| CONFIRMED["确认惯性<br/>weight=0.7<br/>进入各链消费"]
     
-    CONFLICT -->|"一致"| STABLE["画像收敛<br/>confidence↑"]
-    CONFLICT -->|"不一致"| ESCALATE["升级到元认知<br/>LLM retrospective review"]
+    CONFIRMED -->|"持续验证<br/>10+轮, 0反例"| STABLE["稳定惯性<br/>weight=0.9+<br/>成为设计约束"]
     
-    ESCALATE -->|"分析冲突原因"| RESOLVE{"冲突根因?"}
-    RESOLVE -->|"LLM错判"| FIX_LLM["调低该维LLM权重"]
-    RESOLVE -->|"量化误读"| FIX_QUANT["BFI divergence>0.25→BFI覆盖"]
-    RESOLVE -->|"用户行为真变了"| FIX_PROFILE["接受新值, 旧值归档"]
-    RESOLVE -->|"用户错了"| FIX_USER["保留系统值, 降低用户修正权重"]
+    STABLE -->|"反例出现"| WEAKENED["降权惯性<br/>weight=0.6<br/>→ 旧权重归档"]
+    
+    STABLE -->|"用户主动修正<br/>(打破双惯性)"| BROKEN["打破信号<br/>→ 情绪分析<br/>→ 最珍贵的学习数据"]
+    
+    BROKEN -->|"建立新惯性"| NEW["新惯性<br/>weight 从候选起步"]
+    
+    CANDIDATE -->|"反例≥2次"| DROPPED["丢弃<br/>保留归档"]
 ```
 
 ---
 
-## 4. 画像对各链的反哺
-
-| 画像维度 | 反哺目标 | 机制 |
-|---------|---------|------|
-| O (Openness) | 关联链 L1.5 补全 | 高O→弱关联也愿意探索→降低补全置信度阈值 |
-| C (Conscientiousness) | 工程链 颗粒度 | 高C→偏好细颗粒度→展开更多代码层级 |
-| E (Extraversion) | 行为链 冷启动 | 高E→少轮次即触发建议 (ε衰减更快) |
-| A (Agreeableness) | 元认知 审核 | 低A→更严格审核→提高通过阈值 |
-| N (Neuroticism) | 对话树 温度 | 高N→波动大→降低 EMA α, 更快响应变化 |
-| NC (Need for Cognition) | 关联链 L2.5 信念 | 高NC→需要更多证据才锁定意图 |
-| CS (Comm Style) | 上下文编译器 | 分析型→偏好 K/E 域, 叙事型→偏好 D 域 |
-| DK (Domain Knowledge) | 关联链 L2 语义 | 高DK→减少 L1.5 常识补全调用 |
-| MS (Meta-Cognition) | 行为链 发现阈值 | 高MS→接受更低 min_repeat_count (习惯自省) |
-| CL (Curiosity) | 关联链 L5 因果 | 高CL→更积极探索伪因果→晋升更快 |
-
----
-
-## 5. OCEAN → 参数映射表
+## 3. 多视角共识机制
 
 ```
-PUT /v6/parameters 可被画像自动调节的参数:
+惯性确认 = Σ(各视角验证) > 阈值
 
-OCEAN C > 0.7:
-  → behavior.min_repeat_count -= 1
-  → engineering.granularity_level += 1 (展开到更细颗粒度)
+单视角检测:
+  设计视角: 对话树 topic 聚类 → 用户反复讨论"质量"相关主题
+  工程视角: 工程链约束查询 → 用户频繁建立 requires(test) 边
+  行为视角: 行为链 pattern → 用户完成代码后总执行 add_test
+  LLM 视角: 回复内容分析 → "量化优先/拒绝浅层修复/要求全量测试"
+  元认知: 审核日志 → 用户修正主要集中在"质量"维度
+  关联链: L3 意图 → 用户对话意图聚类为 [quality_assurance]
 
-OCEAN NC > 0.7:
-  → behavior.min_repeat_count += 1 (需要更多证据)
-  → association.belief_threshold += 0.05
-
-OCEAN A < 0.4:
-  → behavior.auto_accept_timeout += 5s (给更多时间犹豫)
-  → meta.review_strictness += 0.1
-
-OCEAN MS > 0.7:
-  → profile.ema_alpha += 0.1 (更快响应变化)
-  → meta.retrospective_frequency += 1 (更多元认知审核)
-
-OCEAN CL > 0.7:
-  → behavior.epsilon_min += 0.01 (保持更多探索)
-  → association.causal_promotion_threshold -= 0.05
+多视角共识判定:
+  N_view_verified ≥ 3 → candidate → confirmed (weight 0.5→0.7)
+  N_view_verified ≥ 5 → confirmed → stable (weight 0.7→0.9)
+  任1视角出现反例 → weight -= 0.05 (不立即降级)
+  任3视角出现反例 → 触发 inertia_break_review
 ```
 
 ---
 
-## 6. 画像修正的惯性模型
+## 4. 惯性打破——最强学习信号
+
+### 4.1 打破检测
 
 ```
-用户修正 C=0.46→0.85:
-  t0: 惯性打破点 (用户支付 C_inertia)
-  t1: 新稳态建立 (C ≈ 0.85)
+惯性模式: quality_centric (weight=0.92, 稳定30轮)
+触发打破:
+  对话树: 用户对质量问题说 "算了, 先上线" (首次)
+  行为链: 用户跳过测试直接部署 (首次)
   
-系统漂移:
-  EMA 自然回归 → C 从 0.85 逐渐回落
-  → 这是惯性拉回 (系统基于新数据"认为"旧值更准确)
-  → 当 drift > 0.25 → 触发 retrospective review
+检测:
+  ① 反例计数器 +1 (quality_centric.inertia_strength -= 0.05 → 0.87)
+  ② 如果伴随情绪信号 (WEAKEN spike, 语气变化):
+     → 标记为 potential_inertia_break
+     → 不立即降权, 等待确认
+  
+  ③ 连续3次反例 → inertia_break_confirmed
+     → 元认知 review: "为什么用户从质量优先变成了速度优先?"
+     → 分析可能的根因:
+        外部压力? 时间紧迫? → 临时打破, 会恢复
+        价值观变化?  → 永久打破, 需要建立新惯性
+        情境依赖?    → 惯性本身有开关条件
+```
 
-用户不再次修正:
-  推论14.2 (证实偏见):
-  用户接受系统漂移 → "系统可能比我自己更客观"
-  → 原修正进入"低置信度"状态
-  → 系统标记: user_correction_stale
+### 4.2 打破时的情绪关联
 
-用户再次修正:
-  → 该维度进入 high_self_identification
-  → EMA α 从 0.3 降为 0.1 (锁定)
-  → meta 记录: "用户对该维度有强烈自我认同"
+```
+定理2 (情绪核心公理):
+  情绪波动 = 预期失衡 + 双惯性打破
+
+映射:
+  用户打破质量惯性 → 如果伴随负面情绪 (WEAKEN)
+  → 这是用户"被迫"打破惯性 (非自愿)
+  → 系统应标注: 这是情境性打破, 不应永久降权
+  
+  用户打破质量惯性 → 如果无情绪波动
+  → 用户已"内化"了新行为模式
+  → 系统应标注: 这是真实的惯性迁移
 ```
 
 ---
 
-## 7. 路径归属
+## 5. 惯性→设计约束的投射机制
 
-| 操作 | Fast | Async | Slow |
-|------|:----:|:-----:|:----:|
-| 画像读取 (各链消费) | ✅ | | |
-| 三者对抗检测 | ✅ (<1ms) | | |
-| LLM retrospective review | | ✅ | |
-| 画像 EMA 更新 | ✅ | | |
-| 参数自动调节 (OCEAN→params) | | ✅ | |
-| 自我抽象化检测 | | ✅ | |
-| 画像持久化 | | | ✅ |
-| 长期惯性分析 (Deep) | | | | ✅ |
+```
+每个稳定惯性 → 生成一条设计约束:
+
+惯性: quality_centric (weight=0.92)
+  → 设计约束:
+    ① 回复必须包含量化指标 (不可纯定性)
+    ② 工程建议必须附带验证步骤
+    ③ 代码建议必须包含测试方案
+    ④ 上下文 K域 优先展示
+
+惯性: whitebox_preference (weight=0.88)
+  → 设计约束:
+    ① 系统决策链必须可追溯
+    ② 前端必须暴露关联链/行为链数据
+    ③ 参数修改路径必须可视化
+
+惯性: adversarial_thinking (weight=0.85)
+  → 设计约束:
+    ① 回复避免过度肯定的措辞
+    ② 提供多个方案而非单一最佳方案
+    ③ 重视"什么可能出错"而非"这没问题"
+```
+
+---
+
+## 6. 惯性权重图的数据结构
+
+```python
+@dataclass
+class InertiaPattern:
+    """一个跨链稳定的惯性模式"""
+    id: str                     # "quality_centric"
+    label: str                  # "质量高标准"
+    
+    # 多视角证据
+    evidence: Dict[str, float]  # {"design":0.9, "engineering":0.85, "behavior":0.78, ...}
+    verified_views: int         # 已证实的视角数
+    
+    # 稳定性
+    weight: float               # 0.0-1.0, 当前权重
+    peak_weight: float          # 历史最高权重
+    rounds_stable: int          # 连续稳定轮数
+    last_verified: float        # 最后验证时间
+    
+    # 打破追踪
+    counter_examples: int       # 反例计数
+    inertia_break_events: list  # 打破事件记录
+    
+    # 投射
+    design_constraints: list    # → 设计约束列表
+    parameter_overrides: dict   # → 参数覆盖 (高于用户可调默认值)
+    
+    # 生命周期
+    state: str                  # candidate | confirmed | stable | weakening | broken | archived
+
+class InertiaWeightGraph:
+    """画像本体——惯性模式的加权图"""
+    
+    patterns: Dict[str, InertiaPattern]
+    
+    def get_design_constraints(self) -> List[DesignConstraint]:
+        """聚合所有稳定惯性的设计约束"""
+    
+    def get_parameter_overrides(self) -> Dict[str, Any]:
+        """聚合所有稳定惯性的参数覆盖"""
+    
+    def detect_break(self, pattern_id: str, evidence: Dict) -> BreakSignal:
+        """检测并处理惯性打破"""
+```
+
+---
+
+## 7. 各链消费惯性的方式
+
+```mermaid
+graph TD
+    IWG["惯性权重图<br/>(画像本体)"]
+    
+    IWG -->|"quality_centric→约束"| CTX["上下文编译器<br/>回复必须含量化指标<br/>K域权重+0.2"]
+    IWG -->|"whitebox_pref→约束"| GUI_EDIT["可视化编辑API<br/>关联链/行为链/树<br/>全部暴露+可编辑"]
+    IWG -->|"adversarial→约束"| META["元认知<br/>审核更严格<br/>对抗性黑盒检测"]
+    IWG -->|"quality→阈值"| BHV["行为链<br/>min_repeat_count=2<br/>快速发现质量相关模式"]
+    IWG -->|"whitebox→阈值"| ASSOC["关联链<br/>L1.5 补全置信度要求高<br/>不轻易接受弱关联"]
+    IWG -->|"quality→颗粒度"| ENG["工程链<br/>代码展开到细颗粒度<br/>每个模块都需监控覆盖"]
+```
+
+---
+
+## 8. 路径归属 (更新)
+
+| 操作 | Fast | Async | Slow | Deep |
+|------|:----:|:-----:|:----:|:----:|
+| 单链信号检测 | ✅ | | | |
+| 多视角共识判定 | | ✅ | | |
+| 惯性权重更新 | | ✅ | | |
+| 打破检测 (反例) | | ✅ | | |
+| 打破确认 (3次反例) | | | ✅ | |
+| LLM retrospective review | | ✅ | | |
+| 设计约束投射 | ✅ | | | |
+| 惯性模式沉淀 (Deep) | | | | | ✅ |
+| 跨 session 持久化 | | | ✅ | |
