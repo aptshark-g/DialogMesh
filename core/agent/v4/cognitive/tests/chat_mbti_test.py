@@ -9,6 +9,7 @@ os.environ['DIALOGMESH_MONITOR'] = '1'
 
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
+from core.agent.llm_providers.switch_provider import SwitchGatewayProvider
 from core.agent.v4.event_ir import DialogAdapter
 from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
 from core.agent.v4.cognitive.monitor_report import MonitorReport
@@ -26,9 +27,16 @@ def run_chat_test(turns: int = 10):
     print(f"Log: {log_path}")
     print("=" * 70)
 
-    prov = OpenAIProvider("deepseek", {
-        "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
-    })
+    # Try switch gateway first, fallback to direct DeepSeek
+    prov = None
+    if SwitchGatewayProvider.health():
+        print("Using switch gateway (:8080)")
+        prov = SwitchGatewayProvider.create(model="deepseek-chat")
+    else:
+        print("switch gateway unavailable — using direct DeepSeek")
+        prov = OpenAIProvider("deepseek", {
+            "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
+        })
     eng = CognitiveRuntimeEngine(llm_provider=prov)
     eng.start()
     ad = DialogAdapter()

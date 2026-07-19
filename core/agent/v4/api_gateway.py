@@ -1,16 +1,22 @@
 """Gateway API — provider management, model selection, failover config.
 
+Proxies switch gateway for all provider operations.
+DialogMesh no longer maintains its own provider config — 
+switch's provider.yaml is the single source of truth.
+
 Endpoints:
-  GET  /v6/gateway/providers       — all providers + models
-  PUT  /v6/gateway/providers/{name} — configure provider
-  POST /v6/gateway/providers/{name}/test  — test connection
-  POST /v6/gateway/providers/{name}/models — fetch models
-  GET  /v6/gateway/config          — gateway config + stats
-  PUT  /v6/gateway/config          — update config
+  GET  /v6/gateway/providers       — proxy switch GET /v1/providers
+  PUT  /v6/gateway/providers/{name} — proxy switch PUT /v1/admin/providers
+  POST /v6/gateway/providers/{name}/test  — test connection via switch
+  POST /v6/gateway/providers/{name}/models — proxy switch model list
+  GET  /v6/gateway/config          — proxy switch diagnostics
+  PUT  /v6/gateway/config          — proxy switch admin reload
   PUT  /v6/gateway/active          — switch active provider/model
-  GET  /v6/gateway/usage           — token usage + cost
+  GET  /v6/gateway/usage           — proxy switch GET /v1/usage
+  GET  /v6/gateway/stats           — proxy switch GET /v1/stats
+  GET  /v6/gateway/health          — proxy switch GET /v1/health
 """
-import json, os, time, logging
+import json, os, time, logging, urllib.request, urllib.error
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -18,16 +24,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v6/gateway")
 
-# ---- State ----
-_engine = None  # set by api.py on startup
-DATA_DIR = "data/gateway"
+# ---- Switch gateway config ----
+SWITCH_URL = os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080")
+SWITCH_KEY = os.environ.get("SWITCH_GATEWAY_KEY", "dm-client")
 
+_engine = None
 
 def init(engine):
     global _engine
     _engine = engine
-    os.makedirs(f"{DATA_DIR}/providers", exist_ok=True)
-    os.makedirs(f"{DATA_DIR}/models_cache", exist_ok=True)
 
 
 # ---- Helpers ----
@@ -316,3 +321,37 @@ async def gateway_usage():
         "all_sessions": {"sessions": len(files), "total_tokens": int(all_chars * 3.5)},
         "rates": {"deepseek": "$0.14/M in + $0.28/M out"}
     }
+
+# ── Proxy helpers ──
+
+def _switch_get(path: str) -> dict:
+    try:
+        req = urllib.request.Request(f"{SWITCH_URL}{path}")
+        req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": f"switch unavailable: {e}"}
+
+def _switch_admin(path: str, method: str = "POST", body: dict = None) -> dict:
+    try:
+        data = json.dumps(body).encode() if body else None
+        req = urllib.request.Request(f"{SWITCH_URL}{path}", data=data, method=method)
+        req.add_header("Authorization", "Bearer admin-test")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": f"switch unavailable: {e}"}
+
+@router.get("/stats")
+async def gateway_stats():
+    return _switch_get("/v1/stats")
+
+@router.get("/health")
+async def gateway_health():
+    return _switch_get("/v1/health")
+
+@router.post("/reload")
+async def gateway_reload():
+    return _switch_admin("/v1/admin/reload")
