@@ -970,5 +970,212 @@ export interface V6ProfileCorrectionsResponse {
   total: number;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Meta Retrospect (回溯报告)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6MetaRetrospectDelta {
+  value_change: number;
+  direction?: 'increase' | 'decrease';
+}
+
+export interface V6MetaRetrospectResponse {
+  target: string;
+  delta: V6MetaRetrospectDelta;
+  verdict: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Behavior Predict / Belief / OCEAN Params
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6BehaviorPrediction {
+  trigger: string;
+  predicted: string;
+  conf: number;
+}
+
+export interface V6BehaviorPredictResponse {
+  recent_actions: string[];
+  predictions: Record<string, V6BehaviorPrediction>;
+}
+
+export interface V6BeliefEntry {
+  posterior: number;
+  locked: boolean;
+}
+
+export interface V6BeliefResponse {
+  total_hypotheses: number;
+  locked: number;
+  avg_evidence: number;
+  by_hypothesis: Record<string, V6BeliefEntry>;
+}
+
+export interface V6OceanParamsResponse {
+  applied: Record<string, string>;
+  ocean: Record<string, number>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Engineering Chain (Subgraph / Recursive Map / Modules)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6SubgraphEntry {
+  domain: string;
+  content: string;
+}
+
+export interface V6SubgraphResponse {
+  perspective: string;
+  domains: Record<string, number>;
+  entries: V6SubgraphEntry[];
+  total_tokens: number;
+  budget: number;
+}
+
+export interface V6RecursiveMapResponse {
+  total_nodes: number;
+  by_level: Record<string, number>;
+  high_coupling: number;
+  expanded: number;
+}
+
+export interface V6RecursiveMapControlRequest {
+  node: string;
+  action: 'expand' | 'collapse';
+}
+
+export interface V6RecursiveMapControlResponse {
+  node: string;
+  action: string;
+  expanded: boolean;
+}
+
+export interface V6EngineeringModule {
+  name: string;
+  type: string;
+}
+
+export interface V6EngineeringModulesResponse {
+  modules: V6EngineeringModule[];
+}
+
+export interface V6EngineeringConstraintEditRequest {
+  name: string;
+  action: 'add_constraint' | 'remove_constraint';
+  constraint: string;
+}
+
+export interface V6EngineeringConstraintEditResponse {
+  updated: string;
+  constraint: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Visualization Edit (白盒化编辑)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6GraphEditRequest {
+  action: 'update_weight' | 'add_edge' | 'remove_edge' | 'set_node';
+  source?: string;
+  target?: string;
+  weight?: number;
+  edge_type?: string;
+  node_id?: string;
+  node_state?: Record<string, unknown>;
+}
+
+export interface V6GraphEditResponse {
+  edited?: 'edge' | 'node';
+  source?: string;
+  target?: string;
+  weight?: number;
+  node?: string;
+  state?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface V6DiscourseTreeEditRequest {
+  action: 'reclassify' | 'merge' | 'split' | 'rename';
+  block_id: string;
+  temperature?: string;
+  topic?: string;
+  parent_id?: string;
+}
+
+export interface V6DiscourseTreeEditResponse {
+  edited?: 'temperature' | 'topic' | 'parent';
+  block?: string;
+  before?: string;
+  after?: string;
+  error?: string;
+}
+
+export interface V6ObjectEditRequest {
+  action: 'relate' | 'unrelate' | 'rename' | 'set_lifespan';
+  source?: string;
+  target?: string;
+  relation_type?: string;
+  lifespan?: string;
+  new_name?: string;
+}
+
+export interface V6ObjectEditResponse {
+  edited?: 'relation_added' | 'relation_removed' | false;
+  source?: string;
+  target?: string;
+  type?: string;
+  reason?: string;
+  error?: string;
+}
+
+export interface V6RelationEditRequest {
+  action: 'update' | 'add' | 'remove';
+  source?: string;
+  target?: string;
+  kind?: string;
+  strength?: number;
+}
+
+export interface V6RelationEditResponse {
+  edited?: 'relation' | 'added';
+  source?: string;
+  target?: string;
+  error?: string;
+}
+
+export interface V6IrEditRequest {
+  domain: string;
+  entry_type?: string;
+  content: string;
+  confidence?: number;
+}
+
+export interface V6IrEditResponse {
+  edited?: 'ir_entry_added';
+  domain?: string;
+  type?: string;
+  error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Gateway Provider Add/Remove
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6GatewayProviderAddRequest {
+  name: string;
+  base_url: string;
+  api_key?: string;
+  kind?: string;
+  models?: V6GatewayModel[];
+}
+
+export interface V6GatewayProviderMutationResponse {
+  error?: string;
+  fallback?: string;
+  [key: string]: unknown;
+}
+
 
 

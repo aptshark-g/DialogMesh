@@ -36,6 +36,22 @@ import type {
   V6AnnotationsResponse, V6AnnotationStatsResponse,
   // v8 Corrections
   V6ProfileCorrectionsResponse, V6ProfileCorrection,
+  // v8 Meta Retrospect
+  V6MetaRetrospectResponse,
+  // v8 Behavior Predict / Belief / OCEAN Params
+  V6BehaviorPredictResponse, V6BeliefResponse, V6OceanParamsResponse,
+  // v8 Engineering Chain
+  V6SubgraphResponse,
+  V6RecursiveMapResponse, V6RecursiveMapControlRequest, V6RecursiveMapControlResponse,
+  V6EngineeringModulesResponse, V6EngineeringConstraintEditRequest, V6EngineeringConstraintEditResponse,
+  // v8 Visualization Edit
+  V6GraphEditRequest, V6GraphEditResponse,
+  V6DiscourseTreeEditRequest, V6DiscourseTreeEditResponse,
+  V6ObjectEditRequest, V6ObjectEditResponse,
+  V6RelationEditRequest, V6RelationEditResponse,
+  V6IrEditRequest, V6IrEditResponse,
+  // v8 Gateway Provider Add/Remove
+  V6GatewayProviderAddRequest, V6GatewayProviderMutationResponse,
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -305,6 +321,19 @@ export function reloadGateway(): Promise<{ reloaded: boolean }> {
   return apiFetch<{ reloaded: boolean }>('/v6/gateway/reload', { method: 'POST' });
 }
 
+export function addGatewayProvider(req: V6GatewayProviderAddRequest): Promise<V6GatewayProviderMutationResponse> {
+  return apiFetch<V6GatewayProviderMutationResponse>('/v6/gateway/providers', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export function removeGatewayProvider(name: string): Promise<V6GatewayProviderMutationResponse> {
+  return apiFetch<V6GatewayProviderMutationResponse>(`/v6/gateway/providers/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 服务检测 (Service Status)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -357,12 +386,21 @@ export function triggerMetaScan(): Promise<{ triggered: boolean }> {
   return apiFetch<{ triggered: boolean }>('/v6/meta/scan', { method: 'POST' });
 }
 
+export function triggerMetaRetrospect(target?: string, category?: string): Promise<V6MetaRetrospectResponse> {
+  const params = new URLSearchParams();
+  if (target) params.set('target', target);
+  if (category) params.set('category', category);
+  const qs = params.toString();
+  return apiFetch<V6MetaRetrospectResponse>(`/v6/meta/retrospect${qs ? `?${qs}` : ''}`, { method: 'POST' });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 版本 (Versions)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function getVersions(category: string): Promise<V6VersionsResponse> {
-  return apiFetch<V6VersionsResponse>(`/v6/versions/${encodeURIComponent(category)}`);
+export function getVersions(category: string, target?: string): Promise<V6VersionsResponse> {
+  const qs = target ? `?target=${encodeURIComponent(target)}` : '';
+  return apiFetch<V6VersionsResponse>(`/v6/versions/${encodeURIComponent(category)}${qs}`);
 }
 
 export function rollbackVersion(category: string, commitId: string): Promise<{ rolled_back: boolean }> {
