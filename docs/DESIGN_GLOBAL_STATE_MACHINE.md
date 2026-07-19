@@ -27,7 +27,7 @@
 ## 2. 全局状态机架构
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph COMMANDS["Command 层 (输入)"]
         USER_CMD["用户操作<br/>(修改/标注/反馈)"]
         LLM_CMD["LLM 输出<br/>(回复/推理)"]

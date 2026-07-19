@@ -1,7 +1,31 @@
 {
   "version": 1,
-  "saved_at": "2026-07-19T23:40:31.9610006+08:00",
+  "saved_at": "2026-07-20T01:07:34.3003411+08:00",
   "providers": [
+    {
+      "name": "kimi",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "openrouter",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
     {
       "name": "deepseek",
       "kind": "openai_compatible",
@@ -15,31 +39,7 @@
       "token_completion": 0
     },
     {
-      "name": "openai",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
       "name": "gemini",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -87,7 +87,7 @@
       "token_completion": 0
     },
     {
-      "name": "openrouter",
+      "name": "lmstudio",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -99,7 +99,7 @@
       "token_completion": 0
     },
     {
-      "name": "lmstudio",
+      "name": "openai",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
