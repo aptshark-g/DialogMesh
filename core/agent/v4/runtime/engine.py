@@ -246,7 +246,10 @@ class CognitiveRuntimeEngine:
                 logger.info("Mind loaded: %s", self._mind.stats())
             else:
                 # ---- Build InteractionGraph from RelationSubstrate if available ----
-                if self._interaction_graph and hasattr(self, '_world_provider') and self._world_provider:
+                # NOTE: _interaction_graph is created later in start() — use getattr
+                # to avoid AttributeError aborting the whole Mind/init try-block.
+                _ig = getattr(self, '_interaction_graph', None)
+                if _ig and hasattr(self, '_world_provider') and self._world_provider:
                     try:
                         rs = getattr(self._world_provider, 'relation_substrate', None)
                         if rs:
@@ -255,37 +258,77 @@ class CognitiveRuntimeEngine:
                     except Exception as e:
                         logger.debug("Dynamic graph skipped: %s", e)
 
-                # P1: EventScheduler + CausalTracker + GradedDegradation + MetaSelfRepair
-                try:
-                    from core.agent.v4.scheduler.p1_runtime import (
-                        EventScheduler, CausalTracker, GradedDegradation, MetaSelfRepair
-                    )
-                    self._event_scheduler = EventScheduler()
-                    self._causal_tracker = CausalTracker()
-                    self._degradation = GradedDegradation()
-                    self._meta_repair = MetaSelfRepair()
-                    self._event_scheduler.auto_schedule_checkpoint()
-                    self._event_scheduler.auto_schedule_scans()
-                except Exception:
-                    self._event_scheduler = None
-                    self._causal_tracker = None
-                    self._degradation = None
-                    self._meta_repair = None
+            # P1/P2 scheduler subsystems must start regardless of Mind persistence state
+            # (previously trapped inside the Mind-load else-branch → permanent 503)
+            # P1: EventScheduler + CausalTracker + GradedDegradation + MetaSelfRepair
+            try:
+                from core.agent.v4.scheduler.p1_runtime import (
+                    EventScheduler, CausalTracker, GradedDegradation, MetaSelfRepair
+                )
+                self._event_scheduler = EventScheduler()
+                self._causal_tracker = CausalTracker()
+                self._degradation = GradedDegradation()
+                self._meta_repair = MetaSelfRepair()
+                self._event_scheduler.auto_schedule_checkpoint()
+                self._event_scheduler.auto_schedule_scans()
+            except Exception:
+                self._event_scheduler = None
+                self._causal_tracker = None
+                self._degradation = None
+                self._meta_repair = None
 
-                # P2: CausalPromoter + TTLManager + SubgraphCache
-                try:
-                    from core.agent.v4.cognitive.p2_advanced import (
-                        CausalPromoter, TTLManager, SubgraphCache
-                    )
-                    self._causal_promoter = CausalPromoter()
-                    self._ttl_manager = TTLManager()
-                    self._subgraph_cache = SubgraphCache()
-                except Exception:
-                    self._causal_promoter = None
-                    self._ttl_manager = None
-                    self._subgraph_cache = None
+            # P2: CausalPromoter + TTLManager + SubgraphCache
+            try:
+                from core.agent.v4.cognitive.p2_advanced import (
+                    CausalPromoter, TTLManager, SubgraphCache
+                )
+                self._causal_promoter = CausalPromoter()
+                self._ttl_manager = TTLManager()
+                self._subgraph_cache = SubgraphCache()
+            except Exception:
+                self._causal_promoter = None
+                self._ttl_manager = None
+                self._subgraph_cache = None
 
-                logger.info("Engine started")
+            # v8/v9 GUI-facing cognitive subsystems — the /v6/meta|inertia|behavior|
+            # belief|recursive-map endpoints read these engine attributes; without
+            # instantiation they 503 permanently.
+            try:
+                from core.agent.v4.cognitive.metacognition import MetaCognition
+                from core.agent.v4.cognitive.inertia_graph import InertiaWeightGraph
+                from core.agent.v4.cognitive.behavior_discovery import BehaviorDiscovery
+                from core.agent.v4.cognitive.belief_map import BeliefAccumulator, RecursiveMap
+                from core.agent.v4.cognitive.version_control import GlobalVersionControl
+                from core.agent.v4.cognitive.subgraph_compiler import SubgraphCompiler
+                from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+                self._vcs = GlobalVersionControl()
+                self._meta = MetaCognition(llm_provider=getattr(self, '_llm_provider', None),
+                                           vcs=self._vcs)
+                self._inertia = InertiaWeightGraph()
+                self._behavior_discovery = BehaviorDiscovery(
+                    parameter_registry=getattr(self, '_parameter_registry', None),
+                    meta_cognition=self._meta,
+                )
+                self._belief_accumulator = BeliefAccumulator()
+                self._recursive_map = RecursiveMap()
+                self._subgraph = SubgraphCompiler(engine=self)
+                self._parameter_registry = ParameterRegistry()
+            except Exception as e:
+                logger.warning("v8/v9 cognitive subsystems partial init: %s", e)
+                for attr in ('_meta', '_inertia', '_behavior_discovery',
+                             '_belief_accumulator', '_recursive_map', '_vcs',
+                             '_subgraph', '_parameter_registry'):
+                    if not hasattr(self, attr):
+                        setattr(self, attr, None)
+
+            # v3.2 engineering knowledge graph (for /v6/engineering/modules)
+            try:
+                from core.agent.v3_2.engineering_chain.knowledge_graph import KnowledgeGraph
+                self._engineering_knowledge = KnowledgeGraph()
+            except Exception:
+                self._engineering_knowledge = None
+
+            logger.info("Engine started")
         except Exception as e:
             self._mind = None
             logger.debug("Mind skipped: %s", e)

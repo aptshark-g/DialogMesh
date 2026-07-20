@@ -1565,6 +1565,15 @@ async def v6_meta_retrospect(target: str = "", category: str = "parameters"):
     if report: return {"target": report.target, "delta": report.delta, "verdict": report.verdict}
     raise HTTPException(404, "Insufficient history for retrospection")
 
+@app.get("/v6/subgraph/cache")
+async def v6_subgraph_cache():
+    """Subgraph cache stats. Registered before /v6/subgraph/{perspective} so the
+    literal 'cache' path is not captured by the path parameter."""
+    if not _engine: raise HTTPException(503)
+    sc = getattr(_engine, '_subgraph_cache', None)
+    if sc: return sc.stats()
+    return {"error": "subgraph cache not available"}
+
 @app.get("/v6/subgraph/{perspective}")
 async def v6_subgraph(perspective: str = "dialogue"):
     """View compiled subgraph context."""
@@ -1667,14 +1676,6 @@ async def v6_ttl_tick():
     tm = getattr(_engine, '_ttl_manager', None)
     if tm: return tm.tick()
     return {"error": "TTL manager not available"}
-
-@app.get("/v6/subgraph/cache")
-async def v6_subgraph_cache():
-    """Subgraph cache stats."""
-    if not _engine: raise HTTPException(503)
-    sc = getattr(_engine, '_subgraph_cache', None)
-    if sc: return sc.stats()
-    return {"error": "subgraph cache not available"}
 
 if __name__ == "__main__":
     serve()

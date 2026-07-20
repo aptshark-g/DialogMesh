@@ -13,6 +13,8 @@ import type {
 } from '../types/api';
 
 const DEFAULT_REST_BASE_URL = 'http://localhost:8000';
+// v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
+const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 const WS_RECONNECT_INTERVAL = 3000;
 const WS_MAX_RECONNECT_ATTEMPTS = 5;
 const WS_PING_INTERVAL = 15000;
@@ -26,7 +28,7 @@ export class RestApiClient {
   getBaseUrl(): string { return this.baseUrl; }
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    const response = await fetch(url, { headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, ...options });
+    const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${AUTH_TOKEN}`, ...(options.headers || {}) } });
     if (!response.ok) { const text = await response.text().catch(() => 'Unknown error'); throw new Error(`HTTP ${response.status}: ${text}`); }
     return response.json() as Promise<T>;
   }

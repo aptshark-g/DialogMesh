@@ -12,17 +12,22 @@ import type {
 import type { CognitiveProfile, ProfileStats, IntentDistribution } from '../types/profile';
 import { getApiConfig } from './config';
 
+// v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
+const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
+
 function getBaseUrl(): string {
   return getApiConfig().restBaseUrl;
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      Authorization: `Bearer ${AUTH_TOKEN}`,
+      ...(options?.headers || {}),
     },
-    ...options,
   });
 
   if (!response.ok) {

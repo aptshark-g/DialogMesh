@@ -12,11 +12,18 @@ import type {
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
+const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${AUTH_TOKEN}`,
+      ...(options?.headers || {}),
+    },
   });
   if (!response.ok) {
     const err = await response.text().catch(() => 'Unknown error');
