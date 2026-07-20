@@ -1677,5 +1677,31 @@ async def v6_ttl_tick():
     if tm: return tm.tick()
     return {"error": "TTL manager not available"}
 
+@app.get("/v6/audit")
+async def v6_audit(category: str = "", action: str = "", limit: int = 50):
+    """Unified audit trail: all user + system operations."""
+    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    records = _engine._audit_trail.query(category=category, action=action, limit=limit)
+    return {
+        "records": [{"ts": r.ts, "category": r.category, "action": r.action,
+                      "target": r.target, "before": r.before, "after": r.after,
+                      "author": r.author} for r in records],
+        **(_engine._audit_trail.stats()),
+    }
+
+@app.get("/v6/audit/recent")
+async def v6_audit_recent():
+    """Recent user actions (frontend: 'what did I just do?')."""
+    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    records = _engine._audit_trail.recent_user_actions(20)
+    return {"actions": [{"ts": r.ts, "category": r.category, "action": r.action,
+                          "target": r.target} for r in records]}
+
+@app.get("/v6/audit/history")
+async def v6_audit_history(days: int = 7):
+    """Audit activity trend over N days."""
+    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    return _engine._audit_trail.history(days)
+
 if __name__ == "__main__":
     serve()
