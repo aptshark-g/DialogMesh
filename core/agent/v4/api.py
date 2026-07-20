@@ -1841,10 +1841,13 @@ async def v3_send_message(session_id: str, req: Request):
         r = await post_event(evt)
         reply = ""
         if isinstance(r, dict):
-            reply = r.get("reply", r.get("response", r.get("text", str(r)[:500])))
+            reply = r.get("response") or r.get("reply") or r.get("text") or ""
+            if not reply:
+                logger.warning("V3 message: empty response from engine, keys=%s", list(r.keys())[:5])
+                reply = "[引擎返回空]"
         elif hasattr(r, 'response'):
             reply = r.response
-        return {"content": reply, "session_id": session_id, "status": "accepted"}
+        return {"content": str(reply), "session_id": session_id, "status": "accepted"}
     except Exception as e:
         return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
 

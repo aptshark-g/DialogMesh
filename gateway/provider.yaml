@@ -200,4 +200,5 @@ auth:
   enabled: true
   api_keys:
     - dm-client
+    - not-needed
   admin_token: admin-test

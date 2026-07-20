@@ -1,0 +1,2 @@
+{"ts": 1784564977.199191, "method": "GET", "path": "/v4/health", "status": 200, "duration_ms": 5.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784564977.2611947, "method": "POST", "path": "/v3/session/test/message", "status": 200, "duration_ms": 1469.26, "client_ip": "127.0.0.1", "error": null, "gateway": false}
