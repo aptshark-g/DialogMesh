@@ -37,7 +37,8 @@ goto :skip_api
 :api_port_free
 
 echo [2/3] Starting DialogMesh API ... http://localhost:8000
-start /min "DialogMesh API" cmd /c "python scripts/start_server.py"
+:: Use project venv (not system Python) to ensure fastapi/uvicorn available
+start /min "DialogMesh API" cmd /c ".venv-test\Scripts\python scripts/start_server.py"
 echo [INFO] Waiting 3 seconds for API...
 timeout /t 3 /nobreak >nul
 
