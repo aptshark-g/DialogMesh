@@ -14,35 +14,13 @@ export interface ToolbarProps {
   onSearch?: (query: string) => void;
 }
 
-function useThemeToggle() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const stored = localStorage.getItem('dialogmesh-theme');
-    if (stored) return stored === 'dark';
-    return true;
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) {
-      root.classList.remove('light');
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-      root.classList.add('light');
-    }
-    localStorage.setItem('dialogmesh-theme', isDark ? 'dark' : 'light');
-  }, [isDark]);
-
-  const toggle = useCallback(() => setIsDark((prev) => !prev), []);
-
-  return { isDark, toggle };
-}
+import { useTheme, useToggleTheme } from '@/stores/themeStore';
 
 export function Toolbar({ sessionTitle, onSearch }: ToolbarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
-  const { isDark, toggle } = useThemeToggle();
+  const isDark = useTheme() === 'dark';
+  const toggleTheme = useToggleTheme();
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,7 +69,7 @@ export function Toolbar({ sessionTitle, onSearch }: ToolbarProps) {
         {/* Theme Toggle */}
         <motion.button
           type="button"
-          onClick={toggle}
+          onClick={toggleTheme}
           className="w-9 h-9 flex items-center justify-center rounded-full bg-surface-card border border-subtle hover:bg-surface-card-hover text-text-secondary transition-colors"
           aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
           title={isDark ? '切换到亮色模式' : '切换到暗色模式'}
