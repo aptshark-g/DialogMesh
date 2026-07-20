@@ -1822,7 +1822,7 @@ async def v3_send_message(session_id: str, req: Request):
     body = await req.json()
     content = body.get("content", "")
     try:
-        r = await v4_event(EventRequest(
+        r = await post_event(EventRequest(
             text=content, source="user", session_id=session_id,
             event_id=f"v3_{session_id}_{int(time.time())}",
         ))
