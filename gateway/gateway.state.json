@@ -1,43 +1,7 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T22:14:10.4467769+08:00",
+  "saved_at": "2026-07-20T22:19:10.4465002+08:00",
   "providers": [
-    {
-      "name": "deepseek",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "gemini",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "groq",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
     {
       "name": "openrouter",
       "kind": "openai_compatible",
@@ -100,6 +64,42 @@
     },
     {
       "name": "lmstudio",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "deepseek",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "gemini",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "groq",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
