@@ -1820,32 +1820,24 @@ async def v3_create_session():
 
 @app.post("/v3/session/{session_id}/message")
 async def v3_send_message(session_id: str, req: Request):
-    """Send a message through gateway — async HTTP call."""
+    """Send through full cognitive pipeline — async executor."""
     body = await req.json()
     text = body.get("content", "")
     try:
-        def _call_gateway():
-            import urllib.request
-            api_data = json.dumps({
-                "model": "deepseek-v4-flash",
-                "messages": [{"role": "user", "content": text}],
-                "max_tokens": 1000,
-            })
-            gw_req = urllib.request.Request(
-                "http://127.0.0.1:8080/v1/chat/completions",
-                api_data.encode(),
-                {"Content-Type": "application/json", "Authorization": "Bearer not-needed"}
-            )
-            r = urllib.request.urlopen(gw_req, timeout=30)
-            return json.loads(r.read())
-        
-        loop = asyncio.get_event_loop()
-        gw_body = await loop.run_in_executor(None, _call_gateway)
-        content = gw_body.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return {"content": content or "(empty)", "session_id": session_id, "status": "accepted"}
+        evt = EventRequest(
+            text=text, source="user", session_id=session_id,
+            event_id=f"v3_{session_id}_{int(time.time())}",
+        )
+        r = await post_event(evt)
+        reply = ""
+        if isinstance(r, dict):
+            reply = r.get("response") or r.get("reply") or ""
+        if not reply:
+            reply = f"[无响应] metrics={r.get('llm_metrics',{})}"
+        return {"content": str(reply), "session_id": session_id, "status": "accepted"}
     except Exception as e:
-        logger.exception("V3 message failed")
-        return {"content": f"[Gateway Error] {e}", "session_id": session_id, "status": "error"}
+        logger.exception("V3 failed")
+        return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
 
 
 @app.get("/v3/session/{session_id}/history")
