@@ -1,4 +1,4 @@
-"""Quick test runner for DialogMesh v6.
+r"""Quick test runner for DialogMesh v6.
 
 Usage:
   .venv-test\Scripts\python tests\run_tests.py              # all tests
