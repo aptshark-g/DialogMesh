@@ -178,7 +178,7 @@ def init_api(db_path: str = "data/event_log.db",
     try:
         from core.agent.llm_providers.openai_provider import OpenAIProvider
         _engine._llm_provider = OpenAIProvider("deepseek", {
-            "base_url": "http://127.0.0.1:8080/v1",
+            "base_url": "http://127.0.0.1:8080",
             "api_key": "not-needed",  # gateway handles auth
             "model": "deepseek-v4-flash",
         })
@@ -1833,7 +1833,7 @@ async def v3_send_message(session_id: str, req: Request):
             try:
                 from core.agent.llm_providers.openai_provider import OpenAIProvider
                 _engine._llm_provider = OpenAIProvider(provider, {
-                    "base_url": f"http://127.0.0.1:8080/v1",
+                    "base_url": "http://127.0.0.1:8080",
                     "api_key": "not-needed",
                     "model": model,
                 })

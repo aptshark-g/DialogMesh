@@ -1,7 +1,31 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T23:54:10.4459169+08:00",
+  "saved_at": "2026-07-21T00:04:10.4466723+08:00",
   "providers": [
+    {
+      "name": "kimi",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "lmstudio",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
     {
       "name": "deepseek",
       "kind": "openai_compatible",
@@ -76,30 +100,6 @@
     },
     {
       "name": "anthropic",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "kimi",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "lmstudio",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",

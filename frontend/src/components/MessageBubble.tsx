@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react';
-import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X } from 'lucide-react';
+import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
 import { cn } from '../lib/utils';
@@ -51,24 +51,32 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
   const [showThinking, setShowThinking] = useState(false);
 
   // ─── 消息反馈 (✓/✗) ───
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
-  const [feedbackSending, setFeedbackSending] = useState<'up' | 'down' | null>(null);
+  const [feedback, setFeedback] = useState<'up' | 'down' | 'comment' | null>(null);
+  const [feedbackSending, setFeedbackSending] = useState<'up' | 'down' | 'comment' | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const handleFeedback = useCallback(
-    async (rating: 'up' | 'down') => {
+    async (rating: 'up' | 'down' | 'comment') => {
       if (feedback || feedbackSending) return;
       setFeedbackSending(rating);
       setFeedbackError(null);
       try {
-        const meta = message.metadata as Record<string, unknown> | undefined;
-        const turn = typeof meta?.turn === 'number' ? meta.turn : 0;
-        const ruleName = typeof meta?.rule_name === 'string' ? meta.rule_name : '';
-        const resp = await submitFeedback({ turn, correct: rating === 'up', rule_name: ruleName });
-        if (resp.error) {
-          setFeedbackError(resp.error);
-        } else {
+        if (rating === 'comment') {
+          // Send to meta-cognition annotation
+          const { addAnnotation } = await import('../api/v6');
+          const text = `[用户注释] 消息ID=${message.id}: ${window.prompt('注释内容 (送元认知审核):', '请审查此回复') || '需要审查'}`;
+          await addAnnotation(text);
           setFeedback(rating);
+        } else {
+          const meta = message.metadata as Record<string, unknown> | undefined;
+          const turn = typeof meta?.turn === 'number' ? meta.turn : 0;
+          const ruleName = typeof meta?.rule_name === 'string' ? meta.rule_name : '';
+          const resp = await submitFeedback({ turn, correct: rating === 'up', rule_name: ruleName });
+          if (resp.error) {
+            setFeedbackError(resp.error);
+          } else {
+            setFeedback(rating);
+          }
         }
       } catch (err) {
         setFeedbackError(err instanceof Error ? err.message : '反馈提交失败');
@@ -214,6 +222,20 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
                 ) : (
                   <X size={12} />
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFeedback('comment')}
+                disabled={feedbackSending !== null}
+                title="注释 (送元认知审核)"
+                className={cn(
+                  'p-1 rounded-md border transition-colors disabled:opacity-50',
+                  feedback === 'comment'
+                    ? 'bg-amber-500 text-white border-amber-500'
+                    : 'border-gray-200 text-text-muted hover:text-amber-500 hover:border-amber-500/40'
+                )}
+              >
+                <MessageSquare size={12} />
               </button>
               {feedback && (
                 <span className="text-xs text-text-muted ml-1">感谢反馈</span>
