@@ -239,13 +239,22 @@ def get_interaction_monitor() -> InteractionMonitor:
 
 
 async def interaction_middleware(request, call_next):
-    """FastAPI middleware: captures timing + status for every request."""
+    """FastAPI middleware: captures timing + status + spans for every request."""
     import uuid
     rid = str(uuid.uuid4())[:12]
     mon = get_interaction_monitor()
     mon.begin(rid, request.method, request.url.path,
               client_ip=request.client.host if request.client else "",
               session=request.headers.get("x-session-id", ""))
+
+    # OpenTelemetry-style span
+    from core.agent.v4.monitor.span_tracer import get_tracer
+    span_id = get_tracer().start_span(
+        name=f"{request.method} {request.url.path}",
+        service="api",
+        trace_id=request.headers.get("x-trace-id"),
+        tags={"method": request.method, "path": request.url.path},
+    )
 
     body = ""
     try:
@@ -265,4 +274,6 @@ async def interaction_middleware(request, call_next):
 
     mon.end(rid, response.status_code, request_body=body, response_body=resp_body,
             is_gateway="/v6/gateway" in str(request.url.path))
+    get_tracer().end_span(span_id, status="ok" if response.status_code < 400 else "error",
+                          tags={"status": str(response.status_code)})
     return response

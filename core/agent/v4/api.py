@@ -15,6 +15,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from core.agent.v4.monitor.interaction_monitor import interaction_middleware, get_interaction_monitor
+from core.agent.v4.monitor.span_tracer import get_tracer
 from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
@@ -1769,6 +1770,23 @@ async def monitor_gateway_raw():
         except Exception as e:
             results[path] = {"error": str(e)}
     return results
+
+
+@app.get("/v6/monitor/traces")
+async def monitor_traces(limit: int = 20):
+    """Recent distributed traces."""
+    return {"traces": get_tracer().recent_traces(limit)}
+
+@app.get("/v6/monitor/trace/{trace_id}")
+async def monitor_trace_detail(trace_id: str):
+    """Full trace detail — all spans with timing."""
+    spans = get_tracer().get_trace(trace_id)
+    return {"trace_id": trace_id, "spans": spans}
+
+@app.get("/v6/monitor/trace/{trace_id}/waterfall")
+async def monitor_waterfall(trace_id: str):
+    """Waterfall HTML view for a trace."""
+    return HTMLResponse(get_tracer().waterfall(trace_id))
 
 if __name__ == "__main__":
 
