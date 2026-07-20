@@ -62,7 +62,7 @@ import { useUIStore } from '../stores/uiStore';
 
 export function GatewayPage() {
   const {
-    dmStatus, swStatus, statusLoading,
+    dmStatus, swStatus, statusLoading, servicesDown,
     gatewayProviders, providersLoading,
     router,
     tokens,
@@ -618,7 +618,7 @@ export function GatewayPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={checkServices}
+              onClick={() => checkServices()}
               disabled={statusLoading}
               className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
             >
@@ -626,7 +626,7 @@ export function GatewayPage() {
               检测服务
             </button>
             <button
-              onClick={refresh}
+              onClick={() => refresh()}
               disabled={providersLoading || configLoading || usageLoading || statsLoading || healthLoading}
               className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
             >
@@ -638,6 +638,21 @@ export function GatewayPage() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {servicesDown && (
+          <div className="rounded-xl border border-status-warning/30 bg-status-warning/10 px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-status-warning">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              服务未连接,自动刷新已降频
+            </div>
+            <button
+              onClick={() => refresh()}
+              className="flex items-center gap-1 rounded-lg bg-surface-card border border-status-warning/40 px-3 py-1.5 text-xs font-medium text-status-warning hover:bg-status-warning/15 transition-colors shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              重试
+            </button>
+          </div>
+        )}
         {error && (
           <div className="rounded-xl bg-status-error/5 text-status-error text-sm px-4 py-3">
             {error}

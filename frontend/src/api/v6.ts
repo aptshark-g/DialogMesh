@@ -52,6 +52,9 @@ import type {
   V6IrEditRequest, V6IrEditResponse,
   // v8 Gateway Provider Add/Remove
   V6GatewayProviderAddRequest, V6GatewayProviderMutationResponse,
+  // v10 Scheduler & Degradation
+  V6SyncResponse, V6CausalChainResponse, V6DegradationResponse,
+  V6TtlResponse, V6TtlTickResponse, V6SubgraphCacheResponse,
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -604,4 +607,40 @@ export function submitProfileCorrections(corrections: V6ProfileCorrection[]): Pr
     method: 'POST',
     body: JSON.stringify(corrections),
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 调度 & 降级 (Scheduler & Degradation) — v10 NEW
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 强一致读: 阻塞至事件处理完; 可选 block_id 读取指定块最新状态 */
+export function getSync(blockId?: string): Promise<V6SyncResponse> {
+  const qs = blockId ? `?block_id=${encodeURIComponent(blockId)}` : '';
+  return apiFetch<V6SyncResponse>(`/v6/sync${qs}`);
+}
+
+/** 因果链追踪 (前端乐观更新); 可选 event 追踪指定事件链,缺省返回全局统计 */
+export function getCausalChain(event?: string): Promise<V6CausalChainResponse> {
+  const qs = event ? `?event=${encodeURIComponent(event)}` : '';
+  return apiFetch<V6CausalChainResponse>(`/v6/causal-chain${qs}`);
+}
+
+/** 当前系统降级级别 */
+export function getDegradation(): Promise<V6DegradationResponse> {
+  return apiFetch<V6DegradationResponse>('/v6/degradation');
+}
+
+/** HCWA 温度迁移统计 */
+export function getTtl(): Promise<V6TtlResponse> {
+  return apiFetch<V6TtlResponse>('/v6/ttl');
+}
+
+/** 触发温度迁移 tick */
+export function tickTtl(): Promise<V6TtlTickResponse> {
+  return apiFetch<V6TtlTickResponse>('/v6/ttl/tick', { method: 'POST' });
+}
+
+/** 子图缓存命中率统计 */
+export function getSubgraphCache(): Promise<V6SubgraphCacheResponse> {
+  return apiFetch<V6SubgraphCacheResponse>('/v6/subgraph/cache');
 }

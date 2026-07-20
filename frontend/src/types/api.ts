@@ -1179,3 +1179,59 @@ export interface V6GatewayProviderMutationResponse {
 
 
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10 NEW — 调度 & 降级 (Sync / Causal Chain / Degradation / TTL / Subgraph Cache)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** GET /v6/sync — 强一致读; 不传 block_id 时返回 { status, pending } */
+export interface V6SyncResponse {
+  status?: string;
+  pending?: number;
+  block_id?: string;
+  text?: string;
+}
+
+export interface V6CausalChainEvent {
+  event: string;
+  depth: number;
+}
+
+/** GET /v6/causal-chain — 传 event 返回 { chain, remaining }; 不传返回全局统计 */
+export interface V6CausalChainResponse {
+  chain?: V6CausalChainEvent[];
+  remaining?: number;
+  tracked_chains?: number;
+  avg_chain_length?: number;
+  p90_chain_length?: number;
+}
+
+export type V6DegradationLevel = 'NORMAL' | 'WARNING' | 'DEGRADED' | 'EMERGENCY';
+
+/** GET /v6/degradation — 当前系统降级级别 */
+export interface V6DegradationResponse {
+  level: V6DegradationLevel;
+  queue_depth: number;
+}
+
+/** GET /v6/ttl — HCWA 温度迁移统计; 引擎未就绪时返回 { error } */
+export interface V6TtlResponse {
+  by_state?: Record<string, number>;
+  total?: number;
+  error?: string;
+}
+
+/** POST /v6/ttl/tick — 触发温度迁移; 引擎未就绪时返回 { error } */
+export interface V6TtlTickResponse {
+  promoted?: string[];
+  demoted?: string[];
+  error?: string;
+}
+
+/** GET /v6/subgraph/cache — 子图缓存统计; 引擎未就绪时返回 { error } */
+export interface V6SubgraphCacheResponse {
+  size?: number;
+  hits?: number;
+  stale?: number;
+  error?: string;
+}

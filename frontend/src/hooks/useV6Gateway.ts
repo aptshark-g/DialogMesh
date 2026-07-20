@@ -1,5 +1,6 @@
 // FILE: src/hooks/useV6Gateway.ts
 // v8 Gateway — 服务检测 + Provider 管理 + 配置 + 用量 + 运维
+// 轮询策略: 服务探测级联 + 后台静默刷新(不切换 Loading 标志) + 页面隐藏时暂停
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -41,11 +42,18 @@ import type {
   V6MetricsResponse,
 } from '../types/api';
 
+interface FetchOptions {
+  /** 后台轮询: 不切换 *Loading 标志,避免骨架屏闪烁 */
+  background?: boolean;
+}
+
 interface GatewayData {
   // Service status
   dmStatus: V6ServiceStatus | null;
   swStatus: V6ServiceStatus | null;
   statusLoading: boolean;
+  /** DialogMesh API 与 Switch Gateway 均不可达 */
+  servicesDown: boolean;
 
   // Gateway providers
   gatewayProviders: V6GatewayProvidersResponse | null;
@@ -89,7 +97,8 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
     dmStatus: null,
     swStatus: null,
     statusLoading: false,
-    gatewayProviders: DEFAULT_PROVIDERS, // 初始就有默认 Provider 模板
+    servicesDown: false,
+    gatewayProviders: null, // 首次拉取失败时才用 DEFAULT_PROVIDERS 兜底
     providersLoading: false,
     router: null,
     routerLoading: false,
@@ -114,29 +123,34 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Service Status Detection ───
-  const checkServices = useCallback(async () => {
-    setData(prev => ({ ...prev, statusLoading: true, error: null }));
-    try {
-      const [dmStatus, swStatus] = await Promise.all([
-        checkDialogMeshStatus().catch(() => null),
-        checkSwitchGatewayStatus().catch(() => null),
-      ]);
-      setData(prev => ({ ...prev, dmStatus, swStatus, statusLoading: false, error: null }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '检测服务状态失败';
-      setData(prev => ({ ...prev, statusLoading: false, error: msg }));
-    }
+  const checkServices = useCallback(async (opts?: FetchOptions): Promise<[V6ServiceStatus | null, V6ServiceStatus | null]> => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, statusLoading: true, error: null }));
+    // checkServiceStatus 内部不抛异常,不可达时返回 healthy: false
+    const result: [V6ServiceStatus | null, V6ServiceStatus | null] = await Promise.all([
+      checkDialogMeshStatus().catch(() => null),
+      checkSwitchGatewayStatus().catch(() => null),
+    ]);
+    const [dmStatus, swStatus] = result;
+    setData(prev => ({ ...prev, dmStatus, swStatus, statusLoading: bg ? prev.statusLoading : false, error: null }));
+    return result;
   }, []);
 
   // ─── Gateway Providers ───
-  const fetchGatewayProviders = useCallback(async () => {
-    setData(prev => ({ ...prev, providersLoading: true, error: null }));
+  const fetchGatewayProviders = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, providersLoading: true, error: null }));
     try {
       const gatewayProviders = await getGatewayProviders();
-      setData(prev => ({ ...prev, gatewayProviders, providersLoading: false, error: null }));
+      setData(prev => ({ ...prev, gatewayProviders, providersLoading: bg ? prev.providersLoading : false, error: null }));
     } catch {
-      // API 未实现或后端未启动，使用默认模板兜底
-      setData(prev => ({ ...prev, gatewayProviders: DEFAULT_PROVIDERS, providersLoading: false, error: null }));
+      // API 未实现或后端未启动: 仅在无旧数据时用默认模板兜底;轮询失败保留旧数据,不重置
+      setData(prev => ({
+        ...prev,
+        gatewayProviders: prev.gatewayProviders ?? DEFAULT_PROVIDERS,
+        providersLoading: bg ? prev.providersLoading : false,
+        error: null,
+      }));
     }
   }, []);
 
@@ -196,14 +210,15 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   }, [fetchGatewayProviders]);
 
   // ─── Gateway Config ───
-  const fetchConfig = useCallback(async () => {
-    setData(prev => ({ ...prev, configLoading: true, error: null }));
+  const fetchConfig = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, configLoading: true, error: null }));
     try {
       const config = await getGatewayConfig().catch(() => null);
-      setData(prev => ({ ...prev, config, configLoading: false, error: null }));
+      setData(prev => ({ ...prev, config, configLoading: bg ? prev.configLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取配置失败';
-      setData(prev => ({ ...prev, configLoading: false, error: msg }));
+      setData(prev => ({ ...prev, configLoading: bg ? prev.configLoading : false, error: msg }));
     }
   }, []);
 
@@ -220,38 +235,41 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   }, [fetchConfig]);
 
   // ─── Usage ───
-  const fetchUsage = useCallback(async () => {
-    setData(prev => ({ ...prev, usageLoading: true, error: null }));
+  const fetchUsage = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, usageLoading: true, error: null }));
     try {
       const usage = await getGatewayUsage().catch(() => null);
-      setData(prev => ({ ...prev, usage, usageLoading: false, error: null }));
+      setData(prev => ({ ...prev, usage, usageLoading: bg ? prev.usageLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取用量失败';
-      setData(prev => ({ ...prev, usageLoading: false, error: msg }));
+      setData(prev => ({ ...prev, usageLoading: bg ? prev.usageLoading : false, error: msg }));
     }
   }, []);
 
   // ─── Stats ───
-  const fetchStats = useCallback(async () => {
-    setData(prev => ({ ...prev, statsLoading: true, error: null }));
+  const fetchStats = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, statsLoading: true, error: null }));
     try {
       const stats = await getGatewayStats().catch(() => null);
-      setData(prev => ({ ...prev, stats, statsLoading: false, error: null }));
+      setData(prev => ({ ...prev, stats, statsLoading: bg ? prev.statsLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取统计失败';
-      setData(prev => ({ ...prev, statsLoading: false, error: msg }));
+      setData(prev => ({ ...prev, statsLoading: bg ? prev.statsLoading : false, error: msg }));
     }
   }, []);
 
   // ─── Health ───
-  const fetchHealth = useCallback(async () => {
-    setData(prev => ({ ...prev, healthLoading: true, error: null }));
+  const fetchHealth = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, healthLoading: true, error: null }));
     try {
       const health = await getGatewayHealth().catch(() => null);
-      setData(prev => ({ ...prev, health, healthLoading: false, error: null }));
+      setData(prev => ({ ...prev, health, healthLoading: bg ? prev.healthLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取健康状态失败';
-      setData(prev => ({ ...prev, healthLoading: false, error: msg }));
+      setData(prev => ({ ...prev, healthLoading: bg ? prev.healthLoading : false, error: msg }));
     }
   }, []);
 
@@ -269,14 +287,15 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   }, [fetchGatewayProviders, fetchConfig, fetchHealth]);
 
   // ─── Legacy Router ───
-  const fetchRouter = useCallback(async () => {
-    setData(prev => ({ ...prev, routerLoading: true, error: null }));
+  const fetchRouter = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, routerLoading: true, error: null }));
     try {
       const router = await getRouterModes().catch(() => null);
-      setData(prev => ({ ...prev, router, routerLoading: false, error: null }));
+      setData(prev => ({ ...prev, router, routerLoading: bg ? prev.routerLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取路由失败';
-      setData(prev => ({ ...prev, routerLoading: false, error: msg }));
+      setData(prev => ({ ...prev, routerLoading: bg ? prev.routerLoading : false, error: msg }));
     }
   }, []);
 
@@ -293,42 +312,78 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
   }, [fetchRouter]);
 
   // ─── Legacy Providers ───
-  const fetchLegacy = useCallback(async () => {
-    setData(prev => ({ ...prev, legacyLoading: true, error: null }));
+  const fetchLegacy = useCallback(async (opts?: FetchOptions) => {
+    const bg = opts?.background === true;
+    if (!bg) setData(prev => ({ ...prev, legacyLoading: true, error: null }));
     try {
       const [providers, tokens, metrics] = await Promise.all([
         getProviders().catch(() => null),
         getTokens().catch(() => null),
         getMetrics().catch(() => null),
       ]);
-      setData(prev => ({ ...prev, providers, tokens, metrics, legacyLoading: false, error: null }));
+      setData(prev => ({ ...prev, providers, tokens, metrics, legacyLoading: bg ? prev.legacyLoading : false, error: null }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '获取数据失败';
-      setData(prev => ({ ...prev, legacyLoading: false, error: msg }));
+      setData(prev => ({ ...prev, legacyLoading: bg ? prev.legacyLoading : false, error: msg }));
     }
   }, []);
 
-  // ─── Refresh All ───
-  const refreshAll = useCallback(async () => {
+  // ─── Refresh All (服务探测级联) ───
+  const refreshAll = useCallback(async (opts?: FetchOptions) => {
+    // 每轮先探测服务; 双服务不可达则跳过其余数据请求
+    const [dmStatus, swStatus] = await checkServices(opts);
+    if (!dmStatus?.healthy && !swStatus?.healthy) {
+      setData(prev => ({
+        ...prev,
+        servicesDown: true,
+        // 无旧数据时用模板兜底,保证页面可预填配置; 有旧数据则原样保留
+        gatewayProviders: prev.gatewayProviders ?? DEFAULT_PROVIDERS,
+      }));
+      return;
+    }
+    setData(prev => ({ ...prev, servicesDown: false }));
     await Promise.all([
-      checkServices(),
-      fetchGatewayProviders(),
-      fetchConfig(),
-      fetchUsage(),
-      fetchStats(),
-      fetchHealth(),
-      fetchRouter(),
-      fetchLegacy(),
+      fetchGatewayProviders(opts),
+      fetchConfig(opts),
+      fetchUsage(opts),
+      fetchStats(opts),
+      fetchHealth(opts),
+      fetchRouter(opts),
+      fetchLegacy(opts),
     ]);
   }, [checkServices, fetchGatewayProviders, fetchConfig, fetchUsage, fetchStats, fetchHealth, fetchRouter, fetchLegacy]);
 
-  // ─── Auto Refresh ───
+  // ─── Auto Refresh (页面隐藏时暂停,恢复可见立即刷新一次) ───
   useEffect(() => {
-    refreshAll();
+    refreshAll(); // 首次前台加载
     if (!autoRefresh) return;
-    intervalRef.current = setInterval(refreshAll, intervalMs);
+
+    const stopTimer = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    const startTimer = () => {
+      stopTimer();
+      intervalRef.current = setInterval(() => {
+        refreshAll({ background: true });
+      }, intervalMs);
+    };
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else {
+        refreshAll({ background: true });
+        startTimer();
+      }
+    };
+
+    if (!document.hidden) startTimer();
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      stopTimer();
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [refreshAll, autoRefresh, intervalMs]);
 

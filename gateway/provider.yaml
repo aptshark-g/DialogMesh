@@ -199,5 +199,5 @@ defaults:
 auth:
   enabled: true
   api_keys:
-    - -client
+    - dm-client
   admin_token: admin-test

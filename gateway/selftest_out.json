@@ -1,0 +1,122 @@
+2026/07/20 14:07:44 main.go:24: gateway: starting (config=provider.yaml)
+2026/07/20 14:07:44 manager.go:88: manager: registered provider "deepseek" (kind=openai_compatible)
+2026/07/20 14:07:44 manager.go:88: manager: registered provider "lmstudio" (kind=openai_compatible)
+gateway: listening on :8080
+gateway: GET /v1/health 1.5630065s
+{"ts":"2026-07-20T06:07:47Z","level":"error","request_id":"777082e7c59d35be","method":"GET","path":"/v1/health","provider":"default","status":503,"latency_ms":1563.0065,"client_ip":"[::1]:54608","msg":"request error"}
+gateway: GET /v1/health/detail 21.3µs
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"5fa575c1fea8fd7d","method":"GET","path":"/v1/health/detail","provider":"default","status":200,"latency_ms":0.0213,"client_ip":"[::1]:54611","msg":"request complete"}
+gateway: GET /v1/providers 19.7µs
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"50b8f34852a68ed7","method":"GET","path":"/v1/providers","provider":"default","status":401,"latency_ms":0.019700000000000002,"client_ip":"[::1]:54611","msg":"request complete"}
+gateway: GET /v1/providers 19.6µs
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"e7af0bfb5702e52e","method":"GET","path":"/v1/providers","provider":"default","status":401,"latency_ms":0.0196,"client_ip":"[::1]:54612","msg":"request complete"}
+gateway: POST /v1/admin/reload 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"4a83520d7976d805","method":"POST","path":"/v1/admin/reload","provider":"default","status":403,"client_ip":"[::1]:54613","msg":"request complete"}
+gateway: POST /v1/admin/reload 523.8µs
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"728a76dc410edb04","method":"POST","path":"/v1/admin/reload","provider":"default","status":200,"latency_ms":0.5238,"client_ip":"[::1]:54614","msg":"request complete"}
+manager: registered provider "st-p" (kind=openai_compatible)
+admin: added provider "st-p" (kind=openai_compatible)
+gateway: POST /v1/admin/providers 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"d20873a6230ee732","method":"POST","path":"/v1/admin/providers","provider":"default","status":201,"client_ip":"[::1]:54615","msg":"request complete"}
+admin: removed provider "st-p"
+gateway: DELETE /v1/admin/providers/st-p 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"170e58b9a2e8cbce","method":"DELETE","path":"/v1/admin/providers/st-p","provider":"default","status":200,"client_ip":"[::1]:54616","msg":"request complete"}
+gateway: POST /v1/chat/completions 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"fdf65e114d91efa0","method":"POST","path":"/v1/chat/completions","provider":"deepseek","status":401,"client_ip":"[::1]:54617","msg":"request complete"}
+gateway: POST /v1/chat/completions 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"7f4a70bc1ee49f92","method":"POST","path":"/v1/chat/completions","provider":"deepseek","status":401,"client_ip":"[::1]:54618","msg":"request complete"}
+gateway: GET /v1/stats 521.3µs
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"166ea9f68f4f56f5","method":"GET","path":"/v1/stats","provider":"default","status":200,"latency_ms":0.5213,"client_ip":"[::1]:54619","msg":"request complete"}
+gateway: GET /v1/metrics 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"40401534fc29609b","method":"GET","path":"/v1/metrics","provider":"default","status":200,"client_ip":"[::1]:54619","msg":"request complete"}
+gateway: GET /v1/usage 0s
+{"ts":"2026-07-20T06:07:47Z","level":"info","request_id":"7d9e9f90becd2c6b","method":"GET","path":"/v1/usage","provider":"default","status":401,"client_ip":"[::1]:54620","msg":"request complete"}
+
+========================================
+  GATEWAY RUNTIME — SELF TEST REPORT
+========================================
+  [PASS] health
+  [PASS] health/detail
+  [FAIL] providers_public — expected 200, got 401
+  [PASS] auth_401
+  [PASS] auth_403
+  [PASS] admin_reload
+  [PASS] admin_add_provider
+  [PASS] admin_remove_provider
+  [FAIL] request_validation — expected 400, got 401
+  [FAIL] chat_nonstream — expected 200, got 401
+  [FAIL] stats_after_chat — requests_by_model empty
+  [PASS] prometheus_metrics
+  [FAIL] usage — expected 200, got 401
+----------------------------------------
+  Total: 13  Passed: 8  Failed: 5
+========================================
+
+{
+  "gateway_version": "gateway-runtime v1.0",
+  "time": "2026-07-20T06:07:44Z",
+  "results": [
+    {
+      "name": "health",
+      "passed": true
+    },
+    {
+      "name": "health/detail",
+      "passed": true
+    },
+    {
+      "name": "providers_public",
+      "passed": false,
+      "error": "expected 200, got 401"
+    },
+    {
+      "name": "auth_401",
+      "passed": true
+    },
+    {
+      "name": "auth_403",
+      "passed": true
+    },
+    {
+      "name": "admin_reload",
+      "passed": true
+    },
+    {
+      "name": "admin_add_provider",
+      "passed": true
+    },
+    {
+      "name": "admin_remove_provider",
+      "passed": true
+    },
+    {
+      "name": "request_validation",
+      "passed": false,
+      "error": "expected 400, got 401"
+    },
+    {
+      "name": "chat_nonstream",
+      "passed": false,
+      "error": "expected 200, got 401"
+    },
+    {
+      "name": "stats_after_chat",
+      "passed": false,
+      "error": "requests_by_model empty"
+    },
+    {
+      "name": "prometheus_metrics",
+      "passed": true
+    },
+    {
+      "name": "usage",
+      "passed": false,
+      "error": "expected 200, got 401"
+    }
+  ],
+  "summary": {
+    "total": 13,
+    "passed": 8,
+    "failed": 5
+  }
+}

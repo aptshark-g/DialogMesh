@@ -27,6 +27,8 @@ router = APIRouter(prefix="/v6/gateway")
 # ---- Switch gateway config ----
 SWITCH_URL = os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080")
 SWITCH_KEY = os.environ.get("SWITCH_GATEWAY_KEY", "dm-client")
+ADMIN_KEY = os.environ.get("SWITCH_ADMIN_KEY", "admin-test")
+DATA_DIR = os.environ.get("DM_GATEWAY_DATA_DIR", os.path.join("data", "gateway"))
 
 _engine = None
 
@@ -92,19 +94,96 @@ BUILTIN_PROVIDERS = {
             {"id": "gpt-4o-mini", "display": "GPT-4o Mini", "context": 128000, "max_output": 16384, "cost_in": 0.15, "cost_out": 0.60, "capabilities": ["chat", "code"]},
         ],
     },
+    "anthropic": {
+        "display_name": "Anthropic",
+        "default_base_url": "https://api.deepseek.com/anthropic",
+        "default_models": [],
+    },
+    "gemini": {
+        "display_name": "Google Gemini",
+        "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "default_models": [],
+    },
+    "kimi": {
+        "display_name": "Kimi (Moonshot)",
+        "default_base_url": "https://api.moonshot.cn/v1",
+        "default_models": [],
+    },
+    "groq": {
+        "display_name": "Groq",
+        "default_base_url": "https://api.groq.com/openai/v1",
+        "default_models": [],
+    },
+    "openrouter": {
+        "display_name": "OpenRouter",
+        "default_base_url": "https://openrouter.ai/api/v1",
+        "default_models": [],
+    },
+    "ollama": {
+        "display_name": "Ollama (本地)",
+        "default_base_url": "http://localhost:11434",
+        "default_models": [],
+    },
 }
 
 # ---- Endpoints ----
 
 @router.get("/providers")
 async def list_providers():
-    """All providers with config status, health, and models."""
-    result = []
+    """All providers with config status, health, and models.
+
+    Switch gateway is the source of truth: key configured via the admin API
+    lives in switch memory/state, so the list must reflect switch state.
+    Falls back to builtin definitions + local JSON when switch is down.
+    """
     active = _load_gateway_config()
 
+    def _adapt(sw: dict) -> dict:
+        """Adapt switch /v1/providers item to the GUI contract."""
+        name = sw.get("name", "")
+        builtin = BUILTIN_PROVIDERS.get(name, {})
+        models = [
+            {"id": m, "display": m, "context": 0, "max_output": 0,
+             "cost_in": 0, "cost_out": 0, "capabilities": ["chat"]}
+            for m in (sw.get("models") or [])
+        ]
+        return {
+            "name": name,
+            "display_name": builtin.get("display_name", name),
+            "configured": bool(sw.get("key_configured")) or name in ("lmstudio", "ollama"),
+            "healthy": sw.get("healthy"),
+            "active": bool(sw.get("active")),
+            "circuit_state": sw.get("circuit_state") or None,
+            "base_url": builtin.get("default_base_url", ""),
+            "api_key_masked": None,  # switch never exposes keys
+            "models": models,
+        }
+
+    # Preferred path: proxy switch (source of truth for keys/health)
+    try:
+        req = urllib.request.Request(f"{SWITCH_URL}/v1/providers")
+        req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        items = data.get("providers") if isinstance(data, dict) else data
+        if items:
+            result = [_adapt(sw) for sw in items]
+            result.sort(key=lambda p: (not p["active"], p["name"]))
+            active_names = [p["name"] for p in result if p.get("active")]
+            return {
+                "providers": result,
+                "active_provider": active_names[0] if active_names else active.get("active_provider", "deepseek"),
+                "active_model": active.get("active_model", "deepseek-chat"),
+                "source": "switch",
+            }
+    except Exception as e:
+        logger.warning("switch /v1/providers unavailable, fallback to builtin: %s", e)
+
+    # Fallback: builtin definitions + local JSON (switch offline)
+    result = []
     for name, builtin in BUILTIN_PROVIDERS.items():
         saved = _load_provider_config(name)
-        configured = bool(saved.get("api_key") or name == "lmstudio")
+        configured = bool(saved.get("api_key") or name in ("lmstudio", "ollama"))
         base_url = saved.get("base_url") or builtin["default_base_url"]
 
         # Models: saved cache > builtin defaults
@@ -115,22 +194,13 @@ async def list_providers():
         else:
             models = builtin["default_models"]
 
-        # Health check
-        healthy = None
-        if configured and _engine:
-            try:
-                from core.agent.llm_providers.openai_provider import OpenAIProvider
-                prov = OpenAIProvider(name, {"api_key": saved.get("api_key", "local"),
-                                              "base_url": base_url, "model": models[0]["id"] if models else "x"})
-                healthy = prov.health_check() if hasattr(prov, 'health_check') else None
-            except Exception:
-                healthy = False
-
         result.append({
             "name": name,
             "display_name": builtin["display_name"],
             "configured": configured,
-            "healthy": healthy,
+            "healthy": None,
+            "active": False,
+            "circuit_state": None,
             "base_url": base_url,
             "api_key_masked": _mask_key(saved.get("api_key", "")) if saved.get("api_key") else None,
             "models": models,
@@ -140,6 +210,7 @@ async def list_providers():
         "providers": result,
         "active_provider": active.get("active_provider", "deepseek"),
         "active_model": active.get("active_model", "deepseek-chat"),
+        "source": "fallback",
     }
 
 
@@ -210,12 +281,38 @@ async def remove_provider(name: str):
 
 @router.post("/providers/{name}/test")
 async def test_provider(name: str):
-    """Test connection to provider."""
-    if name not in BUILTIN_PROVIDERS:
-        raise HTTPException(404, f"Unknown provider: {name}")
+    """Test connection to provider.
 
+    Keys live in switch, so the honest test reads switch's provider state:
+    key_configured / healthy / circuit_state. Falls back to local config when
+    switch is offline.
+    """
+    try:
+        req = urllib.request.Request(f"{SWITCH_URL}/v1/providers")
+        req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        items = data.get("providers") if isinstance(data, dict) else data
+        sw = next((p for p in (items or []) if p.get("name") == name), None)
+        if sw is None:
+            raise HTTPException(404, f"Unknown provider: {name}")
+        if not sw.get("key_configured") and name not in ("lmstudio", "ollama"):
+            return {"name": name, "healthy": False, "latency_ms": 0,
+                    "error": "API Key 未配置,请先保存 Key"}
+        healthy = sw.get("healthy")
+        circuit = sw.get("circuit_state") or ""
+        err = None if healthy else (f"熔断器状态: {circuit}" if circuit and circuit != "closed"
+                                    else "健康检查未通过(网关尚未探测或目标不可达)")
+        return {"name": name, "healthy": healthy, "latency_ms": 0, "error": err}
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # switch offline → local fallback
+
+    builtin = BUILTIN_PROVIDERS.get(name)
+    if not builtin:
+        raise HTTPException(404, f"Unknown provider: {name}")
     saved = _load_provider_config(name)
-    builtin = BUILTIN_PROVIDERS[name]
     api_key = saved.get("api_key", "local")
     base_url = saved.get("base_url") or builtin["default_base_url"]
 
@@ -232,12 +329,31 @@ async def test_provider(name: str):
 
 @router.post("/providers/{name}/models")
 async def fetch_models(name: str):
-    """Fetch available models from provider API."""
-    if name not in BUILTIN_PROVIDERS:
+    """Fetch available models. Prefer switch's live model list; fallback to
+    the provider's own /models API with locally saved key, then builtin."""
+    # Switch path: models already known to the gateway
+    try:
+        req = urllib.request.Request(f"{SWITCH_URL}/v1/providers")
+        req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        items = data.get("providers") if isinstance(data, dict) else data
+        sw = next((p for p in (items or []) if p.get("name") == name), None)
+        if sw and sw.get("models"):
+            models = [{"id": m, "display": m, "context": 0, "max_output": 0,
+                       "cost_in": 0, "cost_out": 0, "capabilities": ["chat"]}
+                      for m in sw["models"]]
+            return {"name": name, "models": models}
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    builtin = BUILTIN_PROVIDERS.get(name)
+    if not builtin:
         raise HTTPException(404, f"Unknown provider: {name}")
 
     saved = _load_provider_config(name)
-    builtin = BUILTIN_PROVIDERS[name]
     api_key = saved.get("api_key", "local")
     base_url = saved.get("base_url") or builtin["default_base_url"]
 
