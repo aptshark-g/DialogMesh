@@ -1644,5 +1644,37 @@ async def v6_degradation():
     return {"level": d.level.name, "queue_depth": d._queue_depth}
 
 
+@app.get("/v6/causal")
+async def v6_causal():
+    """Causal chain: L4 temporal → L5 causal candidates."""
+    if not _engine: raise HTTPException(503)
+    cp = getattr(_engine, '_causal_promoter', None)
+    if cp: return cp.stats()
+    return {"error": "causal promoter not available"}
+
+@app.get("/v6/ttl")
+async def v6_ttl():
+    """TTL/HCWA temperature migration status."""
+    if not _engine: raise HTTPException(503)
+    tm = getattr(_engine, '_ttl_manager', None)
+    if tm: return tm.stats()
+    return {"error": "TTL manager not available"}
+
+@app.post("/v6/ttl/tick")
+async def v6_ttl_tick():
+    """Trigger TTL temperature migration tick."""
+    if not _engine: raise HTTPException(503)
+    tm = getattr(_engine, '_ttl_manager', None)
+    if tm: return tm.tick()
+    return {"error": "TTL manager not available"}
+
+@app.get("/v6/subgraph/cache")
+async def v6_subgraph_cache():
+    """Subgraph cache stats."""
+    if not _engine: raise HTTPException(503)
+    sc = getattr(_engine, '_subgraph_cache', None)
+    if sc: return sc.stats()
+    return {"error": "subgraph cache not available"}
+
 if __name__ == "__main__":
     serve()

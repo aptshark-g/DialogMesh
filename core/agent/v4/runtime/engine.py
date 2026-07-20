@@ -272,6 +272,19 @@ class CognitiveRuntimeEngine:
                     self._degradation = None
                     self._meta_repair = None
 
+                # P2: CausalPromoter + TTLManager + SubgraphCache
+                try:
+                    from core.agent.v4.cognitive.p2_advanced import (
+                        CausalPromoter, TTLManager, SubgraphCache
+                    )
+                    self._causal_promoter = CausalPromoter()
+                    self._ttl_manager = TTLManager()
+                    self._subgraph_cache = SubgraphCache()
+                except Exception:
+                    self._causal_promoter = None
+                    self._ttl_manager = None
+                    self._subgraph_cache = None
+
                 logger.info("Engine started")
         except Exception as e:
             self._mind = None
