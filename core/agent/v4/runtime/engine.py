@@ -511,6 +511,7 @@ class CognitiveRuntimeEngine:
 
         # ---- ConversationTracker: record turn for follow-up disambiguation ----
         text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+        concepts = []
         if text:
             # Extract concepts from text for content-overlap scoring
             concepts = self._extract_concepts_from_text(text)
