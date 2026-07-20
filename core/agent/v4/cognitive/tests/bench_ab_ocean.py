@@ -41,6 +41,19 @@ prov = OpenAIProvider("deepseek", {
 })
 eng = CognitiveRuntimeEngine(llm_provider=prov)
 eng.start()
+# Force-init discourse tree + behavior discovery (not auto in bench mode)
+if not getattr(eng, '_discourse_tree', None):
+    try:
+        from core.agent.v4.discourse.manager import DiscourseTreeManager
+        eng._discourse_tree = DiscourseTreeManager()
+    except Exception as e:
+        print(f"  DiscourseTree init skipped: {e}")
+if not getattr(eng, '_behavior_discovery', None):
+    try:
+        from core.agent.v4.cognitive.behavior_discovery import BehaviorDiscovery
+        eng._behavior_discovery = BehaviorDiscovery()
+    except Exception as e:
+        print(f"  BehaviorDiscovery init skipped: {e}")
 # Show loaded profile
 ocean = getattr(getattr(eng, '_ocean_analyst', None), 'profile', None)
 if ocean and ocean.turn_count > 0:

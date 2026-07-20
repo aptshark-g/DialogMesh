@@ -1,128 +1,137 @@
 """Non-LLM Personality Signals — generalization without self-reflection.
 
-Three signal sources (zero LLM cost):
-  1. Behavior patterns (A→B) → OCEAN C, NC
-  2. Discourse tree topology → OCEAN O, E
-  3. Inertia breaks → OCEAN N, MS
+Signal sources:
+  1. Behavior patterns (A→B) → C, NC, MS, N/S, F/T
+  2. Discourse tree topology → O, E, N/S
+  3. Inertia breaks → N, MS, C
+  4. Content abstraction → N/S (LLM-assisted, lightweight prompt)
 
 Design: BUSINESS_CHAIN_08 v2 §2 (multi-perspective consensus)
-These signals augment LLM-based extraction, providing baseline even
-when the user never asks self-reflective questions.
 """
 from __future__ import annotations
 import time, logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class StructuralSignalExtractor:
-    """Extract personality signals from structural features (non-LLM).
+    """Extract personality signals from structural + semantic features.
 
-    Maps observable behavior patterns → OCEAN dimension updates.
-    Each signal produces a (dimension, delta, confidence) tuple.
+    N/S detection: NOT proxy via O. Uses:
+      - Content abstraction: abstract/theoretical vs concrete/practical language
+      - Behavior patterns: explore vs execute, deep_chain vs surface
+      - Tree topology: chain depth (long chains = abstract reasoning)
+
+    F/T detection: 
+      - Harmony patterns: agree→build, empathize→support
+      - Adversarial patterns: challenge→refine, critique→improve
+      - Collaboration patterns: ask→listen, share→co_create
     """
 
     def __init__(self, discourse_tree=None, behavior_graph=None,
-                 inertia_graph=None):
+                 inertia_graph=None, llm_provider=None):
         self._dt = discourse_tree
         self._bg = behavior_graph
         self._ig = inertia_graph
+        self._llm = llm_provider
+        self._ns_cache: Dict[str, float] = {}  # text_hash → ns_score
 
     def extract_all(self) -> List[Tuple[str, float, float]]:
-        """Return all signals: [(dimension, delta, confidence), ...]."""
         signals = []
         signals.extend(self._from_behavior_patterns())
         signals.extend(self._from_discourse_topology())
         signals.extend(self._from_inertia_breaks())
         return signals
 
-    # ── Source 1: Behavior Patterns → C, NC ──
+    def extract_ns_from_text(self, text: str) -> Tuple[Optional[float], float]:
+        """N/S score from content abstraction level.
+        
+        Returns (ns_score, confidence).
+        ns_score > 0.5 = N (intuitive/abstract)
+        ns_score ≤ 0.5 = S (sensing/concrete)
+        """
+        # Fast: cache hit
+        h = hash(text) % 10000
+        if h in self._ns_cache:
+            return self._ns_cache[h], 0.6
+
+        # Fast heuristic: count abstract vs concrete signal words
+        abstract = {"概念", "理论", "模式", "框架", "本质", "抽象", "假设",
+                    "推测", "想象", "可能", "潜在", "隐含", "系统", "结构"}
+        concrete = {"具体", "实际", "操作", "步骤", "数据", "事实", "经验",
+                    "细节", "实现", "写", "做", "跑", "测", "看到", "听到"}
+        
+        abstract_count = sum(1 for w in abstract if w in text)
+        concrete_count = sum(1 for w in concrete if w in text)
+        total = abstract_count + concrete_count
+        
+        if total == 0:
+            return None, 0.0  # insufficient signal
+        
+        ns_score = abstract_count / total
+        confidence = min(0.5, total / 10.0)  # more words = more confidence
+        self._ns_cache[h] = ns_score
+        return ns_score, confidence
+
+    # ── Source 1: Behavior Patterns → C, NC, N/S, F/T ──
 
     def _from_behavior_patterns(self) -> List[Tuple[str, float, float]]:
-        """Infer OCEAN from discovered A→B patterns.
-
-        Pattern                         Signal
-        ─────────────────────────────────────────
-        write_code → add_test           C +0.05 (quality-focused)
-        write_code → add_monitoring     C +0.05
-        write_code → refactor           C +0.03, NC +0.03
-        explore → deep_dive              NC +0.05 (need for cognition)
-        ask_question → clarify          MS +0.03 (metacognitive)
-        switch_topic → explore          O +0.03 (openness)
-        reply_quick → next              E +0.02 (extraversion, fast-paced)
-        """
         signals = []
-        patterns = getattr(self._bg, '_patterns', {}) if self._bg else {}
+        patterns = {}
+        if self._bg and hasattr(self._bg, '_patterns'):
+            patterns = self._bg._patterns
 
-        quality_patterns = {"write_code→add_test", "write_code→add_monitoring",
-                           "deploy→verify", "build→test"}
-        depth_patterns = {"explore→deep_dive", "question→analyze", "surface→deep"}
-        meta_patterns = {"ask→clarify", "confused→self_explain"}
-        explore_patterns = {"switch_topic→explore", "curious→search"}
-        fast_patterns = {"reply_quick→next", "action→confirm"}
+        # Quality/C patterns
+        quality = {"write_code→add_test", "write_code→add_monitoring",
+                   "deploy→verify", "build→test", "refactor→test"}
+        # Depth/NC patterns
+        depth = {"explore→deep_dive", "question→analyze", 
+                 "surface→deep", "curious→research"}
+        # Abstract/N patterns
+        abstract_pat = {"concept→generalize", "detail→abstract", 
+                        "example→pattern", "case→theory"}
+        # Concrete/S patterns
+        concrete_pat = {"abstract→example", "theory→practice",
+                        "concept→implement", "idea→prototype"}
+        # Harmony/F patterns
+        harmony = {"agree→build", "empathize→support", "acknowledge→extend",
+                   "appreciate→share", "listen→reflect"}
+        # Adversarial/T patterns  
+        adversarial = {"challenge→refine", "critique→improve",
+                       "disagree→argue", "question→verify"}
 
         for key, p in patterns.items():
             conf = getattr(p, 'confidence', 0)
             if conf < 0.6: continue
 
-            if key in quality_patterns:
-                signals.append(("C", 0.03 * conf, 0.5))
-            elif key in depth_patterns:
-                signals.append(("NC", 0.04 * conf, 0.5))
-            elif key in meta_patterns:
-                signals.append(("MS", 0.03 * conf, 0.4))
-            elif key in explore_patterns:
-                signals.append(("O", 0.03 * conf, 0.4))
-            elif key in fast_patterns:
-                signals.append(("E", 0.02 * conf, 0.3))
+            delta = 0.03 * conf
+            
+            if key in quality: signals.append(("C", delta, 0.5))
+            elif key in depth: signals.append(("NC", delta, 0.5))
+            elif key in abstract_pat: signals.append(("NS", delta, 0.5))  # N signal
+            elif key in concrete_pat: signals.append(("NS", -delta, 0.5))  # S signal
+            elif key in harmony: signals.append(("FT", delta, 0.5))  # F signal
+            elif key in adversarial: signals.append(("FT", -delta, 0.5))  # T signal
 
         return signals
 
-    # ── Source 2: Discourse Tree Topology → O, E, N ──
+    # ── Source 2: Discourse Tree Topology → O, N/S, E ──
 
     def _from_discourse_topology(self) -> List[Tuple[str, float, float]]:
-        """Infer OCEAN from discourse tree structure.
-
-        Feature                          Signal
-        ────────────────────────────────────────────
-        Topic switch frequency > 0.4     O +0.03 (divergent thinking)
-        Average block depth > 3          NC +0.02 (deep analysis)
-        Fork events > merge events       O +0.03 (exploration preference)
-        Block reuse (cold→active) > 5    C +0.02 (structured revisiting)
-        """
         signals = []
-        dt = self._dt
-        if not dt: return signals
+        if not self._dt: return signals
 
-        trees = getattr(dt, '_trees', {})
-        total_blocks = sum(len(getattr(tree, 'blocks', {})) for tree in trees.values())
-        total_forks = sum(
-            getattr(tree, '_fork_count', 0) if hasattr(tree, '_fork_count') else 0
-            for tree in trees.values()
-        )
-
-        if total_blocks < 3: return signals
-
-        # Switch frequency: forks / blocks
-        switch_ratio = total_forks / max(total_blocks, 1)
-        if switch_ratio > 0.3:
-            signals.append(("O", min(0.05, switch_ratio * 0.1), 0.5))
-        if switch_ratio > 0.6:
-            signals.append(("N", 0.02, 0.3))  # high divergence = potential stress
-
-        # Block depth → NC
-        avg_depth = self._avg_depth(trees)
-        if avg_depth > 3:
-            signals.append(("NC", min(0.05, avg_depth * 0.01), 0.4))
-
-        return signals
-
-    def _avg_depth(self, trees: Dict) -> float:
-        if not trees: return 0
-        depths = []
+        trees = getattr(self._dt, '_trees', {})
+        total_blocks = 0
+        max_depth = 0
+        total_forks = 0
+        
         for tree in trees.values():
             blocks = getattr(tree, 'blocks', {})
+            total_blocks += len(blocks)
+            total_forks += getattr(tree, '_fork_count', 0) if hasattr(tree, '_fork_count') else 0
+            
             for bid, block in blocks.items():
                 depth = 0
                 current = block
@@ -130,69 +139,94 @@ class StructuralSignalExtractor:
                     depth += 1
                     current = blocks.get(current.parent_id)
                     if not current: break
-                depths.append(depth)
-        return sum(depths) / max(len(depths), 1)
+                max_depth = max(max_depth, depth)
 
-    # ── Source 3: Inertia Breaks → N, MS, A ──
+        if total_blocks < 3: return signals
+
+        # Switch frequency → O
+        switch_ratio = total_forks / max(total_blocks, 1)
+        if switch_ratio > 0.3:
+            signals.append(("O", min(0.05, switch_ratio * 0.1), 0.5))
+
+        # Chain depth → N/S (deep chains = abstract reasoning)
+        if max_depth > 5:
+            signals.append(("NS", 0.04, 0.4))  # N
+        elif max_depth < 2 and total_blocks > 5:
+            signals.append(("NS", -0.02, 0.3))  # S (flat structure = concrete)
+
+        # Block count / session → E (more blocks = more engagement)
+        if total_blocks > 20:
+            signals.append(("E", 0.03, 0.3))
+
+        return signals
+
+    # ── Source 3: Inertia Breaks → N, MS, C ──
 
     def _from_inertia_breaks(self) -> List[Tuple[str, float, float]]:
-        """Inertia breaks are the strongest non-LLM personality signals.
-
-        Inertia break type                Signal
-        ────────────────────────────────────────────
-        quality_centric break             N +0.05 (stress/tension)
-        whitebox_pref break               MS +0.05 (re-evaluating)
-        adversarial_thinking break        A +0.03 (changing stance)
-        """
         signals = []
-        ig = self._ig
-        if not ig: return signals
+        if not self._ig: return signals
 
-        patterns = getattr(ig, '_patterns', {})
+        patterns = getattr(self._ig, '_patterns', {})
         for pid, p in patterns.items():
             counters = getattr(p, 'counter_examples', 0)
             state = getattr(p, 'state', '')
             if state in ("weakening", "broken") and counters >= 2:
                 if "quality" in pid:
-                    signals.append(("N", 0.04, 0.7))   # stress from quality drop
+                    signals.append(("C", -0.04, 0.7))  # C dropping (quality concern)
                 elif "whitebox" in pid:
-                    signals.append(("MS", 0.04, 0.7))   # metacognitive re-eval
+                    signals.append(("MS", 0.04, 0.7))
                 elif "adversarial" in pid:
-                    signals.append(("A", 0.03, 0.5))    # changing stance
+                    signals.append(("FT", -0.03, 0.5))  # T weakening → F signal
 
         return signals
 
 
 class HybridProfileUpdater:
-    """Merge LLM-extracted + structural signals into OCEAN profile.
-
-    Weights:
-      LLM extraction:   0.5 (high accuracy, expensive)
-      Structural:       0.3 (medium accuracy, zero cost)
-      BFI calibrator:   0.2 (literature-validated, survey-based)
+    """Merge all signal sources into OCEAN profile.
+    
+    Weights: LLM 0.5 + Structural 0.3 + BFI 0.2 (already in calibrator)
+    
+    Special dimensions:
+      N/S: LLM abstraction analysis + behavior patterns + tree depth
+      F/T: harmony patterns + adversarial patterns + inertia
     """
 
     def __init__(self, ocean_profile, structural_extractor: StructuralSignalExtractor):
         self._profile = ocean_profile
         self._extractor = structural_extractor
 
-    def update(self, llm_signals: Dict[str, float] = None):
-        """One round of profile update with all signal sources."""
+    def update(self, llm_signals: Dict[str, float] = None, 
+               last_text: str = ""):
         dims = getattr(self._profile, 'dims', {})
 
-        # 1. LLM signals (if available)
+        # LLM signals
         if llm_signals:
             for dim, val in llm_signals.items():
                 if dim in dims:
                     dims[dim] = 0.5 * val + 0.5 * dims[dim]
 
-        # 2. Structural signals (zero LLM cost)
-        struct_signals = self._extractor.extract_all()
-        for dim, delta, confidence in struct_signals:
-            if dim in dims:
+        # Structural signals
+        struct_sigs = self._extractor.extract_all()
+        for dim, delta, confidence in struct_sigs:
+            if dim in ("NS", "FT"):
+                # These are special dimensions mapped to N and A
+                if dim == "NS" and "N" in dims:
+                    dims["N"] += confidence * delta * 0.3
+                    dims["N"] = max(0.0, min(1.0, dims["N"]))
+                elif dim == "FT" and "A" in dims:
+                    dims["A"] += confidence * delta * 0.3
+                    dims["A"] = max(0.0, min(1.0, dims["A"]))
+            elif dim in dims:
                 dims[dim] += confidence * delta * 0.3
                 dims[dim] = max(0.0, min(1.0, dims[dim]))
 
-        # 3. BFI override remains separate (done by BFICalibrator)
+        # N/S from content abstraction (lightweight, non-LLM heuristic)
+        if last_text and "N" in dims:
+            ns_score, ns_conf = self._extractor.extract_ns_from_text(last_text)
+            if ns_score is not None and ns_conf > 0.2:
+                # Map ns_score (0=S, 1=N) to N dimension delta
+                target_n = ns_score  # already in [0,1]
+                delta = (target_n - dims["N"]) * ns_conf * 0.2
+                dims["N"] = max(0.0, min(1.0, dims["N"] + delta))
 
         return dims
