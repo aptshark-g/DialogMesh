@@ -1,7 +1,7 @@
-# DialogMesh v6 — GUI API 完整业务文档 (v9 · 82 endpoints)
+# DialogMesh v6 — GUI API 完整业务文档 (v10 · 90 endpoints)
 
-> 版本: v9 | 日期: 2026-07-19
-> 包含: DialogMesh 74 端点 + switch gateway 8 端点
+> 版本: v10 | 日期: 2026-07-20
+> 包含: DialogMesh 82 端点 + switch gateway 8 端点
 
 ---
 
@@ -93,6 +93,21 @@
 | PUT | `/v6/edit/objects` | 编辑语义对象 |
 | PUT | `/v6/edit/relations` | 编辑关系边 |
 | PUT | `/v6/edit/ir` | 编辑 IR 上下文 |
+
+### 调度器 & 降级 (3 · NEW)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v6/causal-chain` | 因果链追踪 (前端乐观更新) |
+| GET | `/v6/degradation` | 当前系统降级级别 |
+| GET | `/v6/sync` | 强一致读 (阻塞至事件处理完) |
+
+### P2 高级 (3 · NEW)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v6/causal` | L4→L5 因果晋升状态 |
+| GET | `/v6/ttl` | HCWA 温度迁移统计 |
+| POST | `/v6/ttl/tick` | 触发温度迁移 |
+| GET | `/v6/subgraph/cache` | 子图缓存命中率 |
 
 ### 规则 & 反馈 (3)
 | 方法 | 路径 | 说明 |
