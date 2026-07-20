@@ -7,7 +7,6 @@ import {
   checkDialogMeshStatus,
   checkSwitchGatewayStatus,
   getGatewayProviders,
-  DEFAULT_PROVIDERS,
   configGatewayProvider,
   testGatewayProvider,
   fetchGatewayProviderModels,
@@ -144,10 +143,9 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
       const gatewayProviders = await getGatewayProviders();
       setData(prev => ({ ...prev, gatewayProviders, providersLoading: bg ? prev.providersLoading : false, error: null }));
     } catch {
-      // API 未实现或后端未启动: 仅在无旧数据时用默认模板兜底;轮询失败保留旧数据,不重置
+      // Keep previous data on failure; don't overwrite real config with defaults
       setData(prev => ({
         ...prev,
-        gatewayProviders: prev.gatewayProviders ?? DEFAULT_PROVIDERS,
         providersLoading: bg ? prev.providersLoading : false,
         error: null,
       }));
@@ -336,8 +334,6 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
       setData(prev => ({
         ...prev,
         servicesDown: true,
-        // 无旧数据时用模板兜底,保证页面可预填配置; 有旧数据则原样保留
-        gatewayProviders: prev.gatewayProviders ?? DEFAULT_PROVIDERS,
       }));
       return;
     }
