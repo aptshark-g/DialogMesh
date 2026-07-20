@@ -56,21 +56,21 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[ProviderSelector 挂载] --> B[GET /v6/gateway/providers]
-    B --> C[过滤: active=true]
-    C --> D[渲染下拉菜单]
+    A["ProviderSelector 挂载"] --> B["GET /v6/gateway/providers"]
+    B --> C["过滤: active=true"]
+    C --> D["渲染下拉菜单"]
 
-    D --> E{用户点击}
-    E -->|选厂商+模型| F[PUT /v6/gateway/active]
-    F --> G[更新 ChatPage state: activeProvider]
-    G --> H[发送消息时附加 provider 参数]
+    D --> E{"用户点击"}
+    E -->|"选厂商+模型"| F["PUT /v6/gateway/active"]
+    F --> G["更新 ChatPage state: activeProvider"]
+    G --> H["发送消息时附加 provider 参数"]
     
-    E -->|查看详情| I[展开面板: 显示电路状态/延迟/健康分]
+    E -->|"查看详情"| I["展开面板: 显示电路状态/延迟/健康分"]
 
-    H --> J[API → Gateway → 加权路由]
-    J --> K{响应是否故障切换?}
-    K -->|是| L[前端 Toast: "已从 A 切换到 B"]
-    K -->|否| M[正常返回]
+    H --> J["API → Gateway → 加权路由"]
+    J --> K{"响应是否故障切换?"}
+    K -->|"是"| L["前端 Toast: '已从 A 切换到 B'"]
+    K -->|"否"| M["正常返回"]
 ```
 
 ---

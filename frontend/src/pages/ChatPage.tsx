@@ -3,12 +3,14 @@ import ChatPanel from '../components/ChatPanel';
 import type { ChatMessage } from '../types/api';
 import type { ConnectionState } from '../types/ui';
 import { createSession, sendMessage } from '../api/session';
+import type { ProviderInfo } from '../components/ProviderSelector';
 
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [activeProvider, setActiveProvider] = useState<ProviderInfo | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'connecting', latencyMs: null, lastError: null,
   });
@@ -58,6 +60,8 @@ export function ChatPage() {
         onClearError={clearError}
         onReconnect={() => window.location.reload()}
         onClearMessages={clearMessages}
+        onSelectProvider={setActiveProvider}
+        activeProvider={activeProvider}
       />
     </div>
   );
