@@ -1469,6 +1469,35 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.debug("BFI/OCEAN skipped: %s", e)
 
+        # P2: wire orphan modules — causal promotion, behavior to meta, TTL, self-repair
+        if hasattr(self, '_causal_promoter') and self._causal_promoter:
+            try:
+                for pk, p in getattr(getattr(self, '_behavior_discovery', None), '_patterns', {}).items():
+                    parts = pk.split("→")
+                    if len(parts) == 2 and getattr(p, 'confidence', 0) > 0.7:
+                        self._causal_promoter.record_pair(parts[0], parts[1], time.time())
+                        self._causal_promoter.assess(pk, parts[0], parts[1],
+                            getattr(p, 'confidence', 0), getattr(p, 'support', 0))
+            except Exception: pass
+
+        if hasattr(self, '_behavior_discovery') and self._behavior_discovery:
+            try:
+                for p in getattr(self._behavior_discovery, 'pending_review', lambda: [])():
+                    if hasattr(self, '_meta') and self._meta:
+                        self._behavior_discovery.submit_to_meta(p)
+            except Exception: pass
+
+        if hasattr(self, '_ttl_manager') and self._ttl_manager:
+            try:
+                self._ttl_manager.tick()
+            except Exception: pass
+
+        if hasattr(self, '_meta_repair') and self._meta_repair and hasattr(self, '_meta') and self._meta:
+            try:
+                audit = self._meta.self_audit()
+                self._meta_repair.record_accuracy(audit.get("accuracy", 0))
+            except Exception: pass
+
     def _inject_cognitive_profile(self):
         """Inject user profile as P domain context entries."""
         if (not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None
