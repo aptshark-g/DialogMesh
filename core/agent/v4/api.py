@@ -1818,37 +1818,35 @@ async def v3_create_session():
 
 @app.post("/v3/session/{session_id}/message")
 async def v3_send_message(session_id: str, req: Request):
-    """Send a message in a session (frontend compatibility)."""
+    """Send a message in a session — direct LLM call via engine."""
     body = await req.json()
     text = body.get("content", "")
     provider = body.get("provider")
     model = body.get("model")
     try:
+        # Use engine's configured LLM provider directly
+        if _engine and hasattr(_engine, '_llm_provider') and _engine._llm_provider:
+            from core.agent.llm_providers.base import GenerateRequest
+            llm_req = GenerateRequest(
+                messages=[{"role": "user", "content": text}],
+                max_tokens=2000,
+            )
+            result = _engine._llm_provider.generate(llm_req)
+            reply = result.text if hasattr(result, 'text') else str(result)
+            return {"content": reply, "session_id": session_id, "status": "accepted"}
+        
+        # Fallback: try engine event processing
         evt = EventRequest(
             text=text, source="user", session_id=session_id,
             event_id=f"v3_{session_id}_{int(time.time())}",
         )
-        # Switch provider if requested
-        if provider and model:
-            try:
-                from core.agent.llm_providers.openai_provider import OpenAIProvider
-                _engine._llm_provider = OpenAIProvider(provider, {
-                    "base_url": "http://127.0.0.1:8080",
-                    "api_key": "not-needed",
-                    "model": model,
-                })
-            except Exception: pass
         r = await post_event(evt)
         reply = ""
         if isinstance(r, dict):
-            reply = r.get("response") or r.get("reply") or r.get("text") or ""
-            if not reply:
-                logger.warning("V3 message: empty response from engine, keys=%s", list(r.keys())[:5])
-                reply = "[引擎返回空]"
-        elif hasattr(r, 'response'):
-            reply = r.response
+            reply = r.get("response") or r.get("reply") or str(r)[:500]
         return {"content": str(reply), "session_id": session_id, "status": "accepted"}
     except Exception as e:
+        logger.exception("V3 message failed")
         return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
 
 
