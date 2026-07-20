@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T21:09:03.7806251+08:00",
+  "saved_at": "2026-07-20T21:19:17.0034309+08:00",
   "providers": [
+    {
+      "name": "lmstudio",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "deepseek",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
     {
       "name": "openai",
       "kind": "openai_compatible",
@@ -16,30 +52,6 @@
     },
     {
       "name": "anthropic",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "gemini",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -75,7 +87,7 @@
       "token_completion": 0
     },
     {
-      "name": "lmstudio",
+      "name": "gemini",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -87,19 +99,7 @@
       "token_completion": 0
     },
     {
-      "name": "ollama",
-      "kind": "ollama",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "deepseek",
+      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",

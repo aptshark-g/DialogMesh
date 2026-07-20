@@ -132,6 +132,24 @@ export function GatewayPage() {
     }
   }, []);
 
+  // Sync configForms from provider data on load (prevents key inputs from clearing on refresh)
+  useEffect(() => {
+    const list = gatewayProviders?.providers || [];
+    if (list.length === 0) return;
+    setConfigForms(prev => {
+      const next = { ...prev };
+      for (const p of list) {
+        if (!next[p.name]) {
+          next[p.name] = {
+            apiKey: p.key_configured ? '(已配置)' : '',
+            baseUrl: p.base_url || '',
+          };
+        }
+      }
+      return next;
+    });
+  }, [gatewayProviders?.providers]);
+
   const fetchContext = useCallback(async () => {
     try {
       setContextData(await getContext());

@@ -1794,3 +1794,37 @@ async def monitor_waterfall(trace_id: str):
 if __name__ == "__main__":
 
     serve()
+
+# ═══════ V3 Session endpoints (frontend chat compatibility) ═══════
+
+@app.post("/v3/session")
+async def v3_create_session():
+    """Create a new chat session (frontend compatibility)."""
+    import uuid
+    sid = str(uuid.uuid4())[:12]
+    return {"session_id": sid, "ws_url": f"ws://127.0.0.1:8000/v4/ws/{sid}", "created": time.time()}
+
+@app.post("/v3/session/{session_id}/message")
+async def v3_send_message(session_id: str, req: Request):
+    """Send a message in a session (frontend compatibility)."""
+    body = await req.json()
+    content = body.get("content", "")
+    try:
+        r = await v4_event(EventRequest(
+            text=content, source="user", session_id=session_id,
+            event_id=f"v3_{session_id}_{int(time.time())}",
+        ))
+        return r
+    except Exception as e:
+        return {"reply": f"[Error] {e}", "session_id": session_id}
+
+
+@app.get("/v3/session/{session_id}/history")
+async def v3_session_history(session_id: str, limit: int = 50, offset: int = 0):
+    """Get session history (frontend compatibility)."""
+    return {"session_id": session_id, "messages": [], "total": 0}
+
+@app.get("/v3/session/{session_id}/status")
+async def v3_session_status(session_id: str):
+    """Get session status (frontend compatibility)."""
+    return {"session_id": session_id, "status": "active", "message_count": 0}
