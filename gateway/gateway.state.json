@@ -1,7 +1,55 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T19:49:29.2798509+08:00",
+  "saved_at": "2026-07-20T20:00:06.6463866+08:00",
   "providers": [
+    {
+      "name": "anthropic",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "kimi",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "groq",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "lmstudio",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
     {
       "name": "deepseek",
       "kind": "openai_compatible",
@@ -27,55 +75,7 @@
       "token_completion": 0
     },
     {
-      "name": "anthropic",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "groq",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "ollama",
-      "kind": "ollama",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
       "name": "gemini",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -99,8 +99,8 @@
       "token_completion": 0
     },
     {
-      "name": "lmstudio",
-      "kind": "openai_compatible",
+      "name": "ollama",
+      "kind": "ollama",
       "base_url": "",
       "api_key": "",
       "models": null,

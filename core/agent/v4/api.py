@@ -407,6 +407,7 @@ async def trigger_checkpoint():
 
 
 @app.get("/v4/health")
+@app.get("/v3/health")
 async def health_check():
     """Health check."""
     checks = {"api": "ok"}
