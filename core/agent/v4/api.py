@@ -1820,15 +1820,21 @@ async def v3_create_session():
 async def v3_send_message(session_id: str, req: Request):
     """Send a message in a session (frontend compatibility)."""
     body = await req.json()
-    content = body.get("content", "")
+    text = body.get("content", "")
     try:
         r = await post_event(EventRequest(
-            text=content, source="user", session_id=session_id,
+            text=text, source="user", session_id=session_id,
             event_id=f"v3_{session_id}_{int(time.time())}",
         ))
-        return r
+        # Extract reply from engine response
+        reply = ""
+        if isinstance(r, dict):
+            reply = r.get("reply", r.get("response", r.get("text", str(r)[:500])))
+        elif hasattr(r, 'response'):
+            reply = r.response
+        return {"content": reply, "session_id": session_id, "status": "accepted"}
     except Exception as e:
-        return {"reply": f"[Error] {e}", "session_id": session_id}
+        return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
 
 
 @app.get("/v3/session/{session_id}/history")
