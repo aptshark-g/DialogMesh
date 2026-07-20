@@ -1753,6 +1753,22 @@ async def monitor_dashboard():
     mon = get_interaction_monitor()
     return HTMLResponse(mon.dashboard_html())
 
+@app.get("/v6/monitor/gateway-raw")
+async def monitor_gateway_raw():
+    """Dump raw gateway responses — shows exactly what frontend sees."""
+    import urllib.request, json
+    base = "http://127.0.0.1:8080"
+    results = {}
+    for path in ["/v1/health", "/v1/providers", "/v1/diagnostics", "/v1/stats"]:
+        try:
+            req = urllib.request.Request(base + path)
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                body = resp.read().decode()[:5000]
+                results[path] = {"status": resp.status, "body": json.loads(body) if body else None}
+        except Exception as e:
+            results[path] = {"error": str(e)}
+    return results
+
 if __name__ == "__main__":
 
     serve()

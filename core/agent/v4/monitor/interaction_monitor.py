@@ -258,9 +258,11 @@ async def interaction_middleware(request, call_next):
 
     resp_body = ""
     try:
-        resp_body = response.body.decode()[:500]
+        body_bytes = response.body
+        resp_body = body_bytes.decode()[:2000]  # capture more for debugging
     except Exception:
         pass
 
-    mon.end(rid, response.status_code, request_body=body, response_body=resp_body)
+    mon.end(rid, response.status_code, request_body=body, response_body=resp_body,
+            is_gateway="/v6/gateway" in str(request.url.path))
     return response
