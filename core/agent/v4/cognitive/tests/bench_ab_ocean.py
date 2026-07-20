@@ -67,10 +67,21 @@ for i, text in enumerate(QUESTIONS):
     bfi = cali[-1]["bfi_scores"] if cali else {}
     all_bfi.append(dict(bfi))
     divergence = cali[-1].get("divergence", {}).get("total_divergence", 0) if cali else 0
-    bfi_overrides = ocean_result.get("bfi_overrides", 0) if 'ocean_result' in dir() else 0
+    bfi_overrides = cali[-1].get("overrides", 0) if cali else 0
+    
+    # Get structural signals
+    sext = getattr(eng, '_structural_extractor', None)
+    struct_sigs = []
+    if sext:
+        try:
+            struct_sigs = [(d, round(delta,3), round(conf,2)) 
+                          for d, delta, conf in sext.extract_all() if abs(delta) > 0.001]
+        except Exception: pass
     
     print(f"T{i+1}: {mbti} C={dims.get('C',0):.2f} A={dims.get('A',0):.2f} "
-          f"bfi_C={bfi.get('C',3)} div={divergence:.2f}")
+          f"N={dims.get('N',0):.2f} O={dims.get('O',0):.2f} "
+          f"bfi_C={bfi.get('C',3)} div={divergence:.2f} "
+          f"struct={struct_sigs}")
 
 final_dims = all_ocean[-1]
 final_mbti = ocean.to_mbti() if ocean else "?"
