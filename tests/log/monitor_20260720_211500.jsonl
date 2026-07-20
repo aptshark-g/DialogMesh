@@ -764,3 +764,8 @@
 {"ts": 1784553791.822645, "method": "GET", "path": "/v6/trace", "status": 200, "duration_ms": 0.6, "client_ip": "127.0.0.1", "error": null, "gateway": false}
 {"ts": 1784553791.8264356, "method": "GET", "path": "/v6/abc", "status": 200, "duration_ms": 0.94, "client_ip": "127.0.0.1", "error": null, "gateway": false}
 {"ts": 1784553791.830912, "method": "GET", "path": "/v6/mind", "status": 200, "duration_ms": 0.98, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784553851.818389, "method": "GET", "path": "/v6/profile", "status": 200, "duration_ms": 3.69, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784553851.8208451, "method": "GET", "path": "/v6/trace", "status": 200, "duration_ms": 2.02, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784553851.8211575, "method": "GET", "path": "/v6/abc", "status": 200, "duration_ms": 2.22, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784553851.829099, "method": "GET", "path": "/v6/mind", "status": 200, "duration_ms": 1.73, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784553851.830538, "method": "GET", "path": "/v3/health", "status": 200, "duration_ms": 2.78, "client_ip": "127.0.0.1", "error": null, "gateway": false}
