@@ -15,7 +15,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATEWAY_EXE = os.path.join(PROJECT_ROOT, "gateway", "gateway.exe")
 
 
-def start_gateway() -> subprocess.Popen | None:
+def start_gateway() -> Optional[subprocess.Popen]:
     """Launch switch gateway as a subprocess if it's not already running."""
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

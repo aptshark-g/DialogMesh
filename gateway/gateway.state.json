@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T19:45:05.3588901+08:00",
+  "saved_at": "2026-07-20T19:49:29.2798509+08:00",
   "providers": [
     {
       "name": "deepseek",
@@ -27,7 +27,7 @@
       "token_completion": 0
     },
     {
-      "name": "gemini",
+      "name": "anthropic",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -40,6 +40,42 @@
     },
     {
       "name": "groq",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "gemini",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -64,42 +100,6 @@
     },
     {
       "name": "lmstudio",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "ollama",
-      "kind": "ollama",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "anthropic",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "kimi",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
