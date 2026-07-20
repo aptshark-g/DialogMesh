@@ -9,7 +9,7 @@ Endpoints:
     POST /v4/ingest         Ingest external documents
 """
 from __future__ import annotations
-import time, logging, os, json
+import time, logging, os, json, asyncio
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
