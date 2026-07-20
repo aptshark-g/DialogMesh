@@ -1830,10 +1830,20 @@ async def v3_send_message(session_id: str, req: Request):
         r = await post_event(evt)
         reply = ""
         if isinstance(r, dict):
-            # Engine returns {"response": text, "status":"accepted", ...}
             reply = r.get("response") or r.get("reply") or ""
         if not reply:
-            reply = "[引擎无响应]"
+            # Monitoring: dump engine state on failure
+            llm_metrics = r.get("llm_metrics", {}) if isinstance(r, dict) else {}
+            engine_status = "LLM provider: "
+            if _engine:
+                engine_status += "yes" if _engine._llm_provider else "NO PROVIDER"
+                engine_status += f", running={_engine._running}"
+            logger.error(
+                "V3 message empty: engine=%s metrics=%s keys=%s",
+                engine_status, llm_metrics,
+                list(r.keys()) if isinstance(r, dict) else type(r).__name__
+            )
+            reply = f"[引擎无响应] {engine_status} metrics={llm_metrics}"
         return {"content": str(reply), "session_id": session_id, "status": "accepted"}
     except Exception as e:
         logger.exception("V3 message failed")
