@@ -83,8 +83,10 @@ app = FastAPI(title="DialogMesh v6 API", version="1.0")
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """P0: Bearer token check on all endpoints except health/ws/docs."""
-    public_paths = ("/v4/health", "/docs", "/openapi.json", "/v4/ws")
+    """P0: Bearer token check. OPTIONS (CORS preflight) always passes."""
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    public_paths = ("/v4/health", "/docs", "/openapi.json", "/v4/ws", "/v3/health")
     if any(request.url.path.startswith(p) for p in public_paths):
         return await call_next(request)
     if not require_auth(request):
