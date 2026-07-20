@@ -13,6 +13,7 @@ import time, logging, os, json
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
@@ -80,6 +81,15 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="DialogMesh v6 API", version="1.0")
+
+# CORS: allow frontend (:4173) to call API (:8000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:4173", "http://127.0.0.1:4173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
