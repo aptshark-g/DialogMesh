@@ -1,19 +1,7 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T23:24:10.4466573+08:00",
+  "saved_at": "2026-07-20T23:39:10.4468131+08:00",
   "providers": [
-    {
-      "name": "ollama",
-      "kind": "ollama",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
     {
       "name": "openai",
       "kind": "openai_compatible",
@@ -101,6 +89,18 @@
     {
       "name": "openrouter",
       "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
       "base_url": "",
       "api_key": "",
       "models": null,

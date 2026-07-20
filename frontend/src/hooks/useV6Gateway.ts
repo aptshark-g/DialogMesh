@@ -157,8 +157,17 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
     setData(prev => ({ ...prev, saveLoading: true, error: null }));
     try {
       await configGatewayProvider(name, req);
-      await fetchGatewayProviders();
-      setData(prev => ({ ...prev, saveLoading: false }));
+      // Don't reload full list — just mark saved locally
+      setData(prev => ({
+        ...prev,
+        saveLoading: false,
+        gatewayProviders: prev.gatewayProviders ? {
+          ...prev.gatewayProviders,
+          providers: (prev.gatewayProviders as any).providers?.map((p: any) =>
+            p.name === name ? { ...p, configured: true } : p
+          ),
+        } : prev.gatewayProviders,
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '配置 Provider 失败';
       setData(prev => ({ ...prev, saveLoading: false, error: msg }));

@@ -82,7 +82,13 @@ export function GatewayPage() {
   } = useV6Gateway(true, 15000);
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
-  const [configForms, setConfigForms] = useState<Record<string, { apiKey: string; baseUrl: string }>>({});
+  // Persist config forms across page navigation via localStorage
+  const [configForms, setConfigForms] = useState<Record<string, { apiKey: string; baseUrl: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('dm_gateway_forms');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [testResults, setTestResults] = useState<Record<string, { healthy: boolean; latency: number; error: string | null }>>({});
   const [activeTab, setActiveTab] = useState<'providers' | 'usage' | 'config' | 'monitor'>('providers');
 
@@ -131,6 +137,11 @@ export function GatewayPage() {
       setEngineStatusLoading(false);
     }
   }, []);
+
+  // Auto-save config forms to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('dm_gateway_forms', JSON.stringify(configForms)); } catch {}
+  }, [configForms]);
 
   // Sync configForms from provider data on load (prevents key inputs from clearing on refresh)
   useEffect(() => {
