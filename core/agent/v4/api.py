@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from core.agent.v4.monitor.interaction_monitor import interaction_middleware, get_interaction_monitor
 from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
@@ -90,6 +91,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Interaction monitor middleware — captures every FE↔API call
+@app.middleware("http")
+async def interaction_logger(request: Request, call_next):
+    return await interaction_middleware(request, call_next)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -1716,5 +1722,29 @@ async def v6_audit_history(days: int = 7):
     if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
     return _engine._audit_trail.history(days)
 
+@app.get("/v6/monitor/interactions")
+async def monitor_interactions(limit: int = 50, errors_only: bool = False):
+    """FE↔API interaction log — every request/response pair."""
+    mon = get_interaction_monitor()
+    if errors_only:
+        return {"errors": mon.errors(limit)}
+    return {"recent": mon.recent(limit), "stats": mon.stats()}
+
+@app.get("/v6/monitor/stats")
+async def monitor_stats():
+    """Interaction monitor stats — success rate, top paths, avg response."""
+    return get_interaction_monitor().stats()
+
+@app.get("/v6/monitor/slow")
+async def monitor_slow(threshold_ms: int = 500):
+    """Slow requests above threshold."""
+    return {"slow": get_interaction_monitor().slow_requests(threshold_ms)}
+
+@app.get("/v6/monitor/errors")
+async def monitor_errors():
+    """Recent errors only."""
+    return {"errors": get_interaction_monitor().errors(30)}
+
 if __name__ == "__main__":
+
     serve()
