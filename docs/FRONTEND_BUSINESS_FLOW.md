@@ -33,32 +33,32 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[打开 /gateway 页面] --> B[useV6Gateway 轮询 15s]
-    B --> C{API 在线?}
-    C -->|是| D[GET /v6/gateway/providers]
-    C -->|否| E[用 DEFAULT_PROVIDERS 兜底]
-    D --> F[显示 9 个 Provider 卡片]
+    A["打开 /gateway 页面"] --> B["useV6Gateway 轮询 15s"]
+    B --> C{"API 在线?"}
+    C -->|"是"| D["GET /v6/gateway/providers"]
+    C -->|"否"| E["用 DEFAULT_PROVIDERS 兜底"]
+    D --> F["显示 9 个 Provider 卡片"]
     E --> F
 
-    F --> G[用户点击 Provider 展开]
-    G --> H[显示 API Key 输入框 + Base URL 输入框]
+    F --> G["用户点击 Provider 展开"]
+    G --> H["显示 API Key 输入框 + Base URL 输入框"]
 
-    H --> I{用户操作}
-    I -->|填 key + 点保存| J[PUT /v6/gateway/providers/{name}]
-    I -->|点测试连接| K[POST /v6/gateway/providers/{name}/test]
-    I -->|点拉取模型| L[POST /v6/gateway/providers/{name}/models]
+    H --> I{"用户操作"}
+    I -->|"填 key + 点保存"| J["PUT /v6/gateway/providers/{name}"]
+    I -->|"点测试连接"| K["POST /v6/gateway/providers/{name}/test"]
+    I -->|"点拉取模型"| L["POST /v6/gateway/providers/{name}/models"]
 
-    J --> M[Gateway PUT /v1/admin/providers/{name}]
-    M --> N[更新内存 + 持久化到 provider.yaml]
-    N --> O[返回 200 → Provider 卡片变绿]
+    J --> M["Gateway PUT /v1/admin/providers/{name}"]
+    M --> N["更新内存 + 持久化到 provider.yaml"]
+    N --> O["返回 200 → Provider 卡片变绿"]
 
-    K --> P[Gateway → 发 ping 到上游 LLM]
-    P --> Q{连通?}
-    Q -->|是| R[显示延迟 + ✅]
-    Q -->|否| S[显示错误]
+    K --> P["Gateway → 发 ping 到上游 LLM"]
+    P --> Q{"连通?"}
+    Q -->|"是"| R["显示延迟 + ✅"]
+    Q -->|"否"| S["显示错误"]
 
-    L --> T[Gateway → 调 /models 端点]
-    T --> U[显示模型列表]
+    L --> T["Gateway → 调 /models 端点"]
+    T --> U["显示模型列表"]
 ```
 
 ---
@@ -134,31 +134,31 @@ sequenceDiagram
 ## 六、前端 14 页 × 后端交互矩阵
 
 ```mermaid
-graph LR
-    subgraph 只读页
-        DASH[Dashboard /] -->|v4/health| API
-        PROF[Profile /profile] -->|v6/profile,trace,abc,mind| API
-        GRAPH[Graph /graph] -->|v6/graph,objects,relations| API
-        PIPE[Pipeline /pipeline] -->|v6/pipeline| API
-        DEEP[DeepChain] -->|v6/relations,causal,behavior| API
-        ENGR[Engineering] -->|v6/engineering,recursive-map| API
-        SESS[Sessions] -->|v6/sessions,persistence| API
+flowchart LR
+    subgraph "只读页"
+        DASH["Dashboard /"] -->|"v4/health"| API
+        PROF["Profile /profile"] -->|"v6/profile,trace,abc,mind"| API
+        GRAPH["Graph /graph"] -->|"v6/graph,objects,relations"| API
+        PIPE["Pipeline /pipeline"] -->|"v6/pipeline"| API
+        DEEP["DeepChain"] -->|"v6/relations,causal,behavior"| API
+        ENGR["Engineering"] -->|"v6/engineering,recursive-map"| API
+        SESS["Sessions"] -->|"v6/sessions,persistence"| API
     end
 
-    subgraph 读写页
-        GW[Gateway ⭐] -->|v6/gateway/* CRUD| API
-        CHAT[Chat] -->|v3/session REST| API
-        SET[Settings] -->|v6/rules CRUD| API
-        META[Meta] -->|v6/meta scan,retrospect,versions| API
-        BEH[Behavior] -->|v6/behavior feedback,inertia| API
+    subgraph "读写页"
+        GW["Gateway ⭐"] -->|"v6/gateway/* CRUD"| API
+        CHAT["Chat"] -->|"v3/session REST"| API
+        SET["Settings"] -->|"v6/rules CRUD"| API
+        META["Meta"] -->|"v6/meta scan,retrospect,versions"| API
+        BEH["Behavior"] -->|"v6/behavior feedback,inertia"| API
     end
 
-    subgraph 占位页
-        TASK[TaskPlanning] -.->|无API| VOID[纯前端]
+    subgraph "占位页"
+        TASK["TaskPlanning"] -.->|"无API"| VOID["纯前端"]
     end
 
-    API -->|所有 LLM 调用| GW2[Gateway :8080]
-    GW2 -->|路由+断路| LLM[DeepSeek/OpenAI/...]
+    API -->|"所有 LLM 调用"| GW2["Gateway :8080"]
+    GW2 -->|"路由+断路"| LLM["DeepSeek/OpenAI/..."]
 ```
 
 ---
