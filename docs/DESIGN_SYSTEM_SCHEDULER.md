@@ -20,7 +20,7 @@
 ## 二、系统调度器架构
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph INPUT["事件源"]
         CMD["用户Command<br/>(发消息/修改/反馈)"]
         TIMER["定时器<br/>(5min静默/30s Checkpoint)"]
