@@ -255,6 +255,23 @@ class CognitiveRuntimeEngine:
                     except Exception as e:
                         logger.debug("Dynamic graph skipped: %s", e)
 
+                # P1: EventScheduler + CausalTracker + GradedDegradation + MetaSelfRepair
+                try:
+                    from core.agent.v4.scheduler.p1_runtime import (
+                        EventScheduler, CausalTracker, GradedDegradation, MetaSelfRepair
+                    )
+                    self._event_scheduler = EventScheduler()
+                    self._causal_tracker = CausalTracker()
+                    self._degradation = GradedDegradation()
+                    self._meta_repair = MetaSelfRepair()
+                    self._event_scheduler.auto_schedule_checkpoint()
+                    self._event_scheduler.auto_schedule_scans()
+                except Exception:
+                    self._event_scheduler = None
+                    self._causal_tracker = None
+                    self._degradation = None
+                    self._meta_repair = None
+
                 logger.info("Engine started")
         except Exception as e:
             self._mind = None
@@ -1361,6 +1378,17 @@ class CognitiveRuntimeEngine:
 
     def _feed_profile(self, text: str, response: str):
         """LLM-coordinated ProfileSignalFilter. Falls back to Trace signals."""
+        # P1: Scheduler tick + degradation
+        if hasattr(self, '_event_scheduler') and self._event_scheduler:
+            try:
+                self._event_scheduler.tick(is_silent=not text)
+            except Exception: pass
+        if hasattr(self, '_degradation') and self._degradation:
+            try:
+                pending = getattr(getattr(self, '_async_dispatch', None), 'pending', lambda: 0)()
+                self._degradation.assess(pending)
+            except Exception: pass
+
         if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
             return
         if not hasattr(self, '_convergence_engine') or self._convergence_engine is None:
