@@ -239,7 +239,9 @@ async def post_event(req: EventRequest):
         kind=req.kind,
         payload=req.payload,
     )
-    llm_response = _engine.on_event(event_ir)
+    llm_response = await asyncio.get_event_loop().run_in_executor(
+        None, _engine.on_event, event_ir
+    )
 
     # Ack
     _event_log.ack_event(req.event_id)
