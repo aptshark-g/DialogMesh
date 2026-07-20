@@ -1821,12 +1821,24 @@ async def v3_send_message(session_id: str, req: Request):
     """Send a message in a session (frontend compatibility)."""
     body = await req.json()
     text = body.get("content", "")
+    provider = body.get("provider")
+    model = body.get("model")
     try:
-        r = await post_event(EventRequest(
+        evt = EventRequest(
             text=text, source="user", session_id=session_id,
             event_id=f"v3_{session_id}_{int(time.time())}",
-        ))
-        # Extract reply from engine response
+        )
+        # Switch provider if requested
+        if provider and model:
+            try:
+                from core.agent.llm_providers.openai_provider import OpenAIProvider
+                _engine._llm_provider = OpenAIProvider(provider, {
+                    "base_url": f"http://127.0.0.1:8080/v1",
+                    "api_key": "not-needed",
+                    "model": model,
+                })
+            except Exception: pass
+        r = await post_event(evt)
         reply = ""
         if isinstance(r, dict):
             reply = r.get("reply", r.get("response", r.get("text", str(r)[:500])))

@@ -34,7 +34,8 @@ export function ChatPage() {
     setIsThinking(true);
 
     try {
-      const resp = await sendMessage(sessionId, content);
+      const resp = await sendMessage(sessionId, content,
+        activeProvider?.name, activeProvider?.model);
       const reply = resp.content || '(no reply)';
       const aiMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'assistant', content: reply, timestamp: Date.now() };
       setMessages(prev => [...prev, aiMsg]);

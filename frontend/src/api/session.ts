@@ -31,10 +31,13 @@ export function createSession(): Promise<CreateSessionResponse> {
   return apiFetch<CreateSessionResponse>('/v3/session', { method: 'POST' });
 }
 
-export function sendMessage(sessionId: string, content: string): Promise<SendMessageResponse> {
+export function sendMessage(sessionId: string, content: string, provider?: string, model?: string): Promise<SendMessageResponse> {
+  const body: any = { content };
+  if (provider) body.provider = provider;
+  if (model) body.model = model;
   return apiFetch<SendMessageResponse>(`/v3/session/${sessionId}/message`, {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   });
 }
 
