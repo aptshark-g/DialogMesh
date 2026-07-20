@@ -6,10 +6,20 @@ import { createSession, sendMessage } from '../api/session';
 import type { ProviderInfo } from '../components/ProviderSelector';
 
 export function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('dm_chat_msgs') || '[]'); } catch { return []; }
+  });
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    sessionStorage.getItem('dm_chat_sid')
+  );
+
+  // Persist chat state across page navigation
+  useEffect(() => {
+    sessionStorage.setItem('dm_chat_msgs', JSON.stringify(messages.slice(-50)));
+    if (sessionId) sessionStorage.setItem('dm_chat_sid', sessionId);
+  }, [messages, sessionId]);
   const [activeProvider, setActiveProvider] = useState<ProviderInfo | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'connecting', latencyMs: null, lastError: null,
