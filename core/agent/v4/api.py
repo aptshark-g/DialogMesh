@@ -1745,6 +1745,14 @@ async def monitor_errors():
     """Recent errors only."""
     return {"errors": get_interaction_monitor().errors(30)}
 
+
+@app.get("/v6/monitor/dashboard")
+async def monitor_dashboard():
+    """HTML mini-dashboard — live API monitoring."""
+    from starlette.responses import HTMLResponse
+    mon = get_interaction_monitor()
+    return HTMLResponse(mon.dashboard_html())
+
 if __name__ == "__main__":
 
     serve()
