@@ -10,7 +10,7 @@ providers:
   - name: deepseek
     kind: openai_compatible
     base_url: https://api.deepseek.com
-    api_key: 
+    api_key: sk-20d76b2a00314beabb73dd8ab9d5743d
     models:
       - deepseek-v4-flash
       - deepseek-v4-pro
