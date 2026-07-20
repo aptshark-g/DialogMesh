@@ -45,32 +45,37 @@ class StructuralSignalExtractor:
         return signals
 
     def extract_ns_from_text(self, text: str) -> Tuple[Optional[float], float]:
-        """N/S score from content abstraction level.
+        """N/S score from content abstraction level. EMA-smoothed.
         
         Returns (ns_score, confidence).
         ns_score > 0.5 = N (intuitive/abstract)
         ns_score ≤ 0.5 = S (sensing/concrete)
         """
-        # Fast: cache hit
         h = hash(text) % 10000
         if h in self._ns_cache:
             return self._ns_cache[h], 0.6
 
-        # Fast heuristic: count abstract vs concrete signal words
         abstract = {"概念", "理论", "模式", "框架", "本质", "抽象", "假设",
-                    "推测", "想象", "可能", "潜在", "隐含", "系统", "结构"}
+                    "推测", "想象", "可能", "潜在", "隐含", "系统", "结构",
+                    "设计", "架构", "哲学", "逻辑", "关系", "推断"}
         concrete = {"具体", "实际", "操作", "步骤", "数据", "事实", "经验",
-                    "细节", "实现", "写", "做", "跑", "测", "看到", "听到"}
+                    "细节", "实现", "写", "做", "跑", "测", "看到", "听到",
+                    "代码", "测试", "运行", "配置", "文件", "函数"}
         
         abstract_count = sum(1 for w in abstract if w in text)
         concrete_count = sum(1 for w in concrete if w in text)
         total = abstract_count + concrete_count
         
         if total == 0:
-            return None, 0.0  # insufficient signal
+            return None, 0.0
         
-        ns_score = abstract_count / total
-        confidence = min(0.5, total / 10.0)  # more words = more confidence
+        raw_score = abstract_count / total
+        # EMA smooth with previous score
+        prev = getattr(self, '_ns_ema', 0.5)
+        self._ns_ema = 0.3 * raw_score + 0.7 * prev  # heavy smoothing
+        ns_score = self._ns_ema
+        
+        confidence = min(0.5, total / 10.0)
         self._ns_cache[h] = ns_score
         return ns_score, confidence
 

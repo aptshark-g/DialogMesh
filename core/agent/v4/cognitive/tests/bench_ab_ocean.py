@@ -44,16 +44,22 @@ eng.start()
 # Force-init discourse tree + behavior discovery (not auto in bench mode)
 if not getattr(eng, '_discourse_tree', None):
     try:
-        from core.agent.v4.discourse.manager import DiscourseTreeManager
-        eng._discourse_tree = DiscourseTreeManager()
+        from core.agent.discourse_block_tree.manager import DiscourseTreeManager
+        eng._discourse_tree = type('DummyDT', (), {
+            '_trees': {}, 'blocks': {}, '_fork_count': 0
+        })()
+        print("  DiscourseTree initialized (dummy for bench)")
     except Exception as e:
         print(f"  DiscourseTree init skipped: {e}")
+        eng._discourse_tree = None
 if not getattr(eng, '_behavior_discovery', None):
     try:
         from core.agent.v4.cognitive.behavior_discovery import BehaviorDiscovery
         eng._behavior_discovery = BehaviorDiscovery()
+        print("  BehaviorDiscovery initialized")
     except Exception as e:
         print(f"  BehaviorDiscovery init skipped: {e}")
+        eng._behavior_discovery = None
 # Show loaded profile
 ocean = getattr(getattr(eng, '_ocean_analyst', None), 'profile', None)
 if ocean and ocean.turn_count > 0:
