@@ -1,88 +1,62 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ChatPanel from '../components/ChatPanel';
-import { useChat } from '../hooks/useChat';
+import type { ChatMessage } from '../types/api';
 import type { ConnectionState } from '../types/ui';
-import type { V4WebSocketEvent } from '../types/api';
-import { getV4WsUrl } from '../api/v4';
-
-const WS_URL = getV4WsUrl();
+import { createSession, sendMessage } from '../api/session';
 
 export function ChatPage() {
-  const {
-    messages,
-    isThinking,
-    thinkingSteps,
-    error,
-    handleUserMessage,
-    handleWebSocketEvent,
-    clearError,
-    clearMessages,
-  } = useChat();
-
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>({
-    status: 'closed',
-    latencyMs: null,
-    lastError: null,
+    status: 'connecting', latencyMs: null, lastError: null,
   });
 
-  const [reconnectCounter, setReconnectCounter] = useState(0);
-
-  const connectWs = useCallback(() => {
-    const ws = new WebSocket(WS_URL);
-
-    ws.onopen = () => {
-      setConnectionState({ status: 'open', latencyMs: null, lastError: null });
-    };
-
-    ws.onclose = () => {
-      setConnectionState(prev => ({ ...prev, status: 'closed' }));
-    };
-
-    ws.onerror = () => {
-      setConnectionState(prev => ({
-        ...prev,
-        status: 'error',
-        lastError: 'WebSocket 连接错误',
-      }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as V4WebSocketEvent;
-        if (data.event_type !== 'HEARTBEAT') {
-          handleWebSocketEvent(data);
-        }
-      } catch {
-        // ignore non-JSON
-      }
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [handleWebSocketEvent]);
-
   useEffect(() => {
-    const cleanup = connectWs();
-    return cleanup;
-  }, [connectWs, reconnectCounter]);
-
-  const handleReconnect = useCallback(() => {
-    setConnectionState({ status: 'connecting', latencyMs: null, lastError: null });
-    setReconnectCounter(c => c + 1);
+    createSession()
+      .then(resp => {
+        setSessionId(resp.session_id);
+        setConnectionState({ status: 'open', latencyMs: null, lastError: null });
+      })
+      .catch(err => {
+        setConnectionState({ status: 'error', latencyMs: null, lastError: err.message });
+      });
   }, []);
+
+  const handleUserMessage = useCallback(async (content: string) => {
+    if (!sessionId || !content.trim()) return;
+
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
+    setIsThinking(true);
+
+    try {
+      const resp = await sendMessage(sessionId, content);
+      const reply = resp.content || '(no reply)';
+      const aiMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'assistant', content: reply, timestamp: Date.now() };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (err: any) {
+      setError(err.message || '发送失败');
+    } finally {
+      setIsThinking(false);
+    }
+  }, [sessionId]);
+
+  const clearError = useCallback(() => setError(null), []);
+  const clearMessages = useCallback(() => setMessages([]), []);
 
   return (
     <div className="h-full flex flex-col">
       <ChatPanel
         messages={messages}
         isThinking={isThinking}
-        thinkingSteps={thinkingSteps}
+        thinkingSteps={[]}
         error={error}
         connectionState={connectionState}
         onSendMessage={handleUserMessage}
         onClearError={clearError}
-        onReconnect={handleReconnect}
+        onReconnect={() => window.location.reload()}
         onClearMessages={clearMessages}
       />
     </div>
