@@ -1701,7 +1701,8 @@ async def v6_ttl_tick():
 @app.get("/v6/audit")
 async def v6_audit(category: str = "", action: str = "", limit: int = 50):
     """Unified audit trail: all user + system operations."""
-    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    if not _engine or not hasattr(_engine, '_audit_trail') or _engine._audit_trail is None:
+        return {"records": [], "total_operations": 0, "by_category": {}, "by_action": {}}
     records = _engine._audit_trail.query(category=category, action=action, limit=limit)
     return {
         "records": [{"ts": r.ts, "category": r.category, "action": r.action,
@@ -1713,7 +1714,8 @@ async def v6_audit(category: str = "", action: str = "", limit: int = 50):
 @app.get("/v6/audit/recent")
 async def v6_audit_recent():
     """Recent user actions (frontend: 'what did I just do?')."""
-    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    if not _engine or not hasattr(_engine, '_audit_trail') or _engine._audit_trail is None:
+        return {"actions": []}
     records = _engine._audit_trail.recent_user_actions(20)
     return {"actions": [{"ts": r.ts, "category": r.category, "action": r.action,
                           "target": r.target} for r in records]}
@@ -1721,7 +1723,8 @@ async def v6_audit_recent():
 @app.get("/v6/audit/history")
 async def v6_audit_history(days: int = 7):
     """Audit activity trend over N days."""
-    if not _engine or not hasattr(_engine, '_audit_trail'): raise HTTPException(503)
+    if not _engine or not hasattr(_engine, '_audit_trail') or _engine._audit_trail is None:
+        return {}
     return _engine._audit_trail.history(days)
 
 @app.get("/v6/monitor/interactions")
