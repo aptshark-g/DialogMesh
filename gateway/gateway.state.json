@@ -1,21 +1,9 @@
 {
   "version": 1,
-  "saved_at": "2026-07-20T01:07:34.3003411+08:00",
+  "saved_at": "2026-07-20T12:11:09.215955+08:00",
   "providers": [
     {
       "name": "kimi",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
-      "name": "openrouter",
       "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
@@ -51,18 +39,6 @@
       "token_completion": 0
     },
     {
-      "name": "ollama",
-      "kind": "ollama",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
-    {
       "name": "anthropic",
       "kind": "openai_compatible",
       "base_url": "",
@@ -77,6 +53,30 @@
     {
       "name": "groq",
       "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "openrouter",
+      "kind": "openai_compatible",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
       "base_url": "",
       "api_key": "",
       "models": null,

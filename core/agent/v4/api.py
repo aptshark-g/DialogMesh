@@ -13,11 +13,61 @@ import time, logging, os, json
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
 from core.agent.v4.event_ir import EventIR
 from core.agent.v4.api_event_log import EventLog
+
+# ══════════ P0 Security: Input validation + Auth + Key masking ══════════
+
+# API key mask for logging
+import re
+
+class APIKeyMaskFilter(logging.Filter):
+    """Redact API keys from log messages."""
+    _PATTERNS = [
+        (re.compile(r'(api_key["\s:=]+)([a-zA-Z0-9_-]{20,})', re.I), r'\1[REDACTED]'),
+        (re.compile(r'(Bearer\s+)([a-zA-Z0-9_-]{20,})'), r'\1[REDACTED]'),
+        (re.compile(r'(sk-[a-zA-Z0-9]{20,})'), r'[REDACTED_KEY]'),
+    ]
+    def filter(self, record):
+        msg = record.getMessage()
+        for pat, repl in self._PATTERNS:
+            msg = pat.sub(repl, msg)
+        record.msg = msg
+        return True
+
+logging.getLogger().addFilter(APIKeyMaskFilter())
+
+# Bearer token auth — P0 minimum viable
+import os as _os
+AUTH_TOKEN = _os.environ.get("DM_AUTH_TOKEN", "dev-token")
+ADMIN_TOKEN = _os.environ.get("DM_ADMIN_TOKEN", "admin-token")
+
+def require_auth(request):
+    """Minimal Bearer token check."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "): return False
+    token = auth[7:]
+    return token in (AUTH_TOKEN, ADMIN_TOKEN)
+
+def require_admin(request):
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "): return False
+    return auth[7:] == ADMIN_TOKEN
+
+# Text size limits
+MAX_EVENT_TEXT = 10_000   # 10KB per event
+MAX_INSPECT_DEPTH = 3
+MAX_SESSION_RESULTS = 100
+
+# Input sanitizer
+def sanitize_path(path: str) -> str:
+    """Reject path traversal attempts."""
+    if ".." in path or path.startswith("/"):
+        raise HTTPException(400, "Invalid path: .. not allowed")
+    return path.replace("\\", "/").strip()
 from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
 from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
 from core.agent.v4.api_viz_edit import router as viz_edit_router, init as viz_edit_init
@@ -26,7 +76,21 @@ from core.agent.v4.api_annotate import router as annotate_router, init as annota
 logger = logging.getLogger(__name__)
 
 # ---- Global state ----
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 app = FastAPI(title="DialogMesh v6 API", version="1.0")
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """P0: Bearer token check on all endpoints except health/ws/docs."""
+    public_paths = ("/v4/health", "/docs", "/openapi.json", "/v4/ws")
+    if any(request.url.path.startswith(p) for p in public_paths):
+        return await call_next(request)
+    if not require_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
 _engine: Optional[CognitiveRuntimeEngine] = None
 _event_log: Optional[EventLog] = None
 
@@ -38,19 +102,33 @@ app.include_router(viz_edit_router)
 app.include_router(annotate_router)
 
 
-# ---- Models ----
+# ---- Models (with P0 validators) ----
 
 class EventRequest(BaseModel):
-    event_id: str
-    kind: str = "dialog.message"
-    payload: dict = {}
-    trace_id: str = ""
+    event_id: str = Field(max_length=128)
+    kind: str = Field(default="dialog.message", max_length=64)
+    payload: dict = Field(default={}, max_length=MAX_EVENT_TEXT)
+    trace_id: str = Field(default="", max_length=64)
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload_size(cls, v):
+        import json
+        size = len(json.dumps(v, ensure_ascii=False))
+        if size > MAX_EVENT_TEXT:
+            raise ValueError(f"Payload too large: {size} > {MAX_EVENT_TEXT}")
+        return v
 
 
 class IngestRequest(BaseModel):
-    source_path: str
-    content: str = ""
-    file_type: str = "markdown"
+    source_path: str = Field(max_length=512)
+    content: str = Field(default="", max_length=100_000)
+    file_type: str = Field(default="markdown", max_length=32)
+
+    @field_validator("source_path")
+    @classmethod
+    def sanitize_source(cls, v):
+        return sanitize_path(v)
 
 
 class StatusResponse(BaseModel):
@@ -518,9 +596,9 @@ async def v6_objects():
 # ── Profile editing (user correction → feedback) ──
 
 class ProfileEditRequest(BaseModel):
-    dim: str = ""
-    value: float = 0.5
-    mbti: str = ""
+    dimension: str = Field(max_length=8)     # C, NC, MS, CL, etc.
+    value: float = Field(ge=0.0, le=1.0)     # OCEAN ranges
+    reason: str = Field(default="", max_length=200)
 
 
 @app.put("/v6/profile")
@@ -534,16 +612,16 @@ async def v6_profile_edit(req: ProfileEditRequest):
     journal = getattr(_engine, '_correction_journal', None)
 
     # Update OCEAN dimension
-    if req.dim and ocean:
+    if req.dimension and ocean:
         dims = getattr(ocean, 'dims', {})
-        if req.dim in dims:
-            old = dims[req.dim]
-            dims[req.dim] = req.value
-            result["updated"].append(f"{req.dim}: {old:.2f} → {req.value:.2f}")
+        if req.dimension in dims:
+            old = dims[req.dimension]
+            dims[req.dimension] = req.value
+            result["updated"].append(f"{req.dimension}: {old:.2f} → {req.value:.2f}")
             # Journal the correction
             if journal:
-                journal.record(req.dim, old, req.value, reason="user_edit", turn=getattr(_engine, '_turn_counter', 0))
-                result["journal"].append(req.dim)
+                journal.record(req.dimension, old, req.value, reason="user_edit", turn=getattr(_engine, '_turn_counter', 0))
+                result["journal"].append(req.dimension)
 
     # Update MBTI → feed back to ABC rules + journal
     if req.mbti and ocean:
