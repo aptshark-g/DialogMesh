@@ -1,19 +1,7 @@
 {
   "version": 1,
-  "saved_at": "2026-07-21T01:09:07.3068265+08:00",
+  "saved_at": "2026-07-21T01:14:07.3060479+08:00",
   "providers": [
-    {
-      "name": "deepseek",
-      "kind": "openai_compatible",
-      "base_url": "",
-      "api_key": "",
-      "models": null,
-      "enabled": true,
-      "requests": 0,
-      "errors": 0,
-      "token_prompt": 0,
-      "token_completion": 0
-    },
     {
       "name": "openai",
       "kind": "openai_compatible",
@@ -101,6 +89,18 @@
     {
       "name": "ollama",
       "kind": "ollama",
+      "base_url": "",
+      "api_key": "",
+      "models": null,
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "deepseek",
+      "kind": "openai_compatible",
       "base_url": "",
       "api_key": "",
       "models": null,

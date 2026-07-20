@@ -150,6 +150,10 @@ class OpenAIProvider(LLMProvider):
             kwargs["response_format"] = {"type": "json_object"}
 
         try:
+            import logging
+            logging.getLogger('openai_provider').info(
+                'LLM call: model=%%s base_url=%%s provider=%%s',
+                self.model, self.base_url, self.name)
             response = self._wrap_with_timeout(
                 client.chat.completions.create,
                 request.timeout_ms,

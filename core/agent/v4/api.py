@@ -1820,36 +1820,29 @@ async def v3_create_session():
 
 @app.post("/v3/session/{session_id}/message")
 async def v3_send_message(session_id: str, req: Request):
-    """Send a message through the full cognitive pipeline."""
+    """Send a message through gateway — direct HTTP call."""
     body = await req.json()
     text = body.get("content", "")
     try:
-        # Go through full engine pipeline (profile + discourse + context + LLM)
-        evt = EventRequest(
-            text=text, source="user", session_id=session_id,
-            event_id=f"v3_{session_id}_{int(time.time())}",
+        # Direct gateway call (bypasses engine for now)
+        import urllib.request
+        api_data = json.dumps({
+            "model": "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 1000,
+        })
+        gw_req = urllib.request.Request(
+            "http://127.0.0.1:8080/v1/chat/completions",
+            api_data.encode(),
+            {"Content-Type": "application/json", "Authorization": "Bearer not-needed"}
         )
-        r = await post_event(evt)
-        reply = ""
-        if isinstance(r, dict):
-            reply = r.get("response") or r.get("reply") or ""
-        if not reply:
-            # Monitoring: dump engine state on failure
-            llm_metrics = r.get("llm_metrics", {}) if isinstance(r, dict) else {}
-            engine_status = "LLM provider: "
-            if _engine:
-                engine_status += "yes" if _engine._llm_provider else "NO PROVIDER"
-                engine_status += f", running={_engine._running}"
-            logger.error(
-                "V3 message empty: engine=%s metrics=%s keys=%s",
-                engine_status, llm_metrics,
-                list(r.keys()) if isinstance(r, dict) else type(r).__name__
-            )
-            reply = f"[引擎无响应] {engine_status} metrics={llm_metrics}"
-        return {"content": str(reply), "session_id": session_id, "status": "accepted"}
+        r = urllib.request.urlopen(gw_req, timeout=30)
+        gw_body = json.loads(r.read())
+        content = gw_body.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return {"content": content or "(empty)", "session_id": session_id, "status": "accepted"}
     except Exception as e:
         logger.exception("V3 message failed")
-        return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
+        return {"content": f"[Gateway Error] {e}", "session_id": session_id, "status": "error"}
 
 
 @app.get("/v3/session/{session_id}/history")
