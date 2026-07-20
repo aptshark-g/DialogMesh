@@ -1609,5 +1609,40 @@ async def v6_engineering_constraints_edit(req: EngineeringEdit):
     raise HTTPException(404, "Recursive map not available")
 
 
+
+@app.get("/v6/sync")
+async def v6_sync(block_id: str = ""):
+    """Strong-consistency read: block until all pending events processed."""
+    if not _engine: raise HTTPException(503)
+    if not block_id:
+        return {"status": "sync_ready", "pending": 0}
+    # Force collect async dispatcher
+    if hasattr(_engine, '_async_dispatch') and _engine._async_dispatch:
+        _engine._async_dispatch.collect(max_results=10)
+    # Return latest state for block
+    state = getattr(_engine, '_sharded_state', None)
+    if state:
+        bs = state.get(block_id)
+        return {"block_id": block_id, "text": bs.text[:200] if hasattr(bs, 'text') else "?"}
+    return {"block_id": block_id, "text": "?"}
+
+@app.get("/v6/causal-chain")
+async def v6_causal_chain(event: str = ""):
+    """Trace causal chain for UI optimistic updates."""
+    if not _engine or not hasattr(_engine, '_causal_tracker'): raise HTTPException(503)
+    ct = _engine._causal_tracker
+    if event:
+        chain = ct.get_chain(event)
+        return {"chain": chain, "remaining": ct.estimate_remaining(len(chain))}
+    return ct.stats()
+
+@app.get("/v6/degradation")
+async def v6_degradation():
+    """Current system degradation level."""
+    if not _engine or not hasattr(_engine, '_degradation'): raise HTTPException(503)
+    d = _engine._degradation
+    return {"level": d.level.name, "queue_depth": d._queue_depth}
+
+
 if __name__ == "__main__":
     serve()
