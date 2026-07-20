@@ -280,3 +280,5 @@
 {"ts": 1784554270.4823475, "method": "GET", "path": "/v6/trace", "status": 200, "duration_ms": 3.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
 {"ts": 1784554270.4833484, "method": "GET", "path": "/v6/abc", "status": 200, "duration_ms": 4.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
 {"ts": 1784554270.484348, "method": "GET", "path": "/v6/mind", "status": 200, "duration_ms": 4.01, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784554510.336354, "method": "GET", "path": "/v6/rules", "status": 200, "duration_ms": 3.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784554510.4958758, "method": "PUT", "path": "/v6/rules", "status": 422, "duration_ms": 1.02, "client_ip": "127.0.0.1", "error": null, "gateway": false}

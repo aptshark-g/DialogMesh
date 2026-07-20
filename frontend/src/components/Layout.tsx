@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -37,7 +38,9 @@ export function Layout() {
                 className="h-full w-full overflow-y-auto"
               >
                 <Suspense fallback={<PageLoader />}>
-                  <Outlet />
+                  <ErrorBoundary>
+                    <Outlet />
+                  </ErrorBoundary>
                 </Suspense>
               </motion.div>
             </AnimatePresence>
