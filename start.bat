@@ -38,7 +38,7 @@ goto :skip_api
 
 echo [2/3] Starting DialogMesh API ... http://localhost:8000
 :: /k keeps window open to show errors if API crashes
-start "DialogMesh API" cmd /k ".venv-test\Scripts\python scripts\start_server.py --no-gateway"
+start "DialogMesh API" cmd /k "python scripts\start_server.py --no-gateway"
 echo [INFO] Waiting 3 seconds for API...
 timeout /t 3 /nobreak >nul
 

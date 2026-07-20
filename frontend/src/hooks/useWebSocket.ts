@@ -276,7 +276,9 @@ export function useWebSocket(): UseWebSocketReturn {
     try {
       const response: CreateSessionResponse = await restRef.current.createSession();
       store.initializeSession(response);
-      connect(response.session_id, response.ws_url);
+      if (response.ws_url) {
+        connect(response.session_id, response.ws_url);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '创建会话失败';
       store.setError(message);

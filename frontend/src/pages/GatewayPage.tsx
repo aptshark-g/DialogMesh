@@ -141,7 +141,7 @@ export function GatewayPage() {
       for (const p of list) {
         if (!next[p.name]) {
           next[p.name] = {
-            apiKey: p.key_configured ? '(已配置)' : '',
+            apiKey: p.configured ? '( 已配置 )' : '',
             baseUrl: p.base_url || '',
           };
         }
