@@ -15,7 +15,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATEWAY_EXE = os.path.join(PROJECT_ROOT, "gateway", "gateway.exe")
 
 
-def start_gateway() -> Optional[subprocess.Popen]:
+def start_gateway():
     """Launch switch gateway as a subprocess if it's not already running."""
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -31,23 +31,23 @@ def start_gateway() -> Optional[subprocess.Popen]:
         print("[Gateway] Binary not found, skipping (use --no-gateway to suppress)")
         return None
 
-    print(f"[Gateway] Starting {GATEWAY_EXE}...")
+    print("[Gateway] Starting %s..." % GATEWAY_EXE)
     proc = subprocess.Popen(
         [GATEWAY_EXE],
         cwd=os.path.dirname(GATEWAY_EXE),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    time.sleep(2)  # wait for startup
+    time.sleep(2)
     return proc
 
 
 if __name__ == "__main__":
     no_gateway = "--no-gateway" in sys.argv
 
+    gw_proc = None
     if not no_gateway:
         gw_proc = start_gateway()
     else:
-        gw_proc = None
         print("[Gateway] Skipped (--no-gateway)")
 
     try:
