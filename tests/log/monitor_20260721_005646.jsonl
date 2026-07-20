@@ -1,0 +1,6 @@
+{"ts": 1784566606.5977128, "method": "GET", "path": "/v4/health", "status": 200, "duration_ms": 4.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784566606.6047127, "method": "POST", "path": "/v3/session", "status": 200, "duration_ms": 2.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784566606.60872, "method": "POST", "path": "/v3/session/2d6e1fcc-0f4/message", "status": 200, "duration_ms": 11616.33, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784566618.2270553, "method": "GET", "path": "/v6/profile", "status": 200, "duration_ms": 2.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784566618.2450993, "method": "POST", "path": "/v3/session/2d6e1fcc-0f4/message", "status": 200, "duration_ms": 1334.22, "client_ip": "127.0.0.1", "error": null, "gateway": false}
+{"ts": 1784566619.583325, "method": "GET", "path": "/v4/health", "status": 200, "duration_ms": 1.0, "client_ip": "127.0.0.1", "error": null, "gateway": false}

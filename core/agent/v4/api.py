@@ -1830,8 +1830,11 @@ async def v3_send_message(session_id: str, req: Request):
         r = await post_event(evt)
         reply = ""
         if isinstance(r, dict):
-            reply = r.get("response") or r.get("reply") or str(r)[:500]
-        return {"content": str(reply) if reply else "[引擎无响应]", "session_id": session_id, "status": "accepted"}
+            # Engine returns {"response": text, "status":"accepted", ...}
+            reply = r.get("response") or r.get("reply") or ""
+        if not reply:
+            reply = "[引擎无响应]"
+        return {"content": str(reply), "session_id": session_id, "status": "accepted"}
     except Exception as e:
         logger.exception("V3 message failed")
         return {"content": f"[Error] {e}", "session_id": session_id, "status": "error"}
