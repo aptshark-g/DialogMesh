@@ -1816,7 +1816,7 @@ async def v3_create_session():
     """Create a new chat session (frontend compatibility)."""
     import uuid
     sid = str(uuid.uuid4())[:12]
-    return {"session_id": sid, "ws_url": "", "created": time.time()}
+    return {"session_id": sid, "ws_url": f"ws://127.0.0.1:8000/v4/ws", "created": time.time()}
 
 @app.post("/v3/session/{session_id}/message")
 async def v3_send_message(session_id: str, req: Request):
