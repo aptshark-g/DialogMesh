@@ -554,6 +554,17 @@ export function GatewayPage() {
                     <button
                       onClick={() => handleRemoveProvider(provider.name)}
                       disabled={removingProvider === provider.name}
+                                          <button
+                      onClick={() => handleToggleRouting(provider.name, routingPool[provider.name] ? 'remove' : 'add')}
+                      disabled={routingLoading === provider.name}
+                      className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                    >
+                      <Shuffle className="h-3.5 w-3.5" />
+                      {routingPool[provider.name] ? '移出路由' : '加入路由'}
+                    </button>
+                    <button
+                      onClick={() => handleRemoveProvider(provider.name)}
+                      disabled={removingProvider === provider.name}
                       className="ml-auto flex items-center gap-1 rounded-lg border border-status-error/30 px-3 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"
                     >
                       {removingProvider === provider.name ? (
