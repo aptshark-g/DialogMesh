@@ -904,6 +904,11 @@ class RuleBasedPCR(IPCRRouter):
         self._telemetry = TelemetryCollector()
         self._config: Dict[str, Any] = {}
         self._health = PCRHealthStatus.WARMING
+        self._llm_provider = None
+
+    def set_llm_provider(self, provider):
+        self._llm_provider = provider
+        self._identifier._llm_provider = provider
 
     @property
     def name(self) -> str:
