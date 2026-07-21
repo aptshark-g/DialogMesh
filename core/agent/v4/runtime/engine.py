@@ -1152,8 +1152,41 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.debug("CausalPlanner context injection failed: %s", e)
 
+            # ---- Context Compression (incremental) ----
+            if self._last_context and self._last_context.entries:
+                try:
+                    from core.agent.window.context_window_manager import ContextWindowManager
+                    cwm = ContextWindowManager(max_tokens=self._world_params.compiler_token_budget)
+                    compressed = cwm.compress(self._last_context)
+                    if compressed:
+                        self._last_context = compressed
+                except Exception as e:
+                    logger.debug('Context compression skipped: %s', e)
+
+            # ---- Pruner ----
+            if self._last_context and self._last_context.entries:
+                try:
+                    from core.agent.v4.context.pruner import Pruner
+                    pruner = Pruner()
+                    self._last_context = pruner.prune(self._last_context, max_entries=50)
+                except Exception as e:
+                    logger.debug('Pruner skipped: %s', e)
+
             # ---- Semantic World Model additional context ----
             self._inject_semantic_world(event, text, perspectives)
+            # Context TTL decay
+            if self._last_context:
+                try:
+                    import time
+                    now = time.time()
+                    if not hasattr(self, '_context_created_at'):
+                        self._context_created_at = now
+                    age = now - self._context_created_at
+                    if age > 300:  # 5min TTL
+                        for e in self._last_context.entries:
+                            e.confidence *= max(0.1, 1.0 - (age - 300) / 3600)
+                except: pass
+
             # P3: v3 legacy module injection
             try:
                 from core.agent.v4.runtime.p3_resolver import P3Resolver
@@ -1161,12 +1194,21 @@ class CognitiveRuntimeEngine:
             except Exception:
                 pass
             # P1: SubgraphCompiler water-wave expansion from targets
+            # (also triggered by PCR LOGICAL_LEAP)
+            force_expand = False
+            if pcr_output and hasattr(pcr_output, 'noise_assessment') and pcr_output.noise_assessment:
+                for span in getattr(pcr_output.noise_assessment, 'spans', []):
+                    if getattr(span, 'noise_type', None) == 'logical_leap':
+                        force_expand = True
+                        break
             if self._world_objects and self._world_provider:
                 try:
                     from core.agent.v4.compiler.subgraph_compiler import SubgraphCompiler
                     compiler = SubgraphCompiler(graph=getattr(self._world_provider,'graph',None),
                                                semantic_index=getattr(self._world_provider,'index',None))
                     targets = self._find_targets_semantic(text, self._world_objects)
+                    if force_expand and not targets:
+                        targets = set(self._world_objects.keys()[:5])
                     if targets:
                         subgraph = compiler.expand(list(targets)[:3], max_depth=2, max_nodes=50)
                         if subgraph:
