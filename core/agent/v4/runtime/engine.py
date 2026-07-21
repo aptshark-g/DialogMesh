@@ -2242,6 +2242,7 @@ class CognitiveRuntimeEngine:
                 "success": result.metrics.success,
                 "provider": result.metrics.provider_name,
                 "model": result.metrics.model_id,
+                "error": result.metrics.error_type,
             }
             if result.metrics.success:
                 logger.debug(
