@@ -34,13 +34,14 @@ class ChatConnection {
   static loadMessages(): ChatMessage[] {
     try { return JSON.parse(sessionStorage.getItem(MSG_KEY) || '[]'); } catch { return []; }
   }
-
-  static saveMessages(msgs: ChatMessage[]) {
-    sessionStorage.setItem(MSG_KEY, JSON.stringify(msgs.slice(-100)));
-  }
-
+  static saveMessages(msgs: ChatMessage[]) { sessionStorage.setItem(MSG_KEY, JSON.stringify(msgs.slice(-100))); }
   static getSessionId(): string | null { return sessionStorage.getItem(SID_KEY); }
   static setSessionId(sid: string) { sessionStorage.setItem(SID_KEY, sid); }
+
+  loadMessages(): ChatMessage[] { return ChatConnection.loadMessages(); }
+  saveMessages(msgs: ChatMessage[]) { ChatConnection.saveMessages(msgs); }
+  getSessionId(): string | null { return ChatConnection.getSessionId(); }
+  setSessionId(sid: string) { ChatConnection.setSessionId(sid); }
 }
 
 export const chatConnection = new ChatConnection();
