@@ -1143,7 +1143,7 @@ class CognitiveRuntimeEngine:
         self._inject_conversation_history(event)
 
         # ---- Inject topic tree context (hierarchical discourse, backtracking) ----
-        self._inject_topic_tree_context(event)
+        self._inject_topic_tree_context(event, pcr_output)
 
         # ---- Inject CausalPlanner context (unified BehaviorGraph + CausalSubstrate) ----
         if self._causal_planner is not None and self._last_context is not None:
@@ -1401,7 +1401,7 @@ class CognitiveRuntimeEngine:
                             except: pass
         except Exception: pass
 
-    def _inject_topic_tree_context(self, current_event: EventIR) -> None:
+    def _inject_topic_tree_context(self, current_event: EventIR, pcr_output=None) -> None:
         if self._last_context is None:
             return
         from core.agent.v4.context.cross_domain_ir import IREntry
