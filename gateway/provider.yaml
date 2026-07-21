@@ -164,7 +164,7 @@ providers:
     model_aliases:
       small: nvidia/nemotron-3-nano-4b
       large: qwen/qwen3.5-9b
-    enabled: true
+    enabled: false
     max_concurrency: 3
     rate_limit_rpm: 30
     timeout_ms: 30000
