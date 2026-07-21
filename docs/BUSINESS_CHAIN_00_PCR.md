@@ -13,248 +13,310 @@
 
 ## 一、PCR 在 10 链中的位置
 
-```
-用户输入
-  │
-  ▼
-┌─────────────────────────────────────────────────┐
-│  PCR (第〇章) — 所有链的输入网关                   │
-│  ─────────────────────────────────            │
-│  Stage 1: ExpectationIdentifier                │
-│  Stage 2: NoiseSpanDetector (拓扑标记)          │
-│  Stage 3: ComplexityEstimator                  │
-│  Stage 4: CognitiveProfiler                    │
-│  Stage 5: StrategyDeriver                      │
-│                                                 │
-│  输出: PCROutput_v1                             │
-│    ├─ expectation    → 调控链01-04 (对话树策略)   │
-│    ├─ noise_spans    → 调控链02 (LLM回复cleanup)  │
-│    ├─ complexity     → 调控链01 (Context深度)     │
-│    ├─ cognitive      → 调控链08 (画像更新)        │
-│    └─ execution_mode → 调控链05 (行为预测开关)    │
-└─────────────────────────────────────────────────┘
-  │
-  ▼  8 条下游链接收 PCR 信号
+```mermaid
+graph TD
+    USER["用户输入"]
+
+    subgraph PCR["第〇章: PCR 预认知路由器"]
+        S1["Stage 1<br/>ExpectationIdentifier"]
+        S2["Stage 2<br/>NoiseSpanDetector<br/>⚠️ 拓扑标记"]
+        S3["Stage 3<br/>ComplexityEstimator"]
+        S4["Stage 4<br/>CognitiveProfiler"]
+        S5["Stage 5<br/>StrategyDeriver"]
+
+        S1 --> S2 --> S3 --> S4 --> S5
+
+        OUT["PCROutput_v1<br/>expectation/noise_spans/complexity/cognitive/execution_mode"]
+        S5 --> OUT
+    end
+
+    USER --> S1
+
+    OUT -->|"expectation"| CH01["链01 对话树<br/>compile mode"]
+    OUT -->|"noise_spans"| CH02["链02 LLM回复<br/>input_corrections"]
+    OUT -->|"complexity"| CH01_SUB["链01 Context深度"]
+    OUT -->|"cognitive"| CH08["链08 画像<br/>TrackA注入"]
+    OUT -->|"execution_mode"| CH05["链05 行为链<br/>预测开关"]
+    OUT -->|"ambiguity"| CH09["链09 元认知<br/>Reconsider Signal"]
+    OUT -->|"logical_leap"| CH10["链10 子图<br/>水波扩展"]
 ```
 
 ---
 
 ## 二、5 阶段 Pipeline
 
-### Stage 1: ExpectationIdentifier (期望识别)
+```mermaid
+flowchart LR
+    INPUT["PCRInput_v1<br/>user_text + history"]
 
-```
-输入: user_text + history
-输出: expectation ∈ {TOOL, ADVISOR, COMPANION, UNKNOWN} + confidence
+    subgraph S1["Stage 1: ExpectationIdentifier"]
+        T0["Tier 0: 规则快路径<br/>0-2ms · 90%+"]
+        T1["Tier 1: 历史推断<br/>0-1ms · 5%"]
+        T2["Tier 2: LLM few-shot<br/>100-200ms · 5%"]
+        T0 -->|"confidence≥0.5"| EXP["TOOL/ADVISOR/<br/>COMPANION/UNKNOWN"]
+        T1 -->|"follow_markers"| EXP
+        T2 -->|"仅低conf触发"| EXP
+    end
 
-三层级联:
-  Tier 0 (0-2ms):   规则快路径 — 关键词模式匹配, 覆盖 90%+
-  Tier 1 (0-1ms):   历史推断 — follow_markers + 主题连续性
-  Tier 2 (100-200ms): LLM few-shot — 仅 confidence < 0.5 时触发
+    subgraph S2["Stage 2: NoiseSpanDetector ⚠️ 重设计"]
+        NSEM["N_semantic<br/>填充词·情绪密度"]
+        NSTR["N_structural<br/>语法异常·格式"]
+        NREF["N_referential<br/>三维:时间/指代/描述"]
+        NSEM --> FUSE["融合<br/>N=0.5Ns+0.3Nt+0.2Nr"]
+        NSTR --> FUSE
+        NREF --> FUSE
+        FUSE --> SPANS["NoiseSpan[]<br/>start_char/end_char<br/>type/severity/correction"]
+    end
 
-调控链路:
-  TOOL → 链01 CompileContext: fast mode, depth=1, skip DomainSelector
-  ADVISOR → 链01 CompileContext: deep mode, subgraph_expand=True
-  COMPANION → 链01 CompileContext: conversational mode, 末尾追加 ask_user 节点
-  UNKNOWN → 链09 MetaCognition: 触发 clarify 信号
-```
+    subgraph S3["Stage 3: ComplexityEstimator"]
+        YAML["YAML 配置表匹配"]
+        STEPS["步骤计数<br/>step_markers"]
+        DOMAINS["领域跨度<br/>matched_domains"]
+        YAML --> COMP["complexity_level<br/>0-1"]
+        STEPS --> COMP
+        DOMAINS --> COMP
+    end
 
-### Stage 2: NoiseSpanDetector (噪声拓扑标记) ⚠️ 重设计
+    subgraph S4["Stage 4: CognitiveProfiler"]
+        COG["cognitive_level"]
+        EXP_LEV["expertise_level"]
+        PREF["preferred_detail"]
+        TRAITS["cognitive_traits"]
+    end
 
-```
-⚠️ 原设计缺陷: 压扁为全局 noise_level: float → 丢信息
-✅ 修正方案: 输出 noise_spans: List[NoiseSpan]
+    subgraph S5["Stage 5: StrategyDeriver"]
+        MODE["execution_mode<br/>FAST_EXECUTE/CLARIFY/DEEP_RESEARCH"]
+        STYLE["prompt_style<br/>BRIEF/EXPLAIN/TUTORIAL/BALANCED"]
+        AMB["ambiguity_strategy<br/>AUTO/CONSERVATIVE/BALANCED"]
+        SUGG["suggested_next_actions"]
+    end
 
-NoiseSpan:
-  start_char, end_char: int
-  noise_type: TYPO | AMBIGUOUS_ANAPHORA | JARGON_ABUSE | 
-              UNRELATED_FLUFF | LOGICAL_LEAP | PROMPT_INJECTION_SUSPECT
-  severity: float (0-1)
-  suggested_correction: Optional[str]
-  reason: str
-
-三维模型 (保留):
-  N = α·Nsemantic + β·Nstructural + γ·Nreferential  (α=0.5, β=0.3, γ=0.2)
-  但这是内部计算——输出是 NoiseSpan 列表, 不是压扁的标量
-
-认知刷新豁免:
-  时间/指代/描述三维判别: 正常话题切换 ≠ 噪声
-  temporal_factor × (0.4·referential_dissonance + 0.6·discursive_shift)
-
-调控链路:
-  TYPO → 链02 LLM: input_corrections 字段, 自动纠偏实体提取
-  AMBIGUOUS_ANAPHORA → 链01: 强制 CLARIFICATION mode
-  PROMPT_INJECTION_SUSPECT → 链02 LLM: suppress标记, isolate span
-  LOGICAL_LEAP → 链10 Subgraph: 触发水波扩展
-```
-
-### Stage 3: ComplexityEstimator (复杂度评估)
-
-```
-输入: user_text + expectation
-输出: complexity_level: float (0-1)
-
-规则推导:
-  1. YAML 配置表匹配 (intent_complexity_map.yaml)
-  2. 步骤计数: step_markers → step_count × 0.10
-  3. 领域跨度: matched_domains × 0.15
-  4. 期望调整: TOOL×0.8, COMPANION×1.2
-
-调控链路:
-  complexity > 0.8 → 链01: max_sub_intents ↑
-  complexity < 0.2 → 链01: Fast Path 门控 (跳过 Stage 6-8)
-```
-
-### Stage 4: CognitiveProfiler (认知画像快速评估)
-
-```
-输出: CognitiveProfile_v1
-  ├─ cognitive_level: float
-  ├─ expertise_level: float
-  ├─ preferred_detail: float
-  └─ cognitive_traits: List[str]
-
-更新方式: 滑动窗口 EMA (指数移动平均)
-  EMA(t) = α·S(t) + (1-α)·EMA(t-1), α=0.3
-
-调控链路:
-  → 链08 Profile: 快速评估结果注入慢速完整评估
-  → 链05 Behavior: 画像偏置 → 主题匹配权重 (OCEAN→topic_weight)
-  → 链02 LLM: 控制系统指令风格
-```
-
-### Stage 5: StrategyDeriver (策略推导)
-
-```
-输入: expectation × noise × complexity × cognitive
-输出:
-  execution_mode: FAST_EXECUTE | CLARIFICATION | DEEP_RESEARCH | CONVERSATIONAL | BALANCED
-  prompt_style: BRIEF | EXPLANATORY | TUTORIAL | BALANCED
-  ambiguity_strategy: AGGRESSIVE_AUTO | CONSERVATIVE_ASK | BALANCED
-  suggested_next_actions: List[str]
-  should_attach_process: bool
-  should_refresh_analysis: bool
-
-决策矩阵 (可配置 YAML):
-                 TOOL      ADVISOR   COMPANION   UNKNOWN
-  低噪声低复杂  EXECUTE    RESEARCH  EXPLAIN     CLARIFY
-  低噪声高复杂  EXECUTE    RESEARCH  TUTORIAL    CLARIFY
-  高噪声低复杂  CLARIFY    BALANCED  BALANCED    CLARIFY
-  高噪声高复杂  CLARIFY    BALANCED  BALANCED    CLARIFY
+    INPUT --> S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> OUT["PCROutput_v1"]
 ```
 
 ---
 
-## 三、PCR → 8 链调控映射
+## 三、NoiseSpan 拓扑 (替代全局 noise_level)
 
-```
-链 01 (对话树):
-  expectation → compile mode (fast/deep/conversational)
-  complexity → Path 选择 (Fast/Async/Slow)
-  noise_spans.AMBIGUOUS → 强制 CLARIFICATION → 不 fork 新分支
+```mermaid
+graph TD
+    INPUT["用户输入: '帮我写个脚本dddd懂的都懂'"]
+    
+    INPUT --> S2["NoiseSpanDetector"]
 
-链 02 (LLM 回复):
-  noise_spans.TYPO → input_corrections → 自动纠偏
-  noise_spans.INJECTION → suppress 标记
-  prompt_style → 系统指令
-  execution_mode → max_tokens 调整
+    S2 --> SPAN1["NoiseSpan<br/>start=8 end=12<br/>type=TYPO<br/>severity=0.7<br/>correction='ddd'"]
+    S2 --> SPAN2["NoiseSpan<br/>start=13 end=17<br/>type=AMBIGUOUS_ANAPHORA<br/>severity=0.85<br/>reason='懂的都懂'指向不明"]
 
-链 03 (用户编辑):
-  (PCR 不参与编辑环节)
-
-链 04 (元认知 + 持久化):
-  expectation=UNKNOWN → 触发 clarify Signal
-  noise_level 异常 → 触发 Audit Signal
-
-链 05 (行为链):
-  cognitive_profile → 画像偏置 → topic匹配权重
-  execution_mode=FAST_EXECUTE → 跳过行为预测
-
-链 06 (关联链):
-  (PCR 不直接调控——关联链读对话树状态)
-
-链 07 (工程链):
-  complexity → max_sub_intents 映射
-
-链 08 (画像):
-  cognitive_profile → 快速评估结果注入慢速TrackA
-
-链 09 (元认知审核):
-  UNKNOWN + high_noise → 触发 reconsider Signal
-  noise_source 分类 → 针对性复盘
-
-链 10 (子图):
-  LOGICAL_LEAP noise → 触发水波扩展
-  DEEP_RESEARCH mode → subgraph_expand_all
+    SPAN1 -->|"TYPO"| FIX1["链02 LLM<br/>自动纠偏 'ddd'→clear"]
+    SPAN2 -->|"AMBIGUOUS"| FIX2["链01 对话树<br/>强制 CLARIFICATION<br/>列出3个可能目标"]
+    
+    SPAN2 --> NOPE["❌ 旧方案<br/>noise_level=0.3<br/>下游无法区分处理"]
 ```
 
----
+### NoiseSpan 类型 × 处理策略
 
-## 四、生命周期
+```mermaid
+graph LR
+    subgraph TYPES["6种噪声类型"]
+        TYPO["TYPO<br/>输入错字"]
+        AMB["AMBIGUOUS_ANAPHORA<br/>模糊指代"]
+        JARGON["JARGON_ABUSE<br/>过度术语"]
+        FLUFF["UNRELATED_FLUFF<br/>无关赘述"]
+        LEAP["LOGICAL_LEAP<br/>逻辑跳跃"]
+        INJECTION["PROMPT_INJECTION<br/>注入攻击"]
+    end
 
-```
-启动:
-  PCRLifecycleManager.initialize()
-    ├─ RuleBasedPCR 实例化
-    ├─ warm_up() — 预热缓存, 加载 YAML
-    ├─ FallbackEngine 启动
-    └─ TelemetryCollector 启动
+    subgraph ACTIONS["差异化下游处理"]
+        A1["suppress标记<br/>input_corrections"]
+        A2["强制CLARIFY mode<br/>列出候选目标"]
+        A3["简化系统指令<br/>plain language"]
+        A4["剪枝<br/>不送入LLM上下文"]
+        A5["触发Subgraph<br/>水波扩展"]
+        A6["isolate span<br/>XML转义隔离"]
+    end
 
-运行时 (每轮 on_event):
-  PCRInput_v1(user_text, history, conversation_id)
-    → RuleBasedPCR.evaluate()
-    → PCROutput_v1
-
-降级:
-  规则失败 → FallbackEngine
-    ├─ conservative: 返回 BALANCED 默认输出
-    ├─ degraded: 跳过 Stage 2-4, 只做期望识别
-    └─ pass_through: 全部跳过, BALANCED 直接通过
-
-关闭:
-  PCRLifecycleManager.shutdown()
-    ├─ 后台健康检查线程停止
-    └─ TelemetryCollector 落盘
+    TYPO --> A1
+    AMB --> A2
+    JARGON --> A3
+    FLUFF --> A4
+    LEAP --> A5
+    INJECTION --> A6
 ```
 
 ---
 
-## 五、性能约束
+## 四、PCR → 8 链调控映射
 
-```
-规则快路径: < 10ms (Tier 0 + Tier 1, 覆盖 95%)
-LLM fallback: < 200ms (Tier 2, 仅 5% 触发)
-端到端 (100轮对话): < 20ms
+```mermaid
+graph TD
+    PCR["PCR Output<br/>expectation/noise_spans/complexity<br/>cognitive/execution_mode"]
 
-容错:
-  ─ FallbackEngine 3级回退
-  ─ 热加载配置 (YAML → 运行时, 无重启)
-  ─ 健康检查 (30s 探针)
+    subgraph CHAINS["8 条下游链"]
+        C01["链01 对话树<br/>compile_depth · fork策略"]
+        C02["链02 LLM回复<br/>系统指令 · corrections"]
+        C04["链04 元认知+持久化<br/>clarity signal · audit"]
+        C05["链05 行为链<br/>预测开关 · 偏置权重"]
+        C07["链07 工程链<br/>max_sub_intents"]
+        C08["链08 画像<br/>快速评估注入TrackA"]
+        C09["链09 元认知审核<br/>reconsider · 针对性复盘"]
+        C10["链10 子图<br/>水波扩展触发"]
+    end
+
+    PCR -->|"expectation:TOOL"| C01
+    PCR -->|"expectation:DEEP_RESEARCH"| C01
+    PCR -->|"expectation:UNKNOWN"| C04
+    PCR -->|"noise_spans:TYPO"| C02
+    PCR -->|"noise_spans:INJECTION"| C02
+    PCR -->|"noise_spans:LOGICAL_LEAP"| C10
+    PCR -->|"complexity > 0.8"| C01
+    PCR -->|"complexity < 0.2"| C01
+    PCR -->|"execution_mode"| C05
+    PCR -->|"complexity"| C07
+    PCR -->|"cognitive_profile"| C05
+    PCR -->|"cognitive_profile"| C08
+    PCR -->|"noise_source:context_break"| C09
 ```
 
 ---
 
-## 六、实现状态
+## 五、决策矩阵 (StrategyDeriver)
 
+```mermaid
+graph TD
+    subgraph INPUTS["输入信号"]
+        EXP["expectation<br/>TOOL/ADVISOR/COMPANION/UNKNOWN"]
+        NZ["noise (聚合)<br/>low: <0.3 · high: ≥0.3"]
+        CX["complexity<br/>low: <0.5 · high: ≥0.5"]
+    end
+
+    subgraph MATRIX["策略推导矩阵"]
+        T1["EXECUTE"]; T2["CLARIFY"]; T3["RESEARCH"]
+        T4["EXECUTE"]; T5["CLARIFY"]; T6["RESEARCH"]
+        T7["CLARIFY"]; T8["BALANCED"]; T9["BALANCED"]
+    end
+
+    EXP --> MATRIX
+    NZ --> MATRIX
+    CX --> MATRIX
+
+    MATRIX --> MODE["execution_mode"]
+    MATRIX --> STYLE["prompt_style"]
+    MATRIX --> AMB["ambiguity_strategy"]
 ```
-✅ PCR 核心代码:      3500行 · 9模块 · 168/170 test PASS
-❌ 接入 on_event:     0% — PCR.evaluate() 从未被调用
-❌ 8链调控映射:       0% — PCROutput 信号从未流向任何链
-❌ NoiseSpan 拓扑:    设计修正中 — 当前仍是全局 noise_level
-❌ 生命周期管理:      代码存在 — PCRLifecycleManager 未被API使用
+
+| | TOOL | ADVISOR | COMPANION | UNKNOWN |
+|---|---|:---:|:---:|---|
+| **低噪声·低复杂** | FAST_EXECUTE | DEEP_RESEARCH | EXPLAIN | CLARIFY |
+| **低噪声·高复杂** | FAST_EXECUTE | DEEP_RESEARCH | TUTORIAL | CLARIFY |
+| **高噪声·低复杂** | CLARIFY | BALANCED | BALANCED | CLARIFY |
+| **高噪声·高复杂** | CLARIFY | BALANCED | BALANCED | CLARIFY |
+
+---
+
+## 六、生命周期
+
+```mermaid
+sequenceDiagram
+    participant API as API Startup
+    participant LM as PCRLifecycleManager
+    participant PCR as RuleBasedPCR
+    participant FE as FallbackEngine
+    participant TEL as TelemetryCollector
+
+    API->>LM: initialize()
+    LM->>PCR: RuleBasedPCR()
+    LM->>PCR: warm_up()
+    Note over PCR: 加载YAML配置<br/>预热规则缓存
+    LM->>FE: start()
+    LM->>TEL: start()
+    LM-->>API: ready
+
+    Note over PCR,TEL: === 运行时 ===
+
+    loop 每轮 on_event
+        API->>PCR: evaluate(PCRInput_v1)
+        alt 成功
+            PCR-->>API: PCROutput_v1
+        else 规则失败
+            PCR->>FE: fallback
+            FE-->>API: BALANCED default
+        end
+    end
+
+    Note over PCR,TEL: === 关闭 ===
+
+    API->>LM: shutdown()
+    LM->>TEL: flush() + stop()
+    LM->>FE: stop()
+    LM->>PCR: shutdown()
+    LM-->>API: done
 ```
 
 ---
 
-## 七、接入优先级
+## 七、三级降级回退
 
+```mermaid
+graph TD
+    REQ["PCR.evaluate()"] --> OK{"成功?"}
+    
+    OK -->|"✅"| OUTPUT["PCROutput_v1<br/>完整5阶段输出"]
+
+    OK -->|"❌"| F1["FallbackEngine<br/>Level 1: conservative"]
+    
+    F1 --> F1OK{"成功?"}
+    F1OK -->|"✅"| OUT1["BALANCED默认<br/>expectation=UNKNOWN"]
+    F1OK -->|"❌"| F2["Level 2: degraded<br/>跳过Stage 2-4<br/>只做期望识别"]
+
+    F2 --> F2OK{"成功?"}
+    F2OK -->|"✅"| OUT2["简化输出<br/>仅 expectation"]
+    F2OK -->|"❌"| F3["Level 3: pass_through<br/>全部跳过<br/>BALANCED直接通过"]
+
+    F3 --> OUT3["最小输出<br/>noise=0, complexity=0<br/>execution_mode=BALANCED"]
 ```
-P0: on_event 接入 PCR.evaluate()
-    └─ 5条核心调控信号流向链 01/02/08
 
-P1: NoiseSpan 拓扑替换 noise_level
-    └─ 6 种噪声类型 × 差异化下游处理
+---
 
-P2: FallbackEngine + 热加载 + Telemetry
-    └─ 生产级多级回退 + 无重启配置更新
+## 八、实现状态
+
+```mermaid
+graph LR
+    subgraph DONE["✅ 已完成"]
+        CODE["代码 3500行<br/>9模块"]
+        TEST["测试 168/170"]
+        DESIGN["设计 17篇"]
+    end
+
+    subgraph TODO["❌ 待实现"]
+        HOOK["接入 on_event"]
+        REG["8链调控映射"]
+        TOPO["NoiseSpan拓扑"]
+        LIFE["LifecycleManager"]
+    end
+
+    DONE --> TODO
+```
+
+---
+
+## 九、接入优先级
+
+```mermaid
+gantt
+    title PCR 接入路线
+    dateFormat  YYYY-MM-DD
+    section P0 核心
+    on_event 接入 PCR.evaluate    :p0, 2026-07-21, 2d
+    5条核心调控信号流向链01/02/08   :p0b, after p0, 2d
+    section P1 噪声
+    NoiseSpan 拓扑替换 noise_level :p1, after p0b, 3d
+    6种噪声类型差异化下游处理        :p1b, after p1, 2d
+    section P2 生产
+    FallbackEngine + 热加载        :p2, after p1b, 2d
+    Telemetry 集成                 :p2b, after p2, 1d
 ```
