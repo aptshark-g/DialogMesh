@@ -1,4 +1,4 @@
-﻿"""TieredIntentParser: rule-based classification (fast) → LLM classification (slow)."""
+"""TieredIntentParser: rule-based classification (fast) → LLM classification (slow)."""
 from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,14 +21,21 @@ class TieredIntentParser:
         Tier 1 (llm):    LLM-based intent_classifier prompt (only when rule is uncertain).
     """
 
-    def __init__(self, llm_provider=None, registry=None):
+    def __init__(self, llm_provider=None, registry=None,
+                 jieba_parser=None, stanza_parser=None):
         self._llm_provider = llm_provider
         self._parser = IntentParser(llm_provider=llm_provider)
 
+        # Tier 0: recursive convergence fast match (replaces regex)
+        from core.agent.v4.tiered.topic_matcher import RecursiveConvergenceMatcher
+        self._topic_matcher = RecursiveConvergenceMatcher(
+            jieba_parser=jieba_parser, stanza_parser=stanza_parser,
+        )
+
         rule_tier = Tier(
             level=0,
-            name="intent.rule",
-            process=self._rule_classify,
+            name="intent.topic",
+            process=self._topic_classify,
             confidence_threshold=0.6,
             confidence_threshold_param="intent.rule_threshold",
             registry=registry,
