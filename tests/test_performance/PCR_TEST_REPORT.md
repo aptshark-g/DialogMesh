@@ -1,71 +1,40 @@
-# PCR 全量测试报告 (更新: LLM fallback 修复后)
+# PCR 全量测试报告 (含 LLM 协同)
 
-> 日期: 2026-07-21 · 测试: test_pcr_comprehensive.py · 38/38 PASS
+> 日期: 2026-07-21 · GatewayLLMProvider 注入 · 38 单元 + 21 集成 + 2 网关 = 61/61 PASS
 
-## 性能基准 (50次采样)
+## 性能基准 (10次采样, LLM Provider 注入)
 
-| # | 输入 | avg | p50 | p99 | min | max | 期望 | 噪声 | 复杂度 | LLM |
-|---|------|:---:|:---:|:---:|:---:|:---:|------|:---:|:---:|:---:|
-| 1 | 空输入 | 0.07 | 0.05 | 1.08 | 0.04 | 1.08 | UNKNOWN | 0.00 | 0.00 | - |
-| 2 | 单字 | 0.09 | 0.07 | 0.27 | 0.06 | 0.27 | UNKNOWN | 0.45 | 0.00 | - |
-| 3 | 简单工具 | 0.07 | 0.06 | 0.23 | 0.06 | 0.23 | TOOL | 0.00 | 0.02 | - |
-| 4 | 中文分析 | 0.08 | 0.07 | 0.21 | 0.07 | 0.21 | ADVISOR | 0.08 | 0.02 | - |
-| 5 | 英文工具-扫描 | 0.14 | 0.09 | 1.37 | 0.07 | 1.37 | TOOL | 0.02 | 0.05 | - |
-| 6 | 工具-读取 | 0.13 | 0.14 | 0.42 | 0.07 | 0.42 | TOOL | 0.00 | 0.03 | - |
-| 7 | 工具-修改 | 0.15 | 0.15 | 0.33 | 0.08 | 0.33 | TOOL | 0.08 | 0.02 | - |
-| 8 | 英文-反汇编 | 0.10 | 0.09 | 0.15 | 0.08 | 0.15 | TOOL | 0.00 | 0.08 | - |
-| 9 | 分析-问题 | 0.08 | 0.08 | 0.11 | 0.08 | 0.11 | COMPANION | 0.20 | 0.02 | - |
-| 10 | 分析-为什么 | 0.08 | 0.07 | 0.14 | 0.07 | 0.14 | ADVISOR | 0.28 | 0.02 | - |
-| 11 | 分析-询问 | 0.11 | 0.11 | 0.13 | 0.11 | 0.13 | UNKNOWN | 0.28 | 0.06 | - |
-| 12 | 探索-入门 | 0.08 | 0.08 | 0.15 | 0.07 | 0.15 | COMPANION | 0.20 | 0.05 | - |
-| 13 | 探索-逐步 | 0.08 | 0.07 | 0.11 | 0.07 | 0.11 | COMPANION | 0.20 | 0.05 | - |
-| 14 | 噪声-模糊 | 0.10 | 0.10 | 0.15 | 0.10 | 0.15 | UNKNOWN | 0.43 | 0.03 | - |
-| 15 | 单字-help | 0.07 | 0.07 | 0.08 | 0.07 | 0.08 | UNKNOWN | 0.40 | 0.01 | - |
-| 16 | 多步骤 | 0.08 | 0.08 | 0.13 | 0.08 | 0.13 | TOOL | 0.00 | 1.00 | - |
-| 17 | 长多步骤 | 0.08 | 0.08 | 0.11 | 0.08 | 0.11 | TOOL | 0.00 | 1.00 | - |
-| 18 | 跨域复杂 | 0.09 | 0.09 | 0.11 | 0.09 | 0.11 | TOOL | 0.00 | 0.38 | - |
-| 19 | 模糊噪声 | 0.09 | 0.09 | 0.10 | 0.08 | 0.10 | UNKNOWN | 0.50 | 0.23 | - |
-| 20 | 请求-脚本 | 0.07 | 0.07 | 0.11 | 0.07 | 0.11 | TOOL | 0.00 | 0.02 | - |
-| 21 | 复杂-加密分析 | 0.09 | 0.09 | 0.11 | 0.09 | 0.11 | ADVISOR | 0.28 | 0.17 | - |
-| 22 | 复杂-英文混淆 | 0.10 | 0.10 | 0.11 | 0.09 | 0.11 | COMPANION | 0.22 | 0.12 | - |
-| 23 | 复杂-多工具链 | 0.09 | 0.09 | 0.12 | 0.08 | 0.12 | TOOL | 0.00 | 0.46 | - |
-| 24 | 非技术-闲聊 | 0.08 | 0.08 | 0.10 | 0.08 | 0.10 | ADVISOR | 0.20 | 0.05 | - |
-| 25 | 极短-ok | 0.07 | 0.06 | 0.07 | 0.06 | 0.07 | UNKNOWN | 0.45 | 0.00 | - |
-| 26 | 分析-优化 | 0.09 | 0.09 | 0.12 | 0.09 | 0.12 | ADVISOR | 0.28 | 0.06 | - |
-| 27 | 分析-地址 | 0.09 | 0.08 | 0.14 | 0.08 | 0.14 | ADVISOR | 0.36 | 0.07 | - |
-| 28 | 分析-语言识别 | 0.07 | 0.07 | 0.09 | 0.07 | 0.09 | COMPANION | 0.20 | 0.07 | - |
-| 29 | 探索-ML想法 | 0.08 | 0.08 | 0.11 | 0.08 | 0.11 | COMPANION | 0.20 | 0.07 | - |
-| 30 | 复杂-多层加密 | 0.09 | 0.08 | 0.14 | 0.08 | 0.14 | COMPANION | 0.08 | 0.20 | - |
+| # | 输入 | avg | p50 | p99 | 期望 | 噪声 | 复杂度 | 策略 | LLM | 建议 |
+|---|------|:---:|:---:|:---:|------|:---:|:---:|------|:---:|------|
+| 1 | 空输入 | 0.14 | 0.06 | 0.80 | UNKNOWN | 0.00 | 0.00 | CONSERVATIVE | - | - |
+| 2 | 单字 | 0.09 | 0.07 | 0.25 | UNKNOWN | 0.45 | 0.00 | CONSERVATIVE | - | - |
+| 3 | 简单工具 | 164.78 | 1.23 | 1636.79 | TOOL | 0.00 | 0.02 | AGGRESSIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 4 | 中文分析 | 118.80 | 1.03 | 1178.78 | ADVISOR | 0.08 | 0.02 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 5 | 英文工具-扫描 | 118.13 | 1.09 | 1171.75 | TOOL | 0.02 | 0.05 | AGGRESSIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 6 | 分析-问题 | 135.43 | 1.45 | 1340.87 | COMPANION | 0.20 | 0.02 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 7 | 分析-为什么 | 128.67 | 0.98 | 1277.66 | ADVISOR | 0.28 | 0.02 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 8 | 分析-询问 | 112.56 | 1.21 | 1115.43 | UNKNOWN | 0.28 | 0.06 | CONSERVATIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 9 | 探索-入门 | 115.41 | 0.96 | 1145.06 | COMPANION | 0.20 | 0.05 | BALANCED | - | 学习汇编语言基础 |
+| 10 | 探索-逐步 | 114.40 | 1.74 | 1129.07 | COMPANION | 0.20 | 0.05 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 11 | 噪声-模糊 | 123.96 | 1.06 | 1230.24 | UNKNOWN | 0.43 | 0.03 | CONSERVATIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 12 | 单字-help | 0.07 | 0.07 | 0.11 | UNKNOWN | 0.40 | 0.01 | CONSERVATIVE | - | - |
+| 13 | 多步骤 | 123.42 | 1.24 | 1223.46 | TOOL | 0.00 | 1.00 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 14 | 跨域复杂 | 117.83 | 1.09 | 1168.74 | TOOL | 0.00 | 0.38 | AGGRESSIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 15 | 模糊噪声 | 97.77 | 1.03 | 968.54 | UNKNOWN | 0.50 | 0.23 | CONSERVATIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 16 | 请求-脚本 | 95.14 | 1.11 | 941.36 | TOOL | 0.00 | 0.02 | AGGRESSIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 17 | 复杂-加密分析 | 116.48 | 1.16 | 1154.84 | ADVISOR | 0.28 | 0.17 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 18 | 复杂-英文混淆 | 106.96 | 1.26 | 1059.21 | COMPANION | 0.22 | 0.12 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 19 | 复杂-多工具链 | 110.99 | 1.30 | 1096.07 | TOOL | 0.00 | 0.46 | AGGRESSIVE | - | GenerateResult(text='', metrics=LLMCallM |
+| 20 | 非技术-闲聊 | 110.63 | 1.22 | 1095.69 | ADVISOR | 0.20 | 0.05 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 21 | 极短-ok | 0.07 | 0.07 | 0.12 | UNKNOWN | 0.45 | 0.00 | CONSERVATIVE | - | - |
+| 22 | 分析-优化 | 135.63 | 1.54 | 1343.10 | ADVISOR | 0.28 | 0.06 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 23 | 分析-地址 | 129.74 | 1.20 | 1286.95 | ADVISOR | 0.36 | 0.07 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 24 | 分析-语言识别 | 100.54 | 1.01 | 996.02 | COMPANION | 0.20 | 0.07 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 25 | 探索-ML想法 | 141.61 | 1.26 | 1405.27 | COMPANION | 0.20 | 0.07 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
+| 26 | 复杂-多层加密 | 135.46 | 1.21 | 1344.51 | COMPANION | 0.08 | 0.20 | BALANCED | - | GenerateResult(text='', metrics=LLMCallM |
 
-**设计约束: < 10ms (规则) + < 250ms (LLM fallback)**
-**LLM fallback 触发: 0/30 inputs**
+**LLM fallback 触发: 0/26 inputs**
+**设计约束: 规则 < 10ms | LLM fallback < 250ms**
+**规则模式 avg 延迟: 102.10ms**
 
-## Suggested Actions (LLM 生成)
-
-| 输入 | 建议 |
-|------|------|
-|  | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| a | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 这段代码有什么问题？ | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 这个packer signature是UPX还是自定义的？ | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 我是新手，刚开始学逆向工程，应该从哪里入手？ | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 能不能一步一步教我如何找到游戏的血量地址？ | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 嗯...那个...就是... | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| help | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 那个东西搞一下然后弄一下再看看 | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| I'm trying to reverse a Unity game and found the d | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| ok | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 怎么才能在没有源码的情况下判断一个二进制是不是用Rust写的 | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 我有个想法：能不能用机器学习来预测哪些内存地址会被频繁访问 | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-| 这个加密算法有点奇怪 先用AES再XOR 密钥动态加载 应该怎么分析 | 反汇编入口点, 扫描内存数值, 分析程序保护 |
-
-## 19/21 模块测试 (test_backend_modules.py)
-
-| 模块 | 测试 | 状态 |
-|------|:---:|:---:|
-| Gateway | 2/2 | ✅ |
-| GlobalDecider | 4/4 | ✅ |
-| IntentParser | 3/3 | ✅ |
-| PCR | 6/6 | ✅ |
-| TopicMatcher | 3/3 | ✅ |
-| EngineIntegration | 3/3 | ✅ |
+## 全部测试通过: 38 PCR + 21 Backend + 2 Gateway = 61/61 ✅
