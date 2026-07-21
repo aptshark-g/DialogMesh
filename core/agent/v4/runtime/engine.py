@@ -2261,15 +2261,31 @@ class CognitiveRuntimeEngine:
             return None
 
     def _direct_llm_call(self, prompt: str, system_instruction: str) -> GenerateResult:
-        """Fallback: call gateway directly via urllib (bypasses provider)."""
+        """Fallback: call gateway directly — clean message, no context dump."""
         import urllib.request, time, json
         from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
         start = time.time() * 1000
         try:
-            full_prompt = f"{system_instruction}\n\n{prompt}"[:12000]
+            # Extract user text from prompt (format: "[User]\n<text>\n\nSystem...")
+            user_text = prompt
+            if "[User]" in prompt:
+                parts = prompt.split("[User]", 1)
+                if len(parts) > 1:
+                    user_text = parts[1].split("\n\n", 1)[0].strip()
+                    if not user_text:
+                        user_text = parts[1].split("\n", 1)[0].strip()
+            # Clean system instruction — don't ask LLM to explain DialogMesh internals
+            clean_system = (
+                "You are a helpful AI assistant. Answer the user's question directly and concisely. "
+                "If the user mentions DialogMesh internal concepts (DomainSelector, BudgetAllocator, "
+                "CrossDomainContextIR, etc.), explain them. Otherwise focus on the user's actual question."
+            )
             data = json.dumps({
                 "model": "deepseek-v4-flash",
-                "messages": [{"role": "user", "content": full_prompt}],
+                "messages": [
+                    {"role": "system", "content": clean_system},
+                    {"role": "user", "content": user_text or prompt[:2000]},
+                ],
                 "max_tokens": 1000,
             })
             req = urllib.request.Request(
