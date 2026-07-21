@@ -3105,8 +3105,8 @@ class CognitiveRuntimeEngine:
         try:
             from core.agent.pcr.lifecycle import PCRLifecycleManager
             self._pcr_lifecycle = PCRLifecycleManager()
-            self._pcr_lifecycle.initialize()
-            self._pcr_router = self._pcr_lifecycle.router
+            self._pcr_lifecycle.initialize({})
+            self._pcr_router = self._pcr_lifecycle._primary
             logger.info('PCR ready: %s', self._pcr_router.name)
         except Exception as e:
             logger.warning('PCR init failed (degraded): %s', e)

@@ -88,6 +88,8 @@ class RecursiveConvergenceMatcher:
 
         # Multi-source fusion
         candidates = self._fuse(text, profile_bias, context_topics)
+        if not candidates:
+            return TopicMatchResult('unknown', 0.0, 'none', 0.0, 0)
 
         # Kurtosis check
         k = self._kurtosis([c.score for c in candidates])
