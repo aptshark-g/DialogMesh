@@ -2208,10 +2208,10 @@ class CognitiveRuntimeEngine:
             max_tokens=self._world_params.compiler_token_budget,
         )
 
-        # Append user message
+        # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
         if user_text:
-            prompt += f"\n[User]\n{user_text}\n"
+            prompt = f"[User]\n{user_text}\n\n{system_instruction}\n{prompt}"
 
         # Call LLM — with ReasoningPolicy temperature modulation
         try:
@@ -2225,7 +2225,7 @@ class CognitiveRuntimeEngine:
             request = GenerateRequest(
                 prompt=prompt,
                 system_prompt=system_instruction,
-                max_tokens=min(self._world_params.compiler_token_budget // 2, 1024),
+                max_tokens=max(self._world_params.compiler_token_budget // 2, 2048),
                 temperature=temperature,
                 timeout_ms=30000,
             )
@@ -2262,7 +2262,7 @@ class CognitiveRuntimeEngine:
 
     def _direct_llm_call(self, prompt: str, system_instruction: str) -> GenerateResult:
         """Fallback: call gateway directly via urllib (bypasses provider)."""
-        import urllib.request, time
+        import urllib.request, time, json
         from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
         start = time.time() * 1000
         try:
