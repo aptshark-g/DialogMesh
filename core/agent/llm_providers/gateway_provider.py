@@ -46,6 +46,7 @@ class GatewayLLMProvider(LLMProvider):
             self._client = Client(
                 base_url=self._base_url,
                 timeout=self._timeout,
+                headers={"Authorization": "Bearer not-needed"},
             )
         except ImportError:
             import urllib.request
@@ -68,7 +69,7 @@ class GatewayLLMProvider(LLMProvider):
             req = urllib.request.Request(
                 f"{self._base_url}{url}",
                 data=data,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "Authorization": "Bearer not-needed"},
             )
             with urllib.request.urlopen(req, timeout=self._timeout) as r:
                 return json.loads(r.read())
