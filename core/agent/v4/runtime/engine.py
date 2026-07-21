@@ -172,6 +172,10 @@ class CognitiveRuntimeEngine:
         self._intent_parser = None     # v3_common IntentParser — lazy init
         self._last_intent_context = None  # Last IntentContext
         self._last_parse_result = None   # Last ParseResult
+        self._planner = None             # v3_0 Planner — lazy init
+        self._skill_matcher = None       # v3_0 SkillMatcher — lazy init
+        self._scheduler = None           # v4 CognitiveScheduler — lazy init
+        self._last_plan_result = None    # Last PlanResult
         self._llm_metrics: Optional[Dict[str, Any]] = None
 
         # Path trigger policy and state machine (from path_trigger_policy)
@@ -190,6 +194,7 @@ class CognitiveRuntimeEngine:
         self._session_active = True
         self._init_pcr()
         self._init_intent()
+        self._init_planning()
         self._instantiate_adapters()
         self._observation_pool = self._create_observation_pool()
         self._context_assembler = self._create_context_assembler()
@@ -630,6 +635,24 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.warning('IntentParser failed: %s', e)
 
+        # ---- Planning (Layer 1.5) ----
+        plan_result = None
+        if self._planner is not None and parse_result:
+            try:
+                intent = parse_result.intent if hasattr(parse_result, 'intent') else None
+                if intent:
+                    from core.agent.v3_0.data_models import IntentContext_v3
+                    plan_ctx = IntentContext_v3()
+                    if pcr_output:
+                        plan_ctx.expectation = getattr(pcr_output, 'expectation', None)
+                    plan_result = self._planner.plan(
+                        intent=intent,
+                        intent_context=plan_ctx,
+                    )
+                    self._last_plan_result = plan_result
+            except Exception as e:
+                logger.warning('Planning failed: %s', e)
+
         # ---- Context Engineering: compile CrossDomainContextIR ----
         self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result)
 
@@ -738,7 +761,7 @@ class CognitiveRuntimeEngine:
                     self._monitor.record_tree(self._turn_counter, len(tree.blocks),
                         len(tree.active_blocks()), len(tree.blocks) - 1)
 
-        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result)
+        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result, plan_result=plan_result)
         if llm_response:
             self._last_llm_response = llm_response
 
@@ -2209,7 +2232,7 @@ class CognitiveRuntimeEngine:
                 if getattr(e, 'type', '') != 'graph'
             ]
 
-    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None) -> Optional[str]:
+    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None, plan_result=None) -> Optional[str]:
         """Compile context IR to prompt, call LLM, return response text.
 
         Args:
@@ -2260,6 +2283,16 @@ class CognitiveRuntimeEngine:
 
         # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # Plan-driven system instruction (TaskGraph)
+        if plan_result and hasattr(plan_result, 'task_graph'):
+            tg = plan_result.task_graph
+            node_count = len(getattr(tg, 'nodes', []))
+            if node_count > 0:
+                steps = [f'{n.action or n.name}' for n in tg.nodes[:5] 
+                        if hasattr(n, 'action') or hasattr(n, 'name')]
+                if steps:
+                    system_instruction += f' [Plan: {node_count} steps — {" → ".join(steps)}]'
 
         # Intent-driven system instruction
         if parse_result and parse_result.intent:
@@ -2950,6 +2983,25 @@ class CognitiveRuntimeEngine:
             logger.warning('PCR init failed (degraded): %s', e)
             self._pcr_lifecycle = None
             self._pcr_router = None
+
+    def _init_planning(self):
+        try:
+            from core.agent.v3_0.planning.planner import PlanningSkill
+            from core.agent.v3_0.planning.skill_matcher import SkillMatcher
+            self._planner = PlanningSkill(llm_provider=self._llm_provider)
+            self._skill_matcher = SkillMatcher()
+            logger.info('Planning: Planner + SkillMatcher ready')
+        except Exception as e:
+            logger.warning('Planning init failed (degraded): %s', e)
+            self._planner = None
+            self._skill_matcher = None
+        try:
+            from core.agent.v4.cognitive_scheduler.scheduler import CognitiveScheduler
+            self._scheduler = CognitiveScheduler()
+            logger.info('CognitiveScheduler ready')
+        except Exception as e:
+            logger.warning('Scheduler init failed: %s', e)
+            self._scheduler = None
 
     def _init_intent(self):
         try:
