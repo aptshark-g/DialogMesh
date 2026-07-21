@@ -1034,6 +1034,20 @@ class CognitiveRuntimeEngine:
         except Exception:
             return None
 
+    def _update_profile_from_trace(self, pcr_output, response, metrics):
+        track_a = getattr(self._cognitive_profile, 'track_a', None)
+        if track_a is None:
+            return
+        alpha = 0.3
+        if pcr_output and getattr(pcr_output, 'cognitive_profile', None):
+            fast = pcr_output.cognitive_profile
+            if hasattr(fast, 'cognitive_level'):
+                track_a.cog_resource = alpha * fast.cognitive_level + 0.7 * getattr(track_a, 'cog_resource', 0.5)
+        if metrics and metrics.get('success'):
+            track_a.trust = min(1.0, getattr(track_a, 'trust', 0.5) + 0.02)
+        elif metrics and not metrics.get('success'):
+            track_a.trust = max(0.0, getattr(track_a, 'trust', 0.5) - 0.05)
+
     def trigger_checkpoint(self) -> List[AdapterResult]:
         """Run the Slow Path (checkpoint) with ObservationPool data.
 
