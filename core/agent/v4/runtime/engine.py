@@ -171,6 +171,7 @@ class CognitiveRuntimeEngine:
         self._last_pcr = None    # Last PCROutput
         self._decider = None     # GlobalDecider — state machine coordinator
         self._intent_parser = None     # v3_common IntentParser — lazy init
+        self._unified_parser = None   # UnifiedParser — Tier 0→2 pipeline
         self._last_intent_context = None  # Last IntentContext
         self._last_parse_result = None   # Last ParseResult
         self._planner = None             # v3_0 Planner — lazy init
@@ -196,6 +197,7 @@ class CognitiveRuntimeEngine:
         from core.agent.v4.state.global_decider import GlobalDecider, Command, EventType
         self._decider = GlobalDecider()
         self._init_pcr()
+        self._init_unified()
         self._init_intent()
         self._init_planning()
         self._instantiate_adapters()
@@ -699,7 +701,7 @@ class CognitiveRuntimeEngine:
                 logger.warning('Planning failed: %s', e)
 
         # ---- Context Engineering: compile CrossDomainContextIR ----
-        self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result)
+        self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result, unified_result=unified_result)
 
         # ---- BehaviorGraph: record event as step ----
         if self._causal_planner is not None:
@@ -806,7 +808,7 @@ class CognitiveRuntimeEngine:
                     self._monitor.record_tree(self._turn_counter, len(tree.blocks),
                         len(tree.active_blocks()), len(tree.blocks) - 1)
 
-        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result, plan_result=plan_result)
+        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result, plan_result=plan_result, unified_result=unified_result)
         if llm_response:
             self._last_llm_response = llm_response
 
@@ -1111,7 +1113,7 @@ class CognitiveRuntimeEngine:
 
     # ---- Context Engineering ----
 
-    def _compile_context(self, event: EventIR, pcr_output=None, parse_result=None) -> None:
+    def _compile_context(self, event: EventIR, pcr_output=None, parse_result=None, unified_result=None) -> None:
         """Compile CrossDomainContextIR from current cognitive state.
 
         Conversation memory: prior turns are injected as context entries
@@ -2361,7 +2363,7 @@ class CognitiveRuntimeEngine:
                 if getattr(e, 'type', '') != 'graph'
             ]
 
-    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None, plan_result=None) -> Optional[str]:
+    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None, plan_result=None, unified_result=None) -> Optional[str]:
         """Compile context IR to prompt, call LLM, return response text.
 
         Args:
@@ -2412,6 +2414,19 @@ class CognitiveRuntimeEngine:
 
         # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # Unified behavior label
+        if unified_result and unified_result.behavior_label:
+            system_instruction += f' [Context: {unified_result.behavior_label}]'
+
+        # Unified entities → context boost
+        if unified_result and unified_result.entities:
+            ent_str = ', '.join(unified_result.entities[:5])
+            system_instruction += f' [Entities: {ent_str}]'
+
+        # Unified causal closure
+        if unified_result and unified_result.causal_closure:
+            system_instruction += f' [Causal: {unified_result.causal_closure[:100]}]'
 
         # Plan-driven system instruction (TaskGraph)
         if plan_result and hasattr(plan_result, 'task_graph'):
@@ -3141,6 +3156,15 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.warning('Scheduler init failed: %s', e)
             self._scheduler = None
+
+    def _init_unified(self):
+        try:
+            from core.agent.v4.unified_parser import UnifiedParser
+            self._unified_parser = UnifiedParser(llm_provider=self._llm_provider)
+            logger.info('UnifiedParser ready (Intent+Association, 3-Tier)')
+        except Exception as e:
+            logger.warning('UnifiedParser init failed: %s', e)
+            self._unified_parser = None
 
     def _init_intent(self):
         try:
