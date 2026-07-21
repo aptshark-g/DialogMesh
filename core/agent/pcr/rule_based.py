@@ -239,10 +239,10 @@ class ExpectationIdentifier:
 
         prompt = self._build_llm_prompt(query)
         try:
-            raw_response = self._llm_provider.chat(
-                [{"role": "user", "content": prompt}],
-                temperature=0.1,
-            )
+            from core.agent.llm_providers.base import GenerateRequest
+            req = GenerateRequest(prompt=prompt, temperature=0.1, max_tokens=20)
+            result = self._llm_provider.generate(req)
+            raw_response = result.text if hasattr(result, 'text') else str(result)
             expectation = self._parse_llm_response(raw_response)
             self._cache[cache_key] = (expectation, time.time())
             return (expectation, 0.65)
