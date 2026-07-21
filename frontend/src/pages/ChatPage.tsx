@@ -7,10 +7,10 @@ import type { ProviderInfo } from '../components/ProviderSelector';
 import { chatConnection } from '../lib/chatConnection';
 
 export function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(chatConnection.loadMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => chatConnection.loadMessages());
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string|null>(null);
-  const [sessionId, setSessionId] = useState<string|null>(chatConnection.getSessionId);
+  const [sessionId, setSessionId] = useState<string|null>(() => chatConnection.getSessionId());
   const [activeProvider, setActiveProvider] = useState<ProviderInfo|null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>({status:'connecting',latencyMs:null,lastError:null});
 
