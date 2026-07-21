@@ -1162,11 +1162,24 @@ class RuleBasedPCR(IPCRRouter):
         return None
 
     def _derive_suggestions(self, expectation: str, input_data: PCRInput_v1) -> List[str]:
-        if expectation == "UNKNOWN":
-            return ["反汇编入口点", "扫描内存数值", "分析程序保护"]
-        if expectation == "COMPANION":
-            return ["反汇编入口点", "扫描内存数值", "分析程序保护"]
-        return []
+        # Try LLM for suggestions when available
+        if self._llm_provider and len(input_data.query) > 5:
+            try:
+                from core.agent.llm_providers.base import GenerateRequest
+                prompt = (
+                    f"User query: '{input_data.query[:200]}'. "
+                    f"Expectation: {expectation}. "
+                    f"Suggest 2-3 next actions. Respond ONLY comma-separated, no explanation."
+                )
+                req = GenerateRequest(prompt=prompt, temperature=0.3, max_tokens=50)
+                result = self._llm_provider.generate(req)
+                raw = getattr(result, 'text', '') or str(result)
+                actions = [a.strip() for a in raw.split(',') if a.strip()][:3]
+                if actions:
+                    return actions
+            except:
+                pass
+        return []  # No hardcoded defaults — LLM not available
 
     def _should_attach_process(self, input_data: PCRInput_v1) -> bool:
         """Check if user needs to attach a process."""
