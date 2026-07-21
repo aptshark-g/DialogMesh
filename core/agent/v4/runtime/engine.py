@@ -169,6 +169,7 @@ class CognitiveRuntimeEngine:
         self._last_llm_response: Optional[str] = None
         self._pcr_router = None  # Pre-Cognitive Router — lazy init in start()
         self._last_pcr = None    # Last PCROutput
+        self._decider = None     # GlobalDecider — state machine coordinator
         self._intent_parser = None     # v3_common IntentParser — lazy init
         self._last_intent_context = None  # Last IntentContext
         self._last_parse_result = None   # Last ParseResult
@@ -192,6 +193,8 @@ class CognitiveRuntimeEngine:
         """Start the runtime engine: instantiate adapters, pools, scheduler, and timers."""
         self._running = True
         self._session_active = True
+        from core.agent.v4.state.global_decider import GlobalDecider, Command, EventType
+        self._decider = GlobalDecider()
         self._init_pcr()
         self._init_intent()
         self._init_planning()
@@ -507,14 +510,18 @@ class CognitiveRuntimeEngine:
     def on_event(self, event: EventIR) -> Optional[str]:
         """Process a single user event through the Async Path.
 
-        Also increments the event counter and auto-triggers Slow Path
-        when the configured threshold is reached.
-
-        Returns:
-            LLM response string if LLM provider is available, else None.
+        Uses GlobalDecider: Command → Event → evolve State.
+        Each tick produces ONE event. Chains communicate via event log, not direct push.
         """
         if not self._running or not self._session_active:
             return None
+
+        # ---- Global State Machine: Tick ----
+        if self._decider:
+            from core.agent.v4.state.global_decider import Command
+            self._decider._tick += 1
+            cmd = Command(type="user_message", payload={"text": text if 'text' in dir() else ""})
+            self._decider.evolve(self._decider.decide(cmd))
 
         self._event_buffer.append(event)
         self._last_event_time = time.time()
@@ -610,6 +617,11 @@ class CognitiveRuntimeEngine:
                 pcr_input = PCRInput_v1(user_text=text, history=[], conversation_id=getattr(event, 'session_id', ''))
                 pcr_output = self._pcr_router.evaluate(pcr_input)
                 self._last_pcr = pcr_output
+                if self._decider:
+                    from core.agent.v4.state.global_decider import Command, EventType
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="pcr", payload={"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
+                    ))
             except Exception as e:
                 logger.warning('PCR evaluate failed: %s', e)
 
@@ -632,6 +644,12 @@ class CognitiveRuntimeEngine:
                 )
                 self._last_intent_context = intent_context
                 self._last_parse_result = parse_result
+                if self._decider and parse_result:
+                    from core.agent.v4.state.global_decider import Command
+                    cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="intent", payload={"category": cat})
+                    ))
             except Exception as e:
                 logger.warning('IntentParser failed: %s', e)
 
