@@ -213,10 +213,14 @@ class CrossDomainContextIR:
                 lines.append(f"  {role_tag} {alloc.domain}: {alloc.budget_tokens} tokens ({alloc.budget_pct:.0%})")
             lines.append("")
 
-        # Entries by domain, with cross-ref annotations
+        # Entries by domain, filtered by budget allocation
+        # Zero-budget domains are skipped — their subgraph is not relevant
+        active_domains = {a.domain for a in (self.domain_allocation or []) if a.budget_tokens > 0}
         current_domain = None
         total_used = 0
         for entry in self.entries:
+            if active_domains and entry.domain not in active_domains:
+                continue
             if max_tokens and total_used + entry.estimated_tokens > max_tokens:
                 lines.append("  [... truncated by token budget]")
                 break
