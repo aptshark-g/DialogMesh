@@ -56,8 +56,6 @@ DialogMesh 的**输入层网关**。在所有认知处理之前，对用户消�
 ---
 
 ## 二、PCR 处理的 5 个信号
-
-```
 输入: PCRInput_v1 {user_text, history[], conversation_id}
                     │
     ┌───────────────┼───────────────┐
@@ -78,9 +76,8 @@ DialogMesh 的**输入层网关**。在所有认知处理之前，对用户消�
   ExpertiseLevel  DEEP_RESEARCH/CONVERSATIONAL/BALANCED
   PreferredDetail prompt_style: BRIEF/EXPLANATORY/TUTORIAL/BALANCED
   CognitiveTraits ambiguity_strategy: AGGRESSIVE_AUTO/CONSERVATIVE_ASK/BALANCED
-```
-
----
+  
+  ---
 
 ## 三、数据契约
 
@@ -272,18 +269,69 @@ PCR 的一个关键设计决策：**PCR 在 Engine 之前运行，不在 Engine 
 
 ## 九、接入计划
 
+**关键纠正**：PCR 噪声度 ≠ 垃圾过滤器。它是**端到端认知调控信号**。
+设计文档明确指出（Line 39）：
+> "正常话题切换和新任务不是'噪声'，而是人类工作记忆的自然刷新。
+>  通过时间/指代/描述三维模型区分'认知刷新'与'上下文断裂'。"
+
+因此噪声度的用途是**动态调整下游策略**，不是切断用户：
+
+| 噪声来源 | 下游调控 | 设计位置 |
+|----------|---------|---------|
+| 结构噪声高 | `min_confidence_threshold` ↓ → 更多依赖 LLM Fallback | Line 90 |
+| 词汇噪声高 | 歧义阈值敏感 → 更容易 ask_user（保守策略） | Line 101 |
+| 上下文断裂高 | `context_window_size` ↑ (20) → 增加回溯深度 | Line 727 |
+| 指代失调高 | `max_ambiguities_before_ask` ↑ (3) → 更多自动消解机会 | Line 729 |
+| 噪声来自话题切换 | 不调控 → 认知刷新豁免（时间/指代/描述三维判别） | Line 39 |
+
+### Phase 1 (P0): 接入 Engine + 策略调控
+
+```python
+def on_event(self, event):
+    pcr_input = PCRInput_v1(
+        user_text=event.payload["text"],
+        history=self._recent_history(),
+        conversation_id=event.session_id,
+    )
+    pcr = self._pcr_router.evaluate(pcr_input)
+    
+    # ❌ 错误: if pcr.noise_level > 0.8: return "请重新描述"
+    # ✅ 正确: 用噪声度调控下游策略
+    
+    if pcr.expectation == "TOOL":
+        self._compile_context(event, mode="fast", depth=1)
+    elif pcr.expectation == "DEEP_RESEARCH":
+        self._compile_context(event, mode="deep", subgraph_expand=True)
+    
+    # 噪声度调控 LLM 调用
+    self._call_llm(event, pcr_output=pcr)
+    # 内部:
+    #   noise > 0.5 → system_instruction = "User input may be noisy. Ask for clarification if unsure."
+    #   noise < 0.2 → system_instruction = "User input is clear. Be precise."
+    
+    # 上下文断裂 → 增加回溯深度
+    if pcr.noise_source == "context_break":
+        self._history_window = 20  # 默认10 → 扩大到20
 ```
-Phase 1 (P0): 接入 on_event
-    ├─ RuleBasedPCR 实例化 + warm_up
-    ├─ on_event 开头调用 PCR.evaluate()
-    └─ noise > 0.8 → 优雅拒绝
 
-Phase 2 (P1): 策略联动
-    ├─ execution_mode → 控制 _compile_context 深度
-    ├─ prompt_style → 控制 _call_llm 系统指令
-    └─ expectation → 控制 DomainSelector 权重
+### Phase 2 (P1): 前端联动
 
-Phase 3 (P2): 前端联动
-    ├─ PCR 结果随 V3 message 返回
-    └─ 前端显示期望/噪声/策略标签
+```python
+# V3 message 返回 PCR 信号
+{
+  "content": "...",
+  "pcr": {
+    "expectation": "ADVISOR",
+    "noise": 0.15,
+    "execution_mode": "DEEP_RESEARCH"
+  }
+}
+# 前端: 显示标签 → "分析模式" + "清晰输入"
+```
+
+### Phase 3 (P2): 完整 Layer 1 接入
+
+```python
+# IntentParser 8阶段 Pipeline 全部接入
+# PCR → IntentContext → IntentParser → ParseResult → TaskGraph
 ```
