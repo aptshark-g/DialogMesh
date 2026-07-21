@@ -2169,10 +2169,10 @@ class CognitiveRuntimeEngine:
             LLM response text, or None if no provider or compilation failed.
         """
         if self._llm_provider is None:
-            logger.debug("No LLM provider configured, skipping generation")
+            logger.warning("[_call_llm] No LLM provider — skip")
             return None
         if self._last_context is None:
-            logger.debug("No compiled context, skipping generation")
+            logger.warning("[_call_llm] No compiled context — skip")
             return None
 
         # Build system instruction from world params
