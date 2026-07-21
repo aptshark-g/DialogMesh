@@ -105,7 +105,11 @@ class GatewayLLMProvider(LLMProvider):
             choices = data.get("choices", [])
             text = ""
             if choices:
-                text = choices[0].get("message", {}).get("content", "")
+                msg = choices[0].get("message", {})
+                text = msg.get("content", "")
+                # Reasoning models put output in reasoning_content
+                if not text:
+                    text = msg.get("reasoning_content", "")
             usage = data.get("usage", {})
             latency = (time.time() - t0) * 1000
 

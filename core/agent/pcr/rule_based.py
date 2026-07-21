@@ -240,7 +240,7 @@ class ExpectationIdentifier:
         prompt = self._build_llm_prompt(query)
         try:
             from core.agent.llm_providers.base import GenerateRequest
-            req = GenerateRequest(prompt=prompt, temperature=0.1, max_tokens=20)
+            req = GenerateRequest(prompt=prompt, temperature=0.1, max_tokens=300)
             result = self._llm_provider.generate(req)
             raw_response = result.text if hasattr(result, 'text') else str(result)
             expectation = self._parse_llm_response(raw_response)
@@ -1171,7 +1171,7 @@ class RuleBasedPCR(IPCRRouter):
                     f"Expectation: {expectation}. "
                     f"Suggest 2-3 next actions. Respond ONLY comma-separated, no explanation."
                 )
-                req = GenerateRequest(prompt=prompt, temperature=0.3, max_tokens=50)
+                req = GenerateRequest(prompt=prompt, temperature=0.3, max_tokens=300)
                 result = self._llm_provider.generate(req)
                 raw = getattr(result, 'text', '') or str(result)
                 actions = [a.strip() for a in raw.split(',') if a.strip()][:3]
