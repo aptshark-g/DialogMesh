@@ -642,14 +642,41 @@ class CognitiveRuntimeEngine:
                 intent = parse_result.intent if hasattr(parse_result, 'intent') else None
                 if intent:
                     from core.agent.v3_0.data_models import IntentContext_v3
+                    from core.agent.v3_0.planning.skill_registry import SkillRegistry
                     plan_ctx = IntentContext_v3()
                     if pcr_output:
                         plan_ctx.expectation = getattr(pcr_output, 'expectation', None)
-                    plan_result = self._planner.plan(
-                        intent=intent,
-                        intent_context=plan_ctx,
-                    )
+                        plan_ctx.complexity = getattr(pcr_output, 'complexity_level', 0.5)
+                        plan_ctx.cognitive_profile = getattr(pcr_output, 'cognitive_profile', None)
+
+                    # Skill matching
+                    blueprint = None
+                    if self._skill_matcher:
+                        try:
+                            intent_str = str(getattr(intent, 'category', intent))
+                            blueprint = self._skill_matcher.match(intent_str)
+                        except: pass
+
+                    # Run async plan() in executor
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    try:
+                        plan_result = loop.run_until_complete(
+                            self._planner.plan(
+                                intent=intent,
+                                intent_context=plan_ctx,
+                                blueprint=blueprint,
+                            )
+                        )
+                    finally:
+                        loop.close()
                     self._last_plan_result = plan_result
+
+                    # Submit TaskGraph to scheduler
+                    if self._scheduler and hasattr(plan_result, 'task_graph') and plan_result.task_graph:
+                        try:
+                            self._scheduler.submit(plan_result.task_graph)
+                        except: pass
             except Exception as e:
                 logger.warning('Planning failed: %s', e)
 
@@ -2988,13 +3015,23 @@ class CognitiveRuntimeEngine:
         try:
             from core.agent.v3_0.planning.planner import PlanningSkill
             from core.agent.v3_0.planning.skill_matcher import SkillMatcher
+            from core.agent.v3_0.planning.skill_registry import SkillRegistry
             self._planner = PlanningSkill(llm_provider=self._llm_provider)
             self._skill_matcher = SkillMatcher()
-            logger.info('Planning: Planner + SkillMatcher ready')
+            # Load predefined blueprints
+            self._skill_registry = SkillRegistry()
+            try:
+                from core.agent.v3_common.blueprints import DEFAULT_BLUEPRINTS
+                for bp in DEFAULT_BLUEPRINTS:
+                    self._skill_registry.register(bp)
+            except: pass
+            logger.info('Planning: Planner + SkillMatcher + %d blueprints ready',
+                       len(getattr(self._skill_registry, '_skills', {})))
         except Exception as e:
             logger.warning('Planning init failed (degraded): %s', e)
             self._planner = None
             self._skill_matcher = None
+            self._skill_registry = None
         try:
             from core.agent.v4.cognitive_scheduler.scheduler import CognitiveScheduler
             self._scheduler = CognitiveScheduler()
