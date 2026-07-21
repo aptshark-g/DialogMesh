@@ -2229,7 +2229,12 @@ class CognitiveRuntimeEngine:
                 temperature=temperature,
                 timeout_ms=30000,
             )
+            # Try provider first; fallback to direct gateway HTTP
             result: GenerateResult = self._llm_provider.generate(request)
+            if not result.metrics.success:
+                logger.warning("Provider failed (%s), trying direct gateway...",
+                             result.metrics.error_type)
+                result = self._direct_llm_call(prompt, system_instruction)
             self._llm_metrics = {
                 "latency_ms": result.metrics.latency_ms,
                 "input_tokens": result.metrics.input_tokens,
@@ -2253,6 +2258,47 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.warning("LLM generation error: %s", e)
             return None
+
+    def _direct_llm_call(self, prompt: str, system_instruction: str) -> GenerateResult:
+        """Fallback: call gateway directly via urllib (bypasses provider)."""
+        import urllib.request, time
+        from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
+        start = time.time() * 1000
+        try:
+            full_prompt = f"{system_instruction}\n\n{prompt}"[:12000]
+            data = json.dumps({
+                "model": "deepseek-v4-flash",
+                "messages": [{"role": "user", "content": full_prompt}],
+                "max_tokens": 1000,
+            })
+            req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data.encode(),
+                {"Content-Type": "application/json", "Authorization": "Bearer not-needed"}
+            )
+            r = urllib.request.urlopen(req, timeout=30)
+            body = json.loads(r.read())
+            content = body["choices"][0]["message"].get("content", "")
+            latency = (time.time() * 1000) - start
+            return GenerateResult(
+                text=content,
+                metrics=LLMCallMetrics(
+                    provider_name="direct-gateway",
+                    latency_ms=latency,
+                    input_tokens=body.get("usage", {}).get("prompt_tokens", 0),
+                    output_tokens=body.get("usage", {}).get("completion_tokens", 0),
+                    success=True, model_id="deepseek-v4-flash",
+                )
+            )
+        except Exception as e:
+            latency = (time.time() * 1000) - start
+            return GenerateResult(
+                text="",
+                metrics=LLMCallMetrics(
+                    provider_name="direct-gateway",
+                    latency_ms=latency, success=False, error_type=str(e)[:50],
+                )
+            )
 
     def _build_system_instruction(self) -> str:
         """Build system prompt from world params and engine state."""
