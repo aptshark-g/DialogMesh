@@ -169,6 +169,9 @@ class CognitiveRuntimeEngine:
         self._last_llm_response: Optional[str] = None
         self._pcr_router = None  # Pre-Cognitive Router — lazy init in start()
         self._last_pcr = None    # Last PCROutput
+        self._intent_parser = None     # v3_common IntentParser — lazy init
+        self._last_intent_context = None  # Last IntentContext
+        self._last_parse_result = None   # Last ParseResult
         self._llm_metrics: Optional[Dict[str, Any]] = None
 
         # Path trigger policy and state machine (from path_trigger_policy)
@@ -186,6 +189,7 @@ class CognitiveRuntimeEngine:
         self._running = True
         self._session_active = True
         self._init_pcr()
+        self._init_intent()
         self._instantiate_adapters()
         self._observation_pool = self._create_observation_pool()
         self._context_assembler = self._create_context_assembler()
@@ -604,8 +608,30 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.warning('PCR evaluate failed: %s', e)
 
+        # ---- Intent Parser (Layer 1) ----
+        parse_result = None
+        intent_context = None
+        if self._intent_parser is not None and text:
+            try:
+                # Build IntentContext from PCR output
+                if pcr_output:
+                    from core.agent.v3_common.models import IntentContext
+                    intent_context = IntentContext.from_pcr_output(pcr_output)
+                else:
+                    intent_context = IntentContext()
+
+                parse_result = self._intent_parser.parse(
+                    user_input=text,
+                    intent_context=intent_context,
+                    parse_context=self._build_parse_context(),
+                )
+                self._last_intent_context = intent_context
+                self._last_parse_result = parse_result
+            except Exception as e:
+                logger.warning('IntentParser failed: %s', e)
+
         # ---- Context Engineering: compile CrossDomainContextIR ----
-        self._compile_context(event, pcr_output=pcr_output)
+        self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result)
 
         # ---- BehaviorGraph: record event as step ----
         if self._causal_planner is not None:
@@ -712,7 +738,7 @@ class CognitiveRuntimeEngine:
                     self._monitor.record_tree(self._turn_counter, len(tree.blocks),
                         len(tree.active_blocks()), len(tree.blocks) - 1)
 
-        llm_response = self._call_llm(event, pcr_output=pcr_output)
+        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result)
         if llm_response:
             self._last_llm_response = llm_response
 
@@ -948,6 +974,16 @@ class CognitiveRuntimeEngine:
         logger.info("Session ended, triggering checkpoint")
         self.trigger_checkpoint()
 
+    def _build_parse_context(self):
+        try:
+            from core.agent.v3_common.models import ParseContext
+            ctx = ParseContext()
+            if self._last_context:
+                ctx.history = list(self._last_context.entries[:10])
+            return ctx
+        except Exception:
+            return None
+
     def trigger_checkpoint(self) -> List[AdapterResult]:
         """Run the Slow Path (checkpoint) with ObservationPool data.
 
@@ -965,7 +1001,7 @@ class CognitiveRuntimeEngine:
 
     # ---- Context Engineering ----
 
-    def _compile_context(self, event: EventIR, pcr_output=None) -> None:
+    def _compile_context(self, event: EventIR, pcr_output=None, parse_result=None) -> None:
         """Compile CrossDomainContextIR from current cognitive state.
 
         Conversation memory: prior turns are injected as context entries
@@ -2173,7 +2209,7 @@ class CognitiveRuntimeEngine:
                 if getattr(e, 'type', '') != 'graph'
             ]
 
-    def _call_llm(self, event: EventIR, pcr_output=None) -> Optional[str]:
+    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None) -> Optional[str]:
         """Compile context IR to prompt, call LLM, return response text.
 
         Args:
@@ -2224,6 +2260,18 @@ class CognitiveRuntimeEngine:
 
         # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # Intent-driven system instruction
+        if parse_result and parse_result.intent:
+            intent_cat = getattr(parse_result.intent, 'category', None) or str(parse_result.intent)
+            if 'EXPLAIN' in str(intent_cat):
+                system_instruction += ' [Intent: EXPLAIN — be educational]'
+            elif 'ANALYZE' in str(intent_cat):
+                system_instruction += ' [Intent: ANALYZE — be analytical]'
+            elif 'C' in str(intent_cat) and 'COMMAND' in str(intent_cat).upper():
+                system_instruction += ' [Intent: COMMAND — execute directly]'
+            elif 'CLARIFY' in str(intent_cat):
+                system_instruction += ' [Intent: CLARIFY — ask clarifying questions]'
 
         # PCR-driven strategy modulation
         if pcr_output:
@@ -2902,6 +2950,15 @@ class CognitiveRuntimeEngine:
             logger.warning('PCR init failed (degraded): %s', e)
             self._pcr_lifecycle = None
             self._pcr_router = None
+
+    def _init_intent(self):
+        try:
+            from core.agent.v3_common.intent_parser import IntentParser
+            self._intent_parser = IntentParser(llm_provider=self._llm_provider)
+            logger.info('IntentParser ready')
+        except Exception as e:
+            logger.warning('IntentParser init failed (degraded): %s', e)
+            self._intent_parser = None
 
     def _create_observation_pool(self):
         """Create the ObservationPool for path-to-path data flow."""
