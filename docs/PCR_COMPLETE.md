@@ -4,6 +4,45 @@
 
 ---
 
+## 〇、文档溯源
+
+PCR 的设计并非一蹴而就，经历过多次迭代。以下是核心设计文档的时间线：
+
+```
+2025-06-24
+├─ design_layer0_pcr_and_layer1_intent_parser.md (v2.4, 2124行)
+│   └─ 定义: Layer 0 PCR + Layer 1 IntentParser 双入口架构
+│   └─ 包含: 5阶段 Pipeline 设计 + 三维认知刷新模型 + 完整算法伪代码
+│   └─ 核心: "先理解用户，再理解任务" 认知先行哲学
+│
+├─ design_pcr_interface_v2_1.md (v2.2.1, 940行)
+│   └─ 接口化修正: IPCRRouter 抽象基类 + 插件生命周期 + 数据契约版本化
+│   └─ 8大修正: 接口完整性、版本化、插件发现、错误处理、可观测性、
+│               配置管理、多模态、认知刷新
+│
+├─ design_pcr_issues_discussion.md (v2.1, 625行)
+│   └─ 多模态分发 + 认知画像硬编码阈值 → 统计学阈值
+│   └─ 3个问题讨论: 多模态、认知画像4维、v2.2.1修正联动
+│
+2026-06-15
+├─ checkpoint_pcr_p13.md
+│   └─ P8-P13 集成测试完成: 168/170 PASS, 30 新增集成测试
+│   └─ 关键: IntentContext 工厂方法 + IntentParser 8阶段 Pipeline
+│
+├─ pcr_gap_assessment.md
+│   └─ 实现差距评估: 总完成度78%, 7核心模块100%, 配置外化0%
+│   └─ P0修复: IntentAgent集成LifecycleManager + 默认配置文件
+│
+├─ pcr_gap_assessment_v2_2.md
+│   └─ 补充评估: 规则快路径+统计学阈值+认知刷新感知修复
+│
+├─ ENGINEERING_PCR.md (v3.0工程实现文档)
+│   └─ 数据模型: PCRInput_v1 / PCROutput_v1 / CognitiveProfile_v1
+│   └─ 算法: pipeline_detail / noise_calculation / complexity_rules
+│   └─ 部署: YAML config / telemetry / lifecycle
+
+---
+
 ## 一、PCR 是什么
 
 DialogMesh 的**输入层网关**。在所有认知处理之前，对用户消息做"第一眼判断"：
