@@ -1038,15 +1038,43 @@ class CognitiveRuntimeEngine:
         track_a = getattr(self._cognitive_profile, 'track_a', None)
         if track_a is None:
             return
+
+        # TrackA: PCR fast profile → EMA
         alpha = 0.3
         if pcr_output and getattr(pcr_output, 'cognitive_profile', None):
             fast = pcr_output.cognitive_profile
-            if hasattr(fast, 'cognitive_level'):
-                track_a.cog_resource = alpha * fast.cognitive_level + 0.7 * getattr(track_a, 'cog_resource', 0.5)
+            for attr in ('cognitive_level', 'expertise_level', 'preferred_detail'):
+                if hasattr(fast, attr):
+                    current = getattr(track_a, attr, 0.5) if hasattr(track_a, attr) else 0.5
+                    setattr(track_a, attr, alpha * getattr(fast, attr) + 0.7 * current)
+
+        # Trust from LLM metrics
         if metrics and metrics.get('success'):
             track_a.trust = min(1.0, getattr(track_a, 'trust', 0.5) + 0.02)
         elif metrics and not metrics.get('success'):
             track_a.trust = max(0.0, getattr(track_a, 'trust', 0.5) - 0.05)
+
+        # TrackB: infer tags from trace (lazy, only every 5 turns)
+        if self._turn_counter % 5 == 0:
+            try:
+                from core.agent.v4.cognitive.tag_layer import TagLayer
+                tag_layer = TagLayer()
+                tag_layer.infer_from_trace(self._trace_v3, self._cognitive_profile)
+            except Exception as e:
+                logger.debug('TagLayer skipped: %s', e)
+
+        # OCEAN mapping (lazy, every 10 turns)
+        if self._turn_counter % 10 == 0:
+            try:
+                self._ocean_analyst.update(self._cognitive_profile)
+            except Exception as e:
+                logger.debug('OCEAN skipped: %s', e)
+
+        # Convergence update
+        if self._turn_counter % 3 == 0 and hasattr(self, '_convergence_engine') and self._convergence_engine:
+            try:
+                self._convergence_engine.update(track_a)
+            except: pass
 
     def trigger_checkpoint(self) -> List[AdapterResult]:
         """Run the Slow Path (checkpoint) with ObservationPool data.
