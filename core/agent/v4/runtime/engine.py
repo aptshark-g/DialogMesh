@@ -2229,12 +2229,12 @@ class CognitiveRuntimeEngine:
                 temperature=temperature,
                 timeout_ms=30000,
             )
-            # Try provider first; fallback to direct gateway HTTP
-            result: GenerateResult = self._llm_provider.generate(request)
-            if not result.metrics.success:
-                logger.warning("Provider failed (%s), trying direct gateway...",
-                             result.metrics.error_type)
-                result = self._direct_llm_call(prompt, system_instruction)
+            # Direct gateway call — proven reliable, skip broken provider
+            result: GenerateResult = self._direct_llm_call(
+                user_text=user_text,
+                system_instruction=system_instruction,
+                context_entries=[]  # TODO: add subgraph-compiled domain entries
+            )
             self._llm_metrics = {
                 "latency_ms": result.metrics.latency_ms,
                 "input_tokens": result.metrics.input_tokens,
@@ -2260,32 +2260,25 @@ class CognitiveRuntimeEngine:
             logger.warning("LLM generation error: %s", e)
             return None
 
-    def _direct_llm_call(self, prompt: str, system_instruction: str) -> GenerateResult:
-        """Fallback: call gateway directly — clean message, no context dump."""
+    def _direct_llm_call(self, user_text: str, system_instruction: str, context_entries: list) -> GenerateResult:
+        """Gateway call — clean user message + optional relevant context."""
         import urllib.request, time, json
         from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
         start = time.time() * 1000
         try:
-            # Extract user text from prompt (format: "[User]\n<text>\n\nSystem...")
-            user_text = prompt
-            if "[User]" in prompt:
-                parts = prompt.split("[User]", 1)
-                if len(parts) > 1:
-                    user_text = parts[1].split("\n\n", 1)[0].strip()
-                    if not user_text:
-                        user_text = parts[1].split("\n", 1)[0].strip()
-            # Clean system instruction — don't ask LLM to explain DialogMesh internals
             clean_system = (
-                "You are a helpful AI assistant. Answer the user's question directly and concisely. "
-                "If the user mentions DialogMesh internal concepts (DomainSelector, BudgetAllocator, "
-                "CrossDomainContextIR, etc.), explain them. Otherwise focus on the user's actual question."
+                "You are a helpful AI assistant. Answer the user's question directly. "
+                "Use the provided context only if it is clearly relevant to the question."
             )
+            messages = [{"role": "system", "content": clean_system}]
+            # Add minimal relevant context if available
+            if context_entries:
+                ctx_text = "\n".join(f"- {e}" for e in context_entries[:5])
+                messages.append({"role": "system", "content": f"Relevant context:\n{ctx_text}"})
+            messages.append({"role": "user", "content": user_text[:4000]})
             data = json.dumps({
                 "model": "deepseek-v4-flash",
-                "messages": [
-                    {"role": "system", "content": clean_system},
-                    {"role": "user", "content": user_text or prompt[:2000]},
-                ],
+                "messages": messages,
                 "max_tokens": 1000,
             })
             req = urllib.request.Request(
