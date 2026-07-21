@@ -26,6 +26,11 @@ export function ChatPage() {
   });
 
   useEffect(() => {
+    // Don't recreate if we already have a session (from sessionStorage)
+    if (sessionId) {
+      setConnectionState({ status: 'open', latencyMs: null, lastError: null });
+      return;
+    }
     createSession()
       .then(resp => {
         setSessionId(resp.session_id);
@@ -37,7 +42,7 @@ export function ChatPage() {
   }, []);
 
   const handleUserMessage = useCallback(async (content: string) => {
-    if (!sessionId || !content.trim()) return;
+    if (!sessionId || !content.trim() || isThinking) return; // prevent double-send
 
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
@@ -54,7 +59,7 @@ export function ChatPage() {
     } finally {
       setIsThinking(false);
     }
-  }, [sessionId]);
+  }, [sessionId, isThinking]);
 
   const clearError = useCallback(() => setError(null), []);
   const clearMessages = useCallback(() => setMessages([]), []);
