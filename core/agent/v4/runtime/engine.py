@@ -2229,12 +2229,16 @@ class CognitiveRuntimeEngine:
                 temperature=temperature,
                 timeout_ms=30000,
             )
-            # Direct gateway call — proven reliable, skip broken provider
-            result: GenerateResult = self._direct_llm_call(
-                user_text=user_text,
-                system_instruction=system_instruction,
-                context_entries=[]  # TODO: add subgraph-compiled domain entries
-            )
+            # Generate via provider (GatewayLLMProvider — tested, reliable)
+            result: GenerateResult = self._llm_provider.generate(request)
+            if not result.metrics.success:
+                logger.warning("Provider failed (%s), trying direct gateway...",
+                             result.metrics.error_type)
+                result = self._direct_llm_call(
+                    user_text=user_text,
+                    system_instruction=system_instruction,
+                    context_entries=[]
+                )
             self._llm_metrics = {
                 "latency_ms": result.metrics.latency_ms,
                 "input_tokens": result.metrics.input_tokens,

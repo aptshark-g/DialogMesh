@@ -177,11 +177,11 @@ def init_api(db_path: str = "data/event_log.db",
     gateway_init(_engine)
     # Auto-configure LLM provider via switch gateway
     try:
-        from core.agent.llm_providers.openai_provider import OpenAIProvider
-        _engine._llm_provider = OpenAIProvider("deepseek", {
-            "base_url": "http://127.0.0.1:8080/v1",
-            "api_key": "not-needed",  # gateway handles auth
-            "model": "deepseek-v4-flash",
+        from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+        _engine._llm_provider = GatewayLLMProvider("gateway", {
+            "base_url": "http://127.0.0.1:8080",
+            "default_provider": "deepseek",
+            "default_model": "deepseek-v4-flash",
         })
         logger.info("LLM provider: switch gateway (deepseek)")
     except Exception as e:
