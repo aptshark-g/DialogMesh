@@ -187,7 +187,7 @@ graph TD
 ## 五、决策矩阵 (StrategyDeriver)
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph INPUTS["输入信号"]
         EXP["expectation<br/>TOOL/ADVISOR/COMPANION/UNKNOWN"]
         NZ["noise (聚合)<br/>low: <0.3 · high: ≥0.3"]
@@ -195,9 +195,15 @@ graph TD
     end
 
     subgraph MATRIX["策略推导矩阵"]
-        T1["EXECUTE"]; T2["CLARIFY"]; T3["RESEARCH"]
-        T4["EXECUTE"]; T5["CLARIFY"]; T6["RESEARCH"]
-        T7["CLARIFY"]; T8["BALANCED"]; T9["BALANCED"]
+        T1["EXECUTE"]
+        T2["CLARIFY"]
+        T3["RESEARCH"]
+        T4["EXECUTE"]
+        T5["CLARIFY"]
+        T6["RESEARCH"]
+        T7["CLARIFY"]
+        T8["BALANCED"]
+        T9["BALANCED"]
     end
 
     EXP --> MATRIX
@@ -285,7 +291,7 @@ graph TD
 ## 八、实现状态
 
 ```mermaid
-graph LR
+flowchart LR
     subgraph DONE["✅ 已完成"]
         CODE["代码 3500行<br/>9模块"]
         TEST["测试 168/170"]
