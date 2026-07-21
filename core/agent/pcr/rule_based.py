@@ -148,7 +148,7 @@ class ExpectationIdentifier:
                 return result
 
         # Tier 3: LLM few-shot fallback (100-200ms, only if provider available)
-        if self._llm_provider and result[1] < 0.5:
+        if self._llm_provider and result[1] < 0.6:
             return self._llm_fallback(query)
 
         return result
