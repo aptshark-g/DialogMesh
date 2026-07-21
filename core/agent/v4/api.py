@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from core.agent.v4.monitor.interaction_monitor import interaction_middleware, get_interaction_monitor
 from core.agent.v4.monitor.span_tracer import get_tracer
 from pydantic import BaseModel, field_validator, Field
