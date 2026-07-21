@@ -167,6 +167,8 @@ class CognitiveRuntimeEngine:
         # LLM Provider integration
         self._llm_provider: Optional[LLMProvider] = llm_provider
         self._last_llm_response: Optional[str] = None
+        self._pcr_router = None  # Pre-Cognitive Router — lazy init in start()
+        self._last_pcr = None    # Last PCROutput
         self._llm_metrics: Optional[Dict[str, Any]] = None
 
         # Path trigger policy and state machine (from path_trigger_policy)
@@ -183,6 +185,7 @@ class CognitiveRuntimeEngine:
         """Start the runtime engine: instantiate adapters, pools, scheduler, and timers."""
         self._running = True
         self._session_active = True
+        self._init_pcr()
         self._instantiate_adapters()
         self._observation_pool = self._create_observation_pool()
         self._context_assembler = self._create_context_assembler()
@@ -590,8 +593,19 @@ class CognitiveRuntimeEngine:
             else:
                 pas.failure_count += 1
 
+        # ---- PCR: Pre-Cognitive Router (Layer 0) ----
+        pcr_output = None
+        if self._pcr_router is not None and text:
+            try:
+                from core.agent.pcr.datacontract import PCRInput_v1
+                pcr_input = PCRInput_v1(user_text=text, history=[], conversation_id=getattr(event, 'session_id', ''))
+                pcr_output = self._pcr_router.evaluate(pcr_input)
+                self._last_pcr = pcr_output
+            except Exception as e:
+                logger.warning('PCR evaluate failed: %s', e)
+
         # ---- Context Engineering: compile CrossDomainContextIR ----
-        self._compile_context(event)
+        self._compile_context(event, pcr_output=pcr_output)
 
         # ---- BehaviorGraph: record event as step ----
         if self._causal_planner is not None:
@@ -698,7 +712,7 @@ class CognitiveRuntimeEngine:
                     self._monitor.record_tree(self._turn_counter, len(tree.blocks),
                         len(tree.active_blocks()), len(tree.blocks) - 1)
 
-        llm_response = self._call_llm(event)
+        llm_response = self._call_llm(event, pcr_output=pcr_output)
         if llm_response:
             self._last_llm_response = llm_response
 
@@ -951,7 +965,7 @@ class CognitiveRuntimeEngine:
 
     # ---- Context Engineering ----
 
-    def _compile_context(self, event: EventIR) -> None:
+    def _compile_context(self, event: EventIR, pcr_output=None) -> None:
         """Compile CrossDomainContextIR from current cognitive state.
 
         Conversation memory: prior turns are injected as context entries
@@ -972,7 +986,7 @@ class CognitiveRuntimeEngine:
         # ---- Perspective: decide how to observe ----
         token_budget = self._world_params.compiler_token_budget
         # Infer expectation type from query + conversation context
-        expectation = self._infer_expectation(text)
+        expectation = pcr_output.expectation if pcr_output else self._infer_expectation(text)
         perspectives = self._perspective_planner.plan_multi(
             enriched_text, token_budget=token_budget,
             expectation=expectation)
@@ -2159,7 +2173,7 @@ class CognitiveRuntimeEngine:
                 if getattr(e, 'type', '') != 'graph'
             ]
 
-    def _call_llm(self, event: EventIR) -> Optional[str]:
+    def _call_llm(self, event: EventIR, pcr_output=None) -> Optional[str]:
         """Compile context IR to prompt, call LLM, return response text.
 
         Args:
@@ -2210,6 +2224,17 @@ class CognitiveRuntimeEngine:
 
         # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # PCR-driven strategy modulation
+        if pcr_output:
+            if pcr_output.expectation == "TOOL":
+                system_instruction += " [PCR: TOOL mode — direct response]"
+            elif pcr_output.expectation == "COMPANION":
+                system_instruction += " [PCR: COMPANION mode — conversational]"
+            if getattr(pcr_output, "prompt_style", "") == "BRIEF":
+                system_instruction += " [PCR: BRIEF — one paragraph]"
+            elif getattr(pcr_output, "prompt_style", "") == "TUTORIAL":
+                system_instruction += " [PCR: TUTORIAL — step by step]"
         if user_text:
             prompt = f"[User]\n{user_text}\n\n{system_instruction}\n{prompt}"
 
@@ -2865,6 +2890,18 @@ class CognitiveRuntimeEngine:
         if self._checkpoint_timer is not None:
             self._checkpoint_timer.cancel()
             self._checkpoint_timer = None
+
+    def _init_pcr(self):
+        try:
+            from core.agent.pcr.lifecycle import PCRLifecycleManager
+            self._pcr_lifecycle = PCRLifecycleManager()
+            self._pcr_lifecycle.initialize()
+            self._pcr_router = self._pcr_lifecycle.router
+            logger.info('PCR ready: %s', self._pcr_router.name)
+        except Exception as e:
+            logger.warning('PCR init failed (degraded): %s', e)
+            self._pcr_lifecycle = None
+            self._pcr_router = None
 
     def _create_observation_pool(self):
         """Create the ObservationPool for path-to-path data flow."""
