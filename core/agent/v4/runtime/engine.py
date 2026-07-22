@@ -636,6 +636,11 @@ class CognitiveRuntimeEngine:
             try:
                 result, route = self._router_v4.route(text, pcr_output=pcr_output)
                 logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
+                if self._decider:
+                    from core.agent.v4.state.global_decider import Command
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="routing", payload={"zone": route.zone, "strategy": route.strategy})
+                    ))
             except Exception as e:
                 logger.debug('RouterV4 failed: %s', e)
 
@@ -703,6 +708,13 @@ class CognitiveRuntimeEngine:
                     finally:
                         loop.close()
                     self._last_plan_result = plan_result
+                    if self._decider and plan_result:
+                        from core.agent.v4.state.global_decider import Command
+                        tg = getattr(plan_result, 'task_graph', None)
+                        task_count = len(getattr(tg, 'nodes', [])) if tg else 0
+                        self._decider.evolve(self._decider.decide(
+                            Command(type="planning", payload={"task_count": task_count})
+                        ))
 
                     # Submit TaskGraph to scheduler
                     if self._scheduler and hasattr(plan_result, 'task_graph') and plan_result.task_graph:
