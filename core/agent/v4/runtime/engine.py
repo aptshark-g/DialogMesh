@@ -172,6 +172,7 @@ class CognitiveRuntimeEngine:
         self._decider = None     # GlobalDecider — state machine coordinator
         self._intent_parser = None     # v3_common IntentParser — lazy init
         self._unified_parser = None   # UnifiedParser — Tier 0→2 pipeline
+        self._router_v4 = None        # V4.0 Cognitive Coordinate Router
         self._last_intent_context = None  # Last IntentContext
         self._last_parse_result = None   # Last ParseResult
         self._planner = None             # v3_0 Planner — lazy init
@@ -198,6 +199,7 @@ class CognitiveRuntimeEngine:
         self._decider = GlobalDecider()
         self._init_pcr()
         self._init_unified()
+        self._init_router_v4()
         self._init_intent()
         self._init_planning()
         self._instantiate_adapters()
@@ -624,8 +626,18 @@ class CognitiveRuntimeEngine:
                     self._decider.evolve(self._decider.decide(
                         Command(type="pcr", payload={"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
                     ))
+
             except Exception as e:
                 logger.warning('PCR evaluate failed: %s', e)
+
+        # ---- V4.0 Cognitive Coordinate Router ----
+        route = None
+        if self._router_v4 is not None and text:
+            try:
+                result, route = self._router_v4.route(text, pcr_output=pcr_output)
+                logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
+            except Exception as e:
+                logger.debug('RouterV4 failed: %s', e)
 
         # ---- Intent Parser (Layer 1) ----
         parse_result = None
@@ -2415,6 +2427,20 @@ class CognitiveRuntimeEngine:
         # User query FIRST (LLMs attend more to beginning)
         user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
 
+        # V4.0 Route zone → system instruction
+        if route:
+            zone_str = f' [Zone: {route.zone}]'
+            if route.zone == 'ATOMIC':
+                system_instruction += f'{zone_str} (fast, cache/rule)'
+            elif route.zone == 'PSYCHE':
+                system_instruction += f'{zone_str} (empathetic, brief)'
+            elif route.zone == 'EXPLORE':
+                system_instruction += f'{zone_str} (exploratory, temp={route.temperature})'
+            elif route.zone == 'PRECISION':
+                system_instruction += f'{zone_str} (precise, structured output)'
+            elif route.zone == 'ABYSS':
+                system_instruction += f'{zone_str} (deep reasoning, recursion={route.max_recursion})'
+
         # Unified behavior label
         if unified_result and unified_result.behavior_label:
             system_instruction += f' [Context: {unified_result.behavior_label}]'
@@ -3165,6 +3191,15 @@ class CognitiveRuntimeEngine:
         except Exception as e:
             logger.warning('UnifiedParser init failed: %s', e)
             self._unified_parser = None
+
+    def _init_router_v4(self):
+        try:
+            from core.agent.v4.router_v4 import RouterV4
+            self._router_v4 = RouterV4()
+            logger.info('RouterV4 ready (StructuralFeatures+Y, BGE mood+Z, 6-zone)')
+        except Exception as e:
+            logger.warning('RouterV4 init failed: %s', e)
+            self._router_v4 = None
 
     def _init_intent(self):
         try:
