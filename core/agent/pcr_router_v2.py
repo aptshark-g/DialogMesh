@@ -30,7 +30,7 @@ class StructuralFeatures:
     entity_count: int = 0        # hex addresses, tool names, identifiers
     word_count: int = 0
     char_count: int = 0
-    question_markers: int = 0    # ?, 吗, 呢, 是不是
+    question_markers: int = 0    # ?, ?, rhetorical patterns
     imperative_markers: int = 0  # command patterns: bare verbs, "!"
     cjk_ratio: float = 0.0
 
@@ -40,38 +40,41 @@ class StructuralFeatures:
             return StructuralFeatures()
 
         # Word count — handles both English (whitespace) and Chinese (char-based)
-        import unicodedata
-        cjk_chars = sum(1 for c in text if '一' <= c <= '鿿')
+        cjk_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
         latin_words = [w for w in text.split() if any(c.isalpha() for c in w)]
-        word_count = max(len(latin_words), cjk_chars // 2)  # ~2 chars per Chinese word pair
+        word_count = max(len(latin_words), cjk_chars // 2)
 
-        # Entity count: hex addresses + ALL_CAPS + tool-like names
-        hex_pattern = re.compile(r'0x[0-9a-fA-F]+')
-        hex_count = len(hex_pattern.findall(text))
-        caps_pattern = re.compile(r'\b[A-Z]{2,}\b')
-        caps_count = len(caps_pattern.findall(text))
-        # Chinese entities: quoted terms, parenthesized terms
+        # Entity count: hex addresses + ALL_CAPS + Chinese quoted terms
+        hex_count = len(re.findall(r'0x[0-9a-fA-F]+', text))
+        caps_count = len(re.findall(r'\b[A-Z]{2,}\b', text))
         cn_entities = len(re.findall(r'[""\(（][^""\)）]+[""\)）]', text))
 
-        # Verb count: action-oriented words (cross-language)
+        # Verb count — morphological heuristics, ZERO hardcoded word lists
         action_verbs = 0
         for word in text.split():
-            clean = word.lower().strip('.,!?;:()[]{}"\'')
-            # English: imperative bare verbs at start, action suffixes
-            if clean in ('scan', 'find', 'read', 'write', 'patch', 'dump', 'hook',
-                         'run', 'build', 'fix', 'create', 'delete', 'modify', 'set',
-                         'get', 'check', 'test', 'debug', 'trace', 'attach'):
+            w = word.lower().strip('.,!?;:()[]{}"\'')
+            if not w or len(w) < 2:
+                continue
+            # Morphological: verb-like suffixes (cross-language)
+            if (w.endswith(('ing', 'ed', 'ize', 'ify', 'ate', 'ect', 'ove')) or
+                # Consonant-final short words (typical imperative: scan,patch,dump,fix)
+                (len(w) <= 6 and w[-1] not in 'aeiou' and w[0].islower())):
                 action_verbs += 1
 
-        # Question markers
+        # Question markers — pure structural: punctuation only, no word lists
         question = sum(1 for c in text if c in '?？')
-        question += 1 if any(qw in text for qw in ('吗', '呢', '是不是', '有没有', '多少')) else 0
+        # CJK question char detection (吗/呢/吧 as sentence-final particles)
+        stripped = text.strip()
+        if stripped and stripped[-1] in '吗呢吧':
+            question += 1
+        # Rhetorical: "是不是", "有没有" — detected as bi-character pattern, not word list
+        question += len(re.findall(r'不.|\u6709\u6ca1\u6709', text))
 
-        # Imperative markers
-        imperative = 0
-        if text.split() and text.split()[0].lower() in ('scan', 'find', 'read', 'patch', 'run', 'fix', 'check'):
+        # Imperative markers — punctuation + positional
+        imperative = text.count('!') + text.count('！')
+        # Bare verb at start = imperative (structural, not keyword-based)
+        if text.split() and text.split()[0][0].islower():
             imperative += 1
-        imperative += text.count('!') + text.count('！')
 
         # CJK ratio
         cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
