@@ -1,0 +1,9 @@
+{
+  "layer1_relations": 13,
+  "layer3_consensus": [
+    "TOOL",
+    "ADVISOR"
+  ],
+  "layer4_chains_count": 4,
+  "layer5_causal_count": 1
+}

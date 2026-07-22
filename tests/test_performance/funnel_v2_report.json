@@ -1,0 +1,12 @@
+{
+  "rule": {
+    "llm_calls": 0,
+    "total_entities": 14,
+    "total_beliefs": 6
+  },
+  "llm": {
+    "llm_calls": 3,
+    "total_entities": 4,
+    "total_beliefs": 2
+  }
+}
