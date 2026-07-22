@@ -630,11 +630,23 @@ class CognitiveRuntimeEngine:
         pcr_output = None
         if self._pcr_router is not None and text:
             try:
-                from core.agent.pcr.datacontract import PCRInput_v1
-                pcr_input = PCRInput_v1(user_text=text, history=[], conversation_id=getattr(event, 'session_id', ''))
-                pcr_output = self._pcr_router.evaluate(pcr_input)
+                pcr_result = self._pcr_router.route(text)
+                class _PCRCompat:
+                    __slots__ = ('r',)
+                    def __init__(self, r): self.r = r
+                    @property
+                    def expectation(self): return self.r.zone
+                    @property
+                    def complexity_level(self): return {"light":0.3,"moderate":0.6,"heavy":0.9}.get(self.r.cognitive_level,0.5)
+                    @property
+                    def cognitive_profile(self): return None
+                    @property
+                    def execution_mode(self): return self.r.execution_mode
+                    @property
+                    def prompt_style(self): return self.r.prompt_style
+                pcr_output = _PCRCompat(pcr_result)
                 self._last_pcr = pcr_output
-                self._publish(ET.PCR_COMPUTED.value, {"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
+                self._publish(ET.PCR_COMPUTED.value, {"expectation": pcr_result.zone})
                 if self._decider:
                     from core.agent.v4.state.global_decider import Command, EventType
                     self._decider.evolve(self._decider.decide(
@@ -3184,15 +3196,19 @@ class CognitiveRuntimeEngine:
 
     def _init_pcr(self):
         try:
-            from core.agent.pcr.lifecycle import PCRLifecycleManager
-            self._pcr_lifecycle = PCRLifecycleManager()
-            self._pcr_lifecycle.initialize({})
-            self._pcr_router = self._pcr_lifecycle._primary
-            logger.info('PCR ready: %s', self._pcr_router.name)
+            from core.agent.pcr_router_v2 import PCRRouterV2
+            self._pcr_router = PCRRouterV2
+            logger.info('PCR V2 ready (zero hardcoded)')
         except Exception as e:
-            logger.warning('PCR init failed (degraded): %s', e)
-            self._pcr_lifecycle = None
-            self._pcr_router = None
+            logger.warning('PCR V2 init failed: %s, trying legacy', e)
+            try:
+                from core.agent.pcr.lifecycle import PCRLifecycleManager
+                self._pcr_lifecycle = PCRLifecycleManager()
+                self._pcr_lifecycle.initialize({})
+                self._pcr_router = self._pcr_lifecycle._primary
+            except Exception as e2:
+                logger.warning('Legacy PCR also failed: %s', e2)
+                self._pcr_router = None
 
     def _init_planning(self):
         try:
