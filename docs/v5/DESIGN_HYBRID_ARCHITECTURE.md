@@ -36,7 +36,7 @@ Association (关联链):
 ## 二、混合架构全景
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph HOT["热路径 (直连, <10ms) — 8条链"]
         direction LR
         PCR["PCR<br/>(<1ms)"] --> RTR["Router<br/>(<10ms)"]
@@ -56,6 +56,9 @@ graph TD
         EB --> META["Meta Subscriber<br/>消费: 8链事件<br/>产出: review + correction"]
         EB --> ASSOC["Association Subscriber<br/>消费: 6链事件<br/>产出: relation + causal + temporal"]
     end
+
+    REPLY["REPLY"]
+    ANALYSIS["ANALYSIS"]
 
     PCR -.->|"publish PCR_COMPUTED"| EL
     RTR -.->|"publish ROUTE_GENERATED"| EL

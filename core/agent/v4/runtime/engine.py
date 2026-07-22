@@ -170,6 +170,10 @@ class CognitiveRuntimeEngine:
         self._pcr_router = None  # Pre-Cognitive Router — lazy init in start()
         self._last_pcr = None    # Last PCROutput
         self._decider = None     # GlobalDecider — state machine coordinator
+        self._event_log = None   # EventLog — SQLite append-only
+        self._event_bus = None   # EventBus — ring buffer pub/sub
+        self._meta_sub = None    # MetaSubscriber — cold path
+        self._assoc_sub = None   # AssociationSubscriber — cold path
         self._intent_parser = None     # v3_common IntentParser — lazy init
         self._unified_parser = None   # UnifiedParser — Tier 0→2 pipeline
         self._router_v4 = None        # V4.0 Cognitive Coordinate Router
@@ -197,6 +201,13 @@ class CognitiveRuntimeEngine:
         self._session_active = True
         from core.agent.v4.state.global_decider import GlobalDecider, Command, EventType
         self._decider = GlobalDecider()
+        from core.agent.v4.api_event_log import EventLog
+        from core.agent.v4.event_bus import EventBus, Event, EventType as ET
+        self._event_log = EventLog()
+        self._event_bus = EventBus()
+        from core.agent.v4.meta_subscriber import MetaSubscriber
+        self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
+        logger.info('EventLog+EventBus ready, Meta subscriber active')
         self._init_pcr()
         self._init_unified()
         self._init_router_v4()
@@ -621,6 +632,7 @@ class CognitiveRuntimeEngine:
                 pcr_input = PCRInput_v1(user_text=text, history=[], conversation_id=getattr(event, 'session_id', ''))
                 pcr_output = self._pcr_router.evaluate(pcr_input)
                 self._last_pcr = pcr_output
+                self._publish(ET.PCR_COMPUTED.value, {"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
                 if self._decider:
                     from core.agent.v4.state.global_decider import Command, EventType
                     self._decider.evolve(self._decider.decide(
@@ -630,12 +642,23 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.warning('PCR evaluate failed: %s', e)
 
+    def _publish(self, event_type, payload=None):
+        """Fire-and-forget publish. Never blocks hot path."""
+        if self._event_log and self._event_bus:
+            try:
+                kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
+                self._event_log.put_event(kind, payload or {}, trace_id=getattr(self, '_trace_id', ''))
+                self._event_bus.publish(kind, payload or {})
+            except Exception as e:
+                logger.debug('Publish skipped: %s', e)
+
         # ---- V4.0 Cognitive Coordinate Router ----
         route = None
         if self._router_v4 is not None and text:
             try:
                 result, route = self._router_v4.route(text, pcr_output=pcr_output)
                 logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
+                self._publish(ET.ROUTE_GENERATED.value, {"zone": route.zone, "strategy": route.strategy})
                 if self._decider:
                     from core.agent.v4.state.global_decider import Command
                     self._decider.evolve(self._decider.decide(
@@ -663,6 +686,8 @@ class CognitiveRuntimeEngine:
                 )
                 self._last_intent_context = intent_context
                 self._last_parse_result = parse_result
+                cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
+                self._publish(ET.INTENT_PARSED.value, {"category": cat})
                 if self._decider and parse_result:
                     from core.agent.v4.state.global_decider import Command
                     cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
