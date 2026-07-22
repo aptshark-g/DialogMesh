@@ -1,46 +1,51 @@
-# Mood Profile Vectors — soft-coded, extensible via BGE cosine.
-# 
-# Each category has descriptors that encode the "vibe" of that mood.
-# NOT keyword lists. These are used to build a BGE embedding vector.
-# Classification: BGE(text) → cosine nearest-neighbor → mood category.
-#
-# Add new categories by appending entries — no code change needed.
+# Mood Profile Vectors — BGE cosine classification
+# Add categories/descriptors freely — no code change needed.
 
 profiles:
   solution_seeking:
     z_value: 1.0
     descriptors:
-      - "give me the exact answer, I need facts"
-      - "confirm whether this is correct or not"
-      - "provide the specific value, number, or address"
-      - "yes or no question expecting definitive answer"
-      - "what is the exact result of this operation"
-      - "show me the data directly without interpretation"
+      - "give me the exact answer, I need specific facts"
+      - "confirm whether this is correct or not, yes or no"
+      - "provide the specific value, number, or memory address"
+      - "what is the exact result of running this operation"
+      - "execute this tool command and return the output"
+      - "perform a specific technical action: scan, patch, read, write"
+      - "fix this error, give me the steps to resolve it"
+      - "I need actionable instructions to complete a task"
+      - "find the exact location, address, or reference"
+      - "show me the data directly without interpretation or analysis"
 
   exploration:
     z_value: 0.0
     descriptors:
-      - "I want to understand the reasoning behind this"
-      - "what are possible approaches or strategies"
-      - "help me think through this problem step by step"
-      - "how would you analyze this situation"
-      - "what factors should I consider when deciding"
-      - "can you explain the underlying mechanism"
-      - "I'm curious about different perspectives on this"
+      - "I want to understand the reasoning and principles behind this"
+      - "what are possible approaches, strategies, or methods"
+      - "help me think through this problem and explore options"
+      - "how would you analyze this situation from different angles"
+      - "what factors should I consider when making this decision"
+      - "can you explain the underlying mechanism or theory"
+      - "I'm curious about different perspectives and tradeoffs"
+      - "let me explore ideas before committing to a solution"
+      - "discuss the implications and possibilities"
+      - "what are the pros and cons of each approach"
 
   mirror_emotional:
     z_value: -1.0
     descriptors:
-      - "I'm frustrated and need to vent"
-      - "this is too hard, I feel overwhelmed"
-      - "I just need someone to listen to me"
-      - "expressing emotional distress, not seeking solutions"
-      - "sharing a personal struggle, wanting empathy"
-      - "I feel defeated and need encouragement"
+      - "I'm frustrated and need to vent my emotions"
+      - "this is too hard, I feel completely overwhelmed and stuck"
+      - "I just need someone to listen and understand my struggle"
+      - "expressing emotional distress, not seeking technical solutions"
+      - "sharing a personal struggle or failure, wanting empathy"
+      - "I feel defeated, exhausted, and need emotional support"
+      - "this situation is driving me crazy, I need to complain"
+      - "I'm burned out and questioning everything"
 
   neutral:
     z_value: 0.0
     descriptors:
-      - "routine task execution"
-      - "general information exchange"
-      - "simple greeting or acknowledgment"
+      - "routine task execution, simple exchange"
+      - "general information exchange or update"
+      - "simple greeting, acknowledgment, or small talk"
+      - "quick status check or confirmation"
