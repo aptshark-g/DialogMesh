@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "saved_at": "2026-07-22T00:11:28.3066549+08:00",
+  "providers": [
+    {
+      "name": "gemini",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "deepseek",
+      "kind": "openai_compatible",
+      "enabled": true,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "openai",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "kimi",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "groq",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "openrouter",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "lmstudio",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    },
+    {
+      "name": "anthropic",
+      "kind": "openai_compatible",
+      "enabled": false,
+      "requests": 0,
+      "errors": 0,
+      "token_prompt": 0,
+      "token_completion": 0
+    }
+  ],
+  "usage": null
+}

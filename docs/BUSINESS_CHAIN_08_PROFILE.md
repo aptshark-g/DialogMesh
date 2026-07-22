@@ -8,7 +8,7 @@
 ## 一、Profile 在 10 链中的位置
 
 ```mermaid
-graph TD
+flowchart TD
     PCR["PCR · cognitive_profile (快速)"]
     LLM["LLM 回复"]
     USER["用户反馈"]
@@ -21,21 +21,24 @@ graph TD
         OCEAN["OCEAN 映射<br/>BFI-10 支撑"]
         CONV["ConvergenceEngine<br/>收敛系数推算"]
         STORE["ProfileStore<br/>持久化"]
+
+        TRACE --> TRACKA
+        TRACE --> TRACKB
+        TRACKA --> OCEAN
+        TRACKB --> OCEAN
+        TRACKA --> CONV
+        OCEAN --> STORE
     end
+
+    BEHAVIOR["链05 行为链<br/>画像偏置"]
+    LLM2["链02 LLM<br/>风格调控"]
 
     PCR -->|"快速评估→EMA 注入"| TRACKA
     LLM -->|"回复质量→ExecutionTrace"| TRACE
     USER -->|"反馈→STRENGTHEN/WEAKEN"| TRACE
 
-    TRACE --> TRACKA
-    TRACE --> TRACKB
-    TRACKA --> OCEAN
-    TRACKB --> OCEAN
-    TRACKA --> CONV
-    OCEAN --> STORE
-
-    PROFILE -->|"OCEAN10维"| BEHAVIOR["链05 行为链<br/>画像偏置"]
-    PROFILE -->|"标签"| LLM2["链02 LLM<br/>风格调控"]
+    PROFILE -->|"OCEAN10维"| BEHAVIOR
+    PROFILE -->|"标签"| LLM2
 ```
 
 ---
@@ -43,7 +46,9 @@ graph TD
 ## 二、双 Track 架构
 
 ```mermaid
-graph TD
+flowchart TD
+    TRACE["ExecutionTrace<br/>STRENGTHEN/WEAKEN/REJECT"]
+
     subgraph TRACK_A["Track A: 认知动力学 (7维 EMA)"]
         A1["inertia         · 认知惯性"]
         A2["cog_resource     · 认知资源"]
@@ -61,7 +66,7 @@ graph TD
         B4["temporal_context    · 时间上下文"]
     end
 
-    TRACE["ExecutionTrace<br/>STRENGTHEN/WEAKEN/REJECT"] --> TRACK_A
+    TRACE --> TRACK_A
     TRACE --> TRACK_B
 ```
 

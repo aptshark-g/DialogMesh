@@ -1,0 +1,10 @@
+{"text": "扫描 0x401000 处的 4 bytes", "x": 0.44, "y": 0.659, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "近/简/解 → ATOMIC", "latency_ms": 286.89}
+{"text": "重构这段代码并补充单元测试和集成测试", "x": 0.3, "y": 0.793, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "近/深/解 → PRECISION", "latency_ms": 167.77}
+{"text": "有没有什么思路来分析这个加密算法", "x": 0.3, "y": 0.687, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "近/中/探 → EXPLORE or MIXED", "latency_ms": 146.58}
+{"text": "用量子退火算法优化物流路径，并论证可行性和成本效益", "x": 0.44, "y": 0.764, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "远/深/探 → ABYSS", "latency_ms": 218.62}
+{"text": "做了三天逆向整个人都废了", "x": 0.3, "y": 0.711, "z": -0.745, "zone": "PSYCHE", "strategy": "empathetic", "expected": "任意/简/镜 → PSYCHE", "latency_ms": 150.89}
+{"text": "scan 4 bytes at 0x401000 and patch the jump", "x": 0.44, "y": 0.382, "z": 0.255, "zone": "MIXED", "strategy": "balanced", "expected": "近/简/解 → ATOMIC", "latency_ms": 298.27}
+{"text": "虽然延迟飙升但若监控未报错且历史基线正常则需检查网络并重试", "x": 0.3, "y": 0.846, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "近/深/解 → PRECISION", "latency_ms": 288.82}
+{"text": "你好 今天天气怎么样", "x": 0.44, "y": 0.382, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "近/简/探 → ATOMIC or EXPLORE", "latency_ms": 151.95}
+{"text": "", "x": 0.3, "y": 0.232, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "空 → MIXED default", "latency_ms": 0.64}
+{"text": "ok", "x": 0.3, "y": 0.277, "z": -0.245, "zone": "MIXED", "strategy": "balanced", "expected": "短 → MIXED default", "latency_ms": 115.18}

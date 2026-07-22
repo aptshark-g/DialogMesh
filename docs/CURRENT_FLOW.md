@@ -54,6 +54,24 @@
 
 ---
 
+
+
+```mermaid
+flowchart TD
+    FE["前端 GUI (Vite + React)<br/>ChatPage │ GatewayPage │ ProfilePage │ TracePage │ ABC/Mind<br/>zustand chatStore │ localStorage │ sessionStorage"]
+API_DM["DialogMesh API (:8000)<br/>V3 Session · 聊天会话<br/>V4 Event · 认知事件<br/>V6 CRUD · profile/trace/abc/mind/graph/recursive-map/ 40+ 端点<br/>GatewayLLMProvider · httpx<br/>WebSocket · /v4/ws<br/>Monitor · InteractionMon."]
+
+API_GW["Switch Gateway (:8080)<br/>Auth · 鉴权<br/>Routing · 路由池<br/>Generate · LLM 代理<br/>CircuitBreaker · 熔断<br/>gracefulDegradation · 降级<br/>Prober · 30s健康探针<br/>Persistence · YAML+JSON<br/>RateLimit · 限流<br/>Cache · 热缓存<br/>Admin · 厂商CRUD端点"]
+
+ENG["CognitiveRuntimeEngine<br/>on_event(event) → 40+ 子系统管道<br/>输入层: PCR → ExpectationInfer → DomainSelector<br/>上下文: ContextAssembler → CrossDomainContextIR<br/>LLM: SubgraphCompiler → GatewayLLMProvider<br/>状态: DiscourseTree · TopicTree · ConversationGraph<br/>画像: TrackA(动力学) · TrackB(标签) · OCEAN映射<br/>行为: BehaviorDiscovery · PatternLearner · Mind<br/>工程: ConstraintEngine · RecursiveMap · ParameterReg.<br/>元认知: MetaCognition · AnnotationStore · Review<br/>ABC: ABC 3层(符号/LLM/JSON) · RuleEngine<br/>关联: AssociationChain · 5层漏斗 · Fusion<br/>规划: PerspectivePlanner · TaskPlanner · BudgetAllocator<br/>持久化: UnifiedStore · JSONL · Checkpoint<br/>监控: SpanTracer · InteractionMonitor"]
+
+FE -->|"HTTP REST"| API_DM
+FE -->|"HTTP REST"| API_GW
+API_DM -->|"GatewayLLMProvider · httpx"| API_GW
+API_DM -->|"on_event"| ENG
+API_GW -->|"HTTPS"| ENG
+```
+
 ## 二、请求链路总览
 
 ```
@@ -77,32 +95,32 @@
 ## 三、组件间数据流
 
 ```mermaid
-graph TD
-    U[用户] -->|输入文字| CHAT[ChatPage · zustand store]
-    CHAT -->|POST /v3/session/{id}/message| V3[V3 Session API]
-    V3 -->|await post_event| V4[POST /v4/event]
-    V4 -->|on_event| ENG[CognitiveRuntimeEngine]
+flowchart TD
+    U["用户"] -->|"输入文字"| CHAT["ChatPage · zustand store"]
+    CHAT -->|"POST /v3/session/{id}/message"| V3["V3 Session API"]
+    V3 -->|"await post_event"| V4["POST /v4/event"]
+    V4 -->|"on_event"| ENG["CognitiveRuntimeEngine"]
 
-    ENG -->|Profile查询| V6_PROFILE[GET /v6/profile]
-    ENG -->|Trace查询| V6_TRACE[GET /v6/trace]
-    ENG -->|Mind查询| V6_MIND[GET /v6/mind]
-    ENG -->|ABC查询| V6_ABC[GET /v6/abc]
-    ENG -->|Graph查询| V6_GRAPH[GET /v6/recursive-map]
+    ENG -->|"Profile查询"| V6_PROFILE["GET /v6/profile"]
+    ENG -->|"Trace查询"| V6_TRACE["GET /v6/trace"]
+    ENG -->|"Mind查询"| V6_MIND["GET /v6/mind"]
+    ENG -->|"ABC查询"| V6_ABC["GET /v6/abc"]
+    ENG -->|"Graph查询"| V6_GRAPH["GET /v6/recursive-map"]
 
-    ENG -->|GatewayLLMProvider.generate| GW[Gateway :8080]
-    V6_GW[GET/PUT /v6/gateway/*] -->|代理| GW
-    GW -->|https| DS[DeepSeek]
-    GW -->|https| OA[OpenAI]
-    GW -->|http| LM[LMStudio]
+    ENG -->|"GatewayLLMProvider.generate"| GW["Gateway :8080"]
+    V6_GW["GET/PUT /v6/gateway/*"] -->|"代理"| GW
+    GW -->|"https"| DS["DeepSeek"]
+    GW -->|"https"| OA["OpenAI"]
+    GW -->|"http"| LM["LMStudio"]
 
-    ENG -->|JSONL写入| DISK[data/monitor/]
-    ENG -->|定期保存| MIND_DISK[data/mind_*.json]
-    ENG -->|定期保存| ABC_DISK[data/pattern_learner.json]
-    GW -->|5min自动保存| STATE[gateway.state.json]
-    GW -->|启动读 + 保存写| YAML[gateway/provider.yaml]
+    ENG -->|"JSONL写入"| DISK["data/monitor/"]
+    ENG -->|"定期保存"| MIND_DISK["data/mind_*.json"]
+    ENG -->|"定期保存"| ABC_DISK["data/pattern_learner.json"]
+    GW -->|"5min自动保存"| STATE["gateway.state.json"]
+    GW -->|"启动读 + 保存写"| YAML["gateway/provider.yaml"]
 
-    CHAT -->|sessionStorage| SES[dm_chat_msgs]
-    GWPG[GatewayPage] -->|localStorage| LOC[configForms]
+    CHAT -->|"sessionStorage"| SES["dm_chat_msgs"]
+    GWPG["GatewayPage"] -->|"localStorage"| LOC["configForms"]
 ```
 
 ---

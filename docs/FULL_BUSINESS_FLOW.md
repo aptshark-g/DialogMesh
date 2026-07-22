@@ -8,7 +8,7 @@
 ## 一、端到端请求流
 
 ```mermaid
-graph TD
+flowchart TD
     USER["用户 (浏览器/API)"]
     
     subgraph FRONTEND["前端 GUI"]

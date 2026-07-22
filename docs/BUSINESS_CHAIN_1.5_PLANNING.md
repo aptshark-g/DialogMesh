@@ -18,35 +18,35 @@
 ## 一、Planning 在 10 链中的位置
 
 ```mermaid
-graph TD
+flowchart TD
     PCR["PCR Output<br/>expectation/complexity/cognitive"]
     IP["IntentParser<br/>ParseResult · TaskGraph"]
 
     subgraph PLAN["链1.5: Planning Skill Layer"]
         direction TB
-        SM["SkillMatcher<br/>意图→Capability Blueprint"]
+        SM["SkillMatcher<br/>意图->Capability Blueprint"]
         SE["SkillEngine<br/>Action Graph 执行"]
         PL["Planner<br/>策略选择·TaskGraph生成"]
-        TS["ToolShortlister<br/>工具筛选"]
+        TS["ToolShortList<br/>工具筛选"]
         DP["DynamicPlanner<br/>LLM自主规划"]
         CS["CognitiveScheduler<br/>谁·什么时候·优先级"]
-        DE["DistillationEngine<br/>运行记录→Skill提炼"]
+        DE["DistillationEngine<br/>运行记录->Skill提炼"]
 
         SM --> SE
         SE --> PL
         PL --> TS
         TS --> DP
         DP --> CS
+        CS -->|"技能更新"| DE
     end
 
-    PCR -->|"expectation→execution_mode"| PL
-    PCR -->|"cognitive→偏置"| SM
-    IP -->|"intent+entities"| SM
+    PCR -->|"expectation->execution_mode"| PL
+    PCR -->|"cognitive->偏置"| SM
+    IP -->|"intent->entities"| SM
     IP -->|"ParseResult"| PL
 
-    PLAN -->|"TaskGraph"| EXEC["链02 LLM执行<br/>ToolRegistry→调用"]
-    PLAN -->|"Skill更新"| DE
-    DE -->|"提炼"| REG["SkillRegistry<br/>长期记忆"]
+    PLAN -->|"输出任务图"| EXEC["链02 LLM执行<br/>工具注册调用"]
+    DE -->|"提炼技能"| REG["SkillRegistry<br/>长期记忆"]
 ```
 
 ---

@@ -1,0 +1,6 @@
+{"zone": "ATOMIC", "triggered": 6, "skipped": 4, "triggered_chains": ["routing", "context", "llm", "behavior", "abc", "mind"], "skipped_chains": ["intent", "planning", "profile", "meta"], "total_events": 8}
+{"zone": "PRECISION", "triggered": 9, "skipped": 1, "triggered_chains": ["routing", "intent", "planning", "context", "llm", "behavior", "abc", "mind", "meta"], "skipped_chains": ["profile"], "total_events": 11}
+{"zone": "EXPLORE", "triggered": 7, "skipped": 3, "triggered_chains": ["routing", "intent", "context", "llm", "behavior", "abc", "mind"], "skipped_chains": ["planning", "profile", "meta"], "total_events": 9}
+{"zone": "ABYSS", "triggered": 9, "skipped": 1, "triggered_chains": ["routing", "intent", "planning", "context", "llm", "behavior", "abc", "mind", "meta"], "skipped_chains": ["profile"], "total_events": 11}
+{"zone": "PSYCHE", "triggered": 7, "skipped": 3, "triggered_chains": ["routing", "intent", "context", "llm", "behavior", "abc", "mind"], "skipped_chains": ["planning", "profile", "meta"], "total_events": 9}
+{"zone": "MIXED", "triggered": 7, "skipped": 3, "triggered_chains": ["routing", "intent", "context", "llm", "behavior", "abc", "mind"], "skipped_chains": ["planning", "profile", "meta"], "total_events": 9}

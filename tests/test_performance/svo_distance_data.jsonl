@@ -1,0 +1,15 @@
+{"text": "扫描 0x401000 处的 4 bytes", "subj": "扫描", "obj": "0x401000", "verb": "0x401000", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "TOOL", "correct": false, "latency_ms": 0.93}
+{"text": "分析这个加密算法的实现", "subj": "分析这个加密算法的实现", "obj": "分析这个加密算法的实现", "verb": "分析这个加密算法的实现", "cosine": 1.0, "predicted": "TOOL", "expected": "ADVISOR", "correct": false, "latency_ms": 0.03}
+{"text": "能不能用机器学习预测内存地址的访问模式", "subj": "能不能用机器学习预测内存地址的访问模式", "obj": "能不能用机器学习预测内存地址的访问模式", "verb": "能不能用机器学习预测内存地址的访问模式", "cosine": 1.0, "predicted": "TOOL", "expected": "COMPANION", "correct": false, "latency_ms": 0.03}
+{"text": "为什么这个函数被优化掉了", "subj": "为什么这个函数被优化掉了", "obj": "为什么这个函数被优化掉了", "verb": "为什么这个函数被优化掉了", "cosine": 1.0, "predicted": "TOOL", "expected": "ADVISOR", "correct": false, "latency_ms": 0.02}
+{"text": "我是新手刚开始学逆向应该从哪里入手", "subj": "我是新手刚开始学逆向应该从哪里入手", "obj": "我是新手刚开始学逆向应该从哪里入手", "verb": "我是新手刚开始学逆向应该从哪里入手", "cosine": 1.0, "predicted": "TOOL", "expected": "COMPANION", "correct": false, "latency_ms": 0.02}
+{"text": "scan 4 bytes at 0x401000 and patch", "subj": "scan", "obj": "0x401000", "verb": "4", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "TOOL", "correct": false, "latency_ms": 0.02}
+{"text": "what packer is used for this binary", "subj": "what", "obj": "binary", "verb": "packer", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "ADVISOR", "correct": false, "latency_ms": 0.02}
+{"text": "先不说技术了，你做逆向的人是不是都比较有耐心", "subj": "先不说技术了", "obj": "你做逆向的人是不是都比较有耐心", "verb": "先不说技术了", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "COMPANION", "correct": false, "latency_ms": 0.02}
+{"text": "ok", "subj": "ok", "obj": "ok", "verb": "ok", "cosine": 1.0, "predicted": "TOOL", "expected": "UNKNOWN", "correct": false, "latency_ms": 0.01}
+{"text": "", "subj": "", "obj": "", "verb": "", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "UNKNOWN", "correct": true, "latency_ms": 0.0}
+{"text": "先用frida hook然后angr约束求解再ghidra分析比对结果", "subj": "先用", "obj": "分析比对结果", "verb": "frida", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "TOOL", "correct": false, "latency_ms": 0.02}
+{"text": "我有个想法：能不能用ML来预测哪些内存地址会被频繁访问", "subj": "我有个想法", "obj": "来预测哪些内存地址会被频繁访问", "verb": "能不能用", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "COMPANION", "correct": false, "latency_ms": 0.02}
+{"text": "帮我看看这个地址0x7ff12345是不是有效的虚函数表指针", "subj": "帮我看看这个地址", "obj": "0x7ff12345", "verb": "0x7ff12345", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "ADVISOR", "correct": false, "latency_ms": 0.02}
+{"text": "修改这个函数把返回值改成0", "subj": "修改这个函数把返回值改成", "obj": "0", "verb": "修改这个函数把返回值改成", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "TOOL", "correct": false, "latency_ms": 0.01}
+{"text": "这个加密算法先用AES再XOR密钥动态加载应该怎么分析", "subj": "这个加密算法先用", "obj": "密钥动态加载应该怎么分析", "verb": "AES", "cosine": 0.0, "predicted": "UNKNOWN", "expected": "ADVISOR", "correct": false, "latency_ms": 0.02}
