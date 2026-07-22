@@ -134,6 +134,14 @@ class MoodClassifier:
             if m in text:
                 return -1.0
         
+        # Exploration: "how" / "why" / "怎么" questions (check before solution)
+        for m in cls.EXPLORE_MARKERS:
+            if m in text:
+                return 0.0
+        for m in cls.EXPLORE_EN:
+            if f" {m} " in f" {text_lower} " or text_lower.startswith(m+" "):
+                return 0.0
+        
         # Solution-seeking: direct questions expecting facts
         for m in cls.SOLUTION_MARKERS:
             if m in text:
@@ -142,14 +150,13 @@ class MoodClassifier:
             if f" {m} " in f" {text_lower} " or text_lower.startswith(m+" "):
                 return 1.0
         
-        # Imperative + no question = strong solution demand
+        # Imperative = solution demand
         if has_imperative:
             return 0.7
         
-        # Exploration: "how" / "why" / "怎么" questions
-        # Default: slight solution bias for structured input
+        # Fallback
         if has_question:
-            return 0.3
+            return 0.0
         
         return 0.0
 
