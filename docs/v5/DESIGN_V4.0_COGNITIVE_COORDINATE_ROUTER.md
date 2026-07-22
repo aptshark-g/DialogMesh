@@ -69,17 +69,15 @@ X = Clip( G × 0.7 + IDF_avg × 0.3, 0, 1 )
 
 ### 3.2 Y轴: 操作粒度 (0.0 ~ 1.0)
 
-**骨架映射**: S1-b (句法地形复杂度 STC) → 计算节点熵
+**骨架映射**: StructuralFeatures (语法结构, 0.1ms, 零网络依赖)
 
 ```
-Step 1: Stanza 依存解析
-Step 2: 提取三个特征:
-  D = 最大嵌套深度 (Root → Leaf 最长路径)
-  C = 并列连词数 ("且/或/并/and/or")
-  P = 约束密度 (介词/状语数量 / 总Token数)
+不使用 Stanza (离线超时, 导入卡死)。
+改用 StructuralFeatures 三板斧:
 
-Step 3: 计算节点熵
-Y = Sigmoid( D×0.4 + C×0.4 + P×10×0.2 )
+Y = min(verb_count/5, 1.0) × 0.4 
+  + min(entity_count/5, 1.0) × 0.3 
+  + min(word_count/20, 1.0) × 0.3
 ```
 
 物理含义:
@@ -91,23 +89,16 @@ Y = Sigmoid( D×0.4 + C×0.4 + P×10×0.2 )
 
 ### 3.3 Z轴: 反馈期望 (-1.0 ~ +1.0)
 
-**骨架映射**: 句法语气 + 探针峭度 + 认知节律 (三信号联合解码)
+**骨架映射**: BGE 情绪向量库 (mood_profiles.yaml → 32描述符 → cosine 匹配)
 
 ```
-信号A (50%): 句法语气
-  - 首词=吗/多少/Is/Are/Do → +1 (求解)
-  - 疑问词=如何/为什么/怎么 → 0 (启发)
-  - 情绪密集=烂透了/太棒了/太烦了 → -1 (镜子)
+信号源: config/mood_profiles.yaml (可编辑, 无需改代码)
+匹配: BGE(text) → cosine nearest-neighbor → z_value
 
-信号B (30%): 探针峭度 K
-  - K极高(概率尖锐) → 偏向求解 (+1方向)
-  - K极低(概率平坦) → 偏向探索 (0方向)
-
-信号C (20%): 认知节律 λ
-  - 高觉醒(am 9-11) → 偏向求解
-  - 低觉醒(pm 14-16) → 偏向探索/倾诉
-
-Z = A×0.5 + K_norm×0.3 + λ_bias×0.2
+实现:
+  - MoodVectorLibrary: BGE/fastembed 描述符向量库
+  - MoodClassifierLLM: LLM few-shot fallback (75%)
+  - NRC-VAD: 54k English lexicon fallback (50%, 英文限定)
 ```
 
 物理含义:
@@ -219,26 +210,34 @@ def route(x: float, y: float, z: float) -> RoutingDecision:
 
 ---
 
-## 七、代码变化
+## 七、代码实现
 
 ```
-移除:
-  - PCR._TOOL_KEYWORDS, _ADVISOR_KEYWORDS, _COMPANION_KEYWORDS
-  - UnifiedParser._derive_behavior_label (硬编码 if-else)
-  - 所有 discrete expectation labels (TOOL/ADVISOR/COMPANION/UNKNOWN)
+已实现:
+  StructuralFeatures        → Y轴 (0.1ms, 零网络, 14/14 test)
+  BGE Mood Vector Library   → Z轴 (9ms, mood_profiles.yaml 32描述符, 67% accuracy)
+  NRC-VAD Mood Classifier   → Z轴 fallback (<0.1ms, 50% English-only)
+  LLM Mood Classifier       → Z轴 fallback (200ms, 75%)
+  MoodClassifier (V1)       → Z轴 pure rule (12/12 test)
+  CoordinateProjector       → (X,Y,Z) 投影 (router_v4.py)
+  6-zone routing            → ATOMIC/PRECISION/EXPLORE/ABYSS/PSYCHE/MIXED
 
-新增:
-  - SyntacticTerrain.from_stanza() → STC 提取器
-  - coordinate_projector.py → (X,Y,Z) 投影器  
-  - routing_zones.py → 六区域路由决策
-  - calibration_tracker.py → 用户系数追踪
+移除/待定:
+  Stanza 依存解析            → offline超时, 暂用StructuralFeatures替代
+  SVO + BGE 语义距离 (X轴)   → 需conversation history, 待多轮交互后实现
+  后验校准追踪器              → 需用户反馈数据积累
+  系数微调反向传播            → 同上
 
-保留:
-  - StructuralFeatures (语法结构, 零硬编码)
-  - Stanza 依存解析
-  - BGE embedding (用于 SVO 语义距离)
-  - Kurtosis 峭度 (用于 Z 轴)
-  - CognitiveProfile (用户状态, 节律)
+文件清单:
+  core/agent/v4/classifier/structural_classifier.py   (14/14 test)
+  core/agent/v4/mood_vector_library.py                (BGE mood vectors)
+  core/agent/v4/mood_classifier_llm.py                 (LLM fallback)
+  core/agent/v4/mood_vad.py                            (NRC-VAD fallback)
+  core/agent/v4/coordinate_router.py                   (V1 hardcoded, 待替换)
+  core/agent/v4/router_v4.py                           (V4, 待engine集成)
+  config/mood_profiles.yaml                            (32 descriptors)
+  config/NRC-VAD-Lexicon-v2.1.txt                      (54k words, 手动下载)
+  docs/v5/DESIGN_V4.0_COGNITIVE_COORDINATE_ROUTER.md   (本文档)
 ```
 
 ---
@@ -247,10 +246,12 @@ def route(x: float, y: float, z: float) -> RoutingDecision:
 
 | 阶段 | 内容 | 状态 |
 |:---:|------|:---:|
-| P0 | Staza STC 提取器 (D/C/P 三特征) | stanza 已装 ✅ |
-| P0 | SVO + BGE 语义距离 (X轴) | 需装 bge-small |
-| P0 | 句法语气分类器 (Z轴信号A) | 纯规则, 即写 |
-| P1 | 坐标投影器 (XYZ 三维投影) | 公式就绪 |
-| P1 | 路由区域决策器 | 六区域定义就绪 |
-| P2 | 后验校准追踪器 | 需累���用户反馈数据 |
-| P2 | 系数微调反向传播 | 需多轮交互数据 |
+| P0 | StructuralFeatures (Y轴) | ✅ 14/14 test, 0.1ms |
+| P0 | BGE Mood Vectors (Z轴) | ✅ 67%, 9ms, 32描述符 |
+| P0 | NRC-VAD lexicon (Z轴 fallback) | ✅ 54k词, <0.1ms |
+| P0 | LLM Mood Classifier (Z轴 fallback) | ✅ 75%, 200ms |
+| P0 | 6-zone routing | ✅ ATOMIC/PRECISION/EXPLORE/ABYSS/PSYCHE/MIXED |
+| P1 | router_v4 → engine 集成 | ⚠️ 代码就绪, 待接入 |
+| P1 | SVO + BGE 语义距离 (X轴) | ⚠️ 需多轮conversation history |
+| P2 | 后验校准追踪器 | ❌ 需用户反馈数据 |
+| P2 | OCEAN/DMN 状态信号 | ❌ Profile精进后
