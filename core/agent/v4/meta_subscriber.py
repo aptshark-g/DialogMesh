@@ -29,7 +29,8 @@ class MetaSubscriber:
 
         for et in (EventType.PCR_COMPUTED, EventType.ROUTE_GENERATED,
                    EventType.INTENT_PARSED, EventType.REPLY_GENERATED,
-                   EventType.PROFILE_UPDATED, EventType.BEHAVIOR_RECORDED):
+                   EventType.PROFILE_UPDATED, EventType.BEHAVIOR_RECORDED,
+                   EventType.ABC_EVALUATED, EventType.MIND_LEARNED):
             self._bus.subscribe(et, "meta", self._on_event)
 
     def _on_event(self, event: dict):

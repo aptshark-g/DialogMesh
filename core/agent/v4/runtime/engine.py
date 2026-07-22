@@ -207,7 +207,9 @@ class CognitiveRuntimeEngine:
         self._event_bus = EventBus()
         from core.agent.v4.meta_subscriber import MetaSubscriber
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
-        logger.info('EventLog+EventBus ready, Meta subscriber active')
+        from core.agent.v4.assoc_subscriber import AssociationSubscriber
+        self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
+        logger.info('EventLog+EventBus ready, Meta+Assoc subscribers active')
         self._init_pcr()
         self._init_unified()
         self._init_router_v4()
@@ -733,6 +735,7 @@ class CognitiveRuntimeEngine:
                     finally:
                         loop.close()
                     self._last_plan_result = plan_result
+                    self._publish(ET.PLAN_GENERATED.value)
                     if self._decider and plan_result:
                         from core.agent.v4.state.global_decider import Command
                         tg = getattr(plan_result, 'task_graph', None)
