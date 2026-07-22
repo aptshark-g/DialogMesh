@@ -17,7 +17,8 @@
 | Topic Tree | 100% | **100%** ✅ | **70%** | 递归收敛快匹配未接 |
 | Profile | 100% | **100%** ✅ | **95%** | TrackB+OCEAN+Convergence已接 |
 | Behavior | 100% | **100%** ✅ | **60%** | record_interaction基础调用 |
-| Association | 100% | **0%** ❌ | **0%** | 被V4.0 Router替代 (3D坐标取代5层漏斗) |
+| Association | 100% | **0%** ❌ | **0%** | 7层双向引擎: 句法→补全→语义→信念→意图→时序→因果. 代码完整(1600+行), 全未接入. RouterV4是路由, Association是实体关系发现——正交系统 |
+| RouterV4 (新) | 100% | **100%** ✅ | **80%** | X轴需SVO+BGE, Y轴StructuralFeatures, Z轴BGE情绪 |
 | Engineering | 75% | **50%** ⚠️ | **38%** | ConstraintEngine·RecursiveMap闲置 |
 | Meta Cognitive | 100% | **100%** ✅ | **60%** | review()每5轮触发 |
 | ABC Framework | 100% | **100%** ✅ | **60%** | learn_from_feedback()每轮触发 |
