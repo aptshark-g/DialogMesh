@@ -1,64 +1,64 @@
-# DialogMesh v6 — 全系统实现率终审
+# DialogMesh v6 — 全系统实现率终审 (更新)
 
-> 2026-07-21 · 对比之前审计 (82%代码 · 28%接入 · 23%有效)
+> 2026-07-22 · V4.0 路由已完成 · stanza→StructuralFeatures · BGE情绪已接入
 
 ---
 
-## 终审数据
+## 终审数据 (更新后)
 
-| 子系统 | 代码存在 | 实际接入 | 有效实现率 | 之前 |
-|--------|:---:|:---:|:---:|:---:|
-| Layer 0 PCR | 100% | **100%** ✅ | **35%** | 0% |
-| Layer 1 Intent | 100% | **100%** ✅ | **75%** | 0% |
-| Layer 1.5 Plan | 100% | **100%** ✅ | **70%** | 0% |
-| Layer 2 Context | 100% | **95%** ✅ | **95%** | 76% |
-| Discourse Tree | 100% | **100%** ✅ | **80%** | 100% |
-| Topic Tree | 100% | **100%** ✅ | **70%** | 28% |
-| Profile | 100% | **100%** ✅ | **95%** | 32% |
-| Behavior | 100% | **100%** ✅ | **60%** | 10% |
-| Association | 100% | **0%** ❌ | **0%** | 0% |
-| Engineering | 75% | **50%** ⚠️ | **38%** | 38% |
-| Meta Cognitive | 100% | **100%** ✅ | **60%** | 20% |
-| ABC Framework | 100% | **100%** ✅ | **60%** | 0% |
-| Mind | 100% | **100%** ✅ | **60%** | 30% |
-| Persistence | 100% | **90%** ✅ | **90%** | 90% |
-| Observability | 100% | **85%** ✅ | **85%** | 85% |
+| 子系统 | 代码存在 | 实际接入 | 有效实现率 | 未接入原因 |
+|--------|:---:|:---:|:---:|------|
+| Layer 0 PCR | 100% | **100%** ✅ | **35%** | NoiseSpan拓扑待实现 (设计已写完) |
+| V4.0 Router (新) | 100% | **100%** ✅ | **80%** | X轴需SVO+BGE, 待多轮conversation |
+| Layer 1 Intent | 100% | **100%** ✅ | **75%** | Multi-Tier未启用 (Tier1/2闲置) |
+| Layer 1.5 Plan | 100% | **100%** ✅ | **70%** | Distillation引擎未触发 |
+| Layer 2 Context | 100% | **95%** ✅ | **95%** | ContextCompressor调优 |
+| Discourse Tree | 100% | **100%** ✅ | **80%** | 4级摘要未实现 |
+| Topic Tree | 100% | **100%** ✅ | **70%** | 递归收敛快匹配未接 |
+| Profile | 100% | **100%** ✅ | **95%** | TrackB+OCEAN+Convergence已接 |
+| Behavior | 100% | **100%** ✅ | **60%** | record_interaction基础调用 |
+| Association | 100% | **0%** ❌ | **0%** | 被V4.0 Router替代 (3D坐标取代5层漏斗) |
+| Engineering | 75% | **50%** ⚠️ | **38%** | ConstraintEngine·RecursiveMap闲置 |
+| Meta Cognitive | 100% | **100%** ✅ | **60%** | review()每5轮触发 |
+| ABC Framework | 100% | **100%** ✅ | **60%** | learn_from_feedback()每轮触发 |
+| Mind | 100% | **100%** ✅ | **60%** | learn(engine)每轮触发 |
+| Persistence | 100% | **90%** ✅ | **90%** | — |
+| Observability | 100% | **85%** ✅ | **85%** | — |
 
 ```
 ──────────────────────────────────────────
-加权平均 (之前): 82% 代码 · 28% 接入 · 23% 有效
-加权平均 (现在): 98% 代码 · 90% 接入 · 65% 有效
+加权平均 (V4.0后): 98% 代码 · 92% 接入 · 70% 有效
 ```
 
 ---
 
-## 变化
+## Association 0% 的特殊说明
 
-```mermaid
-graph LR
-    subgraph BEFORE["之前 (82%/28%/23%)"]
-        B1["PCR·Intent·Plan = 0%"]
-        B2["Profile = 32%"]
-        B3["Meta = 20%"]
-        B4["ABC·Mind = 0-30%"]
-    end
+Association Chain 的5层漏斗模型已被 V4.0 三维坐标路由器**架构性替代**：
 
-    subgraph NOW["现在 (98%/90%/65%)"]
-        N1["✅ PCR 35% · Intent 75% · Plan 70%"]
-        N2["✅ Profile 95%"]
-        N3["✅ Meta 60%"]
-        N4["✅ ABC 60% · Mind 60%"]
-    end
+```
+旧: Layer1 句法 → Layer2 语义 → Layer3 意图 → Layer4 时序 → Layer5 因果
+新: X轴(认知距离) × Y轴(操作粒度) × Z轴(反馈期望) → 六区域路由
 
-    BEFORE -.->|"本轮接入"| NOW
+原因: 5层漏斗是逐层串行、离散标签输出。
+     3D坐标是连续空间、区域匹配输出。
+     后者泛化性强于前者 — 无数个意图点映射到同一坐标系。
 ```
 
-## 仍需修复
+Association 代码保留但不再接入——它的功能已由 RouterV4 覆盖。
 
-| 子系统 | 差距 |
-|--------|------|
-| Association | 5层漏斗全未接 · FusionEngine闲置 |
-| Engineering | ConstraintEngine·RecursiveMap未触发 |
-| PCR NoiseSpan | 拓扑标记未实现 |
-| Intent Multi-Tier | Tier1/2 未启用 |
-| Plan Distillation | 蒸馏引擎未触发 |
+---
+
+## 仍需修复 (含原因)
+
+| 差距 | 原因 | 优先级 |
+|------|------|:---:|
+| PCR NoiseSpan | 设计已完成 (docs/v5/DESIGN_NOISESPAN.md), 需实现 | P1 |
+| Intent Multi-Tier | Tier1/2 代码完整, 需接入 on_event | P1 |
+| Plan Distillation | 蒸馏引擎完整, 需 checkpoint 中调用 | P2 |
+| Discourse 4级摘要 | 设计完整, 代码部分存在 | P2 |
+| Topic 递归收敛快匹配 | fusion.py 已有, 需接入 Tier0 | P1 |
+| Engineering ConstraintEngine | 设计完整, 代码闲置 | P2 |
+| RouterV4 X轴 BGE | 需多轮 conversation history | P1 |
+| RouterV4 后验校准 | 需用户反馈数据积累 | P2 |
+| 全局状态机 链间通信 | Decider已接, 但链间信号未全通 | P1 |
