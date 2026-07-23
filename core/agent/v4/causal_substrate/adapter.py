@@ -60,7 +60,7 @@ class CausalSubstrateAdapter(RuntimeAdapter):
     def _init_substrate(self, graph: Any) -> None:
         """Lazy-init CausalSubstrate with graph."""
         if self._substrate is None or self._substrate.graph is not graph:
-            from core.agent.v3_2.causal_substrate.causal_substrate import CausalSubstrate
+            from core.agent.association.causal_substrate import CausalSubstrate
             self._substrate = CausalSubstrate(graph)
             logger.debug("CausalSubstrate initialized with graph (%d nodes)",
                          len(graph.nodes) if hasattr(graph, "nodes") else 0)

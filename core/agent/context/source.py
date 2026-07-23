@@ -828,7 +828,7 @@ class CausalSubstrateAdapter:
     def substrate(self):
         if self._substrate is None and self._graph is not None:
             try:
-                from core.agent.v3_2.causal_substrate.causal_substrate import CausalSubstrate
+                from core.agent.association.causal_substrate import CausalSubstrate
                 self._substrate = CausalSubstrate(self._graph)
             except Exception as e:
                 logger.warning("Failed to create CausalSubstrate: %s", e)

@@ -1,14 +1,14 @@
 """v4 BehaviorGraph adapter package."""
-from core.agent.v4.behavior_graph.adapter import (
+from core.agent.behavior.adapter import (
     BehaviorGraphAdapter,
     BehaviorContextItem,
     BehaviorChainResult,
 )
-from core.agent.v4.behavior_graph.causal_adapter import (
+from core.agent.behavior.causal_adapter import (
     CausalSubstrateAdapter,
     CausalInsight,
 )
-from core.agent.v4.behavior_graph.runtime_hook import (
+from core.agent.behavior.runtime_hook import (
     BehaviorGraphRuntimeHook,
     register_with_engine,
 )

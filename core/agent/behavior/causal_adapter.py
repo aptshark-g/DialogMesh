@@ -11,14 +11,14 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from core.agent.context.source import ContextSource, ContextItem
-from core.agent.v4.behavior_graph.adapter import (
+from core.agent.behavior.adapter import (
     BehaviorGraphAdapter, BehaviorChainResult, BehaviorContextItem,
 )
 
 # v3_2 imports (read-only)
-from core.agent.v3_2.causal_substrate.causal_substrate import CausalSubstrate as V3CausalSubstrate
-from core.agent.v3_2.causal_substrate.skeleton_library import SkeletonLibrary
-from core.agent.v3_2.causal_substrate.delta_adjuster import DeltaAdjuster
+from core.agent.association.causal_substrate import CausalSubstrate as V3CausalSubstrate
+from core.agent.association.skeleton_library import SkeletonLibrary
+from core.agent.association.delta_adjuster import DeltaAdjuster
 
 logger = logging.getLogger(__name__)
 

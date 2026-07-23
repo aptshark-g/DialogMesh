@@ -6,8 +6,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from core.agent.v4.tiered.pipeline import Tier, TierResult, MultiTierPipeline
-from core.agent.v3_2.fusion.fusion_engine import FusionEngine
-from core.agent.v3_2.fusion.models import FusionResult, TrackType
+from core.agent.association.fusion_engine import FusionEngine
+from core.agent.association.models import FusionResult, TrackType
 
 logger = logging.getLogger(__name__)
 

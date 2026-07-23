@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from core.agent.context.source import ContextSource, ContextItem
-from core.agent.v4.behavior_graph.adapter import V4BehaviorGraph
+from core.agent.behavior.adapter import V4BehaviorGraph
 
 
 class BehaviorSource(ContextSource):

@@ -41,7 +41,7 @@ from core.agent.v4.cognitive_scheduler.tasks import (
     ObservationTask, HypothesisTask, KnowledgeTask, SkillTask,
 )
 
-from core.agent.v4.behavior_graph.adapter import BehaviorGraphAdapter, BehaviorGraphState
+from core.agent.behavior.adapter import BehaviorGraphAdapter, BehaviorGraphState
 from core.agent.v4.causal_substrate.adapter import CausalSubstrateAdapter, CausalContextEntry
 from core.agent.v4.runtime.event_log_adapter import V4EventLog, EventLogConfig
 

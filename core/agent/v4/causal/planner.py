@@ -158,8 +158,8 @@ class CausalPlanner:
         if self._v3_2_loaded:
             return True
         try:
-            from core.agent.v3_2.behavior_graph.graph_store import BehaviorGraph
-            from core.agent.v3_2.causal_substrate.causal_substrate import CausalSubstrate
+            from core.agent.behavior.graph_store import BehaviorGraph
+            from core.agent.association.causal_substrate import CausalSubstrate
 
             if self._graph_path:
                 self._graph = BehaviorGraph.load(self._graph_path)
@@ -193,7 +193,7 @@ class CausalPlanner:
                 return None
 
             # Map IR -> v3_2 step
-            from core.agent.v3_2.behavior_graph.models import BehaviorStep as V3Step
+            from core.agent.behavior.models import BehaviorStep as V3Step
             v3_step = V3Step(
                 step_id=step_ir.step_id,
                 action_summary=step_ir.action_summary,
@@ -208,7 +208,7 @@ class CausalPlanner:
             edge_id = None
             if len(self._step_buffer) >= 2:
                 prev = self._step_buffer[-2]
-                from core.agent.v3_2.behavior_graph.models import BehaviorStep as V3Step
+                from core.agent.behavior.models import BehaviorStep as V3Step
                 prev_v3 = V3Step(
                     step_id=prev.step_id,
                     action_summary=prev.action_summary,
@@ -252,7 +252,7 @@ class CausalPlanner:
                 return result
 
             # Build v3_2 step chain for substrate
-            from core.agent.v3_2.behavior_graph.models import BehaviorStep as V3Step
+            from core.agent.behavior.models import BehaviorStep as V3Step
             v3_chain = []
             for s in chain:
                 v3_chain.append(V3Step(
@@ -358,7 +358,7 @@ class CausalPlanner:
         """Load BehaviorGraph from disk."""
         with self._lock:
             try:
-                from core.agent.v3_2.behavior_graph.graph_store import BehaviorGraph
+                from core.agent.behavior.graph_store import BehaviorGraph
                 self._graph = BehaviorGraph.load(path)
                 self._graph_path = path
                 self._v3_2_loaded = True

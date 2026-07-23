@@ -19,8 +19,8 @@ from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.observation_compiler.models import ObservationBundle
 
 # v3_2 imports (read-only, no modifications)
-from core.agent.v3_2.behavior_graph.graph_store import BehaviorGraph as V3BehaviorGraph
-from core.agent.v3_2.behavior_graph.models import BehaviorStep, BehaviorEdge
+from core.agent.behavior.graph_store import BehaviorGraph as V3BehaviorGraph
+from core.agent.behavior.models import BehaviorStep, BehaviorEdge
 
 logger = logging.getLogger(__name__)
 
@@ -407,10 +407,10 @@ class BehaviorGraphAdapter(ContextSource):
             self._graph = V3BehaviorGraph.load(target)
             # v3_2 load() doesn't initialize weight_updater; fix here
             if self._graph.weight_updater is None:
-                from core.agent.v3_2.behavior_graph.weight_updater import WeightUpdater
+                from core.agent.behavior.weight_updater import WeightUpdater
                 self._graph.weight_updater = WeightUpdater()
             if self._graph.cold_start is None:
-                from core.agent.v3_2.behavior_graph.cold_start import ColdStartManager
+                from core.agent.behavior.cold_start import ColdStartManager
                 self._graph.cold_start = ColdStartManager()
             self._session_step_ids.clear()
             self._last_step_id = None

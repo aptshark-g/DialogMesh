@@ -11,8 +11,8 @@ import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from core.agent.v4.event_ir import EventIR
-from core.agent.v4.behavior_graph.adapter import BehaviorGraphAdapter
-from core.agent.v4.behavior_graph.causal_adapter import CausalSubstrateAdapter
+from core.agent.behavior.adapter import BehaviorGraphAdapter
+from core.agent.behavior.causal_adapter import CausalSubstrateAdapter
 
 if TYPE_CHECKING:
     from core.agent.v4.runtime.engine import CognitiveRuntimeEngine

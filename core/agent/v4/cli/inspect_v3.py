@@ -10,7 +10,7 @@ def _inspect_behavior(engine, user: str = None, limit: int = 10):
     print("Behavior patterns (summary):")
     print("-" * 50)
     try:
-        from core.agent.v3_2.behavior_graph import BehaviorGraph
+        from core.agent.behavior import BehaviorGraph
         # Try to get a simple status
         print("  BehaviorGraph module is importable.")
         print("  (Full behavior graph inspection requires active session data)")
@@ -24,7 +24,7 @@ def _inspect_causal(engine, source: str = None, limit: int = 10):
     print("Causal chains (summary):")
     print("-" * 50)
     try:
-        from core.agent.v3_2.causal_substrate import CausalSubstrate
+        from core.agent.association import CausalSubstrate
         print("  CausalSubstrate module is importable.")
         print("  (Full causal chain inspection requires active data)")
     except ImportError:
@@ -64,7 +64,7 @@ def _inspect_fusion(engine, show_status: bool = False):
     print("Fusion engine (summary):")
     print("-" * 50)
     try:
-        from core.agent.v3_2.fusion import FusionEngine
+        from core.agent.association import FusionEngine
         print("  FusionEngine module is importable.")
     except ImportError:
         print("  FusionEngine module not found")
