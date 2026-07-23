@@ -363,6 +363,108 @@ class MultiPerspectiveBranchView:
 
 ---
 
+### 4 结论：行为驱动 + 分层策略。纠错 = 最强信号
+
+**核心纠正**: 摘要刷新的触发源不是时间, 不是内容变化——是**行为**。
+
+```
+对话 = 行为的一种形式
+纠错 = 行为
+情绪 = 行为
+沉默 = 行为
+一切用户动作 = 行为
+
+这就是为什么我们需要 PCR/Association/Behavior/Profile/Meta 这么多模块——
+不是只为了"记住对话", 而是捕捉行为的全维度。
+```
+
+**纠错作为最高优先级信号**:
+
+```
+用户纠正 → 意味着摘要已经出错了
+  → 这不是 TTL 过期
+  → 不是内容自然变化
+  → 是系统理解错误 — 必须立即修复
+
+关系块在单轮内也需关注:
+  用户: "明天 14:00 会议室 B, 密码 8842"
+  → 如果 L1 摘要写成 "用户安排了会议"
+  → 漏掉了时间/地点/密码 — 这是关键实体丢失
+  → 用户后续纠正 → 触发摘要修复 + 提取质量审查
+```
+
+**分层策略——行为触发 + 本地模型降本**:
+
+```python
+class BehaviorDrivenRefresh:
+    """
+    L1 (细粒度): 本地模型可每轮都跑 (Hermes 设计参考)
+    L2 (中粒度): 纠错触发 OR 行为突变 OR TTL>10轮
+    L3 (粗粒度): 分支切换 OR Meta 审查 OR TTL>30轮
+    L-root:     新分支创建 OR 全局行为漂移
+    """
+    
+    def on_user_correction(self, block_id: str, correction: str):
+        """纠错 = 最强刷新信号 — 级联标记"""
+        # L1: 立即用本地小模型重新摘要
+        self.regenerate_l1(block_id, model="local")
+        
+        # 标记相关 L2/L3 为 dirty — 不立即重算
+        affected = self.tree.ancestors(block_id, levels=2)
+        for node in affected:
+            self.mark_dirty(node, reason=f"correction_at_{block_id}")
+        
+        # 触发 Meta 审查
+        self.event_bus.publish("summary_corrected", {
+            "block": block_id,
+            "correction": correction,
+            "extraction_quality": "downgraded"  # 可能漏了关键实体
+        })
+    
+    def on_behavior_surge(self, behavior_type: str):
+        """行为突变 → 相关分支摘要可能过时"""
+        if behavior_type in ("topic_switch", "emotion_spike", "tool_change"):
+            active_branch = self.tree.current_branch
+            self.mark_dirty_all(active_branch, reason=f"behavior_{behavior_type}")
+    
+    def should_refresh(self, layer: str, node: str) -> bool:
+        rules = {
+            "L1": lambda: (
+                self.is_dirty(node) or
+                self.local_model_available()  # 本地模型在 → 每轮跑
+            ),
+            "L2": lambda: (
+                self.is_dirty(node) or
+                self.since_last_refresh(node) > 10  # TTL 兜底
+            ),
+            "L3": lambda: (
+                self.is_dirty(node) or
+                self.branch_switched() or
+                self.since_last_refresh(node) > 30
+            ),
+        }
+        return rules.get(layer, lambda: False)()
+```
+
+**Hermes 设计参考**: Hermes Agent 的本地模型持续跑轻量任务, 远程模型处理重任务。我们的 L1 摘要同理——本地 nemotron 可以每轮都跑, L2/L3 等行为信号触发。
+
+**行为信号的优先级排序**:
+
+```
+P0 (立即触发): 用户纠正 → 级联 dirty L1/L2/L3
+P1 (本轮触发): 话题切换, 情绪突变, 工具更换
+P2 (TTL 兜底): 距离上次刷新 > 阈值
+P3 (资源空闲): Meta 审查 → 批量重组关系块
+```
+
+**决策**: 
+- L1: 本地模型每轮可跑, 纠错立即可触
+- L2/L3: 行为事件驱动 (纠错/切换/突变) + TTL 兜底
+- L-root: 新分支或全局漂移
+- 一切以用户纠正为最高优先级 — 这是摘要质量的真实反馈信号
+
+---
+
 ### 5. 跨分支上下文组装——Token 预算分配算法
 
 **问题**: 消费一个节点时, 需要注入多少上下文？距离衰减公式给了粒度, 但 Token 预算是有限的。
