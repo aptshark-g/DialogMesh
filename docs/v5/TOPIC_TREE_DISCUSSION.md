@@ -236,6 +236,118 @@ metadata_store = {
 
 ---
 
+### 3 结论：不求一致，求糅合。子图的多视角融合交给 LLM
+
+**前提**: 对话是事实，不存在争议。存疑的是内在联系——不同模块对同一事实有不同的解读。这不是 bug，这是 feature。
+
+```
+用户: "实现功能A"
+
+工程链视角:  A应该在现有模块B基础上扩展
+  → 分支定义: A 属于 B 的子节点
+  → 理由: 最小改动, 约束继承
+
+关联链视角:  A应该重构到独立模块C
+  → 分支定义: A 是独立分支, 与 B 同级
+  → 理由: 语义本体类型不兼容, 长期维护成本
+
+元认知:  两者都没有错, 取决于当前优先级
+  → 工期紧迫 → 工程链视角权重↑
+  → 质量优先 → 关联链视角权重↑
+```
+
+**核心**: 完全一致不仅不可能，也不需要。不一致本身就是 LLM 做权衡决策的关键输入。
+
+**子图的真正角色——多视角糅合**:
+
+```
+子图 ≠ 选出"正确"的分支定义
+子图 = 把多视角的分支定义都呈现出来
+
+DiscourseBlockTree:  "从词汇链看, 这属于分支A"
+社区检测:            "从跨域图结构看, 这属于分支B"
+关联链:              "从语义本体看, A和B存在 type conflict"
+工程链:              "从约束看, A在B的约束域内"
+
+→ 子图打包这 4 个视角 → 交给 LLM
+→ LLM 看到: "4个模块有3个认为该放A，关联链认为放B比较特殊"
+→ LLM 自行权衡 (工期/质量/约束/语义)
+```
+
+**对应博客的三方案**:
+
+```
+方案一: 单关卡求解 → 适合确定性问题 (如分类)
+方案二: 多层后验逐步收敛 → 适合可迭代验证的问题
+方案三: 拉长 (extend) → 适合多视角不可调和的问题
+
+分支定义 → 属于方案三。
+  对话是事实 → 不需要妥协
+  内在联系存疑 → 多个模块各自解读
+  LLM 看到全貌 → 自行权衡
+```
+
+**实现**:
+
+```python
+class MultiPerspectiveBranchView:
+    """不选边, 呈现多视角"""
+    
+    def get_branch_context(self, block_id: str) -> dict:
+        perspectives = {}
+        
+        # 视角1: 对话树的词汇链
+        dt_view = self.discourse_tree.get_segment(block_id)
+        perspectives["discourse_tree"] = {
+            "branch": dt_view.branch_id,
+            "reason": f"词汇链相似度 {dt_view.cohesion:.2f}"
+        }
+        
+        # 视角2: 图社区检测
+        gc_view = self.graph_community.get_community(block_id)
+        perspectives["graph_community"] = {
+            "branch": gc_view.community_id,
+            "reason": f"跨域图结构, 模块度 {gc_view.modularity:.2f}"
+        }
+        
+        # 视角3: 关联链语义
+        ac_view = self.association.get_type_compatibility(block_id)
+        if ac_view.conflict:
+            perspectives["association"] = {
+                "conflict": ac_view.conflict_type,
+                "reason": f"语义类型冲突: {ac_view.type_a} vs {ac_view.type_b}"
+            }
+        
+        # 视角4: 工程链约束
+        ec_view = self.engineering.get_constraint_domain(block_id)
+        perspectives["engineering"] = {
+            "domain": ec_view.domain,
+            "reason": f"约束域: {ec_view.invariant}"
+        }
+        
+        # 打包给 LLM — 不选边
+        return {
+            "block_content": self.fact_store.get(block_id),
+            "perspectives": perspectives,
+            "consensus": self._check_consensus(perspectives),  # True/False
+        }
+```
+
+**共识状态的处理**:
+
+```
+有共识: perspectives 一致 → LLM 可以直接采纳
+无共识: perspectives 分歧 → LLM 看到分歧原因, 自行权衡
+  
+无共识不是阻塞 — 是更好的上下文。
+"3个模块说放A, 1个模块说放B因为类型冲突" 
+→ LLM 获得的信息比"一致同意放A"更丰富
+```
+
+**决策**: 不选边。子图收集多视角分支定义 + 分歧原因。有共识自动采纳, 无共识交给 LLM 权衡。这恰好是元认知存在的意义——当需要最终基调时, Meta 根据全局状态做出统一决策。
+
+---
+
 ### 4. 摘要刷新触发时机——每轮？懒加载？事件驱动？
 
 **问题**: 什么时候触发摘要生成？
