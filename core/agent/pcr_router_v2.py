@@ -157,21 +157,38 @@ class PCRRouterV2:
         if not descriptors:
             return
 
-        # Try BGE, fallback to NRC
+        import numpy as np
+        vecs = None
+        
+        # Try 1: sentence_transformers (most common, .venv has it)
         try:
             from sentence_transformers import SentenceTransformer
-            import numpy as np
             model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
             vecs = np.array([model.encode(d, normalize_embeddings=True) for d in descriptors])
-        except Exception:
+        except Exception as e1:
+            logger.debug("sentence_transformers unavailable: %s", e1)
+        
+        # Try 2: fastembed (lighter, CPU-optimized)
+        if vecs is None:
             try:
                 from fastembed import TextEmbedding
-                import numpy as np
                 model = TextEmbedding("BAAI/bge-small-zh-v1.5")
-                vecs = np.array(list(model.embed(descriptors)))
-                vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
-            except Exception:
-                logger.debug("BGE not available, mood vectors will use NRC-VAD fallback")
+                raw = list(model.embed(descriptors))
+                vecs = np.array(raw)
+                vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
+            except Exception as e2:
+                logger.debug("fastembed unavailable: %s", e2)
+        
+        # Try 3: HF_HOME override
+        if vecs is None:
+            try:
+                import os as _os
+                _os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+                vecs = np.array([model.encode(d, normalize_embeddings=True) for d in descriptors])
+            except Exception as e3:
+                logger.debug("BGE with mirror also failed: %s", e3)
                 return
 
         cls._mood_vectors = vecs
