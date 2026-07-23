@@ -31,12 +31,12 @@ from collections import defaultdict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from core.agent.v3_0.data_models import (
-    CognitiveProfile_v3,
-    Intent_v3,
-    TaskGraph_v3,
-    TaskNode_v3,
-)
+import importlib
+_dm = importlib.import_module('core.agent.v3_0.data_models')
+CognitiveProfile_v3 = _dm.CognitiveProfile_v3
+Intent_v3 = _dm.Intent_v3
+TaskGraph_v3 = _dm.TaskGraph_v3
+TaskNode_v3 = _dm.TaskNode_v3
 
 logger = logging.getLogger(__name__)
 
