@@ -67,6 +67,20 @@ class RelationEdge:
 
 # ---- Substrate ----
 
+@dataclass
+class EntityNode:
+    """Conversation entity — lightweight node for L2 ontology graph."""
+    entity_id: str
+    name: str
+    types: List[str] = field(default_factory=list)  # e.g. ["工具", "现象"]
+    cluster_id: str = ""
+    first_seen_turn: int = 0
+    last_seen_turn: int = 0
+
+    def __hash__(self):
+        return hash(self.entity_id)
+
+
 class RelationSubstrate:
     """Unified relation store.
 
@@ -81,7 +95,78 @@ class RelationSubstrate:
         self._edges: Dict[str, RelationEdge] = {}
         self._by_source: Dict[str, Set[str]] = {}
         self._by_target: Dict[str, Set[str]] = {}
-        self._params = params  # ParameterRegistry (optional, for soft-coded thresholds)
+        self._params = params
+        self._entities: Dict[str, EntityNode] = {}  # L2: conversation entities
+
+    # ---- L2 Conversation Entity Methods ----
+
+    def add_entity(self, entity: EntityNode):
+        self._entities[entity.entity_id] = entity
+
+    def add_conversation_edge(self, source_id: str, target_id: str,
+                              predicate: str, turn_num: int,
+                              bm25_score: float = 0.0, llm_confidence: float = 0.0):
+        """Add edge with conversation evidence (BM25 + LLM)."""
+        evidence = []
+        if bm25_score > 0:
+            evidence.append(Evidence(
+                evidence_id=f"bm25_turn_{turn_num}_{source_id}_{target_id}",
+                source="conversation_bm25", claim=f"BM25 hit in turn {turn_num}",
+                confidence=bm25_score, predicate=predicate,
+            ))
+        if llm_confidence > 0:
+            evidence.append(Evidence(
+                evidence_id=f"llm_turn_{turn_num}_{source_id}_{target_id}",
+                source="conversation_llm", claim=f"LLM extracted in turn {turn_num}",
+                confidence=llm_confidence, predicate=predicate,
+            ))
+        edge_id = f"conv_{turn_num}_{source_id}_{target_id}"
+        edge = RelationEdge(
+            identity=edge_id,
+            source=source_id, target=target_id,
+            relation_kind="temporal" if predicate in ("sequential","co_occurrence") else "structural",
+            semantic_strength="association",
+            predicate=predicate,
+            inverse="associated_with",
+            confidence=max(bm25_score, llm_confidence, 0.3),
+            evidence=evidence,
+        )
+        self.add(edge)
+        return edge_id
+
+    def entity_neighbors(self, entity_id: str, hops: int = 2) -> dict:
+        """1-2 hop neighbor traversal for L2 ontology.
+        Returns: {"1hop": [entity_ids], "2hop": [entity_ids], "edges": [edge_ids]}
+        """
+        result = {"1hop": [], "2hop": [], "edges": []}
+        visited = {entity_id}
+        frontier = {entity_id}
+        
+        for hop in [1, 2]:
+            next_frontier = set()
+            for eid in frontier:
+                for edge_id in self._by_source.get(eid, set()):
+                    edge = self._edges.get(edge_id)
+                    if edge and edge.target not in visited:
+                        key = "1hop" if hop == 1 else "2hop"
+                        result[key].append(edge.target)
+                        result["edges"].append(edge_id)
+                        visited.add(edge.target)
+                        next_frontier.add(edge.target)
+            frontier = next_frontier
+        
+        return result
+
+    def entity_edge(self, from_id: str, to_id: str) -> Optional[RelationEdge]:
+        """Get edge between two entities."""
+        for eid in self._by_source.get(from_id, set()):
+            edge = self._edges.get(eid)
+            if edge and edge.target == to_id:
+                return edge
+        return None
+
+    def get_entity(self, entity_id: str) -> Optional[EntityNode]:
+        return self._entities.get(entity_id)
 
     # ---- Build ----
 
