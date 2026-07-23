@@ -46,7 +46,7 @@ class RegexExtractionProvider(ExtractionProvider):
     def extract(self, text: str, concepts: List[str]) -> ExtractionResult:
         result = ExtractionResult(provider="regex")
         try:
-            from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+            from core.agent.tiered.jieba_parser import JiebaRelationParser
             jrp = JiebaRelationParser()
             tuples = jrp.extract(text)
             for tup in tuples:
@@ -72,14 +72,14 @@ class StanzaExtractionProvider(ExtractionProvider):
 
     def available(self) -> bool:
         try:
-            from core.agent.v4.tiered.stanza_parser import StanzaParser
+            from core.agent.tiered.stanza_parser import StanzaParser
             return StanzaParser().available()
         except: return False
 
     def extract(self, text: str, concepts: List[str]) -> ExtractionResult:
         result = ExtractionResult(provider="stanza")
         try:
-            from core.agent.v4.tiered.stanza_parser import StanzaParser
+            from core.agent.tiered.stanza_parser import StanzaParser
             sp = StanzaParser()
             tuples = sp.extract_tuples(text)
             for t in tuples:

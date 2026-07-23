@@ -12,7 +12,7 @@ from typing import List, Dict, Optional, Any
 import time
 import logging
 
-from core.agent.v4.classifier.structural_classifier import StructuralFeatures
+from core.agent.classifier.structural_classifier import StructuralFeatures
 
 logger = logging.getLogger(__name__)
 

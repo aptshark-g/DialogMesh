@@ -179,7 +179,7 @@ class TestGateway(unittest.TestCase):
 
 class TestTopicMatcher(unittest.TestCase):
     def setUp(self):
-        from core.agent.v4.tiered.topic_matcher import RecursiveConvergenceMatcher
+        from core.agent.tiered.topic_matcher import RecursiveConvergenceMatcher
         self.m = RecursiveConvergenceMatcher()
 
     def test_kurtosis_peak(self):

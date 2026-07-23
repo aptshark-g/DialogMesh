@@ -4,7 +4,7 @@ import os, time, glob
 from typing import Dict, List, Optional
 
 from core.agent.world.schema import ReferenceUnit, StructuralEdge, StructuralWorldGraph
-from core.agent.v4.adapter.code.extractor import TreeSitterExtractor
+from core.agent.adapter.code.extractor import TreeSitterExtractor
 
 
 class CodeWorldAdapter:

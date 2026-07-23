@@ -3,7 +3,7 @@
 import sys, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.agent.v4.classifier.structural_classifier import StructuralFeatures
+from core.agent.classifier.structural_classifier import StructuralFeatures
 
 
 class TestStructuralFeatures(unittest.TestCase):

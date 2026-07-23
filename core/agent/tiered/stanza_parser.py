@@ -7,7 +7,7 @@ Model: zh (Chinese, ~50MB), downloaded on first use.
 from __future__ import annotations
 import logging
 from typing import List, Dict, Optional
-from core.agent.v4.tiered.parser import ParsedClause
+from core.agent.tiered.parser import ParsedClause
 
 logger = logging.getLogger(__name__)
 

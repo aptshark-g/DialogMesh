@@ -148,7 +148,7 @@ class InternalSimulationEngine:
 
     def _fallback_simulate(self, last_answer: str, recent_topics: List[str]) -> SimulationResult:
         """Topic-transition fallback when LLM unavailable."""
-        from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+        from core.agent.tiered.jieba_parser import JiebaRelationParser
         parser = JiebaRelationParser()
         entities = parser.extract_relations(last_answer)
         qs = [f"Can you explain more about {e}?" for e in entities[:3]]

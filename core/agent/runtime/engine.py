@@ -26,7 +26,7 @@ from core.agent.context.source import (
 from core.agent.context.topic_tree_source import TopicTreeContextSource
 from core.agent.compiler.content_index import ContentIndex
 from core.agent.compiler.index_source import IndexSource
-from core.agent.v4.conversation.tracker import ConversationTracker
+from core.agent.conversation.tracker import ConversationTracker
 from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
 from core.agent.causal.planner import CausalPlanner, CausalContextSource
 from core.agent.context.domain_selector import DomainSelector
@@ -1526,7 +1526,7 @@ class CognitiveRuntimeEngine:
         Only records concepts that appear in SemanticObject store.
         """
         try:
-            from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+            from core.agent.tiered.jieba_parser import JiebaRelationParser
             jrp = JiebaRelationParser()
             tuples = jrp.extract(text)
             entities = set()
@@ -1892,7 +1892,7 @@ class CognitiveRuntimeEngine:
         concepts = list(getattr(self, "_world_objects", {}).keys())[:10]
         if not concepts:
             try:
-                from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+                from core.agent.tiered.jieba_parser import JiebaRelationParser
                 jrp = JiebaRelationParser()
                 sample_texts = []
                 for domain in self._observation_pool.stats().get("by_domain", {}):
@@ -1948,7 +1948,7 @@ class CognitiveRuntimeEngine:
         if not rs:
             return
         try:
-            from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+            from core.agent.tiered.jieba_parser import JiebaRelationParser
             jrp = JiebaRelationParser()
             extractions = []
             for domain in self._observation_pool.stats().get("by_domain", {}):
@@ -2261,7 +2261,7 @@ class CognitiveRuntimeEngine:
             keywords = set(w for w in jieba.cut(text) if len(w) >= 2)
             # Also add JiebaRelationParser entities
             try:
-                from core.agent.v4.tiered.jieba_parser import JiebaRelationParser
+                from core.agent.tiered.jieba_parser import JiebaRelationParser
                 for t in JiebaRelationParser().extract(text):
                     keywords.add(t["subject"]); keywords.add(t["object"])
             except Exception:

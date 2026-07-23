@@ -1,7 +1,7 @@
 """EventLog package — EventIR-aware persistence layer for v4."""
 from __future__ import annotations
 
-from core.agent.v4.event_log.adapter import (
+from core.agent.event_log.adapter import (
     EventLogAdapter,
     EventLogEntry,
     EventLogReplayAdapter,

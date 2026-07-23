@@ -203,7 +203,7 @@ def _inspect_world(engine, mode: str = "stats"):
     # Try to get from adapter
     if world_graph is None:
         try:
-            from core.agent.v4.adapter.code.adapter import CodeWorldAdapter
+            from core.agent.adapter.code.adapter import CodeWorldAdapter
         except Exception:
             pass
 

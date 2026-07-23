@@ -106,7 +106,7 @@ class SyntacticDecomposer:
         edus = []
         for i, clause in enumerate(clauses[:self.MAX_CLAUSES]):
             try:
-                from core.agent.v4.tiered.parser import RuleDecomposer
+                from core.agent.tiered.parser import RuleDecomposer
                 parsed = RuleDecomposer().parse(clause)
                 entities = []
                 for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', clause):

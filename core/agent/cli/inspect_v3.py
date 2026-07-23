@@ -50,7 +50,7 @@ def _inspect_discourse(engine, node: str = None, depth: int = 3):
     print("Discourse tree (summary):")
     print("-" * 50)
     try:
-        from core.agent.v3_2.discourse_block_tree import DiscourseBlockTree
+        from core.agent.discourse import DiscourseBlockTree
         print("  DiscourseBlockTree module is importable.")
         if node:
             print(f"  Node: {node}, Depth: {depth}")
@@ -77,10 +77,10 @@ def _inspect_summary(engine, level: str = "l1", topic: str = None):
     print("-" * 50)
     try:
         if level == "l1":
-            from core.agent.v3_2.l1_summary import L1SummaryBuilder
+            from core.agent.summary.l1 import L1SummaryBuilder
             print("  L1SummaryBuilder module is importable.")
         else:
-            from core.agent.v3_2.l2_summary import L2SummaryBuilder
+            from core.agent.summary.l2 import L2SummaryBuilder
             print("  L2SummaryBuilder module is importable.")
         if topic:
             print(f"  Topic: {topic}")

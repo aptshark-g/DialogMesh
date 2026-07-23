@@ -11,7 +11,7 @@ that the assembler can route to C (conversation) and B (behavior) domains.
 from __future__ import annotations
 from typing import List
 from core.agent.context.source import ContextSource, ContextItem, _keyword_score
-from core.agent.v4.conversation.tracker import ConversationTracker
+from core.agent.conversation.tracker import ConversationTracker
 
 
 class TopicContextSource(ContextSource):

@@ -73,7 +73,7 @@ class SyntacticDecomposer:
             self._register_syntactic_domain()
 
     def _register_syntactic_domain(self) -> None:
-        from core.agent.v4.tiered_action_resolver import DomainAdapter, EmbeddingIndex
+        from core.agent.tiered_action_resolver import DomainAdapter, EmbeddingIndex
         rules = {cat: list(words) for cat, words in PREDICATE_DICT.items()}
         index = EmbeddingIndex(dim=32)
         for word in ALL_PREDICATE_WORDS:

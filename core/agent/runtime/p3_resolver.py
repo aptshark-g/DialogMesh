@@ -20,7 +20,7 @@ class P3Resolver:
         status = {}
         # 1. TieredRuleEngine
         try:
-            from core.agent.v4.tiered.rule_engine import TieredRuleEngine
+            from core.agent.tiered.rule_engine import TieredRuleEngine
             engine._rule_engine = TieredRuleEngine(llm_provider=getattr(engine, '_llm_provider', None))
             status["rule_engine"] = "ok"
             logger.info("P3: TieredRuleEngine")
@@ -29,7 +29,7 @@ class P3Resolver:
 
         # 2. TieredNegativeKB
         try:
-            from core.agent.v4.tiered.negative_kb import TieredNegativeKB
+            from core.agent.tiered.negative_kb import TieredNegativeKB
             engine._negative_kb = TieredNegativeKB()
             status["negative_kb"] = "ok"
             logger.info("P3: TieredNegativeKB")
@@ -38,7 +38,7 @@ class P3Resolver:
 
         # 3. TieredFusionEngine
         try:
-            from core.agent.v4.tiered.fusion import TieredFusionEngine
+            from core.agent.tiered.fusion import TieredFusionEngine
             engine._tiered_fusion = TieredFusionEngine()
             status["tiered_fusion"] = "ok"
             logger.info("P3: TieredFusionEngine")
@@ -47,7 +47,7 @@ class P3Resolver:
 
         # 4. TieredCognitiveCompiler
         try:
-            from core.agent.v4.tiered.cognitive_compiler import TieredCognitiveCompiler
+            from core.agent.tiered.cognitive_compiler import TieredCognitiveCompiler
             engine._cognitive_compiler = TieredCognitiveCompiler(llm_provider=getattr(engine, '_llm_provider', None))
             status["cognitive_compiler"] = "ok"
             logger.info("P3: TieredCognitiveCompiler")

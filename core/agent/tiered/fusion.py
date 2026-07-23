@@ -5,7 +5,7 @@ import concurrent.futures
 import logging
 from typing import Any, Dict, Optional
 
-from core.agent.v4.tiered.pipeline import Tier, TierResult, MultiTierPipeline
+from core.agent.tiered.pipeline import Tier, TierResult, MultiTierPipeline
 from core.agent.association.fusion_engine import FusionEngine
 from core.agent.association.models import FusionResult, TrackType
 

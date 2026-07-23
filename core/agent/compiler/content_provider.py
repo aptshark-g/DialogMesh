@@ -85,7 +85,7 @@ class ContentProvider:
             if blocks: break
         if blocks:
             try:
-                from core.agent.v4.adapter.code.tree_sitter_extractor import PythonCodeExtractor
+                from core.agent.adapter.code.tree_sitter_extractor import PythonCodeExtractor
                 return "[CODE:" + name + "]\n" + PythonCodeExtractor().extract_for_concept(name, blocks)
             except: pass
             return "\n---\n".join(blocks[:2])

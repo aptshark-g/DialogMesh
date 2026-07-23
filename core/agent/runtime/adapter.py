@@ -169,7 +169,7 @@ class WorldModelAdapter(RuntimeAdapter):
         self._project_root = project_root
 
     def execute(self, ctx: RuntimeContext) -> AdapterResult:
-        from core.agent.v4.adapter.code.adapter import CodeWorldAdapter
+        from core.agent.adapter.code.adapter import CodeWorldAdapter
 
         adapter = CodeWorldAdapter(
             tier=self.params.get("extraction_tier", 1),
