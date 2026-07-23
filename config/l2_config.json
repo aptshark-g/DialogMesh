@@ -21,5 +21,18 @@
     "default_hop_count": 2,
     "edge_ttl_turns": 50,
     "description": "Entity graph traversal limits. edges older than ttl_turns are pruned."
+  },
+  "l3": {
+    "profile_c_threshold": 0.6,
+    "assoc_max_causal_for_venting": 3,
+    "assoc_stability_min": 0.8
+  },
+  "l3_behavior_map": {
+    "诊断": "diagnostic",
+    "修复": "repair",
+    "探索": "exploratory",
+    "吐槽": "venting",
+    "信息查询": "query",
+    "指令": "command"
   }
 }
