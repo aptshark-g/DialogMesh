@@ -1,0 +1,37 @@
+{
+  "tests": [
+    {
+      "id": "associative_modifier",
+      "text": "这个模块的延迟飙升",
+      "entity_clusters": {
+        "latency_related": {"entities": ["API延迟", "数据库延迟", "网络延迟"], "last_seen": 1},
+        "module_related": {"entities": ["网络模块", "数据库模块", "监控模块"], "last_seen": 2},
+        "api_security": {"entities": ["PaymentGateway", "HMAC", "JWT"], "last_seen": 0}
+      },
+      "note": "modifier_context由Stanza实时提取; 预期匹配latency_related"
+    },
+    {
+      "id": "pronoun_resolution",
+      "text": "那个API安全",
+      "entity_clusters": {
+        "api_entities": {"entities": ["PaymentGateway", "HMAC", "JWT"], "last_seen": 1}
+      },
+      "note": "指代'那个'→语法消解→最近实体簇"
+    },
+    {
+      "id": "no_modifiers_simple",
+      "text": "你好",
+      "entity_clusters": {},
+      "note": "无修饰语无上下文→不需补全"
+    },
+    {
+      "id": "ambiguous_multi_cluster",
+      "text": "分析加密算法后修补二进制文件",
+      "entity_clusters": {
+        "crypto": {"entities": ["AES", "RSA", "DES"], "last_seen": 3},
+        "binary": {"entities": ["elf", "pe", "macho"], "last_seen": 2}
+      },
+      "note": "两个实体簇都可能→ambiguous→LLM决策"
+    }
+  ]
+}
