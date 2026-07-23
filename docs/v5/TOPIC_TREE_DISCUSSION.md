@@ -481,9 +481,113 @@ P3 (资源空闲): Meta 审查 → 批量重组关系块
 
 ---
 
-## 建议讨论顺序
+### 5 结论：Token 预算是学习结果，不是固定算法。三维协同决定。
 
-1. 先定 **分支定义** (问题3) —— 这是基础, 影响所有上层
-2. 再定 **温度vs距离** (问题1) —— 影响摘要生成策略
-3. 然后定 **刷新时机** (问题4) + **缓存失效** (问题2) —— 一起决定
-4. 最后定 **Token分配** (问题5) —— 这是调优, 可以后做
+**核心纠正**: Token 预算不是工程师定义的一个公式——是**用户自己决定的**, 系统通过学习来适配。
+
+```
+质量优先型用户 (如你):
+  → Token 预算高, 不怕消耗, 要最完整的上下文
+  → "宁可多给, 不可遗漏"
+
+性价比优先型用户:
+  → Token 预算低, 要精炼的核心信息
+  → "够用就好, 别浪费"
+
+这不是一个"正确值" — 是用户画像的一维。
+```
+
+**三维协同模型**:
+
+```
+                    ┌─────────────┐
+                    │  用户画像    │ ← "这个人偏好什么？"
+                    │  (Profile)   │    OCEAN/质量倾向/耐心度
+                    └──────┬──────┘
+                           │ quality_preference
+                           ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  行为链      │    │   Token     │    │  元认知      │
+│ (Behavior)   │───→│   预算      │←───│  (Meta)     │
+│              │    │  分配器     │    │             │
+│ 用户在做什么？│    │             │    │ 现在该给多少？│
+└─────────────┘    └─────────────┘    └─────────────┘
+                           │
+                           ▼
+              其他模块也提供信号:
+                Intent: query_complexity → 复杂问题多给
+                PCR: expectation → TOOL 多给 (需要精确), MIRROR 少给 (要倾听)
+                TopicTree: branch_depth → 深度推导需要更多上下文
+```
+
+**学习过程——不是预设，是观察**:
+
+```python
+class LearnedTokenBudget:
+    """Token 预算从用户行为中学习, 不是硬编码"""
+    
+    def __init__(self):
+        self.user_quality_bias = 0.5  # 初始中性
+        self.observation_window = []
+    
+    def observe(self, interaction: dict):
+        """观察用户行为, 调整质量偏好"""
+        signals = {
+            "reads_full_response": interaction.get("scroll_depth", 0) > 0.8,
+            "asks_followup": interaction.get("followup_count", 0) > 0,
+            "corrects_detail": interaction.get("corrections", 0) > 0,
+            "accepts_quickly": interaction.get("response_time", 999) < 2,
+            "ignores_long": interaction.get("skip_rate", 0) > 0.3,
+        }
+        
+        # 质量追求者: 读完全文 + 追问 + 纠正细节
+        if signals["reads_full_response"] and signals["asks_followup"]:
+            self.user_quality_bias += 0.05  # 更喜欢完整信息
+        
+        # 效率追求者: 快速接受 + 跳过长文
+        if signals["accepts_quickly"] and signals["ignores_long"]:
+            self.user_quality_bias -= 0.05  # 更喜欢精炼
+        
+        self.user_quality_bias = max(0.1, min(1.0, self.user_quality_bias))
+    
+    def allocate(self, base_budget: int, context: dict) -> dict:
+        """根据学习到的偏好分配 Token"""
+        
+        # 用户基础偏好
+        quality_factor = self.user_quality_bias  # 0.1~1.0
+        
+        # 元认知调整: 当前状态
+        if context.get("user_frustrated"):
+            quality_factor *= 0.6  # 用户烦躁 → 精简
+        if context.get("deep_exploration"):
+            quality_factor *= 1.3  # 深度探索 → 扩展
+        
+        # 意图调整: 任务类型
+        if context.get("expectation") == "TOOL":
+            quality_factor *= 1.2  # 工具操作 → 需要精确上下文
+        
+        adjusted_budget = int(base_budget * quality_factor)
+        
+        # 在各层之间分配 (距离衰减权重不变, 总量可变)
+        return self._distribute(adjusted_budget, context["active_node"])
+```
+
+**核心**: Token 预算不是一个静态的 `allocate(2000, active_node)`。它随用户变化——系统观察用户行为，学习这个用户是"质量型"还是"效率型"，然后动态调整。Profile 记录这个偏好，Behavior 提供实时信号，Meta 做最终协调。
+
+**决策**: 
+- Token 预算是学习结果, 不是预设算法
+- Profile 记录用户质量偏好
+- Behavior 提供实时行为信号
+- Meta 根据当前状态 (疲劳/探索/纠正) 动态调整
+- 距离衰减权重不变, Token 总量可变
+
+---
+
+## 讨论完成 ✅
+
+全部 5 个模糊点已决议：
+1. 温度vs距离 → 双视角并行, 不融合
+2. 缓存失效 → 关系块元信息 + 懒加载
+3. 分支定义 → 多视角糅合, LLM权衡
+4. 刷新时机 → 行为驱动, 纠错=P0
+5. Token预算 → 学习结果, 三维协同
