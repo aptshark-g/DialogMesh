@@ -101,6 +101,9 @@ class ModifierExtractor:
                         core[key] = word.text
                 
                 elif DepRelClassifier.is_modifier(role):
+                    # Skip single-character modifiers — noise ("进","制","这")
+                    if len(word.text) <= 1:
+                        continue
                     head_text = sent.words[word.head - 1].text if word.head > 0 else "ROOT"
                     mod = Modifier(
                         text=word.text,

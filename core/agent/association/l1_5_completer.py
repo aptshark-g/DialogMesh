@@ -142,18 +142,18 @@ class CollaborativeCompleter:
             for c in syntax_candidates
         ) if syntax_candidates else "  (none)"
 
-        prompt = f"""Complete implicit entities for this text using provided context.
+        prompt = f"""Match this text to entity clusters. Modifiers from syntax parsing may be noisy — trust the raw text more.
 
-Text: "{text[:200]}"
-Modifiers: "{modifier_context}"
+Raw text: "{text[:200]}"
+Syntax modifiers (may be incomplete): "{modifier_context}"
 
 Entity clusters:
 {cluster_desc}
 
-Syntax hints:
+Syntax hints (from modifier matching):
 {syn_hints}
 
-Return JSON: {{"completion": "suggested_completed_text_or_null", "ranking": [
+Return JSON: {{"ranking": [
   {{"cluster_id": "...", "entity": "...", "confidence": 0.0-1.0, "reason": "..."}}
 ], "ambiguous": true/false}}"""
 
