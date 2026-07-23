@@ -71,8 +71,16 @@ class BayesianUpdater:
         return posteriors
     
     def _default_likelihood(self, evidence: Evidence) -> Dict[str, Dict[str, float]]:
-        """Default likelihood matrix based on relation type to intent type."""
-        mapping = {
+        """Likelihood matrix from config/l2_config.json. Falls back to built-in defaults."""
+        try:
+            from ..association.l2_config import get as cfg_get
+            matrix = cfg_get('l2_5.likelihood_matrix', None)
+            if matrix:
+                return matrix
+        except Exception:
+            pass
+        # Fallback defaults
+        return {
             "causes": {"诊断": 0.85, "修复": 0.70, "探索": 0.40, "吐槽": 0.15, "信息查询": 0.30},
             "triggers": {"诊断": 0.75, "修复": 0.60, "探索": 0.50, "吐槽": 0.10, "信息查询": 0.30},
             "co_occurrence": {"诊断": 0.55, "修复": 0.55, "探索": 0.60, "吐槽": 0.40, "信息查询": 0.50},
@@ -99,7 +107,7 @@ class BeliefAccumulator:
         acc.status()  # -> {intent: {probability, belief_7d, trace}}
     """
     
-    LLM_TRIGGER_ENTROPY = 0.5
+    LLM_TRIGGER_ENTROPY = 0.5  # overridden by config/l2_config.json l2_5.thresholds
     LOCK_THRESHOLD = 0.85
     FORCE_CRYSTAL_TURNS = 5
     
@@ -108,6 +116,7 @@ class BeliefAccumulator:
         self.priors: Dict[str, float] = {i: 1.0 / len(self.intents) for i in self.intents}
         self.bayesian = BayesianUpdater()
         self.llm = llm_provider
+        self._load_config()
         
         # 7D structured belief for each intent
         self._belief_7d: Dict[str, dict] = {
@@ -211,6 +220,14 @@ Return JSON: {{"resolved": "intent_name", "reason": "..."}}"""
             logger.debug("LLM resolve failed: %s", e)
         return None
     
+    def _load_config(self):
+        from .l2_config import get as cfg_get
+        t = cfg_get('l2_5.thresholds', {})
+        if t:
+            self.LLM_TRIGGER_ENTROPY = t.get('llm_trigger_entropy', 0.5)
+            self.LOCK_THRESHOLD = t.get('lock_threshold', 0.85)
+            self.FORCE_CRYSTAL_TURNS = t.get('force_crystal_turns', 5)
+
     def _best_intent(self) -> str:
         return max(self.priors, key=self.priors.get)
     

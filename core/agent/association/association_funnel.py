@@ -115,18 +115,14 @@ Return JSON array of strings. Example: ["virtual_memory", "stack_frame"]"""
             return self._fallback_complete(text)
 
     def _fallback_complete(self, text: str) -> List[str]:
-        """Rule-based fallback: context keywords."""
-        ctx_keywords = {
-            "reverse": ["binary_analysis", "disassembly"],
-            "patch": ["binary_modification", "offset_patching"],
-            "analyze": ["static_analysis", "dynamic_analysis"],
-            "encrypt": ["cryptographic_algorithm", "key_derivation"],
-        }
-        result = []
-        for kw, implied in ctx_keywords.items():
-            if kw in text.lower():
-                result.extend(implied)
-        return result
+        """Structural entity extraction — no keyword lists."""
+        import re
+        # Extract entities structurally: hex addresses, capitalized terms, Chinese 2-char+ nouns
+        entities = []
+        entities.extend(re.findall(r'0x[0-9a-fA-F]+', text))
+        entities.extend(re.findall(r'[A-Z]{2,}', text))
+        entities.extend(re.findall(r'[\u4e00-\u9fff]{2,4}', text)[-3:])  # last 3 Chinese phrases
+        return entities[:8]
 
 
 @dataclass
@@ -226,22 +222,17 @@ Return: ["label1", "label2"]"""
             return self._fallback_hypotheses(text, entities)
 
     def _fallback_hypotheses(self, text: str, entities: List[str]) -> List[str]:
-        """Keyword-based fallback when LLM unavailable."""
-        hints = {
-            "scan": "memory_scan", "memor": "memory_scan", "dump": "memory_scan",
-            "patch": "code_patch", "nop": "code_patch", "modif": "code_patch",
-            "encrypt": "crypto_analysis", "cipher": "crypto_analysis", "aes": "crypto_analysis",
-            "hook": "function_hook", "detour": "function_hook", "inline": "function_hook",
-            "packer": "packer_identification", "upx": "packer_identification",
-            "debug": "anti_debug_analysis", "anti": "anti_debug_analysis",
-        }
+        """Structural hypothesis generation — no keyword lists. Uses entity types from context."""
         labels = []
         lower = text.lower()
-        for cue, label in hints.items():
-            if cue in lower and label not in labels:
-                labels.append(label)
-        for label in labels:
-            self.vote(label, "fallback_keyword")
+        # Structural signals: hex addresses → memory-related, verbs with -ing → action
+        if any(c in lower for c in ['0x']):
+            labels.append('memory_operation')
+        if entities:
+            labels.append(f'entity_analysis_{len(entities)}')
+        if labels:
+            for label in labels:
+                self.vote(label, 'structural_fallback')
         return labels
 
     def vote(self, label: str, evidence: str, support: bool = True):

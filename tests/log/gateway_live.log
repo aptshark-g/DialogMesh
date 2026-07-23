@@ -1,0 +1,20 @@
+2026/07/20 20:28:03 main.go:24: gateway: starting (config=provider.yaml)
+2026/07/20 20:28:03 store.go:96: persistence: restored state from gateway.state.json (saved 2026-07-20T20:26:47+08:00, 9 providers)
+2026/07/20 20:28:03 manager.go:88: manager: registered provider "deepseek" (kind=openai_compatible)
+2026/07/20 20:28:03 manager.go:88: manager: registered provider "lmstudio" (kind=openai_compatible)
+2026/07/20 20:28:03 store.go:138: persistence: auto-save every 5m0s to gateway.state.json
+2026/07/20 20:28:03 watcher.go:48: watcher: monitoring provider.yaml (every 5s)
+═══ gateway startup: 9 providers ═══
+  INACTIVE openrouter | kind=openai_compatible | key=NO_KEY | url=https://openrouter.ai/api/v1 | models=4 | circuit=
+  INACTIVE ollama | kind=ollama | key=KEY_SET | url=http://localhost:11434 | models=4 | circuit=
+  ACTIVE deepseek | kind=openai_compatible | key=KEY_SET | url=https://api.deepseek.com | models=2 | circuit=closed
+  INACTIVE openai | kind=openai_compatible | key=NO_KEY | url=https://api.openai.com | models=4 | circuit=
+  INACTIVE gemini | kind=openai_compatible | key=NO_KEY | url=https://generativelanguage.googleapis.com/v1beta/openai | models=2 | circuit=
+  INACTIVE groq | kind=openai_compatible | key=NO_KEY | url=https://api.groq.com/openai/v1 | models=3 | circuit=
+  ACTIVE lmstudio | kind=openai_compatible | key=KEY_SET | url=http://127.0.0.1:1234/v1 | models=2 | circuit=closed
+  INACTIVE anthropic | kind=openai_compatible | key=NO_KEY | url=https://api.deepseek.com/anthropic | models=3 | circuit=
+  INACTIVE kimi | kind=openai_compatible | key=NO_KEY | url=https://api.moonshot.cn/v1 | models=3 | circuit=
+═══ 2 active, 3 with keys ═══
+gateway: listening on 0.0.0.0:8080
+gateway: GET /v1/providers 0s
+{"ts":"2026-07-20T12:28:09Z","level":"info","request_id":"a63b6d45efbb3dc2","method":"GET","path":"/v1/providers","provider":"default","status":401,"client_ip":"127.0.0.1:5422","msg":"request complete"}

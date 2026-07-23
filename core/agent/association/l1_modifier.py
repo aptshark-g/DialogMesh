@@ -102,7 +102,8 @@ class ModifierExtractor:
                 
                 elif DepRelClassifier.is_modifier(role):
                     # Skip short modifiers — noise filter, threshold from config
-                    min_len = 2  # config/l2_config.json modifier_filter.min_length
+                    from ..association.l2_config import get as _cfg
+                    min_len = _cfg('modifier_filter.min_length', 2)
                     if len(word.text) < min_len:
                         continue
                     head_text = sent.words[word.head - 1].text if word.head > 0 else "ROOT"
