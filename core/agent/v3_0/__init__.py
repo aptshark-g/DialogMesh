@@ -12,7 +12,13 @@ from __future__ import annotations
 __version__ = "3.0.0"
 
 from core.agent.v3_0.system_bootstrap import SystemBootstrap, DialogMeshSystem, SystemStartupError
-from core.agent.v3_0.orchestrator import Orchestrator, OrchestratorResult
+
+# Lazy import to avoid circular dependency with planner models
+def __getattr__(name):
+    if name in ("Orchestrator", "OrchestratorResult"):
+        from core.agent.v3_0.orchestrator import Orchestrator, OrchestratorResult
+        return locals()[name]
+    raise AttributeError(f"module 'core.agent.v3_0' has no attribute '{name}'")
 
 __all__ = [
     "SystemBootstrap",
