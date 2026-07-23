@@ -91,9 +91,9 @@ class ObservationCompilerAdapter(RuntimeAdapter):
     """Wraps ObservationBuilder for the Async Path."""
 
     def execute(self, ctx: RuntimeContext) -> AdapterResult:
-        from core.agent.v4.observation_compiler.builder import ObservationBuilder
-        from core.agent.v4.observation_compiler.normalizer import Normalizer
-        from core.agent.v4.observation_compiler.projector import Projector
+        from core.agent.observation.builder import ObservationBuilder
+        from core.agent.observation.normalizer import Normalizer
+        from core.agent.observation.projector import Projector
 
         if ctx.event is None:
             return AdapterResult(ok=False, error="No event in context", adapter_name=self.name)
@@ -126,7 +126,7 @@ class HypothesisEngineAdapter(RuntimeAdapter):
     """Wraps HypothesisPipeline for the Slow Path."""
 
     def execute(self, ctx: RuntimeContext) -> AdapterResult:
-        from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+        from core.agent.hypothesis.pipeline import HypothesisPipeline
 
         pipeline = HypothesisPipeline()
         observations = ctx.observations if ctx.observations else []

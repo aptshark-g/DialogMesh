@@ -1,6 +1,6 @@
 """Tests for Projector."""
 import pytest
-from core.agent.v4.observation_compiler.projector import Projector
+from core.agent.observation.projector import Projector
 
 
 class TestProjector:

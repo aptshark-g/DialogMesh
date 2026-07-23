@@ -15,8 +15,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from core.agent.v4.monitor.interaction_monitor import interaction_middleware, get_interaction_monitor
-from core.agent.v4.monitor.span_tracer import get_tracer
+from core.agent.monitor.interaction_monitor import interaction_middleware, get_interaction_monitor
+from core.agent.monitor.span_tracer import get_tracer
 from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
@@ -262,8 +262,8 @@ async def post_ingest(req: IngestRequest):
         raise HTTPException(503, "API not initialized")
 
     try:
-        from core.agent.v4.document.pipeline import DocumentIngestionPipeline
-        from core.agent.v4.observation_compiler.document_domain_adapter import DocumentDomainAdapter
+        from core.agent.document.pipeline import DocumentIngestionPipeline
+        from core.agent.observation.document_domain_adapter import DocumentDomainAdapter
 
         pool = getattr(_engine, '_observation_pool', None)
         pipeline = DocumentIngestionPipeline(observation_pool=pool)
@@ -333,7 +333,7 @@ async def inspect(module: str, limit: int = 10, detail: bool = False):
             return {"module": "observations", "count": len(bundles), "items": items}
 
         elif module == "hypotheses":
-            from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+            from core.agent.hypothesis.pipeline import HypothesisPipeline
             pipe = HypothesisPipeline()
             items = []
             if hasattr(pipe, '_match_vote') and hasattr(pipe._match_vote, '_hypotheses'):
@@ -355,7 +355,7 @@ async def inspect(module: str, limit: int = 10, detail: bool = False):
             return {"module": "hypotheses", "count": len(items), "items": items}
 
         elif module == "knowledge":
-            from core.agent.v4.hypothesis_engine.pipeline import HypothesisPipeline
+            from core.agent.hypothesis.pipeline import HypothesisPipeline
             pipe = HypothesisPipeline()
             items = []
             if hasattr(pipe, '_match_vote') and hasattr(pipe._match_vote, '_hypotheses'):
@@ -925,7 +925,7 @@ async def v6_engineering():
     if hasattr(ek, 'get_by_type'):
         for ktype_name in ['constraint', 'pattern', 'architecture']:
             try:
-                from core.agent.v3_2.engineering_chain.models import KnowledgeType
+                from core.agent.engineering.models import KnowledgeType
                 kt = getattr(KnowledgeType, ktype_name.upper(), None)
                 if kt:
                     for n in ek.get_by_type(kt)[:20]:
@@ -1632,7 +1632,7 @@ async def v6_engineering_modules():
     modules = []
     if hasattr(ek, 'get_by_type'):
         try:
-            from core.agent.v3_2.engineering_chain.models import KnowledgeType
+            from core.agent.engineering.models import KnowledgeType
             for n in ek.get_by_type(KnowledgeType.CONSTRAINT)[:20]:
                 modules.append({"name": str(getattr(n, 'name', '?')), "type": "constraint"})
         except: pass

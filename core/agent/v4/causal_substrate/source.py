@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from core.agent.context.source import ContextSource, ContextItem
-from core.agent.v4.causal_substrate.adapter import V4CausalSubstrate
+from core.agent.causal_substrate.adapter import V4CausalSubstrate
 
 
 class CausalSource(ContextSource):

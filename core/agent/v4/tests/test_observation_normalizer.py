@@ -1,6 +1,6 @@
 """Tests for Normalizer."""
 import pytest
-from core.agent.v4.observation_compiler.normalizer import Normalizer
+from core.agent.observation.normalizer import Normalizer
 from core.agent.v4.event_ir import EventIR
 
 

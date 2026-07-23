@@ -1,6 +1,6 @@
 """Tests for Observation Compiler models."""
 import pytest
-from core.agent.v4.observation_compiler.models import (
+from core.agent.observation.models import (
     ObservationBundle, DomainObservation, Interpretation,
     Evidence, BeliefState, ObservationEvent,
 )

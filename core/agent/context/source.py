@@ -519,7 +519,7 @@ class WorldSource(ContextSource):
         if self._graph is None:
             return []
         try:
-            from core.agent.v4.world.compiler import StructuralContextCompiler
+            from core.agent.world.compiler import StructuralContextCompiler
             compiler = StructuralContextCompiler()
             subgraph = compiler.compile_subgraph(self._graph, intent=query, max_nodes=top_k * 2)
             items = []

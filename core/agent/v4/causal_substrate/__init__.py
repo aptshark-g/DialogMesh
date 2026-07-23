@@ -1,5 +1,5 @@
 """v4 CausalSubstrate adapter package."""
-from core.agent.v4.causal_substrate.adapter import (
+from core.agent.causal_substrate.adapter import (
     CausalSubstrateAdapter,
     CausalContextEntry,
 )

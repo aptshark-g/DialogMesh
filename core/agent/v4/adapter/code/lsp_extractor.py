@@ -7,8 +7,8 @@ Tree-sitter cannot resolve (type inference, rename, find references).
 """
 from __future__ import annotations
 from typing import List, Optional
-from core.agent.v4.world.extractor import StructureExtractor
-from core.agent.v4.world.schema import ReferenceUnit, StructuralEdge
+from core.agent.world.extractor import StructureExtractor
+from core.agent.world.schema import ReferenceUnit, StructuralEdge
 
 
 class LSPExtractor(StructureExtractor):

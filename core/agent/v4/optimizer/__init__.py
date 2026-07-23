@@ -9,8 +9,8 @@ Bayesian Parameter Optimizer for DialogMesh v4.
   - 读/写 WorldParams，不做独立存储
 
 Usage:
-    from core.agent.v4.optimizer import BayesianOptimizer, FeedbackSignal, ParameterBounds
-    from core.agent.v4.world.params import WorldParams
+    from core.agent.optimizer import BayesianOptimizer, FeedbackSignal, ParameterBounds
+    from core.agent.world.params import WorldParams
 
     # 1. 定义要优化的参数边界
     bounds = {

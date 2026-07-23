@@ -18,7 +18,7 @@ class P1Resolver:
     def wire_view_manager(engine) -> None:
         """P1: wire ViewManager into engine's perspective system."""
         try:
-            from core.agent.v4.compiler.view_manager import ViewManager
+            from core.agent.compiler.view_manager import ViewManager
             engine._view_manager = ViewManager()
             # Check if perspectives exist before trying to reframe
             if hasattr(engine, '_perspectives') and engine._perspectives and hasattr(engine._view_manager, 'reframe'):
@@ -59,7 +59,7 @@ class P1Resolver:
 
         # Wire umbrella domain adapters
         try:
-            from core.agent.v4.compiler.domain_adapters import DomainAdapters
+            from core.agent.compiler.domain_adapters import DomainAdapters
             umbrella = DomainAdapters()
             for domain, adapter in adapters.items():
                 umbrella.register(domain, adapter)

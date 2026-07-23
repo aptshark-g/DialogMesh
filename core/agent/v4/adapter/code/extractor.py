@@ -8,8 +8,8 @@ from typing import Dict, List, Optional
 from tree_sitter import Language, Parser, Node
 import tree_sitter_python as tspython
 
-from core.agent.v4.world.schema import ReferenceUnit, StructuralEdge, Location
-from core.agent.v4.world.extractor import StructureExtractor
+from core.agent.world.schema import ReferenceUnit, StructuralEdge, Location
+from core.agent.world.extractor import StructureExtractor
 
 
 # tree-sitter-python node types

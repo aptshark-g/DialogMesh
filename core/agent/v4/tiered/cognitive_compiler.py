@@ -6,8 +6,8 @@ import logging
 from typing import Any, Dict
 
 from core.agent.v4.tiered.pipeline import Tier, MultiTierPipeline
-from core.agent.v3_2.compiler.hybrid_compiler import HybridCompiler
-from core.agent.v3_2.compiler.models import ParseResult, ParseContext
+from core.agent.compiler.hybrid_compiler import HybridCompiler
+from core.agent.compiler.models import ParseResult, ParseContext
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +74,9 @@ class TieredCognitiveCompiler:
     def _run_rule_only(input_data: dict, _context: dict) -> ParseResult:
         sentence = input_data["sentence"]
         ctx = input_data["context"]
-        from core.agent.v3_2.compiler.rule_engine import RuleConstraintEngine, FrameLibrary
-        from core.agent.v3_2.compiler.stability_scorer import StabilityScorer
-        from core.agent.v3_2.compiler.degradation_manager import DegradationManager
+        from core.agent.compiler.rule_engine import RuleConstraintEngine, FrameLibrary
+        from core.agent.compiler.stability_scorer import StabilityScorer
+        from core.agent.compiler.degradation_manager import DegradationManager
         library = FrameLibrary.load_default()
         rule_engine = RuleConstraintEngine(library)
         dm = DegradationManager(max_retries=1)

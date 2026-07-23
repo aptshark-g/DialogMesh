@@ -127,7 +127,7 @@ class PathAwareScheduler:
         self.config = config or build_default_config()
         self.world_params = world_params
         if self.world_params is None:
-            from core.agent.v4.world.params import get_world_params
+            from core.agent.world.params import get_world_params
             self.world_params = get_world_params()
         self._registry = registry
 
@@ -436,7 +436,7 @@ class PathAwareScheduler:
         """
         if self._chunk_registry is None:
             try:
-                from core.agent.v4.chunking.strategies import default_registry
+                from core.agent.chunking.strategies import default_registry
                 self._chunk_registry = default_registry()
             except Exception as e:
                 logger.warning("Failed to load default chunk registry: %s", e)

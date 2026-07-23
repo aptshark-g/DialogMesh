@@ -8,8 +8,8 @@ import sys, json, time, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.agent.v4.state.global_decider import GlobalDecider, Command, EventType, StateSnapshot
-from core.agent.v4.state.trigger_conditions import TRIGGER_CONDITIONS
+from core.agent.state.global_decider import GlobalDecider, Command, EventType, StateSnapshot
+from core.agent.state.trigger_conditions import TRIGGER_CONDITIONS
 
 
 class TestTriggerConditions(unittest.TestCase):

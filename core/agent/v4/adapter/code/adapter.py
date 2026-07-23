@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, time, glob
 from typing import Dict, List, Optional
 
-from core.agent.v4.world.schema import ReferenceUnit, StructuralEdge, StructuralWorldGraph
+from core.agent.world.schema import ReferenceUnit, StructuralEdge, StructuralWorldGraph
 from core.agent.v4.adapter.code.extractor import TreeSitterExtractor
 
 

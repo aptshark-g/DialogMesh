@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.v4.event_ir import EventIR
 from core.agent.context.source import ContextSource, ContextItem
-from core.agent.v4.observation_compiler.models import ObservationBundle
+from core.agent.observation.models import ObservationBundle
 
 # v3_2 imports (read-only, no modifications)
 from core.agent.behavior.graph_store import BehaviorGraph as V3BehaviorGraph

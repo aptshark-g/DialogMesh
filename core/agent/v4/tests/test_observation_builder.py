@@ -1,6 +1,6 @@
 """Tests for ObservationBuilder."""
 import pytest
-from core.agent.v4.observation_compiler.builder import ObservationBuilder
+from core.agent.observation.builder import ObservationBuilder
 
 
 class TestObservationBuilder:

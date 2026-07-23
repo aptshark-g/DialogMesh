@@ -1,7 +1,7 @@
 """Tests for ObservationPool."""
 import pytest
-from core.agent.v4.observation_compiler.pool import ObservationPool
-from core.agent.v4.observation_compiler.models import ObservationBundle
+from core.agent.observation.pool import ObservationPool
+from core.agent.observation.models import ObservationBundle
 
 
 class TestObservationPool:

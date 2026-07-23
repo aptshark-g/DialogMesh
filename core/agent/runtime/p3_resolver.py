@@ -68,7 +68,7 @@ class P3Resolver:
             try:
                 re_engine = engine._rule_engine
                 if hasattr(re_engine, 'resolve_all'):
-                    from core.agent.v3_2.compiler.models import ParseContext
+                    from core.agent.compiler.models import ParseContext
                     result = re_engine.resolve_all({"text": getattr(event, 'text', '')}, ParseContext())
                     events["rule_engine"] = {"resolved": len(result) if result else 0}
                 elif hasattr(re_engine, '_rule_evaluate'):

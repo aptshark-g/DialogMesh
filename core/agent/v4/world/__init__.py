@@ -3,7 +3,7 @@
 Layer constraint: NEVER imports tree-sitter, LSP, or any adapter-specific code.
 The World layer only depends on: stdlib, networkx, and v4 ParameterRegistry.
 """
-from core.agent.v4.world.schema import (
+from core.agent.world.schema import (
     Location,
     ReferenceUnit,
     StructuralEdge,
@@ -32,11 +32,11 @@ __all__ = [
     "StructuralContextCompiler",
 ]
 
-from core.agent.v4.world.extractor import StructureExtractor
-from core.agent.v4.world.community import CommunityDetector
-from core.agent.v4.world.importance import (StructuralImportanceStrategy,
+from core.agent.world.extractor import StructureExtractor
+from core.agent.world.community import CommunityDetector
+from core.agent.world.importance import (StructuralImportanceStrategy,
     BetweennessStrategy, PageRankStrategy, DegreeStrategy,
     HybridStrategy, compute_backbone_scores)
-from core.agent.v4.world.updater import IncrementalUpdater
-from core.agent.v4.world.params import WorldParams, get_world_params
-from core.agent.v4.world.compiler import StructuralContextCompiler
+from core.agent.world.updater import IncrementalUpdater
+from core.agent.world.params import WorldParams, get_world_params
+from core.agent.world.compiler import StructuralContextCompiler

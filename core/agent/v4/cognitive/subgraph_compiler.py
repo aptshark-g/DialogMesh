@@ -79,7 +79,7 @@ class SubgraphCompiler:
         ek = getattr(eng, '_engineering_knowledge', None)
         if ek and hasattr(ek, 'get_by_type'):
             try:
-                from core.agent.v3_2.engineering_chain.models import KnowledgeType
+                from core.agent.engineering.models import KnowledgeType
                 for n in ek.get_by_type(KnowledgeType.CONSTRAINT)[:3]:
                     entries.append(DomainEntry("K", str(getattr(n, 'name', '?'))[:200], 0.8, "engineering", 50))
             except Exception: pass

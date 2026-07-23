@@ -18,20 +18,20 @@ from core.agent.runtime.adapter import (
 from core.agent.runtime.config import (
     RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config,
 )
-from core.agent.v4.world.params import WorldParams, get_world_params
+from core.agent.world.params import WorldParams, get_world_params
 from core.agent.context.assembler import ContextAssembler
 from core.agent.context.source import (
     SkillSource, WorldSource,
 )
 from core.agent.context.topic_tree_source import TopicTreeContextSource
-from core.agent.v4.compiler.content_index import ContentIndex
-from core.agent.v4.compiler.index_source import IndexSource
+from core.agent.compiler.content_index import ContentIndex
+from core.agent.compiler.index_source import IndexSource
 from core.agent.v4.conversation.tracker import ConversationTracker
-from core.agent.v4.compiler.discourse_block_tree import DiscourseBlockTreeManager
-from core.agent.v4.causal.planner import CausalPlanner, CausalContextSource
+from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
+from core.agent.causal.planner import CausalPlanner, CausalContextSource
 from core.agent.context.domain_selector import DomainSelector
 from core.agent.context.cross_domain_ir import CrossDomainContextIR
-from core.agent.v4.compiler.perspective_planner import PerspectivePlanner, Perspective
+from core.agent.compiler.perspective_planner import PerspectivePlanner, Perspective
 from core.agent.v4.cognitive_scheduler.path_scheduler import PathAwareScheduler
 from core.agent.v4.cognitive_scheduler.path_models import PathType, PathState
 from core.agent.v4.cognitive_scheduler.path_trigger_policy import (
@@ -42,11 +42,11 @@ from core.agent.v4.cognitive_scheduler.tasks import (
 )
 
 from core.agent.behavior.adapter import BehaviorGraphAdapter, BehaviorGraphState
-from core.agent.v4.causal_substrate.adapter import CausalSubstrateAdapter, CausalContextEntry
+from core.agent.causal_substrate.adapter import CausalSubstrateAdapter, CausalContextEntry
 from core.agent.runtime.event_log_adapter import V4EventLog, EventLogConfig
 
-from core.agent.v4.optimizer.signals import FeedbackSignal
-from core.agent.v4.optimizer.optimizer import BayesianOptimizer
+from core.agent.optimizer.signals import FeedbackSignal
+from core.agent.optimizer.optimizer import BayesianOptimizer
 from core.agent.llm_providers.base import LLMProvider, GenerateRequest, GenerateResult
 from core.agent.llm_providers.provider_factory import ProviderFactory
 
@@ -134,7 +134,7 @@ class CognitiveRuntimeEngine:
         # DiscourseBlockTree: conversation-to-tree compiler
         self._discourse_tree = DiscourseBlockTreeManager()
         # Granularity regulator: BDI+BOR adaptive split/merge
-        from core.agent.v4.compiler.discourse_block_tree import DiscourseBlockGranularityRegulator
+        from core.agent.compiler.discourse_block_tree import DiscourseBlockGranularityRegulator
         self._granularity_regulator = DiscourseBlockGranularityRegulator()
         self._turn_counter = 0
 
@@ -199,7 +199,7 @@ class CognitiveRuntimeEngine:
         """Start the runtime engine: instantiate adapters, pools, scheduler, and timers."""
         self._running = True
         self._session_active = True
-        from core.agent.v4.state.global_decider import GlobalDecider, Command, EventType
+        from core.agent.state.global_decider import GlobalDecider, Command, EventType
         self._decider = GlobalDecider()
         from core.agent.v4.api_event_log import EventLog
         from core.agent.v4.event_bus import EventBus, Event, EventType as ET
@@ -237,7 +237,7 @@ class CognitiveRuntimeEngine:
 
         # ---- v6 State Evolution Tracking ----
         try:
-            from core.agent.v4.state.execution_trace import ExecutionTraceV3
+            from core.agent.state.execution_trace import ExecutionTraceV3
             self._trace_v3 = ExecutionTraceV3(session_id=str(time.time()))
             logger.info("ExecutionTraceV3 initialized")
         except Exception as e:
@@ -294,7 +294,7 @@ class CognitiveRuntimeEngine:
             # (previously trapped inside the Mind-load else-branch → permanent 503)
             # P1: EventScheduler + CausalTracker + GradedDegradation + MetaSelfRepair
             try:
-                from core.agent.v4.scheduler.p1_runtime import (
+                from core.agent.scheduler.p1_runtime import (
                     EventScheduler, CausalTracker, GradedDegradation, MetaSelfRepair
                 )
                 self._event_scheduler = EventScheduler()
@@ -332,7 +332,7 @@ class CognitiveRuntimeEngine:
                 from core.agent.v4.cognitive.belief_map import BeliefAccumulator, RecursiveMap
                 from core.agent.v4.cognitive.version_control import GlobalVersionControl
                 from core.agent.v4.cognitive.subgraph_compiler import SubgraphCompiler
-                from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+                from core.agent.compiler.parameter_registry import ParameterRegistry
                 self._vcs = GlobalVersionControl()
                 self._meta = MetaCognition(llm_provider=getattr(self, '_llm_provider', None),
                                            vcs=self._vcs)
@@ -355,7 +355,7 @@ class CognitiveRuntimeEngine:
 
             # v3.2 engineering knowledge graph (for /v6/engineering/modules)
             try:
-                from core.agent.v3_2.engineering_chain.knowledge_graph import KnowledgeGraph
+                from core.agent.engineering.knowledge_graph import KnowledgeGraph
                 self._engineering_knowledge = KnowledgeGraph()
             except Exception:
                 self._engineering_knowledge = None
@@ -412,7 +412,7 @@ class CognitiveRuntimeEngine:
         # ---- v6 Internal State Monitor
         # ---- v6 Interaction Graph (dynamic state propagation) ----
         try:
-            from core.agent.v4.state.interaction_graph import InteractionGraph, InteractionType
+            from core.agent.state.interaction_graph import InteractionGraph, InteractionType
             self._interaction_graph = InteractionGraph()
             # Seed core architectural edges
             self._interaction_graph.add_edge("EventIR", "Observer", InteractionType.DEPENDS_ON, 0.8)
@@ -535,7 +535,7 @@ class CognitiveRuntimeEngine:
 
         # ---- Global State Machine: Tick ----
         if self._decider:
-            from core.agent.v4.state.global_decider import Command
+            from core.agent.state.global_decider import Command
             self._decider._tick += 1
             cmd = Command(type="user_message", payload={"text": text if 'text' in dir() else ""})
             self._decider.evolve(self._decider.decide(cmd))
@@ -648,7 +648,7 @@ class CognitiveRuntimeEngine:
                 self._last_pcr = pcr_output
                 self._publish(ET.PCR_COMPUTED.value, {"expectation": pcr_result.zone})
                 if self._decider:
-                    from core.agent.v4.state.global_decider import Command, EventType
+                    from core.agent.state.global_decider import Command, EventType
                     self._decider.evolve(self._decider.decide(
                         Command(type="pcr", payload={"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
                     ))
@@ -674,7 +674,7 @@ class CognitiveRuntimeEngine:
                 logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
                 self._publish(ET.ROUTE_GENERATED.value, {"zone": route.zone, "strategy": route.strategy})
                 if self._decider:
-                    from core.agent.v4.state.global_decider import Command
+                    from core.agent.state.global_decider import Command
                     self._decider.evolve(self._decider.decide(
                         Command(type="routing", payload={"zone": route.zone, "strategy": route.strategy})
                     ))
@@ -703,7 +703,7 @@ class CognitiveRuntimeEngine:
                 cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
                 self._publish(ET.INTENT_PARSED.value, {"category": cat})
                 if self._decider and parse_result:
-                    from core.agent.v4.state.global_decider import Command
+                    from core.agent.state.global_decider import Command
                     cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
                     self._decider.evolve(self._decider.decide(
                         Command(type="intent", payload={"category": cat})
@@ -749,7 +749,7 @@ class CognitiveRuntimeEngine:
                     self._last_plan_result = plan_result
                     self._publish(ET.PLAN_GENERATED.value)
                     if self._decider and plan_result:
-                        from core.agent.v4.state.global_decider import Command
+                        from core.agent.state.global_decider import Command
                         tg = getattr(plan_result, 'task_graph', None)
                         task_count = len(getattr(tg, 'nodes', [])) if tg else 0
                         self._decider.evolve(self._decider.decide(
@@ -820,7 +820,7 @@ class CognitiveRuntimeEngine:
         # v6 Trace: snapshot state before reasoning
         pre_state = None
         if self._trace_v3:
-            from core.agent.v4.state.state_object import StateObject, TransitionReason, StateDelta
+            from core.agent.state.state_object import StateObject, TransitionReason, StateDelta
             pre_state = StateObject(data={
                 "turn": self._turn_counter,
                 "user_text": text[:200],
@@ -921,7 +921,7 @@ class CognitiveRuntimeEngine:
         # ---- v6 Trace: record post-reasoning transition ----
         post_state = None
         if self._trace_v3 and llm_response and pre_state:
-            from core.agent.v4.state.state_object import Transition, TransitionReason, StateDelta, StateObject
+            from core.agent.state.state_object import Transition, TransitionReason, StateDelta, StateObject
             # INFER: LLM reasoning result
             post_state = self._trace_v3.states[-1] if self._trace_v3.states else StateObject()
             # Dynamic confidence from response quality
@@ -1329,7 +1329,7 @@ class CognitiveRuntimeEngine:
                         break
             if self._world_objects and self._world_provider:
                 try:
-                    from core.agent.v4.compiler.subgraph_compiler import SubgraphCompiler
+                    from core.agent.compiler.subgraph_compiler import SubgraphCompiler
                     compiler = SubgraphCompiler(graph=getattr(self._world_provider,'graph',None),
                                                semantic_index=getattr(self._world_provider,'index',None))
                     targets = self._find_targets_semantic(text, self._world_objects)
@@ -1831,7 +1831,7 @@ class CognitiveRuntimeEngine:
 
     def _init_extraction_orchestrator(self):
         try:
-            from core.agent.v4.compiler.extraction_blueprint import (
+            from core.agent.compiler.extraction_blueprint import (
                 ExtractionOrchestrator, ExtractionBlueprint,
                 RegexExtractionProvider, StanzaExtractionProvider,
                 LMStudioExtractionProvider, DeepSeekExtractionProvider,
@@ -1854,7 +1854,7 @@ class CognitiveRuntimeEngine:
     def _get_param(self, key: str, default):
         """Read a parameter from ParameterRegistry with fallback."""
         try:
-            from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+            from core.agent.compiler.parameter_registry import ParameterRegistry
             val = ParameterRegistry().get(key)
             return val if val is not None else default
         except Exception:
@@ -1862,7 +1862,7 @@ class CognitiveRuntimeEngine:
 
     def _get_slow_threshold(self) -> int:
         try:
-            from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+            from core.agent.compiler.parameter_registry import ParameterRegistry
             return ParameterRegistry().get_int("slow_path.event_threshold", 5)
         except Exception:
             return 5
@@ -1911,7 +1911,7 @@ class CognitiveRuntimeEngine:
             return
         min_text_len = 30
         try:
-            from core.agent.v4.compiler.parameter_registry import ParameterRegistry
+            from core.agent.compiler.parameter_registry import ParameterRegistry
             min_text_len = ParameterRegistry().get_int("slow_path.min_text_length", 30)
         except Exception:
             pass
@@ -1973,7 +1973,7 @@ class CognitiveRuntimeEngine:
             logger.debug("Build-time extraction skipped: %s", e)
 
     def _apply_extraction(self, result):
-        from core.agent.v4.compiler.relation_substrate import RelationEdge, Evidence
+        from core.agent.compiler.relation_substrate import RelationEdge, Evidence
         prov = getattr(self, "_content_provider", None)
         if not prov:
             logger.debug("Slow Path writeback: no content provider")
@@ -2149,8 +2149,8 @@ class CognitiveRuntimeEngine:
                 idx = getattr(self._world_provider, 'index', None)
             if graph is None or idx is None:
                 return
-            from core.agent.v4.compiler.object_builder import build_object_graph
-            from core.agent.v4.compiler.object_runtime import ObjectRuntime
+            from core.agent.compiler.object_builder import build_object_graph
+            from core.agent.compiler.object_runtime import ObjectRuntime
             objects = build_object_graph(pool, graph, idx)
             if objects:
                 ort = ObjectRuntime(provider=self._world_provider)
@@ -2238,7 +2238,7 @@ class CognitiveRuntimeEngine:
         if len(objects) > 1000:
             try:
                 import numpy as np
-                from core.agent.v4.compiler.lsh_index import LSHIndex
+                from core.agent.compiler.lsh_index import LSHIndex
                 lsh = LSHIndex()
                 for name in objects:
                     lsh.insert(name, name)
@@ -2328,7 +2328,7 @@ class CognitiveRuntimeEngine:
             return
 
         from core.agent.context.cross_domain_ir import IREntry
-        from core.agent.v4.compiler.semantic_object import LOD as LODObj
+        from core.agent.compiler.semantic_object import LOD as LODObj
         objects = self._world_objects
         runtime = getattr(self, '_object_runtime', None)
         provider = getattr(self, '_world_provider', None)
@@ -2944,7 +2944,7 @@ class CognitiveRuntimeEngine:
                 logger.warning("Legacy CausalSource init skipped: %s", e)
 
         # ---- Topic + Behavior domain adapters (v4 design: C and B domains) ----
-        from core.agent.v4.compiler.domain_adapters import TopicContextSource, BehaviorContextSource
+        from core.agent.compiler.domain_adapters import TopicContextSource, BehaviorContextSource
         if self._conversation_tracker is not None:
             sources.append(TopicContextSource(self._conversation_tracker))
             sources.append(BehaviorContextSource(self._conversation_tracker))
@@ -2967,7 +2967,7 @@ class CognitiveRuntimeEngine:
             self._topic_tree_source = None
 
         # ---- User Profile V2 (P domain) ----
-        from core.agent.v4.compiler.profile_source import ProfileContextSource
+        from core.agent.compiler.profile_source import ProfileContextSource
         from core.agent.v4.cognitive.models import CognitiveProfileV2
         from core.agent.v4.cognitive.convergence import ConvergenceEngine, ProfileStore
         profile_v2 = CognitiveProfileV2(user_id="default", session_id=getattr(self, '_session_id', '') or "")
@@ -3269,7 +3269,7 @@ class CognitiveRuntimeEngine:
     def _create_observation_pool(self):
         """Create the ObservationPool for path-to-path data flow."""
         try:
-            from core.agent.v4.observation_compiler.pool import ObservationPool
+            from core.agent.observation.pool import ObservationPool
             return ObservationPool()
         except Exception as e:
             logger.warning("Cannot create ObservationPool: %s", e)

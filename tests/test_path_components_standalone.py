@@ -268,7 +268,7 @@ def test_parameter_loading():
     assert_true(policy.should_trigger("slow", event_count=25), "config: 25 >= 25")
 
     # Test 2: WorldParams override
-    from core.agent.v4.world.params import WorldParams
+    from core.agent.world.params import WorldParams
     wp = WorldParams()
     wp.min_support = 5
 

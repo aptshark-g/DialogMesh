@@ -107,7 +107,7 @@ class RuleEngine:
             # Window state (last N turns) — better for personality detection
             all_transitions = getattr(engine._trace_v3, 'transitions', [])
             recent = all_transitions[-window*4:] if len(all_transitions) > window*4 else all_transitions
-            from core.agent.v4.state.state_object import TransitionReason
+            from core.agent.state.state_object import TransitionReason
             state["strengthen"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.STRENGTHEN)
             state["weaken"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.WEAKEN)
             state["reject"] = sum(1 for t in recent if getattr(t, 'reason', None) == TransitionReason.REJECT)

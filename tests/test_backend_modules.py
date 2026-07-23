@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 class TestGlobalDecider(unittest.TestCase):
     def setUp(self):
-        from core.agent.v4.state.global_decider import GlobalDecider, Command
+        from core.agent.state.global_decider import GlobalDecider, Command
         self.d = GlobalDecider()
         self.Command = Command
 

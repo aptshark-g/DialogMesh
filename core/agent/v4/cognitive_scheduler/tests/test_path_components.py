@@ -406,7 +406,7 @@ class TestParameterLoading:
         assert policy.should_trigger("slow", event_count=25)
 
     def test_world_params_override(self):
-        from core.agent.v4.world.params import WorldParams
+        from core.agent.world.params import WorldParams
 
         wp = WorldParams()
         wp.min_support = 5

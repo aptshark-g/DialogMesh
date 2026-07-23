@@ -65,7 +65,7 @@ class LLMProfileAnalyst:
         window = 3
         transitions = getattr(engine._trace_v3, 'transitions', [])
         recent = transitions[-window*4:]
-        from core.agent.v4.state.state_object import TransitionReason
+        from core.agent.state.state_object import TransitionReason
         return {
             "total_strengthen": rd.get("strengthen", 0),
             "total_weaken": rd.get("weaken", 0),

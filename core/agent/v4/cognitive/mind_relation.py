@@ -11,7 +11,7 @@ import json, os
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-from core.agent.v4.state.state_object import TransitionReason
+from core.agent.state.state_object import TransitionReason
 
 
 class RelationPrior:
@@ -102,7 +102,7 @@ class RelationPrior:
             if score < 0.4:
                 continue
             try:
-                from core.agent.v4.state.interaction_graph import InteractionType
+                from core.agent.state.interaction_graph import InteractionType
                 itype = {
                     'contains': InteractionType.CONTAINS,
                     'depends_on': InteractionType.DEPENDS_ON,

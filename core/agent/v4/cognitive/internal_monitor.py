@@ -16,7 +16,7 @@ import json, time, os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.state.state_object import TransitionReason
+from core.agent.state.state_object import TransitionReason
 
 
 @dataclass
