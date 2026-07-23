@@ -341,11 +341,11 @@ class DiscourseBlock:
         return self.summary
     
     def _llm_summarize(self, text: str, llm_provider=None) -> str:
-        """LLM compression via LM Studio nemotron."""
+        """LLM compression via LM Studio nemotron. Falls back to BM25+kurtosis."""
         if not llm_provider:
             try:
                 import urllib.request, json
-                prompt = f"Summarize this conversation turn in 1 sentence (Chinese or English):\n{text[:300]}"
+                prompt = f"Extract the key action and entity from this reverse engineering conversation. Output 1 short sentence:\n{text[:300]}"
                 req = urllib.request.Request(
                     "http://127.0.0.1:1234/v1/chat/completions",
                     data=json.dumps({
@@ -358,17 +358,34 @@ class DiscourseBlock:
                 resp = urllib.request.urlopen(req, timeout=10)
                 result = json.loads(resp.read())
                 content = result["choices"][0]["message"].get("content", "")
-                # Handle nemotron reasoning_content fallback
                 if not content:
                     content = result["choices"][0]["message"].get("reasoning_content", "")
-                return content[:120] if content else text[:120]
-            except Exception:
-                return text[:120]
+                if content and len(content) > 5:
+                    return content[:120]
+                raise ValueError("empty LLM response")
+            except Exception as e:
+                logger.debug("LM Studio failed: %s, using BM25 fallback", e)
+                return self._bm25_fallback(text)
         
-        result = llm_provider.generate(prompt=f"Summarize: {text[:200]}", max_tokens=80)
+        result = llm_provider.generate(prompt=f"Extract key action: {text[:200]}", max_tokens=80)
         return (result.text if hasattr(result, 'text') else str(result))[:120]
+    
+    def _bm25_fallback(self, text: str) -> str:
+        """BM25+kurtosis topic matching when LLM unavailable."""
         try:
-            from core.agent.llm_providers.base import GenerateRequest
+            from core.agent.compiler.topic_quick_match import TopicQuickMatcher
+            matcher = TopicQuickMatcher()
+            # Index common reverse engineering domains
+            matcher.index("memory_scan", ["scan memory address entry point find offset"])
+            matcher.index("code_patch", ["patch binary modify nop change instruction"])
+            matcher.index("crypto_analysis", ["encrypt decrypt algorithm cipher AES key"])
+            matcher.index("function_hook", ["hook detour intercept function frida inline"])
+            matcher.index("packer_detect", ["packer unpack upx aspack peid detect identify"])
+            matcher.index("debug_analysis", ["debug trace breakpoint step anti-debug bypass"])
+            return matcher.summarize(text)
+        except Exception:
+            entities = __import__('re').findall(r'0x[0-9a-fA-F]+|[A-Z]{2,}', text)
+            return f"[{', '.join(set(entities[:5]))}]" if entities else text[:100]
             text = " ".join(getattr(e, 'raw_text', '') for e in self.edus[:5])
             prompt = (
                 f"Summarize this conversation fragment in one Chinese sentence (max 40 characters). "
