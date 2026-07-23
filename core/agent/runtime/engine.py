@@ -213,6 +213,17 @@ class CognitiveRuntimeEngine:
         from core.agent.topic_tree.manager import TopicTreeManager
         self._topic_tree = TopicTreeManager()
         logger.info('EventLog+EventBus+TopicTree ready')
+        
+        # Association Chain L1→L3 (async cold path)
+        from core.agent.association.l1_modifier import ModifierExtractor
+        from core.agent.association.l1_5_completer import CollaborativeCompleter
+        from core.agent.association.l2_5_belief import BeliefAccumulator
+        from core.agent.association.l3_intent import MultiPerspectiveValidator
+        self._l1_extractor = ModifierExtractor()
+        self._l1_5_completer = CollaborativeCompleter()
+        self._l2_5_accumulator = BeliefAccumulator()
+        self._l3_validator = MultiPerspectiveValidator()
+        logger.info('Association chain L1→L3 initialized')
         self._init_pcr()
         self._init_unified()
         self._init_router_v4()
@@ -807,6 +818,13 @@ class CognitiveRuntimeEngine:
                     logger.debug('Discourse context injected: %s chars', len(discourse_ctx))
             except Exception as e:
                 logger.debug('Discourse context injection skipped: %s', e)
+
+        # ---- Association Chain L1→L2.5 (cold path, parallel to hot path) ----
+        if text and self._l1_extractor:
+            try:
+                self._run_association_chain(event, text, pcr_output)
+            except Exception as e:
+                logger.debug('Association chain skipped: %s', e)
 
         # ---- BehaviorGraph: record event as step ----
         if self._causal_planner is not None:
@@ -3439,6 +3457,56 @@ class CognitiveRuntimeEngine:
             replayed, failed, remaining,
         )
         return {"replayed": replayed, "failed": failed, "remaining": remaining}
+
+    def _run_association_chain(self, event, text: str, pcr_output):
+        """Run L1→L2.5 association chain as cold path."""
+        # L1: extract modifiers
+        l1_modifiers = {}
+        try:
+            import stanza
+            doc = self._nlp(text) if hasattr(self, '_nlp') else None
+            if doc:
+                l1_modifiers, l1_core = self._l1_extractor.extract(doc)
+        except Exception:
+            pass
+        
+        # Build modifier context
+        modifier_ctx = " ".join(
+            f"[{m.role}]{m.text}→{m.head_word}"
+            for h, ml in l1_modifiers.items() for m in ml
+        )
+        
+        # L1.5: complete implicit entities (uses L2 entity clusters from substrate)
+        entity_clusters = {}
+        if hasattr(self, '_substrate'):
+            for eid, entity in self._substrate._entities.items():
+                entity_clusters.setdefault(entity.cluster_id or "default", {
+                    "entities": [], "last_seen": 0
+                })
+                entity_clusters[entity.cluster_id or "default"]["entities"].append(entity.name)
+        
+        l1_5_result = self._l1_5_completer.complete(
+            text=text, modifier_context=modifier_ctx,
+            entity_clusters=entity_clusters
+        )
+        
+        # L2.5: ingest evidence from L1.5 completion
+        if l1_5_result.candidates:
+            from core.agent.association.l2_5_belief import Evidence as BeliefEvidence
+            for c in l1_5_result.candidates[:3]:
+                ev = BeliefEvidence(
+                    entity_id=c.cluster_id,
+                    entity_name=c.entity,
+                    relation_type="co_occurrence",
+                    confidence=c.confidence,
+                    turn_num=getattr(event, 'turn', 1),
+                    source="l1_5_completer"
+                )
+                self._l2_5_accumulator.ingest(ev)
+        
+        logger.debug('Association chain L1→L2.5: modifiers=%d, completed=%s, belief_entropy=%.2f',
+                    len(l1_modifiers), l1_5_result.completed_text[:50] if l1_5_result.completed_text else 'none',
+                    self._l2_5_accumulator.bayesian.entropy(self._l2_5_accumulator.priors))
 
     def cleanup_event_log(self) -> int:
         """Delete old consumed events from EventLog."""
