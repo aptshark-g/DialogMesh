@@ -1,0 +1,112 @@
+{
+  "scenarios": [
+    {
+      "id": "bayesian_convergence",
+      "turns": [
+        {
+          "evidence": {
+            "entity_name": "延迟飙升",
+            "relation_type": "causes",
+            "confidence": 0.6,
+            "turn": 1
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "监控缺失",
+            "relation_type": "causes",
+            "confidence": 0.6,
+            "turn": 2
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "告警未触发",
+            "relation_type": "triggers",
+            "confidence": 0.7,
+            "turn": 3
+          }
+        }
+      ],
+      "checks": {
+        "locked_after_turns": 3,
+        "locked_intent": "诊断",
+        "trace_count": 3
+      }
+    },
+    {
+      "id": "stuck_trigger_llm",
+      "turns": [
+        {
+          "evidence": {
+            "entity_name": "加密算法",
+            "relation_type": "co_occurrence",
+            "confidence": 0.6,
+            "turn": 1
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "二进制文件",
+            "relation_type": "co_occurrence",
+            "confidence": 0.55,
+            "turn": 2
+          }
+        }
+      ],
+      "checks": {
+        "needs_llm_after_turns": 2,
+        "not_locked": true
+      }
+    },
+    {
+      "id": "force_crystal",
+      "turns": [
+        {
+          "evidence": {
+            "entity_name": "弱信号1",
+            "relation_type": "co_occurrence",
+            "confidence": 0.2,
+            "turn": 1
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "弱信号2",
+            "relation_type": "co_occurrence",
+            "confidence": 0.15,
+            "turn": 2
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "弱信号3",
+            "relation_type": "co_occurrence",
+            "confidence": 0.25,
+            "turn": 3
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "弱信号4",
+            "relation_type": "co_occurrence",
+            "confidence": 0.2,
+            "turn": 4
+          }
+        },
+        {
+          "evidence": {
+            "entity_name": "弱信号5",
+            "relation_type": "co_occurrence",
+            "confidence": 0.3,
+            "turn": 5
+          }
+        }
+      ],
+      "checks": {
+        "locked_after_turns": 5,
+        "trace_count": 5
+      }
+    }
+  ]
+}
