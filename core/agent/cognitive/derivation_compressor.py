@@ -136,6 +136,7 @@ Generate 3-5 divergent hypotheses. Return JSON array of strings: ["hypothesis 1"
         try:
             import json
             response = self.llm.generate(prompt, max_tokens=300, temperature=self.DIVERGE_TEMPERATURE)
+            response = self._clean_json(response) if response else ''
             guesses_raw = json.loads(response) if response else []
             return [DivergenceGuess(content=g) for g in guesses_raw[:5]]
         except Exception as e:
@@ -170,6 +171,7 @@ Return JSON array."""
         try:
             import json
             response = self.llm.generate(prompt, max_tokens=400, temperature=self.CONVERGE_TEMPERATURE)
+            response = self._clean_json(response) if response else ''
             verdicts = json.loads(response) if response else []
             verified = []
             for v in verdicts:
@@ -215,6 +217,7 @@ Return JSON: {{"summary": "...", "conditions": ["..."], "counter_examples": ["..
         try:
             import json
             response = self.llm.generate(prompt, max_tokens=500, temperature=0.1)
+            response = self._clean_json(response) if response else ''
             data = json.loads(response) if response else {}
             return HeuristicChain(
                 chain_id=chain_id or f"hc_{int(time.time())}",
@@ -227,6 +230,14 @@ Return JSON: {{"summary": "...", "conditions": ["..."], "counter_examples": ["..
             logger.debug("Heuristic failed: %s", e)
             return None
     
+    def _clean_json(self, text: str) -> str:
+        """Strip markdown code fences from LLM JSON response."""
+        import re
+        # Remove ```json ... ``` wrapper
+        text = re.sub(r'```(?:json)?\s*\n?', '', text)
+        text = re.sub(r'\n?```', '', text)
+        return text.strip()
+
     def should_compress(self) -> bool:
         """Should we run compression now?"""
         self._turn_counter += 1
