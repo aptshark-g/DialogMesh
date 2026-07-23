@@ -3196,6 +3196,8 @@ class CognitiveRuntimeEngine:
 
     def _init_pcr(self):
         try:
+            import os as _os
+            _os.environ.setdefault("PYTHONPATH", "")
             from core.agent.pcr_router_v2 import PCRRouterV2
             self._pcr_router = PCRRouterV2
             logger.info('PCR V2 ready (zero hardcoded)')

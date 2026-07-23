@@ -7,8 +7,8 @@ Produces: META_REVIEWED, ANOMALY_DETECTED.
 from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
-from .api_event_log import EventLog
-from .event_bus import EventBus, EventType
+from core.agent.api.api_event_log import EventLog
+from core.agent.events.event_bus import EventBus, EventType
 
 logger = logging.getLogger(__name__)
 
