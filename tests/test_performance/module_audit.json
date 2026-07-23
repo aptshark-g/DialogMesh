@@ -1,0 +1,471 @@
+[
+  {
+    "name": "adapter",
+    "cat": "🟢 小型",
+    "files": 9,
+    "lines": 790,
+    "tests": "✅"
+  },
+  {
+    "name": "api",
+    "cat": "🟡 中型",
+    "files": 5,
+    "lines": 2873,
+    "tests": "❌"
+  },
+  {
+    "name": "association",
+    "cat": "🟢 小型",
+    "files": 12,
+    "lines": 884,
+    "tests": "❌"
+  },
+  {
+    "name": "behavior",
+    "cat": "🟡 中型",
+    "files": 15,
+    "lines": 1492,
+    "tests": "✅"
+  },
+  {
+    "name": "causal",
+    "cat": "🟢 小型",
+    "files": 2,
+    "lines": 472,
+    "tests": "❌"
+  },
+  {
+    "name": "chunking",
+    "cat": "🟢 小型",
+    "files": 5,
+    "lines": 764,
+    "tests": "✅"
+  },
+  {
+    "name": "classifier",
+    "cat": "⚪ 微型",
+    "files": 2,
+    "lines": 160,
+    "tests": "❌"
+  },
+  {
+    "name": "cli",
+    "cat": "🟡 中型",
+    "files": 14,
+    "lines": 1310,
+    "tests": "✅"
+  },
+  {
+    "name": "cognitive_compiler",
+    "cat": "🟡 中型",
+    "files": 9,
+    "lines": 1453,
+    "tests": "✅"
+  },
+  {
+    "name": "compiler",
+    "cat": "🔴 大型",
+    "files": 47,
+    "lines": 8649,
+    "tests": "✅"
+  },
+  {
+    "name": "config",
+    "cat": "🟡 中型",
+    "files": 4,
+    "lines": 1031,
+    "tests": "❌"
+  },
+  {
+    "name": "context",
+    "cat": "🔴 大型",
+    "files": 18,
+    "lines": 5384,
+    "tests": "✅"
+  },
+  {
+    "name": "context_compiler",
+    "cat": "🟢 小型",
+    "files": 8,
+    "lines": 503,
+    "tests": "✅"
+  },
+  {
+    "name": "context_manager",
+    "cat": "🟡 中型",
+    "files": 5,
+    "lines": 2565,
+    "tests": "❌"
+  },
+  {
+    "name": "context_window",
+    "cat": "🟢 小型",
+    "files": 6,
+    "lines": 734,
+    "tests": "✅"
+  },
+  {
+    "name": "conversation",
+    "cat": "🟢 小型",
+    "files": 2,
+    "lines": 215,
+    "tests": "❌"
+  },
+  {
+    "name": "coordinator",
+    "cat": "🟡 中型",
+    "files": 7,
+    "lines": 2354,
+    "tests": "❌"
+  },
+  {
+    "name": "discourse",
+    "cat": "⚪ 微型",
+    "files": 2,
+    "lines": 60,
+    "tests": "❌"
+  },
+  {
+    "name": "discourse_block_tree",
+    "cat": "🟡 中型",
+    "files": 16,
+    "lines": 1780,
+    "tests": "❌"
+  },
+  {
+    "name": "do_calculus",
+    "cat": "🟢 小型",
+    "files": 7,
+    "lines": 368,
+    "tests": "❌"
+  },
+  {
+    "name": "document",
+    "cat": "🟡 中型",
+    "files": 7,
+    "lines": 1393,
+    "tests": "✅"
+  },
+  {
+    "name": "embedding",
+    "cat": "🟢 小型",
+    "files": 11,
+    "lines": 633,
+    "tests": "❌"
+  },
+  {
+    "name": "engineering",
+    "cat": "🟢 小型",
+    "files": 14,
+    "lines": 691,
+    "tests": "✅"
+  },
+  {
+    "name": "event_log",
+    "cat": "🟢 小型",
+    "files": 2,
+    "lines": 243,
+    "tests": "❌"
+  },
+  {
+    "name": "events",
+    "cat": "⚪ 微型",
+    "files": 2,
+    "lines": 191,
+    "tests": "❌"
+  },
+  {
+    "name": "foa",
+    "cat": "⚪ 微型",
+    "files": 4,
+    "lines": 91,
+    "tests": "❌"
+  },
+  {
+    "name": "frontend",
+    "cat": "🟡 中型",
+    "files": 8,
+    "lines": 2131,
+    "tests": "✅"
+  },
+  {
+    "name": "hypothesis",
+    "cat": "🟢 小型",
+    "files": 11,
+    "lines": 753,
+    "tests": "✅"
+  },
+  {
+    "name": "knowledge",
+    "cat": "⚪ 微型",
+    "files": 5,
+    "lines": 169,
+    "tests": "❌"
+  },
+  {
+    "name": "llm_providers",
+    "cat": "🔴 大型",
+    "files": 24,
+    "lines": 3696,
+    "tests": "✅"
+  },
+  {
+    "name": "mcp",
+    "cat": "🟡 中型",
+    "files": 7,
+    "lines": 1343,
+    "tests": "✅"
+  },
+  {
+    "name": "meta",
+    "cat": "⚪ 微型",
+    "files": 1,
+    "lines": 64,
+    "tests": "❌"
+  },
+  {
+    "name": "monitor",
+    "cat": "🟢 小型",
+    "files": 3,
+    "lines": 448,
+    "tests": "❌"
+  },
+  {
+    "name": "mood",
+    "cat": "🟢 小型",
+    "files": 3,
+    "lines": 304,
+    "tests": "❌"
+  },
+  {
+    "name": "negative_kb",
+    "cat": "⚪ 微型",
+    "files": 5,
+    "lines": 94,
+    "tests": "❌"
+  },
+  {
+    "name": "observability",
+    "cat": "🟡 中型",
+    "files": 12,
+    "lines": 2782,
+    "tests": "✅"
+  },
+  {
+    "name": "observation",
+    "cat": "🟡 中型",
+    "files": 23,
+    "lines": 1378,
+    "tests": "✅"
+  },
+  {
+    "name": "onboarding",
+    "cat": "🟢 小型",
+    "files": 3,
+    "lines": 849,
+    "tests": "❌"
+  },
+  {
+    "name": "optimizer",
+    "cat": "🟢 小型",
+    "files": 5,
+    "lines": 587,
+    "tests": "✅"
+  },
+  {
+    "name": "orchestrator",
+    "cat": "🔴 大型",
+    "files": 9,
+    "lines": 3379,
+    "tests": "✅"
+  },
+  {
+    "name": "pcr",
+    "cat": "🔴 大型",
+    "files": 27,
+    "lines": 10164,
+    "tests": "✅"
+  },
+  {
+    "name": "persistence",
+    "cat": "🔴 大型",
+    "files": 33,
+    "lines": 6617,
+    "tests": "✅"
+  },
+  {
+    "name": "planner",
+    "cat": "🔴 大型",
+    "files": 27,
+    "lines": 7869,
+    "tests": "✅"
+  },
+  {
+    "name": "predictor",
+    "cat": "🟢 小型",
+    "files": 9,
+    "lines": 686,
+    "tests": "❌"
+  },
+  {
+    "name": "prompts",
+    "cat": "🟢 小型",
+    "files": 6,
+    "lines": 472,
+    "tests": "❌"
+  },
+  {
+    "name": "rewarder",
+    "cat": "🟢 小型",
+    "files": 8,
+    "lines": 332,
+    "tests": "❌"
+  },
+  {
+    "name": "router",
+    "cat": "🟢 小型",
+    "files": 2,
+    "lines": 376,
+    "tests": "❌"
+  },
+  {
+    "name": "runtime",
+    "cat": "🔴 大型",
+    "files": 10,
+    "lines": 4443,
+    "tests": "✅"
+  },
+  {
+    "name": "scheduler",
+    "cat": "🟢 小型",
+    "files": 4,
+    "lines": 642,
+    "tests": "❌"
+  },
+  {
+    "name": "security",
+    "cat": "🟢 小型",
+    "files": 7,
+    "lines": 696,
+    "tests": "✅"
+  },
+  {
+    "name": "service",
+    "cat": "🔴 大型",
+    "files": 17,
+    "lines": 3697,
+    "tests": "✅"
+  },
+  {
+    "name": "state",
+    "cat": "🟢 小型",
+    "files": 6,
+    "lines": 938,
+    "tests": "❌"
+  },
+  {
+    "name": "summary",
+    "cat": "🟢 小型",
+    "files": 8,
+    "lines": 504,
+    "tests": "❌"
+  },
+  {
+    "name": "task_engine",
+    "cat": "🟡 中型",
+    "files": 4,
+    "lines": 1073,
+    "tests": "❌"
+  },
+  {
+    "name": "tests",
+    "cat": "🟢 小型",
+    "files": 3,
+    "lines": 482,
+    "tests": "❌"
+  },
+  {
+    "name": "tiered",
+    "cat": "🟡 中型",
+    "files": 15,
+    "lines": 1740,
+    "tests": "✅"
+  },
+  {
+    "name": "tool_registry",
+    "cat": "🔴 大型",
+    "files": 10,
+    "lines": 3452,
+    "tests": "✅"
+  },
+  {
+    "name": "tools",
+    "cat": "🟢 小型",
+    "files": 2,
+    "lines": 457,
+    "tests": "❌"
+  },
+  {
+    "name": "topic_tree",
+    "cat": "🟡 中型",
+    "files": 7,
+    "lines": 2217,
+    "tests": "✅"
+  },
+  {
+    "name": "user_engine",
+    "cat": "🟡 中型",
+    "files": 5,
+    "lines": 1247,
+    "tests": "❌"
+  },
+  {
+    "name": "v3_0",
+    "cat": "📦 遗留",
+    "files": 42,
+    "lines": 8951,
+    "tests": "✅"
+  },
+  {
+    "name": "v3_2",
+    "cat": "📦 遗留",
+    "files": 54,
+    "lines": 3051,
+    "tests": "✅"
+  },
+  {
+    "name": "v3_common",
+    "cat": "🔴 大型",
+    "files": 18,
+    "lines": 6804,
+    "tests": "✅"
+  },
+  {
+    "name": "v3_legacy",
+    "cat": "📦 遗留",
+    "files": 3,
+    "lines": 2393,
+    "tests": "❌"
+  },
+  {
+    "name": "v4",
+    "cat": "📦 遗留",
+    "files": 100,
+    "lines": 12909,
+    "tests": "✅"
+  },
+  {
+    "name": "window",
+    "cat": "🟡 中型",
+    "files": 7,
+    "lines": 1084,
+    "tests": "✅"
+  },
+  {
+    "name": "world",
+    "cat": "🟡 中型",
+    "files": 9,
+    "lines": 1191,
+    "tests": "✅"
+  }
+]
