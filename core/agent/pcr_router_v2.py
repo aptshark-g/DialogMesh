@@ -140,7 +140,7 @@ class PCRRouterV2:
         import yaml, json
         from pathlib import Path
 
-        config_path = Path(__file__).parent.parent.parent.parent / "config" / "mood_profiles.yaml"
+        config_path = Path(__file__).parent.parent.parent / "config" / "mood_profiles.yaml"
         try:
             config = yaml.safe_load(open(config_path, 'r', encoding='utf-8'))
         except Exception:
@@ -160,7 +160,26 @@ class PCRRouterV2:
         import numpy as np
         vecs = None
         
-        # Try 1: sentence_transformers (most common, .venv has it)
+        # Try 1: LM Studio nomic embedding (local, no numpy conflict)
+        try:
+            import urllib.request, json
+            embeddings = []
+            for d in descriptors:
+                req = urllib.request.Request(
+                    "http://127.0.0.1:1234/v1/embeddings",
+                    data=json.dumps({"model": "text-embedding-nomic-embed-text-v1.5", "input": d}).encode(),
+                    headers={"Content-Type": "application/json"}
+                )
+                resp = urllib.request.urlopen(req, timeout=5)
+                emb = json.loads(resp.read())["data"][0]["embedding"]
+                embeddings.append(emb)
+            vecs = np.array(embeddings)
+            vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
+            logger.debug("LM Studio nomic loaded: %d descriptors", len(descriptors))
+        except Exception as e1:
+            logger.debug("LM Studio nomic unavailable: %s", e1)
+        
+        # Try 2: sentence_transformers
         try:
             from sentence_transformers import SentenceTransformer
             model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
@@ -203,7 +222,7 @@ class PCRRouterV2:
             return
 
         from pathlib import Path
-        config_dir = Path(__file__).parent.parent.parent.parent / "config"
+        config_dir = Path(__file__).parent.parent.parent / "config"
         vad_path = config_dir / "NRC-VAD-Lexicon-v2.1.txt"
 
         if not vad_path.exists():
@@ -274,27 +293,23 @@ class PCRRouterV2:
         if not text or not text.strip():
             return 0.0
 
-        # 1. BGE mood vectors (primary)
+        # 1. LM Studio nomic mood vectors (primary)
         cls._load_mood_vectors()
         if cls._mood_vectors is not None:
             try:
-                from sentence_transformers import SentenceTransformer
-                import numpy as np
-                model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
-                v = model.encode(text, normalize_embeddings=True)
+                import urllib.request, json, numpy as np
+                req = urllib.request.Request(
+                    "http://127.0.0.1:1234/v1/embeddings",
+                    data=json.dumps({"model": "text-embedding-nomic-embed-text-v1.5", "input": text}).encode(),
+                    headers={"Content-Type": "application/json"}
+                )
+                resp = urllib.request.urlopen(req, timeout=5)
+                v = np.array(json.loads(resp.read())["data"][0]["embedding"])
+                v = v / (np.linalg.norm(v) + 1e-8)
                 idx = int(np.argmax(np.dot(cls._mood_vectors, v)))
                 return cls._mood_zvalues.get(cls._mood_labels[idx], 0.0)
             except Exception:
-                try:
-                    from fastembed import TextEmbedding
-                    import numpy as np
-                    model = TextEmbedding("BAAI/bge-small-zh-v1.5")
-                    v = np.array(list(model.embed([text])))[0]
-                    v = v / np.linalg.norm(v)
-                    idx = int(np.argmax(np.dot(cls._mood_vectors, v)))
-                    return cls._mood_zvalues.get(cls._mood_labels[idx], 0.0)
-                except Exception:
-                    pass
+                pass
 
         # 2. NRC-VAD lexicon (secondary)
         cls._load_vad_lexicon()
