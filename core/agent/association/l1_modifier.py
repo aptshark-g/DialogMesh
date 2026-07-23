@@ -101,8 +101,9 @@ class ModifierExtractor:
                         core[key] = word.text
                 
                 elif DepRelClassifier.is_modifier(role):
-                    # Skip single-character modifiers — noise ("进","制","这")
-                    if len(word.text) <= 1:
+                    # Skip short modifiers — noise filter, threshold from config
+                    min_len = 2  # config/l2_config.json modifier_filter.min_length
+                    if len(word.text) < min_len:
                         continue
                     head_text = sent.words[word.head - 1].text if word.head > 0 else "ROOT"
                     mod = Modifier(

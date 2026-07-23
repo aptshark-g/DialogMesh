@@ -1,0 +1,25 @@
+{
+  "modifier_filter": {
+    "min_length": 2,
+    "description": "Skip single-character modifiers (noise from Chinese tokenization)"
+  },
+  "confidence": {
+    "syntax_overlap_weight": 0.3,
+    "syntax_recency_weight": 0.4,
+    "syntax_max_confidence": 0.8,
+    "syntax_only_degradation": 0.7,
+    "llm_min_confidence_for_completion": 0.6,
+    "description": "Weights for L1.5 confidence scoring. syntax_only_degradation: multiplier when LLM unavailable."
+  },
+  "bm25": {
+    "probe_threshold": 0.7,
+    "k1": 1.2,
+    "b": 0.75,
+    "description": "BM25 probe threshold: above this, skip vector/L2 and go fast path."
+  },
+  "graph": {
+    "default_hop_count": 2,
+    "edge_ttl_turns": 50,
+    "description": "Entity graph traversal limits. edges older than ttl_turns are pruned."
+  }
+}
