@@ -31,7 +31,7 @@ try:
 except ImportError:
     aiosqlite = None  # type: ignore
 
-from core.agent.v3_0.observability.models import Alert, TurnTrace, SessionMetricsSnapshot
+from core.agent.observability.models import Alert, TurnTrace, SessionMetricsSnapshot
 
 logger = logging.getLogger(__name__)
 

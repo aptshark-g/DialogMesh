@@ -24,7 +24,7 @@ class PersistenceWiring:
 
         # 1. AnnotationStore — unified JSON storage
         try:
-            from core.agent.v4.persistence.unified_store import AnnotationStore
+            from core.agent.persistence.unified_store import AnnotationStore
             engine._annotation_store = AnnotationStore("data/annotations")
             status["annotation_store"] = "ok"
             logger.info("AnnotationStore wired")
@@ -34,7 +34,7 @@ class PersistenceWiring:
 
         # 2. UnifiedStore — vector index
         try:
-            from core.agent.v4.persistence.unified_store import UnifiedStore
+            from core.agent.persistence.unified_store import UnifiedStore
             engine._unified_store = UnifiedStore(
                 bge_model=getattr(engine, '_bge', None),
                 annotation_store=engine._annotation_store,

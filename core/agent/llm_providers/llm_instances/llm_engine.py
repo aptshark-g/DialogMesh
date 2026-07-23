@@ -6,7 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from core.agent.v3_0.llm_providers.base import (
+from core.agent.llm_providers.base import (
     GenerateRequest_v3, GenerateResult_v3, LLMProvider_v3,
 )
 from core.agent.v3_0.cognitive_tree.models import CognitiveTreeNode, CogType, CogNodeStatus

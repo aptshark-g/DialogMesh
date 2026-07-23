@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v4.persistence.faiss_store import FaissVectorStore
-from core.agent.v4.persistence.fts5_index import FTS5Index
+from core.agent.persistence.faiss_store import FaissVectorStore
+from core.agent.persistence.fts5_index import FTS5Index
 
 logger = logging.getLogger(__name__)
 

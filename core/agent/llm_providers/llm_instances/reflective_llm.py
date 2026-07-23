@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from core.agent.v3_0.cognitive_tree.models import CogType
-from core.agent.v3_0.llm_providers.llm_instances.llm_engine import LLMEngine
+from core.agent.llm_providers.llm_instances.llm_engine import LLMEngine
 
 _PROMPT = """你是一位系统复盘师，负责分析 Cognitive Tree 的长期模式并生成改进策略。
 

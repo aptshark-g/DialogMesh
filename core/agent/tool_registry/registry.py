@@ -19,7 +19,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
-from core.agent.v3_0.tool_registry.models import ToolDefinition
+from core.agent.tool_registry.models import ToolDefinition
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ import sys, os, json, time
 sys.path.insert(0, '.')
 os.environ['DIALOGMESH_MONITOR'] = '1'
 
-from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.llm_providers.switch_provider import SwitchGatewayProvider
 from core.agent.v4.event_ir import DialogAdapter

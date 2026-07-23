@@ -27,14 +27,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
-from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine, AlgorithmResult
-from core.agent.v3_0.orchestrator.fusion_engine import (
+from core.agent.orchestrator.algorithm_engine import AlgorithmEngine, AlgorithmResult
+from core.agent.orchestrator.fusion_engine import (
     FusionEngine,
     FusionResult,
     FusionSource,
     FusionStrategy,
 )
-from core.agent.v3_0.orchestrator.models import LLMInstanceResult
+from core.agent.orchestrator.models import LLMInstanceResult
 
 logger = logging.getLogger(__name__)
 

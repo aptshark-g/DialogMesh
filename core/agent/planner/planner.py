@@ -648,7 +648,7 @@ class PlanningSkill:
         if self.llm_provider is None:
             raise RuntimeError("LLM provider not available")
 
-        from core.agent.v3_0.llm_providers.base import GenerateRequest_v3
+        from core.agent.llm_providers.base import GenerateRequest_v3
 
         request = GenerateRequest_v3(
             prompt=prompt,

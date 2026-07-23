@@ -17,7 +17,7 @@ DialogMesh v3.0 LLM Provider 包入口。
 
 from __future__ import annotations
 
-from core.agent.v3_0.llm_providers.models import (
+from core.agent.llm_providers.models import (
     BatchGenerateRequest,
     BatchGenerateResult,
     CallStatistics,
@@ -34,7 +34,7 @@ from core.agent.v3_0.llm_providers.models import (
     StreamingChunk,
     TokenPricing,
 )
-from core.agent.v3_0.llm_providers.base import (
+from core.agent.llm_providers.base import (
     GenerateRequest_v3,
     GenerateResult_v3,
     LLMConnectionError,
@@ -42,25 +42,25 @@ from core.agent.v3_0.llm_providers.base import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from core.agent.v3_0.llm_providers.streaming import (
+from core.agent.llm_providers.streaming import (
     ProgressiveJSONParser,
     SSEFormatter,
     StreamingAggregator,
     WebSocketFormatter,
 )
-from core.agent.v3_0.llm_providers.circuit_breaker import (
+from core.agent.llm_providers.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerOpenError,
     CircuitBreakerRegistry,
 )
-from core.agent.v3_0.llm_providers.openai_provider import OpenAIProvider_v3
-from core.agent.v3_0.llm_providers.local_provider import LocalProvider_v3
-from core.agent.v3_0.llm_providers.mock_provider import MockProvider_v3
-from core.agent.v3_0.llm_providers.failover_provider import FailoverProvider_v3
-from core.agent.v3_0.llm_providers.hybrid_router import HybridRouter_v3
-from core.agent.v3_0.llm_providers import llm_instances
-from core.agent.v3_0.llm_providers.provider_manager import (
+from core.agent.llm_providers.openai_provider import OpenAIProvider_v3
+from core.agent.llm_providers.local_provider import LocalProvider_v3
+from core.agent.llm_providers.mock_provider import MockProvider_v3
+from core.agent.llm_providers.failover_provider import FailoverProvider_v3
+from core.agent.llm_providers.hybrid_router import HybridRouter_v3
+from core.agent.llm_providers import llm_instances
+from core.agent.llm_providers.provider_manager import (
     ProviderManager,
     ProviderManagerConfig,
 )

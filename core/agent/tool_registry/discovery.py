@@ -21,8 +21,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.tool_registry.models import ToolDefinition
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
+from core.agent.tool_registry.models import ToolDefinition
+from core.agent.tool_registry.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     async def _self_test() -> None:
         logger.info("=== v3.0 tool_registry/discovery self-test ===")
 
-        from core.agent.v3_0.tool_registry.registry import ToolRegistry
+        from core.agent.tool_registry.registry import ToolRegistry
 
         registry = ToolRegistry()
         discovery = ToolDiscovery(registry)
@@ -208,7 +208,7 @@ if __name__ == "__main__":
             module_path = os.path.join(tmpdir, "demo_tools.py")
             with open(module_path, "w", encoding="utf-8") as f:
                 f.write(
-                    "from core.agent.v3_0.tool_registry.models import ToolDefinition\n"
+                    "from core.agent.tool_registry.models import ToolDefinition\n"
                     "TOOL_DEFINITIONS = [\n"
                     "    ToolDefinition(name='demo_tool_a', description='Demo A', tags=['demo']),\n"
                     "    ToolDefinition(name='demo_tool_b', description='Demo B', tags=['demo']),\n"

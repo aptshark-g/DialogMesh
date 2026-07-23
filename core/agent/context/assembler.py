@@ -19,9 +19,9 @@ from core.agent.context.source import (
 from core.agent.context.cross_domain_ir import CrossDomainContextIR, IREntry
 from core.agent.context.domain_selector import DomainSelector, Domain
 from core.agent.context.budget_allocator import BudgetAllocator
-from core.agent.v4.persistence.vector_store import SQLiteVectorStore, VectorStore
-from core.agent.v4.persistence.milvus_store import MilvusVectorStore
-from core.agent.v4.persistence.hybrid_index import HybridIndex, KeywordIndex
+from core.agent.persistence.vector_store import SQLiteVectorStore, VectorStore
+from core.agent.persistence.milvus_store import MilvusVectorStore
+from core.agent.persistence.hybrid_index import HybridIndex, KeywordIndex
 
 
 class ContextAssembler:

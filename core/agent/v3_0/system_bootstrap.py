@@ -344,7 +344,7 @@ class SystemBootstrap:
         try:
             self._config = load_agent_config(self._config_path)
 
-            from core.agent.v3_0.observability import Telemetry
+            from core.agent.observability import Telemetry
 
             telemetry = await Telemetry.from_config()
             self._components["observability"] = telemetry
@@ -530,8 +530,8 @@ class SystemBootstrap:
 
     async def _init_llm_providers(self, observability: Any) -> Any:
         """初始化 LLM ProviderManager 与 HybridRouter。"""
-        from core.agent.v3_0.llm_providers import ProviderManager, ProviderManagerConfig
-        from core.agent.v3_0.llm_providers.models import ProviderConfig, ProviderBackend
+        from core.agent.llm_providers import ProviderManager, ProviderManagerConfig
+        from core.agent.llm_providers.models import ProviderConfig, ProviderBackend
 
         providers_cfg = self._config.get("llm_providers", {})
         fallback_order = self._config.get("hybrid_router", {}).get("fallback_order", ["openai", "ollama"])
@@ -598,7 +598,7 @@ class SystemBootstrap:
     ) -> Any:
         """初始化 Tool Registry。"""
         try:
-            from core.agent.v3_0.tool_registry import ToolRegistry
+            from core.agent.tool_registry import ToolRegistry
 
             registry = ToolRegistry()
             logger.info("[ToolRegistry] Initialized")
@@ -648,7 +648,7 @@ class SystemBootstrap:
         tool_registry: Any,
     ) -> Any:
         """初始化 Orchestrator — 整合 6 个 LLM 实例的核心编排器。"""
-        from core.agent.v3_0.orchestrator import Orchestrator
+        from core.agent.orchestrator import Orchestrator
 
         orch = Orchestrator(
             llm_provider=llm_provider,

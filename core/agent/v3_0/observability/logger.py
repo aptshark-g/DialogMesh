@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
-from core.agent.v3_0.observability.models import LogEntry, LogLevel, DecisionLogEntry
+from core.agent.observability.models import LogEntry, LogLevel, DecisionLogEntry
 
 
 logger = logging.getLogger(__name__)

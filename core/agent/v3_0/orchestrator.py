@@ -515,7 +515,7 @@ class Orchestrator:
 
             # 调用 LLM
             if self._llm_providers and hasattr(self._llm_providers, "generate"):
-                from core.agent.v3_0.llm_providers.base import GenerateRequest_v3
+                from core.agent.llm_providers.base import GenerateRequest_v3
 
                 request = GenerateRequest_v3(prompt=prompt, max_tokens=1024, temperature=0.5)
                 result = await self._llm_providers.generate(request, provider_name=provider_name)

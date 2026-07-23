@@ -94,7 +94,7 @@ def _inspect_store(engine, mode: str = "stats"):
     print("Graph store (summary):")
     print("-" * 50)
     try:
-        from core.agent.v4.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_store import UnifiedGraphStore
         print("  UnifiedGraphStore (v4) is importable.")
     except ImportError:
         pass

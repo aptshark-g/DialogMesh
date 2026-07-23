@@ -61,15 +61,15 @@ from core.agent.v3_0.data_models import (
     UserMessage_v3,
     WebSocketEvent,
 )
-from core.agent.v3_0.llm_providers.base import GenerateRequest_v3, GenerateResult_v3
-from core.agent.v3_0.observability.telemetry import Telemetry
+from core.agent.llm_providers.base import GenerateRequest_v3, GenerateResult_v3
+from core.agent.observability.telemetry import Telemetry
 from core.agent.planner.planner import PlanningSkill
 from core.agent.planner.models import PlanResult
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
-from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine
-from core.agent.v3_0.orchestrator.fusion_engine import FusionEngine, FusionStrategy
-from core.agent.v3_0.orchestrator.hybrid_engine import HybridEngine
-from core.agent.v3_0.llm_providers.llm_instances import (
+from core.agent.tool_registry.registry import ToolRegistry
+from core.agent.orchestrator.algorithm_engine import AlgorithmEngine
+from core.agent.orchestrator.fusion_engine import FusionEngine, FusionStrategy
+from core.agent.orchestrator.hybrid_engine import HybridEngine
+from core.agent.llm_providers.llm_instances import (
     PCRLLM,
     IntentLLM,
     PlanningLLM,
@@ -79,7 +79,7 @@ from core.agent.v3_0.llm_providers.llm_instances import (
 )
 
 
-from core.agent.v3_0.orchestrator.models import (
+from core.agent.orchestrator.models import (
     FusionResult,
     FusionSource,
     LLMInstanceResult,

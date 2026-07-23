@@ -5,7 +5,7 @@ from __future__ import annotations
 def _snapshot_list(engine, limit: int = 10):
     """List snapshots from UnifiedGraphStore."""
     try:
-        from core.agent.v4.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         snapshots = store.get_snapshots(limit=limit)
@@ -29,8 +29,8 @@ def _snapshot_list(engine, limit: int = 10):
 def _snapshot_restore(engine, snapshot_id: str):
     """Restore from a snapshot."""
     try:
-        from core.agent.v4.persistence.snapshot import SnapshotManager
-        from core.agent.v4.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.snapshot import SnapshotManager
+        from core.agent.persistence.unified_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         mgr = SnapshotManager(store)

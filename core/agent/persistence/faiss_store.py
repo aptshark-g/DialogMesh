@@ -14,8 +14,8 @@ from __future__ import annotations
 import json, sqlite3, time, logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v4.persistence.vector_store import VectorStore
-from core.agent.v4.persistence.hnsw_index import HNSWIndex
+from core.agent.persistence.vector_store import VectorStore
+from core.agent.persistence.hnsw_index import HNSWIndex
 
 try:
     import numpy as np

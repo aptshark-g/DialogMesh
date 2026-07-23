@@ -7,7 +7,7 @@ DialogMesh v3.0 可观测性模块导出。
 版本：3.0.0
 """
 
-from core.agent.v3_0.observability.models import (
+from core.agent.observability.models import (
     Alert,
     AlertSeverity,
     DecisionLogEntry,
@@ -23,13 +23,13 @@ from core.agent.v3_0.observability.models import (
     SpanStatus,
     TurnTrace,
 )
-from core.agent.v3_0.observability.logger import AsyncStructuredLogger
-from core.agent.v3_0.observability.metrics import AsyncMetricsAggregator
-from core.agent.v3_0.observability.alert import AsyncAlertEngine
-from core.agent.v3_0.observability.tracer import AsyncTracer
-from core.agent.v3_0.observability.store import AsyncObservabilityStore
-from core.agent.v3_0.observability.telemetry import Telemetry
-from core.agent.v3_0.observability.dashboard import TextDashboard
+from core.agent.observability.logger import AsyncStructuredLogger
+from core.agent.observability.metrics import AsyncMetricsAggregator
+from core.agent.observability.alert import AsyncAlertEngine
+from core.agent.observability.tracer import AsyncTracer
+from core.agent.observability.store import AsyncObservabilityStore
+from core.agent.observability.telemetry import Telemetry
+from core.agent.observability.dashboard import TextDashboard
 
 __all__ = [
     # 数据模型

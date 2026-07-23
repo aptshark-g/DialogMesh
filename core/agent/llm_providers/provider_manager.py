@@ -24,12 +24,12 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.agent.v3_0.llm_providers.base import (
+from core.agent.llm_providers.base import (
     GenerateRequest_v3,
     GenerateResult_v3,
     LLMProvider_v3,
 )
-from core.agent.v3_0.llm_providers.models import (
+from core.agent.llm_providers.models import (
     ErrorCategory,
     ProviderBackend,
     ProviderConfig,
@@ -39,12 +39,12 @@ from core.agent.v3_0.llm_providers.models import (
     RoutingStrategy,
     StreamingChunk,
 )
-from core.agent.v3_0.llm_providers.circuit_breaker import CircuitBreakerRegistry
-from core.agent.v3_0.llm_providers.openai_provider import OpenAIProvider_v3
-from core.agent.v3_0.llm_providers.local_provider import LocalProvider_v3
-from core.agent.v3_0.llm_providers.mock_provider import MockProvider_v3
-from core.agent.v3_0.llm_providers.failover_provider import FailoverProvider_v3
-from core.agent.v3_0.llm_providers.hybrid_router import HybridRouter_v3
+from core.agent.llm_providers.circuit_breaker import CircuitBreakerRegistry
+from core.agent.llm_providers.openai_provider import OpenAIProvider_v3
+from core.agent.llm_providers.local_provider import LocalProvider_v3
+from core.agent.llm_providers.mock_provider import MockProvider_v3
+from core.agent.llm_providers.failover_provider import FailoverProvider_v3
+from core.agent.llm_providers.hybrid_router import HybridRouter_v3
 
 logger = logging.getLogger(__name__)
 

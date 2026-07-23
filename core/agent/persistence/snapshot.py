@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading, time, logging
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.persistence.unified_store import (
+from core.agent.persistence.unified_store import (
     UnifiedGraphStore, SnapshotRecord,
 )
 

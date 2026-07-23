@@ -19,18 +19,18 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v3_0.observability.models import (
+from core.agent.observability.models import (
     Alert,
     DecisionLogEntry,
     LogLevel,
     SessionMetricsSnapshot,
     TurnTrace,
 )
-from core.agent.v3_0.observability.logger import AsyncStructuredLogger
-from core.agent.v3_0.observability.metrics import AsyncMetricsAggregator
-from core.agent.v3_0.observability.alert import AsyncAlertEngine
-from core.agent.v3_0.observability.tracer import AsyncTracer
-from core.agent.v3_0.observability.store import AsyncObservabilityStore
+from core.agent.observability.logger import AsyncStructuredLogger
+from core.agent.observability.metrics import AsyncMetricsAggregator
+from core.agent.observability.alert import AsyncAlertEngine
+from core.agent.observability.tracer import AsyncTracer
+from core.agent.observability.store import AsyncObservabilityStore
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ import uuid
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.observability.models import Span, SpanStatus, TurnTrace
+from core.agent.observability.models import Span, SpanStatus, TurnTrace
 
 logger = logging.getLogger(__name__)
 

@@ -20,12 +20,12 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v3_0.tool_registry.models import (
+from core.agent.tool_registry.models import (
     ToolCall,
     ToolDefinition,
     ToolResult,
 )
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
+from core.agent.tool_registry.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +257,7 @@ class ToolExecutor:
             if self._permissions is not None:
                 try:
                     # 延迟导入避免循环依赖
-                    from core.agent.v3_0.tool_registry.permission import PermissionManager as RealPM
+                    from core.agent.tool_registry.permission import PermissionManager as RealPM
 
                     if isinstance(self._permissions, RealPM):
                         if not self._permissions.can_call(requesting_llm, tool_name):
@@ -433,7 +433,7 @@ if __name__ == "__main__":
     async def _self_test() -> None:
         logger.info("=== v3.0 tool_registry/executor self-test ===")
 
-        from core.agent.v3_0.tool_registry.registry import ToolRegistry
+        from core.agent.tool_registry.registry import ToolRegistry
 
         registry = ToolRegistry()
 

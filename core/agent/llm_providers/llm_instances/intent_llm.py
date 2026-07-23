@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from core.agent.v3_0.cognitive_tree.models import CogType
-from core.agent.v3_0.llm_providers.llm_instances.llm_engine import LLMEngine
+from core.agent.llm_providers.llm_instances.llm_engine import LLMEngine
 
 _PROMPT = """你是一位意图分析师，负责从用户输入中提取深层意图和隐含实体。
 

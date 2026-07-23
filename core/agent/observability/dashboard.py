@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.observability.models import (
+from core.agent.observability.models import (
     Alert,
     AlertSeverity,
     GlobalMetricsSnapshot,

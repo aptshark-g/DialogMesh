@@ -18,7 +18,7 @@ DialogMesh v3.0 Tool Registry 包入口。
 
 from __future__ import annotations
 
-from core.agent.v3_0.tool_registry.models import (
+from core.agent.tool_registry.models import (
     BindingResult,
     BindingStrategy,
     ShortlistResult,
@@ -29,12 +29,12 @@ from core.agent.v3_0.tool_registry.models import (
     ToolSource,
     ToolType,
 )
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
-from core.agent.v3_0.tool_registry.executor import ToolExecutor
-from core.agent.v3_0.tool_registry.shortlister import ToolShortlister
-from core.agent.v3_0.tool_registry.binding import ToolBindingEngine
-from core.agent.v3_0.tool_registry.discovery import ToolDiscovery
-from core.agent.v3_0.tool_registry.permission import PermissionManager
+from core.agent.tool_registry.registry import ToolRegistry
+from core.agent.tool_registry.executor import ToolExecutor
+from core.agent.tool_registry.shortlister import ToolShortlister
+from core.agent.tool_registry.binding import ToolBindingEngine
+from core.agent.tool_registry.discovery import ToolDiscovery
+from core.agent.tool_registry.permission import PermissionManager
 
 __version__ = "3.0.0"
 

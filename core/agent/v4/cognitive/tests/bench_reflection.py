@@ -5,7 +5,7 @@
 import sys, os, json
 sys.path.insert(0, '.')
 from core.agent.v4.cognitive.monitor_report import MonitorReport
-from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.mock_provider import MockProvider
 from core.agent.v4.event_ir import DialogAdapter
 

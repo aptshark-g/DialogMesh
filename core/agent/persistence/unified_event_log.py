@@ -14,7 +14,7 @@ from __future__ import annotations
 import time, logging
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.persistence.chained_event_log import ChainedEventLog, ChainedEvent
+from core.agent.persistence.chained_event_log import ChainedEventLog, ChainedEvent
 
 logger = logging.getLogger(__name__)
 

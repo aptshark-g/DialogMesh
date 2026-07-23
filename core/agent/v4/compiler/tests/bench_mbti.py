@@ -59,7 +59,7 @@ class MBTIEvaluator:
 
     def evaluate(self) -> Dict:
         """Run evaluation and return results."""
-        from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+        from core.agent.runtime.engine import CognitiveRuntimeEngine
         from core.agent.llm_providers.mock_provider import MockProvider
         from core.agent.v4.event_ir import DialogAdapter
 

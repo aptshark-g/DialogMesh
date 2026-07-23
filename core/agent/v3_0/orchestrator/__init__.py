@@ -13,7 +13,7 @@ DialogMesh Agent v3.0 Orchestrator 包初始化。
 
 from __future__ import annotations
 
-from core.agent.v3_0.orchestrator.models import (
+from core.agent.orchestrator.models import (
     DialogMeshSystem,
     OrchestratorConfig,
     OrchestratorResult,
@@ -21,11 +21,11 @@ from core.agent.v3_0.orchestrator.models import (
     TurnContext,
     TurnPhase,
 )
-from core.agent.v3_0.orchestrator.orchestrator import Orchestrator
-from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine
-from core.agent.v3_0.orchestrator.fusion_engine import FusionEngine, FusionStrategy
-from core.agent.v3_0.orchestrator.hybrid_engine import HybridEngine
-from core.agent.v3_0.orchestrator.bootstrap import SystemBootstrap
+from core.agent.orchestrator.orchestrator import Orchestrator
+from core.agent.orchestrator.algorithm_engine import AlgorithmEngine
+from core.agent.orchestrator.fusion_engine import FusionEngine, FusionStrategy
+from core.agent.orchestrator.hybrid_engine import HybridEngine
+from core.agent.orchestrator.bootstrap import SystemBootstrap
 
 __version__ = "3.0.0"
 

@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
-from core.agent.v3_0.observability.models import Alert, AlertSeverity, SessionMetricsSnapshot
+from core.agent.observability.models import Alert, AlertSeverity, SessionMetricsSnapshot
 
 logger = logging.getLogger(__name__)
 

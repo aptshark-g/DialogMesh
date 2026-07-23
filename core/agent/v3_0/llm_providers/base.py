@@ -29,7 +29,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.agent.v3_0.llm_providers.models import (
+from core.agent.llm_providers.models import (
     CallStatistics,
     ErrorCategory,
     ProviderCapabilities,

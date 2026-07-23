@@ -82,7 +82,7 @@ class V32Pipeline:
         self._bridge_enabled = False
         self._v30_orchestrator = None
         try:
-            from core.agent.v3_0.orchestrator.orchestrator import Orchestrator
+            from core.agent.orchestrator.orchestrator import Orchestrator
             self._v30_orchestrator = Orchestrator(llm_provider=self.llm)
             self._bridge_enabled = True
             import logging; logging.info('[Bridge] v3.0 Orchestrator attached')

@@ -15,7 +15,7 @@ from core.agent.behavior.adapter import BehaviorGraphAdapter
 from core.agent.behavior.causal_adapter import CausalSubstrateAdapter
 
 if TYPE_CHECKING:
-    from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+    from core.agent.runtime.engine import CognitiveRuntimeEngine
 
 logger = logging.getLogger(__name__)
 

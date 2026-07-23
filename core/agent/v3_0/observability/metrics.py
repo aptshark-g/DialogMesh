@@ -21,7 +21,7 @@ from collections import deque, Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 
-from core.agent.v3_0.observability.models import (
+from core.agent.observability.models import (
     SessionMetricsSnapshot,
     GlobalMetricsSnapshot,
     MetricPoint,

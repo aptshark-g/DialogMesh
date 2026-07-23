@@ -44,7 +44,7 @@ class MaintenanceTask(Task):
     def execute(self):
         if self._store is None:
             try:
-                from core.agent.v4.persistence.tiered_storage import TieredGraphStore
+                from core.agent.persistence.tiered_storage import TieredGraphStore
                 self._store = TieredGraphStore()
             except Exception:
                 return {"status": "skipped", "reason": "no store available"}

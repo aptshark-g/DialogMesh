@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from core.agent.v4.persistence.vector_store import VectorStore
+from core.agent.persistence.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 

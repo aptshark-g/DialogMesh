@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from core.agent.v3_0.cognitive_tree.models import CogType
-from core.agent.v3_0.llm_providers.llm_instances.llm_engine import LLMEngine
+from core.agent.llm_providers.llm_instances.llm_engine import LLMEngine
 
 _PROMPT = """你是 DialogMesh 的回答生成器，负责综合所有认知层输出生成自然、准确、诚实的回复。
 

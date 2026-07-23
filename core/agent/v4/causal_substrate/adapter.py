@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.runtime.adapter import RuntimeAdapter, RuntimeContext, AdapterResult
+from core.agent.runtime.adapter import RuntimeAdapter, RuntimeContext, AdapterResult
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 """Cognitive Runtime: orchestrates v4 modules across Fast/Async/Slow/Deep paths."""
-from core.agent.v4.runtime.config import RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config
-from core.agent.v4.runtime.adapter import RuntimeAdapter, RuntimeContext, AdapterResult
+from core.agent.runtime.config import RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config
+from core.agent.runtime.adapter import RuntimeAdapter, RuntimeContext, AdapterResult
 
 __all__ = [
     "RuntimeConfig", "ModuleConfig", "PathConfig", "load_runtime_config", "build_default_config",
@@ -15,8 +15,8 @@ _PathStats = None
 def _load_engine():
     global _CognitiveRuntimeEngine, _PathStats
     if _CognitiveRuntimeEngine is None:
-        from core.agent.v4.runtime.engine import CognitiveRuntimeEngine as _CognitiveRuntimeEngine
-        from core.agent.v4.runtime.engine import PathStats as _PathStats
+        from core.agent.runtime.engine import CognitiveRuntimeEngine as _CognitiveRuntimeEngine
+        from core.agent.runtime.engine import PathStats as _PathStats
     return _CognitiveRuntimeEngine, _PathStats
 
 # Backward-compatible direct access (will trigger lazy load on first use)

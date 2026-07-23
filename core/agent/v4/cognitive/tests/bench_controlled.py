@@ -16,7 +16,7 @@ import sys, os, math, json, time
 import numpy as np
 sys.path.insert(0, '.')
 
-from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.v4.event_ir import DialogAdapter
 
 

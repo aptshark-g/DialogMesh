@@ -25,7 +25,7 @@ class V4CLI:
     def _init_engine(self):
         if self._engine is not None:
             return
-        from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+        from core.agent.runtime.engine import CognitiveRuntimeEngine
 
         if self._api_key:
             from core.agent.llm_providers.openai_provider import OpenAIProvider

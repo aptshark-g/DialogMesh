@@ -37,19 +37,19 @@ from core.agent.v3_0.cognitive_compiler.event_bus import EventBus
 from core.agent.v3_0.cognitive_tree.models import AccessControlMatrix
 from core.agent.context.manager import ContextManager
 from core.agent.context.store import InMemoryContextStore
-from core.agent.v3_0.llm_providers.provider_manager import ProviderManager
-from core.agent.v3_0.observability.telemetry import Telemetry
+from core.agent.llm_providers.provider_manager import ProviderManager
+from core.agent.observability.telemetry import Telemetry
 from core.agent.planner.planner import PlanningSkill
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
+from core.agent.tool_registry.registry import ToolRegistry
 
-from core.agent.v3_0.orchestrator.models import (
+from core.agent.orchestrator.models import (
     BootstrapConfig,
     DialogMeshSystem,
     SystemHealth,
     SystemPhase,
     OrchestratorConfig,
 )
-from core.agent.v3_0.orchestrator.orchestrator import Orchestrator
+from core.agent.orchestrator.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ class SystemBootstrap:
             try:
                 provider_manager = ProviderManager()
                 # 如果配置了 provider，尝试注册 mock provider（开发阶段）
-                from core.agent.v3_0.llm_providers.models import ProviderConfig, ProviderBackend
+                from core.agent.llm_providers.models import ProviderConfig, ProviderBackend
                 mock_config = ProviderConfig(
                     name="mock",
                     backend=ProviderBackend.MOCK,
@@ -338,7 +338,7 @@ class SystemBootstrap:
             # 3. 工具注册中心
             tool_registry = ToolRegistry()
             # 注册一些基础工具（开发阶段）
-            from core.agent.v3_0.tool_registry.models import ToolDefinition, ToolSource
+            from core.agent.tool_registry.models import ToolDefinition, ToolSource
             tool_registry.register_sync(
                 ToolDefinition(name="memory_read", description="Read memory at address", tags=["memory"], source=ToolSource.BUILTIN)
             )

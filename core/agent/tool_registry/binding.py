@@ -21,12 +21,12 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v3_0.tool_registry.models import (
+from core.agent.tool_registry.models import (
     BindingResult,
     BindingStrategy,
     ToolDefinition,
 )
-from core.agent.v3_0.tool_registry.registry import ToolRegistry
+from core.agent.tool_registry.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +383,7 @@ if __name__ == "__main__":
     async def _self_test() -> None:
         logger.info("=== v3.0 tool_registry/binding self-test ===")
 
-        from core.agent.v3_0.tool_registry.registry import ToolRegistry
+        from core.agent.tool_registry.registry import ToolRegistry
 
         registry = ToolRegistry()
 

@@ -201,7 +201,7 @@ class TestTopicMatcher(unittest.TestCase):
 class TestEngineIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from core.agent.v4.runtime.engine import CognitiveRuntimeEngine
+        from core.agent.runtime.engine import CognitiveRuntimeEngine
         cls.engine = CognitiveRuntimeEngine()
         cls.engine.start()
 

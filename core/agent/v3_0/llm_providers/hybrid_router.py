@@ -32,12 +32,12 @@ import logging
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
-from core.agent.v3_0.llm_providers.base import (
+from core.agent.llm_providers.base import (
     GenerateRequest_v3,
     GenerateResult_v3,
     LLMProvider_v3,
 )
-from core.agent.v3_0.llm_providers.models import (
+from core.agent.llm_providers.models import (
     ErrorCategory,
     ProviderCapabilities,
     ProviderConfig,
@@ -46,8 +46,8 @@ from core.agent.v3_0.llm_providers.models import (
     RoutingStrategy,
     StreamingChunk,
 )
-from core.agent.v3_0.llm_providers.circuit_breaker import CircuitBreakerRegistry
-from core.agent.v3_0.llm_providers.streaming import StreamingAggregator
+from core.agent.llm_providers.circuit_breaker import CircuitBreakerRegistry
+from core.agent.llm_providers.streaming import StreamingAggregator
 
 logger = logging.getLogger(__name__)
 

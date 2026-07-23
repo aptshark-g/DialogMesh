@@ -39,9 +39,9 @@ from core.agent.v3_0.data_models import (
     WebSocketEvent,
     WebSocketEventBuilder,
 )
-from core.agent.v3_0.llm_providers.base import GenerateRequest_v3, LLMProvider_v3
-from core.agent.v3_0.llm_providers.models import ProviderResult
-from core.agent.v3_0.llm_providers.provider_manager import ProviderManager
+from core.agent.llm_providers.base import GenerateRequest_v3, LLMProvider_v3
+from core.agent.llm_providers.models import ProviderResult
+from core.agent.llm_providers.provider_manager import ProviderManager
 from core.service.v3_0.data_models import (
     ClarifyRequest,
     CloseSessionRequest,

@@ -153,7 +153,7 @@ class LLMProvider(ABC):
     def to_v3_request(self, v2_request) -> Any:
         """从 v2.x GenerateRequest 转换为 v3 GenerateRequest_v3。"""
         try:
-            from core.agent.v3_0.llm_providers.base import GenerateRequest_v3
+            from core.agent.llm_providers.base import GenerateRequest_v3
         except ImportError:
             raise ImportError("v3.0 llm_providers not available")
         return GenerateRequest_v3(

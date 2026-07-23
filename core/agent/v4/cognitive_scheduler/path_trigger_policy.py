@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.runtime.config import RuntimeConfig, PathConfig
+from core.agent.runtime.config import RuntimeConfig, PathConfig
 from core.agent.v4.world.params import WorldParams
 
 

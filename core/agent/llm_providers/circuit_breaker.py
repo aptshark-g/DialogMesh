@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from core.agent.v3_0.llm_providers.models import CircuitState, ErrorCategory
+from core.agent.llm_providers.models import CircuitState, ErrorCategory
 
 logger = logging.getLogger(__name__)
 

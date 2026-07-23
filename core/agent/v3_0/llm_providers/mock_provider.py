@@ -21,12 +21,12 @@ import logging
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from core.agent.v3_0.llm_providers.base import (
+from core.agent.llm_providers.base import (
     GenerateRequest_v3,
     GenerateResult_v3,
     LLMProvider_v3,
 )
-from core.agent.v3_0.llm_providers.models import (
+from core.agent.llm_providers.models import (
     ErrorCategory,
     ProviderBackend,
     ProviderCapabilities,

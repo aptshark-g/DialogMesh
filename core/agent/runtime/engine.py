@@ -12,10 +12,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from core.agent.v4.event_ir import EventIR
-from core.agent.v4.runtime.adapter import (
+from core.agent.runtime.adapter import (
     RuntimeAdapter, RuntimeContext, AdapterResult,
 )
-from core.agent.v4.runtime.config import (
+from core.agent.runtime.config import (
     RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config,
 )
 from core.agent.v4.world.params import WorldParams, get_world_params
@@ -43,7 +43,7 @@ from core.agent.v4.cognitive_scheduler.tasks import (
 
 from core.agent.behavior.adapter import BehaviorGraphAdapter, BehaviorGraphState
 from core.agent.v4.causal_substrate.adapter import CausalSubstrateAdapter, CausalContextEntry
-from core.agent.v4.runtime.event_log_adapter import V4EventLog, EventLogConfig
+from core.agent.runtime.event_log_adapter import V4EventLog, EventLogConfig
 
 from core.agent.v4.optimizer.signals import FeedbackSignal
 from core.agent.v4.optimizer.optimizer import BayesianOptimizer
@@ -367,7 +367,7 @@ class CognitiveRuntimeEngine:
 
         # ---- P1: wire remaining islands ----
         try:
-            from core.agent.v4.runtime.p1_resolver import wire_p1
+            from core.agent.runtime.p1_resolver import wire_p1
             p1_count = wire_p1(self)
             logger.info("P1 islands: %d modules wired", p1_count)
         except Exception as e:
@@ -384,7 +384,7 @@ class CognitiveRuntimeEngine:
 
         # ---- P2: unified persistence layer ----
         try:
-            from core.agent.v4.persistence import PersistenceWiring
+            from core.agent.persistence import PersistenceWiring
             p2_status = PersistenceWiring.wire(self)
             logger.info("P2 persistence: %s", p2_status)
         except Exception as e:
@@ -403,7 +403,7 @@ class CognitiveRuntimeEngine:
             pass
         # ---- P3: v3 legacy modules via v4 wrappers ----
         try:
-            from core.agent.v4.runtime.p3_resolver import P3Resolver
+            from core.agent.runtime.p3_resolver import P3Resolver
             p3_status = P3Resolver.wire(self)
             logger.info("P3 legacy: %s", p3_status)
         except Exception as e:
@@ -1315,7 +1315,7 @@ class CognitiveRuntimeEngine:
 
             # P3: v3 legacy module injection
             try:
-                from core.agent.v4.runtime.p3_resolver import P3Resolver
+                from core.agent.runtime.p3_resolver import P3Resolver
                 P3Resolver.inject_in_context(self, event)
             except Exception:
                 pass

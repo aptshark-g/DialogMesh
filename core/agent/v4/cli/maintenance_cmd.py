@@ -5,7 +5,7 @@ from __future__ import annotations
 def _maintenance_gc(engine):
     """Run manual GC and tier migration."""
     try:
-        from core.agent.v4.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         result = store.run_maintenance()
@@ -24,7 +24,7 @@ def _maintenance_gc(engine):
 def _maintenance_stats(engine):
     """Show tiered storage stats."""
     try:
-        from core.agent.v4.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         stats = store.stats
