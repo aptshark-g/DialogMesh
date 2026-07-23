@@ -1,0 +1,40 @@
+{
+  "pipeline": [
+    {
+      "id": "e2e_single_turn",
+      "turns": [
+        {"text": "这个模块的延迟飙升了三天", "entity_clusters": {}, "round": 1}
+      ],
+      "checks": {
+        "l1_has_core": true,
+        "l1_has_modifiers": true,
+        "l1_5_completed": true,
+        "l2_entity_count": 1,
+        "l2_edge_count": 0
+      }
+    },
+    {
+      "id": "e2e_two_turns_relation",
+      "turns": [
+        {"text": "分析加密算法AES的实现", "entity_clusters": {"crypto": {"entities": ["AES","RSA"],"last_seen":0}}, "round": 1},
+        {"text": "然后修补二进制文件", "entity_clusters": {"binary": {"entities": ["elf","pe"],"last_seen":0}}, "round": 2}
+      ],
+      "checks": {
+        "l2_entity_count": 4,
+        "l2_edge_count": 1,
+        "l2_hop_count_min": 1
+      }
+    },
+    {
+      "id": "e2e_empty_input",
+      "turns": [
+        {"text": "", "entity_clusters": {}, "round": 1}
+      ],
+      "checks": {
+        "l1_has_core": false,
+        "l1_has_modifiers": false,
+        "l1_5_ambiguous": true
+      }
+    }
+  ]
+}
