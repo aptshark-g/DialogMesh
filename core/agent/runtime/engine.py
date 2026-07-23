@@ -637,6 +637,18 @@ class CognitiveRuntimeEngine:
                 content=text,
                 entities=re.findall(r'0x[0-9a-fA-F]+|[A-Z]{2,}', text) if 're' in dir() else []
             )
+
+        # ---- DiscourseBlockTree: 3-stage compile (HeaderInjector→SyntacticDecomposer→BlockTree) ----
+        if text and self._discourse_tree:
+            try:
+                session_id = getattr(event, 'session_id', 'default')
+                history = self._event_buffer[-3:] if hasattr(self, '_event_buffer') else None
+                route = self._discourse_tree.feed(text, session_id, history)
+                logger.debug('Discourse: %s blocks, route=%s',
+                           len(self._discourse_tree.get_tree(session_id).blocks if self._discourse_tree.get_tree(session_id) else []),
+                           route.decision.value if route else 'none')
+            except Exception as e:
+                logger.debug('Discourse feed skipped: %s', e)
         
         # ---- PCR: Pre-Cognitive Router (Layer 0) ----
         pcr_output = None

@@ -303,20 +303,70 @@ class MacroMicroQuantizer:
 class DiscourseBlock:
     block_id: str
     edus: List[EDU] = field(default_factory=list)
-
-    def serialize_edus_summary(self) -> str:
-        """Return compressed summary of all EDUs in this block."""
-        texts = [getattr(e, 'raw_text', str(e)) for e in self.edus[:10]]
-        return " | ".join(t[:80] for t in texts if t)
-
-    def llm_summarize(self, llm_provider=None) -> str:
-        """LLM-driven structured summary. Falls back to truncation if no LLM."""
+    temperature: int = 0  # 0=Hot, 1=Warm, 2=Cold, 3=Frozen
+    last_access: float = field(default_factory=time.time)
+    summary: str = ""
+    
+    def summarize(self, llm_provider=None) -> str:
+        """Temperature-gated summary generation.
+        Hot(t=0): keep original text
+        Warm(t=1): entity extraction + key action
+        Cold(t=2): LLM compression (LM Studio nemotron)
+        Frozen(t=3): index only
+        """
         if not self.edus:
             return "(empty)"
-        if not llm_provider or not hasattr(self, '_llm'):
-            # Fallback: structured truncation with topic hints
-            texts = [getattr(e, 'raw_text', str(e)) for e in self.edus[:5]]
-            return " → ".join(t[:60] for t in texts if t)[:150]
+        
+        texts = [getattr(e, 'raw_text', str(e)) for e in self.edus]
+        full_text = " ".join(texts)
+        
+        if self.temperature == 0:  # Hot — keep original
+            self.summary = full_text[:300]
+        elif self.temperature == 1:  # Warm — entity + action extraction
+            entities = []
+            for e in self.edus:
+                entities.extend(getattr(e, 'entities', []))
+            verbs = [getattr(e, 'predicate', '') for e in self.edus if getattr(e, 'predicate', '')]
+            self.summary = f"[{', '.join(set(entities[:5]))}] {' → '.join(verbs[:3])}"
+            self.summary = self.summary[:120]
+        elif self.temperature == 2:  # Cold — LLM compression
+            self.summary = self._llm_summarize(full_text, llm_provider)
+        else:  # Frozen — index only
+            keywords = []
+            for e in self.edus:
+                keywords.extend(getattr(e, 'entities', [])[:3])
+            self.summary = f"[{self.block_id}] {' '.join(set(keywords[:5]))}"[:60]
+        
+        self.last_access = time.time()
+        return self.summary
+    
+    def _llm_summarize(self, text: str, llm_provider=None) -> str:
+        """LLM compression via LM Studio nemotron."""
+        if not llm_provider:
+            try:
+                import urllib.request, json
+                prompt = f"Summarize this conversation turn in 1 sentence (Chinese or English):\n{text[:300]}"
+                req = urllib.request.Request(
+                    "http://127.0.0.1:1234/v1/chat/completions",
+                    data=json.dumps({
+                        "model": "nvidia/nemotron-3-nano-4b",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 100, "temperature": 0.1
+                    }).encode(),
+                    headers={"Content-Type": "application/json"}
+                )
+                resp = urllib.request.urlopen(req, timeout=10)
+                result = json.loads(resp.read())
+                content = result["choices"][0]["message"].get("content", "")
+                # Handle nemotron reasoning_content fallback
+                if not content:
+                    content = result["choices"][0]["message"].get("reasoning_content", "")
+                return content[:120] if content else text[:120]
+            except Exception:
+                return text[:120]
+        
+        result = llm_provider.generate(prompt=f"Summarize: {text[:200]}", max_tokens=80)
+        return (result.text if hasattr(result, 'text') else str(result))[:120]
         try:
             from core.agent.llm_providers.base import GenerateRequest
             text = " ".join(getattr(e, 'raw_text', '') for e in self.edus[:5])
@@ -510,6 +560,32 @@ class DiscourseBlockGranularityRegulator:
         self.global_split_threshold = 0.25
         self._last_regulation_turn = 0
         self._turn_counter = 0
+        self.bor_history: list = []  # BOR tracking for adaptive threshold
+        self.target_bor_min = 0.8
+        self.target_bor_max = 1.5
+    
+    def _compute_bor(self, tree: "DiscourseBlockTree") -> float:
+        """Block Overlap Ratio — measures block fragmentation.
+        BOR < 0.8 = too fragmented (need merge)
+        BOR > 1.5 = too dense (need split)
+        BOR 0.8-1.5 = healthy
+        """
+        blocks = list(tree.blocks.values()) if hasattr(tree, 'blocks') else []
+        if len(blocks) < 2:
+            return 1.0
+        total_edus = sum(len(b.edus) for b in blocks)
+        return total_edus / len(blocks) / self.OPTIMAL_BLOCKS_PER_TOPIC
+    
+    def _adapt_threshold(self):
+        """Adapt split threshold based on BOR history."""
+        if len(self.bor_history) < 3:
+            return
+        recent = self.bor_history[-3:]
+        avg_bor = sum(recent) / len(recent)
+        if avg_bor < self.target_bor_min:
+            self.global_split_threshold = max(0.15, self.global_split_threshold - 0.02)
+        elif avg_bor > self.target_bor_max:
+            self.global_split_threshold = min(0.40, self.global_split_threshold + 0.02)
 
     def regulate(self, tree: "DiscourseBlockTree", current_turn: int):
         """Apply BDI+BOR regulation to tree. Called after feed()."""
