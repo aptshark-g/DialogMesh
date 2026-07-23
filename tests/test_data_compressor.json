@@ -1,0 +1,26 @@
+{
+  "scenarios": [
+    {
+      "id": "extract_from_edges",
+      "edge_history": [
+        {"source": "延迟", "target": "监控", "relation_kind": "structural", "confidence": 0.85},
+        {"source": "监控", "target": "告警", "relation_kind": "temporal", "confidence": 0.70}
+      ],
+      "belief_trace": [],
+      "checks": {"min_transitions": 2}
+    },
+    {
+      "id": "extract_from_belief",
+      "edge_history": [],
+      "belief_trace": [
+        {"probability_before": {"诊断": 0.3, "修复": 0.3, "探索": 0.4}, "probability_after": {"诊断": 0.6, "修复": 0.2, "探索": 0.2}}
+      ],
+      "checks": {"min_transitions": 1, "has_belief_change": true}
+    },
+    {
+      "id": "stale_chain_removal",
+      "empty": true,
+      "checks": {"pool_after": 0}
+    }
+  ]
+}
