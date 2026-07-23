@@ -41,7 +41,7 @@ ZONE_STRATEGY = {
         "max_tokens": 8192,
     },
     "MIXED": {
-        "skip_chains": ["planning", "profile"],
+        "skip_chains": ["planning"],
         "execution_mode": "slow",
         "prompt_style": "default",
         "temperature": 0.4,

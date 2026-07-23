@@ -23,12 +23,13 @@ def should_trigger_planner(state: StateSnapshot, event_log: list) -> bool:
 
 
 def should_trigger_profile(state: StateSnapshot, event_log: list) -> bool:
+    # Trigger on behavior burst regardless of zone (profile MUST learn from patterns)
+    recent_behavior = [e for e in event_log[-10:] if hasattr(e.type, 'value') and e.type.value == "behavior_recorded"]
+    if len(recent_behavior) >= 3:
+        return True
+    # Otherwise, follow zone strategy for cost control
     zone = _get_active_zone(event_log)
-    if should_skip_chain(zone, "profile"):
-        return False
-    # Also trigger on behavior burst (Learn from user patterns)
-    recent_behavior = [e for e in event_log[-10:] if e.type.value == "behavior_recorded"]
-    return len(recent_behavior) >= 3 or True
+    return not should_skip_chain(zone, "profile")
 
 
 def should_trigger_context(state: StateSnapshot, event_log: list) -> bool:
