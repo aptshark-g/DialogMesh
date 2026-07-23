@@ -1,17 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-core/agent/topic_tree/__init__.py
-──────────────────────────────
-Topic tree management exports.
-"""
-
-from core.agent.topic_tree.models import TopicNode, TopicEdge, TopicEdgeType
-from core.agent.topic_tree.manager import TopicTreeManager, RoutingDecision
-
-__all__ = [
-    "TopicNode",
-    "TopicEdge",
-    "TopicEdgeType",
-    "TopicTreeManager",
-    "RoutingDecision",
-]
+"""Topic Tree — tree-structured conversation memory with distance-decay granularity."""
+from core.agent.topic_tree.fact_store import FactBlock, FactStore, RelationMetadataStore
+from core.agent.topic_tree.heat_model import AdaptiveHeatModel
+from core.agent.topic_tree.context import DualPerspectiveContext, MultiPerspectiveBranchView, BehaviorDrivenRefresh
+from core.agent.topic_tree.manager import TopicTreeManager

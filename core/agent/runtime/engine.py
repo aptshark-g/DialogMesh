@@ -4,6 +4,7 @@ Integrates ``PathAwareScheduler`` for path-aware scheduling,
 configuration-driven triggers, and per-path state tracking.
 """
 from __future__ import annotations
+import time, re
 import importlib
 import time
 import logging
@@ -209,7 +210,9 @@ class CognitiveRuntimeEngine:
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
         from core.agent.assoc_subscriber import AssociationSubscriber
         self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
-        logger.info('EventLog+EventBus ready, Meta+Assoc subscribers active')
+        from core.agent.topic_tree.manager import TopicTreeManager
+        self._topic_tree = TopicTreeManager()
+        logger.info('EventLog+EventBus+TopicTree ready')
         self._init_pcr()
         self._init_unified()
         self._init_router_v4()
@@ -626,6 +629,15 @@ class CognitiveRuntimeEngine:
             else:
                 pas.failure_count += 1
 
+        import time, re
+        # ---- Topic Tree: record fact + update heat ----
+        if text and self._topic_tree:
+            self._topic_tree.touch(
+                message_id=f"msg_{int(time.time()*1000)}",
+                content=text,
+                entities=re.findall(r'0x[0-9a-fA-F]+|[A-Z]{2,}', text) if 're' in dir() else []
+            )
+        
         # ---- PCR: Pre-Cognitive Router (Layer 0) ----
         pcr_output = None
         if self._pcr_router is not None and text:
