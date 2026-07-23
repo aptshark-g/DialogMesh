@@ -3,7 +3,7 @@
 import sys, time, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.agent.v4.association_funnel import AssociationFunnel
+from core.agent.association.association_funnel import AssociationFunnel
 
 
 class MockLLM:
