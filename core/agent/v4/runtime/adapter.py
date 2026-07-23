@@ -142,7 +142,7 @@ class SkillDistillerAdapter(RuntimeAdapter):
     """Wraps DistillationEngine for the Deep Path."""
 
     def execute(self, ctx: RuntimeContext) -> AdapterResult:
-        from core.agent.v4.skill_layer.distillation_engine import DistillationEngine
+        from core.agent.planner.distillation_engine import DistillationEngine
 
         engine = DistillationEngine()
         # Build inputs from context: pass hypothesis engine for knowledge access

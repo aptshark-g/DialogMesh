@@ -33,11 +33,11 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.planning.agent_allocator import AgentAllocator
-from core.agent.v3_0.planning.decomposition import DecompositionEngine
-from core.agent.v3_0.planning.dependency_resolver import DependencyResolver
+from core.agent.planner.agent_allocator import AgentAllocator
+from core.agent.planner.decomposition import DecompositionEngine
+from core.agent.planner.dependency_resolver import DependencyResolver
 from core.agent.v3_0.cognitive_tree.models import CogType
-from core.agent.v3_0.planning.models import (
+from core.agent.planner.models import (
     ExecutionPlan,
     PlanningError,
     PlanningMode,
@@ -46,9 +46,9 @@ from core.agent.v3_0.planning.models import (
     Task,
     TaskDAG,
 )
-from core.agent.v3_0.planning.scheduler import ExecutionResult, ExecutionScheduler
-from core.agent.v3_0.planning.skill_matcher import SkillMatcher
-from core.agent.v3_0.planning.skill_registry import SkillRegistry
+from core.agent.planner.scheduler import ExecutionResult, ExecutionScheduler
+from core.agent.planner.skill_matcher import SkillMatcher
+from core.agent.planner.skill_registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 

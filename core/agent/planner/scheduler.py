@@ -25,7 +25,7 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from core.agent.v3_0.planning.models import (
+from core.agent.planner.models import (
     Task,
     TaskDAG,
     TaskResult,
@@ -307,8 +307,8 @@ if __name__ == "__main__":
     logger.info("=== v3.0 scheduler self-test ===")
 
     async def _self_test():
-        from core.agent.v3_0.planning.dependency_resolver import DependencyResolver
-        from core.agent.v3_0.planning.agent_allocator import AgentAllocator
+        from core.agent.planner.dependency_resolver import DependencyResolver
+        from core.agent.planner.agent_allocator import AgentAllocator
 
         # 创建 Worker 和任务
         class MockWorker(Worker):

@@ -31,7 +31,7 @@ def _export_knowledge(engine, output: str = None):
 def _export_skills(engine, output: str = None):
     """Export Skills as JSON."""
     try:
-        from core.agent.v4.skill_layer.skill_pool import SkillPool
+        from core.agent.planner.skill_pool import SkillPool
         pool = SkillPool()
         skills = pool.list_all() if hasattr(pool, 'list_all') else []
         items = []

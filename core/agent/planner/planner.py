@@ -46,8 +46,8 @@ from core.agent.v3_0.data_models import (
     TaskGraph_v3,
     TaskNode_v3,
 )
-from core.agent.v3_0.planning.fallback import FallbackPlanner
-from core.agent.v3_0.planning.models import (
+from core.agent.planner.fallback import FallbackPlanner
+from core.agent.planner.models import (
     PlanResult,
     PlanRevision,
     PlanStep,
@@ -56,8 +56,8 @@ from core.agent.v3_0.planning.models import (
     PlanStrategy,
     StepType,
 )
-from core.agent.v3_0.planning.optimizer import TaskGraphOptimizer
-from core.agent.v3_0.planning.strategy_selector import StrategySelector
+from core.agent.planner.optimizer import TaskGraphOptimizer
+from core.agent.planner.strategy_selector import StrategySelector
 
 logger = logging.getLogger(__name__)
 

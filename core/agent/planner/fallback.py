@@ -31,7 +31,7 @@ from core.agent.v3_0.data_models import (
     TaskGraph_v3,
     TaskNode_v3,
 )
-from core.agent.v3_0.planning.models import PlanRevision
+from core.agent.planner.models import PlanRevision
 
 logger = logging.getLogger(__name__)
 

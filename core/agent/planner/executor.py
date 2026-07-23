@@ -34,8 +34,8 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from core.agent.v3_common.models import DependencyType, TaskStatus
 from core.agent.v3_0.data_models import TaskGraph_v3, TaskNode_v3, TaskEdge_v3
-from core.agent.v3_0.planning.fallback import FallbackPlanner
-from core.agent.v3_0.planning.models import ExecutionCheckpoint, PlanResult
+from core.agent.planner.fallback import FallbackPlanner
+from core.agent.planner.models import ExecutionCheckpoint, PlanResult
 
 logger = logging.getLogger(__name__)
 

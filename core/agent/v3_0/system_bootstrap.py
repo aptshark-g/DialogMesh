@@ -617,7 +617,7 @@ class SystemBootstrap:
     ) -> Any:
         """初始化 Planning Skill。"""
         try:
-            from core.agent.v3_0.planning import PlanningSkill
+            from core.agent.planner import PlanningSkill
 
             # 尝试获取 Planning-LLM 实例
             planning_llm = None
@@ -816,7 +816,7 @@ class _StubPlanningSkill:
     """Planning Skill 存根。"""
 
     async def plan(self, intent: Any, intent_context: Optional[Any] = None, **kwargs: Any) -> Any:
-        from core.agent.v3_0.planning.models import PlanResult
+        from core.agent.planner.models import PlanResult
 
         return PlanResult(success=False, error="PlanningSkill stub: no LLM available")
 

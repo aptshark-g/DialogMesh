@@ -30,7 +30,7 @@ def _search(engine, keyword: str, module: str = None):
     # Search skills
     if module in (None, "skills"):
         try:
-            from core.agent.v4.skill_layer.skill_pool import SkillPool
+            from core.agent.planner.skill_pool import SkillPool
             pool = SkillPool()
             if hasattr(pool, 'list_all'):
                 for s in pool.list_all():

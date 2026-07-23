@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.planning.models import (
+from core.agent.planner.models import (
     AllocationError,
     Task,
     TaskDAG,

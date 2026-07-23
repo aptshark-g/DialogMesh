@@ -140,7 +140,7 @@ def _inspect_skills(engine, detail: bool = False, item_id: str = None,
                     page: int = 1, page_size: int = 10, json_output: bool = False):
     """Show distilled Skills from SkillPool."""
     try:
-        from core.agent.v4.skill_layer.skill_pool import SkillPool
+        from core.agent.planner.skill_pool import SkillPool
         pool = SkillPool()
         skills = pool.list_all() if hasattr(pool, 'list_all') else []
         if not skills:

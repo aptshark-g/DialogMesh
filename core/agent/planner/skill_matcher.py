@@ -21,8 +21,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Set
 
-from core.agent.v3_0.planning.models import SkillMatchResult, SkillTemplate
-from core.agent.v3_0.planning.skill_registry import SkillRegistry
+from core.agent.planner.models import SkillMatchResult, SkillTemplate
+from core.agent.planner.skill_registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger.info("=== v3.0 skill_matcher self-test ===")
 
-    from core.agent.v3_0.planning.skill_registry import SkillRegistry
+    from core.agent.planner.skill_registry import SkillRegistry
 
     registry = SkillRegistry()
     matcher = SkillMatcher(registry)

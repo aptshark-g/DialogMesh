@@ -718,7 +718,7 @@ class CognitiveRuntimeEngine:
                 intent = parse_result.intent if hasattr(parse_result, 'intent') else None
                 if intent:
                     from core.agent.v3_0.data_models import IntentContext_v3
-                    from core.agent.v3_0.planning.skill_registry import SkillRegistry
+                    from core.agent.planner.skill_registry import SkillRegistry
                     plan_ctx = IntentContext_v3()
                     if pcr_output:
                         plan_ctx.expectation = getattr(pcr_output, 'expectation', None)
@@ -3212,9 +3212,9 @@ class CognitiveRuntimeEngine:
 
     def _init_planning(self):
         try:
-            from core.agent.v3_0.planning.planner import PlanningSkill
-            from core.agent.v3_0.planning.skill_matcher import SkillMatcher
-            from core.agent.v3_0.planning.skill_registry import SkillRegistry
+            from core.agent.planner.planner import PlanningSkill
+            from core.agent.planner.skill_matcher import SkillMatcher
+            from core.agent.planner.skill_registry import SkillRegistry
             self._planner = PlanningSkill(llm_provider=self._llm_provider)
             self._skill_matcher = SkillMatcher()
             # Load predefined blueprints

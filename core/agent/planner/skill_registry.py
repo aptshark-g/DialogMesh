@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.planning.models import SkillLevel, SkillNotFoundError, SkillTemplate, SubtaskTemplate
+from core.agent.planner.models import SkillLevel, SkillNotFoundError, SkillTemplate, SubtaskTemplate
 
 logger = logging.getLogger(__name__)
 

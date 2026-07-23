@@ -39,7 +39,7 @@ from core.agent.v3_0.context_manager.manager import ContextManager
 from core.agent.v3_0.context_manager.store import InMemoryContextStore
 from core.agent.v3_0.llm_providers.provider_manager import ProviderManager
 from core.agent.v3_0.observability.telemetry import Telemetry
-from core.agent.v3_0.planning.planner import PlanningSkill
+from core.agent.planner.planner import PlanningSkill
 from core.agent.v3_0.tool_registry.registry import ToolRegistry
 
 from core.agent.v3_0.orchestrator.models import (

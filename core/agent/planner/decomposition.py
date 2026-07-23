@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.planning.models import (
+from core.agent.planner.models import (
     SkillTemplate,
     Task,
     RetryPolicy,
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger.info("=== v3.0 decomposition self-test ===")
 
-    from core.agent.v3_0.planning.skill_registry import SkillRegistry
+    from core.agent.planner.skill_registry import SkillRegistry
 
     registry = SkillRegistry()
     engine = DecompositionEngine()

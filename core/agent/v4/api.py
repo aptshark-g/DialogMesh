@@ -368,7 +368,7 @@ async def inspect(module: str, limit: int = 10, detail: bool = False):
             return {"module": "knowledge", "count": len(items), "items": items[:limit]}
 
         elif module == "skills":
-            from core.agent.v4.skill_layer.skill_pool import SkillPool
+            from core.agent.planner.skill_pool import SkillPool
             pool = SkillPool()
             skills = pool.list_all() if hasattr(pool, 'list_all') else []
             items = []

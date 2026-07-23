@@ -63,8 +63,8 @@ from core.agent.v3_0.data_models import (
 )
 from core.agent.v3_0.llm_providers.base import GenerateRequest_v3, GenerateResult_v3
 from core.agent.v3_0.observability.telemetry import Telemetry
-from core.agent.v3_0.planning.planner import PlanningSkill
-from core.agent.v3_0.planning.models import PlanResult
+from core.agent.planner.planner import PlanningSkill
+from core.agent.planner.models import PlanResult
 from core.agent.v3_0.tool_registry.registry import ToolRegistry
 from core.agent.v3_0.orchestrator.algorithm_engine import AlgorithmEngine
 from core.agent.v3_0.orchestrator.fusion_engine import FusionEngine, FusionStrategy

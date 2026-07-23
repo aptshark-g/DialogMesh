@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Set
 
 from core.agent.v3_common.models import DependencyType, TaskStatus
 from core.agent.v3_0.data_models import TaskGraph_v3, TaskEdge_v3, TaskNode_v3
-from core.agent.v3_0.planning.models import PlanStep, StepType
+from core.agent.planner.models import PlanStep, StepType
 
 logger = logging.getLogger(__name__)
 
