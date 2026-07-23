@@ -219,7 +219,7 @@ async def edit_ir(req: IREditRequest):
     if not lc: raise HTTPException(404, "No context assembled yet")
 
     # Find existing entry or add new one
-    from core.agent.v4.context.cross_domain_ir import IREntry
+    from core.agent.context.cross_domain_ir import IREntry
     if req.content:
         entry = IREntry(domain=req.domain, type=req.entry_type or "user_edited",
                         content=req.content[:500], confidence=req.confidence or 0.8)

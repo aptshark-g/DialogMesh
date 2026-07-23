@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from core.agent.v3_0.context_manager.models import ContextSnapshot
+from core.agent.context.models import ContextSnapshot
 
 logger = logging.getLogger(__name__)
 

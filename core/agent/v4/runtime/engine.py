@@ -19,18 +19,18 @@ from core.agent.v4.runtime.config import (
     RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config,
 )
 from core.agent.v4.world.params import WorldParams, get_world_params
-from core.agent.v4.context.assembler import ContextAssembler
-from core.agent.v4.context.source import (
+from core.agent.context.assembler import ContextAssembler
+from core.agent.context.source import (
     SkillSource, WorldSource,
 )
-from core.agent.v4.context.topic_tree_source import TopicTreeContextSource
+from core.agent.context.topic_tree_source import TopicTreeContextSource
 from core.agent.v4.compiler.content_index import ContentIndex
 from core.agent.v4.compiler.index_source import IndexSource
 from core.agent.v4.conversation.tracker import ConversationTracker
 from core.agent.v4.compiler.discourse_block_tree import DiscourseBlockTreeManager
 from core.agent.v4.causal.planner import CausalPlanner, CausalContextSource
-from core.agent.v4.context.domain_selector import DomainSelector
-from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR
+from core.agent.context.domain_selector import DomainSelector
+from core.agent.context.cross_domain_ir import CrossDomainContextIR
 from core.agent.v4.compiler.perspective_planner import PerspectivePlanner, Perspective
 from core.agent.v4.cognitive_scheduler.path_scheduler import PathAwareScheduler
 from core.agent.v4.cognitive_scheduler.path_models import PathType, PathState
@@ -1232,7 +1232,7 @@ class CognitiveRuntimeEngine:
         # ---- Inject CausalPlanner context (unified BehaviorGraph + CausalSubstrate) ----
         if self._causal_planner is not None and self._last_context is not None:
             try:
-                from core.agent.v4.context.cross_domain_ir import IREntry
+                from core.agent.context.cross_domain_ir import IREntry
 
                 # Inject recent behavior steps
                 recent_steps = self._causal_planner.get_recent_chain(max_steps=5)
@@ -1292,7 +1292,7 @@ class CognitiveRuntimeEngine:
             # ---- Pruner ----
             if self._last_context and self._last_context.entries:
                 try:
-                    from core.agent.v4.context.pruner import Pruner
+                    from core.agent.context.pruner import Pruner
                     pruner = Pruner()
                     self._last_context = pruner.prune(self._last_context, max_entries=50)
                 except Exception as e:
@@ -1338,7 +1338,7 @@ class CognitiveRuntimeEngine:
                     if targets:
                         subgraph = compiler.expand(list(targets)[:3], max_depth=2, max_nodes=50)
                         if subgraph:
-                            from core.agent.v4.context.cross_domain_ir import IREntry
+                            from core.agent.context.cross_domain_ir import IREntry
                             for node in subgraph[:5]:
                                 self._last_context.add_entry(domain="G", entry=IREntry(
                                     domain="G", type="subgraph_node",
@@ -1348,7 +1348,7 @@ class CognitiveRuntimeEngine:
 
         elif self._behavior_graph_adapter is not None and self._last_context is not None:
             try:
-                from core.agent.v4.context.cross_domain_ir import IREntry
+                from core.agent.context.cross_domain_ir import IREntry
 
                 recent = self._behavior_graph_adapter.get_recent_chain(n_steps=5)
                 for step in recent.steps:
@@ -1390,7 +1390,7 @@ class CognitiveRuntimeEngine:
         # ---- Inject EventLog replay context ----
         if self._event_log is not None and self._last_context is not None:
             try:
-                from core.agent.v4.context.cross_domain_ir import IREntry
+                from core.agent.context.cross_domain_ir import IREntry
 
                 replay_events = self._event_log.replay_unconsumed(limit=5)
                 for ev in replay_events:
@@ -1436,7 +1436,7 @@ class CognitiveRuntimeEngine:
         """Hierarchical context: flat history -> DiscourseTree -> persistent sessions."""
         if self._last_context is None:
             return
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
 
         # Layer 1: Flat recent history
         history = self._conversation_tracker.get_history_entries(
@@ -1488,7 +1488,7 @@ class CognitiveRuntimeEngine:
     def _inject_topic_tree_context(self, current_event: EventIR, pcr_output=None) -> None:
         if self._last_context is None:
             return
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
 
         # DiscourseBlockTree: conversation tree structure
         try:
@@ -1773,7 +1773,7 @@ class CognitiveRuntimeEngine:
                     subgraph.append(f"[CALI] LLM OCEAN diverges from BFI-10: "
                         f"{len(calibrated['divergence']['diverging_factors'])} factors")
                 if subgraph and self._last_context:
-                    from core.agent.v4.context.cross_domain_ir import IREntry
+                    from core.agent.context.cross_domain_ir import IREntry
                     for i, node in enumerate(subgraph[:6]):
                         self._last_context.add_entry(domain="F", entry=IREntry(
                             domain="F", type="ocean_node",
@@ -1816,7 +1816,7 @@ class CognitiveRuntimeEngine:
                 or self._last_context is None):
             return
         from core.agent.v4.cognitive.fusion import FusionContext
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
 
         p = self._cognitive_profile
         engine = getattr(self, '_convergence_engine', None)
@@ -2327,7 +2327,7 @@ class CognitiveRuntimeEngine:
                 and self._last_context is not None):
             return
 
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
         from core.agent.v4.compiler.semantic_object import LOD as LODObj
         objects = self._world_objects
         runtime = getattr(self, '_object_runtime', None)
@@ -2740,7 +2740,7 @@ class CognitiveRuntimeEngine:
         """Expand subgraph for specific concepts and inject into context."""
         if not self._last_context:
             return
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
 
         # Find graph source
         graph_src = None
@@ -2788,7 +2788,7 @@ class CognitiveRuntimeEngine:
         """Inject architecture overview from the merged design docs."""
         if not self._last_context:
             return
-        from core.agent.v4.context.cross_domain_ir import IREntry
+        from core.agent.context.cross_domain_ir import IREntry
         import os
 
         # Try to load the architecture overview from merge docs
@@ -2928,7 +2928,7 @@ class CognitiveRuntimeEngine:
         # ---- Legacy fallback: direct v3_2 adapters ----
         elif self._behavior_graph_adapter is not None and self._causal_substrate_adapter is not None:
             try:
-                from core.agent.v4.context.source import CausalSource, CausalSubstrateAdapter as CausalSubstrateInit
+                from core.agent.context.source import CausalSource, CausalSubstrateAdapter as CausalSubstrateInit
                 graph = self._behavior_graph_adapter.graph
                 if graph is not None:
                     init = CausalSubstrateInit(graph)
@@ -2954,7 +2954,7 @@ class CognitiveRuntimeEngine:
         try:
             from core.agent.topic_tree.manager import TopicTreeManager
             from core.agent.discourse_block_tree.manager import DiscourseBlockTreeManager
-            from core.agent.v4.context.topic_tree_source import TopicTreeContextSource
+            from core.agent.context.topic_tree_source import TopicTreeContextSource
             topic_tree = TopicTreeManager()
             discourse = DiscourseBlockTreeManager()
             self._topic_tree_source = TopicTreeContextSource(

@@ -23,7 +23,7 @@ DialogMesh Agent v3.0 — 上下文管理器包导出
 版本: 3.0.0
 """
 
-from core.agent.v3_0.context_manager.models import (
+from core.agent.context.models import (
     ContextPriority,
     ContextSlice,
     ContextSnapshot,
@@ -31,19 +31,19 @@ from core.agent.v3_0.context_manager.models import (
     EntityResolutionState,
     WindowConfig,
 )
-from core.agent.v3_0.context_manager.store import (
+from core.agent.context.store import (
     ContextStore,
     InMemoryContextStore,
     SQLiteContextStore,
 )
-from core.agent.v3_0.context_manager.window import (
+from core.agent.context.window import (
     ContextCompressor,
     ContextWindow,
     RelevanceScorer,
     TokenEstimator,
     TruncationStrategy,
 )
-from core.agent.v3_0.context_manager.manager import ContextManager
+from core.agent.context.manager import ContextManager
 
 __all__ = [
     "ContextManager",

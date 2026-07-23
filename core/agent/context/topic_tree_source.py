@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 
 logger = logging.getLogger(__name__)
 

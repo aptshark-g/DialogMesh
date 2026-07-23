@@ -20,7 +20,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.context_manager.models import (
+from core.agent.context.models import (
     ContextPriority,
     ContextSlice,
     ContextSummary,

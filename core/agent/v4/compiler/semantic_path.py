@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 from collections import defaultdict
 
-from core.agent.v4.context.graph_source import ConceptGraph
+from core.agent.context.graph_source import ConceptGraph
 
 logger = logging.getLogger(__name__)
 

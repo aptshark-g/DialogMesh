@@ -17,7 +17,7 @@ from collections import defaultdict, Counter
 from core.agent.v4.compiler.semantic_object import (
     SemanticObject, CompositionEdge, build_from_graph,
 )
-from core.agent.v4.context.source import _keyword_score
+from core.agent.context.source import _keyword_score
 
 logger = logging.getLogger(__name__)
 

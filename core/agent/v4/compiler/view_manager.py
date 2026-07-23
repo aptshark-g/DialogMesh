@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 from core.agent.v4.compiler.semantic_path import SemanticIndex, SemanticPath
 from core.agent.v4.compiler.content_index import ContentIndex
-from core.agent.v4.context.source import ContextItem
+from core.agent.context.source import ContextItem
 
 logger = logging.getLogger(__name__)
 

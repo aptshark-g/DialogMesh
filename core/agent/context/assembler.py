@@ -11,14 +11,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
-from core.agent.v4.context.source import (
+from core.agent.context.source import (
     ContextSource, ContextItem, CrossDomainContext,
     HybridKnowledgeSource, HybridSkillSource,
     KnowledgeSource, SkillSource, ObservationSource, WorldSource, EngineeringSource,
 )
-from core.agent.v4.context.cross_domain_ir import CrossDomainContextIR, IREntry
-from core.agent.v4.context.domain_selector import DomainSelector, Domain
-from core.agent.v4.context.budget_allocator import BudgetAllocator
+from core.agent.context.cross_domain_ir import CrossDomainContextIR, IREntry
+from core.agent.context.domain_selector import DomainSelector, Domain
+from core.agent.context.budget_allocator import BudgetAllocator
 from core.agent.v4.persistence.vector_store import SQLiteVectorStore, VectorStore
 from core.agent.v4.persistence.milvus_store import MilvusVectorStore
 from core.agent.v4.persistence.hybrid_index import HybridIndex, KeywordIndex
@@ -189,7 +189,7 @@ class ContextAssembler:
             # TieredVectorStore will handle the fallback
 
         # Build TieredVectorStore
-        from core.agent.v4.context.source import TieredVectorStore
+        from core.agent.context.source import TieredVectorStore
         tiered_store = TieredVectorStore(
             sqlite_store=sqlite_store,
             milvus_store=milvus_store,

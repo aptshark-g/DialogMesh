@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from core.agent.v4.context.source import ContextItem, _keyword_score
-from core.agent.v4.context.graph_source import ConceptGraph
+from core.agent.context.source import ContextItem, _keyword_score
+from core.agent.context.graph_source import ConceptGraph
 
 logger = logging.getLogger(__name__)
 

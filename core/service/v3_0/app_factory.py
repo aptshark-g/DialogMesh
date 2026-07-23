@@ -29,8 +29,8 @@ except ImportError:
     HAS_FASTAPI = False
     FastAPI = None
 
-from core.agent.v3_0.context_manager.manager import ContextManager
-from core.agent.v3_0.context_manager.store import InMemoryContextStore
+from core.agent.context.manager import ContextManager
+from core.agent.context.store import InMemoryContextStore
 from core.service.v3_0.data_models import ServiceConfig
 from core.service.v3_0.agent_service import AgentService_v3
 from core.service.v3_0.session_manager import SessionManager_v3

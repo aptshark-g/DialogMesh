@@ -1,7 +1,7 @@
 """IndexSource — wraps ContentIndex as a ContextSource for the assembler."""
 from __future__ import annotations
 from typing import List
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.compiler.content_index import ContentIndex
 
 

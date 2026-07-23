@@ -87,7 +87,7 @@ class P3Resolver:
                 result = engine._negative_kb.check(getattr(event, 'text', ''))
                 events["negative_kb"] = {"triggered": result.triggered if hasattr(result, 'triggered') else False}
                 if hasattr(result, 'triggered') and result.triggered:
-                    from core.agent.v4.context.cross_domain_ir import IREntry
+                    from core.agent.context.cross_domain_ir import IREntry
                     engine._last_context.add_entry(domain="W", entry=IREntry(
                         domain="W", type="negative_pattern",
                         content=f"[AVOID:v3] {getattr(result,'reason','unknown')}"[:200], confidence=0.4))

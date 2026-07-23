@@ -51,7 +51,7 @@ from core.agent.v3_0.cognitive_tree.models import (
     CogNodeStatus,
     CogType,
 )
-from core.agent.v3_0.context_manager.manager import ContextManager
+from core.agent.context.manager import ContextManager
 from core.agent.v3_0.data_models import (
     AgentMessage_v3,
     IntentContext_v3,

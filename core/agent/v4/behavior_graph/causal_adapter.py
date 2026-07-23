@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.behavior_graph.adapter import (
     BehaviorGraphAdapter, BehaviorChainResult, BehaviorContextItem,
 )

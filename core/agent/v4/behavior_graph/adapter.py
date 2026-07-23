@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.v4.event_ir import EventIR
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.observation_compiler.models import ObservationBundle
 
 # v3_2 imports (read-only, no modifications)

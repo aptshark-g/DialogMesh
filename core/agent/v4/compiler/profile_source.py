@@ -6,7 +6,7 @@ Supports both old v3_2 CognitiveProfile and new v2 dual-track profile.
 from __future__ import annotations
 from typing import List, Optional
 
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.cognitive.models import CognitiveProfileV2
 from core.agent.v4.cognitive.convergence import ConvergenceEngine
 from core.agent.v4.cognitive.fusion import FusionContext

@@ -28,7 +28,7 @@ from core.agent.v3_0.cognitive_tree import (
     CogNodeStatus,
     CogType,
 )
-from core.agent.v3_0.context_manager.models import (
+from core.agent.context.models import (
     ContextPriority,
     ContextSlice,
     ContextSnapshot,
@@ -36,12 +36,12 @@ from core.agent.v3_0.context_manager.models import (
     EntityResolutionState,
     WindowConfig,
 )
-from core.agent.v3_0.context_manager.store import (
+from core.agent.context.store import (
     ContextStore,
     EntityCache,
     InMemoryContextStore,
 )
-from core.agent.v3_0.context_manager.window import (
+from core.agent.context.window import (
     ContextCompressor,
     ContextWindow,
     RelevanceScorer,

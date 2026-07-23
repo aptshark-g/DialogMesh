@@ -5,7 +5,7 @@ Provides context items from BehaviorGraph steps and chains.
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.context.source import ContextSource, ContextItem
+from core.agent.context.source import ContextSource, ContextItem
 from core.agent.v4.behavior_graph.adapter import V4BehaviorGraph
 
 

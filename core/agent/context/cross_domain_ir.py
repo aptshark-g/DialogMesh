@@ -250,7 +250,7 @@ class CrossDomainContextIR:
 
     def to_legacy_context(self) -> "CrossDomainContext":
         """Bridge to flat CrossDomainContext for backward compat."""
-        from core.agent.v4.context.source import CrossDomainContext, ContextItem
+        from core.agent.context.source import CrossDomainContext, ContextItem
         items = [
             ContextItem(
                 source=e.domain,

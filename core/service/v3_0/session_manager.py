@@ -25,8 +25,8 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.context_manager.manager import ContextManager
-from core.agent.v3_0.context_manager.models import (
+from core.agent.context.manager import ContextManager
+from core.agent.context.models import (
     ContextPriority,
     EntityResolutionState,
     WindowConfig,

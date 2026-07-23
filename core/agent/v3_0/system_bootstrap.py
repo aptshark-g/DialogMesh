@@ -417,7 +417,7 @@ class SystemBootstrap:
             self._components["topic_tree"] = topic_tree
 
             # ContextManager
-            from core.agent.v3_0.context_manager import ContextManager, SQLiteContextStore, WindowConfig
+            from core.agent.context import ContextManager, SQLiteContextStore, WindowConfig
 
             ctx_cfg = self._config.get("context_manager", {})
             window_config = WindowConfig(
@@ -430,7 +430,7 @@ class SystemBootstrap:
                 db_path = self._config.get("persistence", {}).get("database_path", "data/dialogmesh.db")
                 store = SQLiteContextStore(db_path=db_path)
             except Exception:
-                from core.agent.v3_0.context_manager import InMemoryContextStore
+                from core.agent.context import InMemoryContextStore
                 store = InMemoryContextStore()
 
             context_manager = ContextManager(

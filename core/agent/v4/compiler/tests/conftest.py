@@ -7,7 +7,7 @@ def world():
     from core.agent.v4.observation_compiler.pool import ObservationPool
     from core.agent.v4.document.pipeline import DocumentIngestionPipeline
     from core.agent.v4.chunking.strategies import default_registry, RuntimeConstraints
-    from core.agent.v4.context.graph_source import ConceptGraph
+    from core.agent.context.graph_source import ConceptGraph
     from core.agent.v4.compiler.semantic_path import SemanticIndex
     from core.agent.v4.compiler.relation_substrate import RelationSubstrate
     from core.agent.v4.compiler.content_provider import ContentProvider

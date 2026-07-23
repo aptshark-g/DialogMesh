@@ -35,8 +35,8 @@ from core.agent.v3_0.cognitive_compiler.compiler import (
 )
 from core.agent.v3_0.cognitive_compiler.event_bus import EventBus
 from core.agent.v3_0.cognitive_tree.models import AccessControlMatrix
-from core.agent.v3_0.context_manager.manager import ContextManager
-from core.agent.v3_0.context_manager.store import InMemoryContextStore
+from core.agent.context.manager import ContextManager
+from core.agent.context.store import InMemoryContextStore
 from core.agent.v3_0.llm_providers.provider_manager import ProviderManager
 from core.agent.v3_0.observability.telemetry import Telemetry
 from core.agent.planner.planner import PlanningSkill

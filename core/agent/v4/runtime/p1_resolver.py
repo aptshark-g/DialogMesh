@@ -80,7 +80,7 @@ class P1Resolver:
             vm = engine._view_manager
             view = vm.current_view() if hasattr(vm, 'current_view') else None
             if view and engine._last_context:
-                from core.agent.v4.context.cross_domain_ir import IREntry
+                from core.agent.context.cross_domain_ir import IREntry
                 engine._last_context.add_entry(domain="K", entry=IREntry(
                     domain="K", type="camera_view",
                     content=f"[VIEW] {view.summary()}"[:300], confidence=0.8))
@@ -93,7 +93,7 @@ class P1Resolver:
         if not hasattr(engine, '_domain_adapters') or not engine._domain_adapters:
             return
         try:
-            from core.agent.v4.context.cross_domain_ir import IREntry
+            from core.agent.context.cross_domain_ir import IREntry
             adapters = engine._domain_adapters
             if isinstance(adapters, dict):
                 for domain, adapter in adapters.items():

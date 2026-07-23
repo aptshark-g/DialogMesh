@@ -14,7 +14,7 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from core.agent.v4.context.source import _keyword_score
+from core.agent.context.source import _keyword_score
 
 logger = logging.getLogger(__name__)
 

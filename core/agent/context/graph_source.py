@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-from core.agent.v4.context.source import (
+from core.agent.context.source import (
     ContextSource, ContextItem, _keyword_score, _extract_bundle_text,
 )
 
@@ -344,7 +344,7 @@ class ConceptGraphSource(ContextSource):
                                                 max_nodes=self._max_nodes)
             if items:
                 return items
-        from core.agent.v4.context.source import DocumentSource
+        from core.agent.context.source import DocumentSource
         return DocumentSource(observation_pool=self._pool).retrieve(query, top_k=top_k, **kwargs)
 
     def stats(self) -> dict:
