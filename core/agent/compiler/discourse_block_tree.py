@@ -20,16 +20,16 @@ logger = logging.getLogger(__name__)
 
 # ── Stage 1: HeaderInjector ──
 class HeaderInjector:
-    """Pronoun resolution via session entity cache.
+    """Pronoun resolution via session entity cache + SyntacticDecomposer.
 
-    Priority: same-turn explicit → session recent → causal KB → history pool.
+    Priority: same-turn explicit → session recent → syntactic subject resolution → history pool.
     """
 
-    NEG_MARKERS = {"不", "没", "非", "别", "not", "no", "don't"}
-    UNC_MARKERS = {"可能", "也许", "大概", "maybe", "perhaps"}
-    IMP_MARKERS = {"请", "帮我", "给我", "scan", "patch", "hook"}
-
-    PRONOUNS = ["这个", "那个", "它", "他", "这", "那", "this", "that", "it"]
+    def __init__(self):
+        self._sessions: Dict[str, List[str]] = {}
+        self._decomposer = SyntacticDecomposer()
+    # No semantic IMP markers — imperative detected structurally by SyntacticDecomposer
+    PRONOUNS = ["它", "他", "这", "那", "this", "that", "it"]  # structural deictic resolution
 
     def __init__(self):
         self._entity_cache: Dict[str, List[str]] = {}  # session_id → entities
@@ -54,14 +54,16 @@ class HeaderInjector:
                 cache.append(m.group())
 
     def _resolve_reference(self, text: str, recent_entities: List[str]) -> str:
-        """Syntax-tree based reference resolution using SyntacticDecomposer output."""
+        """Structural reference resolution via SyntacticDecomposer output.
+        Zero hardcoded demonstrative patterns — purely syntactic: empty subject + has object = reference to prior entity."""
         if not recent_entities:
             return text
-        import re
-        ref_patterns = [r'那个', r'这个', r'刚才那个', r'上面那个', r'回到刚才', r'再[看说查]一下']
-        for pat in ref_patterns:
-            if re.search(pat, text):
+        try:
+            edus = self._decomposer.decompose(text)
+            if edus and (not edus[0].subject or len(edus[0].subject or '') <= 2) and edus[0].object:
                 return f"({recent_entities[0]}) {text}"
+        except Exception:
+            pass
         return text
 
     def _resolve(self, pronoun: str, text: str, session_id: str) -> Optional[str]:
