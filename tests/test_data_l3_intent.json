@@ -1,0 +1,34 @@
+{
+  "scenarios": [
+    {
+      "id": "full_consensus",
+      "hypothesis": "诊断",
+      "belief_7d": {"support": 8, "conflict": 1, "stability": 0.89, "coverage": 0.7, "recency": 0.9, "novelty": 0.1, "entropy": 0.2},
+      "discourse_topics": ["延迟飙升", "监控缺失", "告警"],
+      "profile_traits": {"conscientiousness": 0.75},
+      "pcr_zone": "PRECISION",
+      "entity_relations": ["causes", "triggers"],
+      "checks": {"consensus": true, "accepts_min": 3}
+    },
+    {
+      "id": "deadlock_2v2",
+      "hypothesis": "吐槽",
+      "belief_7d": {"support": 3, "conflict": 4, "stability": 0.43, "coverage": 0.3, "recency": 0.5, "novelty": 0.6, "entropy": 0.7},
+      "discourse_topics": ["烦死了", "太难了"],
+      "profile_traits": {"conscientiousness": 0.82},
+      "pcr_zone": "PSYCHE",
+      "entity_relations": ["causes", "triggers", "depends_on"],
+      "checks": {"consensus": false, "behavior_type": "venting"}
+    },
+    {
+      "id": "consensus_with_rejects",
+      "hypothesis": "修复",
+      "belief_7d": {"support": 6, "conflict": 2, "stability": 0.75, "coverage": 0.6, "recency": 0.8, "novelty": 0.2, "entropy": 0.3},
+      "discourse_topics": ["修补", "patch", "修改"],
+      "profile_traits": {},
+      "pcr_zone": "PRECISION",
+      "entity_relations": ["depends_on"],
+      "checks": {"consensus": true, "accepts_min": 2, "rejects_max": 1}
+    }
+  ]
+}
