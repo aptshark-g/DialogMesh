@@ -53,6 +53,17 @@ class HeaderInjector:
             for m in re.finditer(r'[\u4e00-\u9fff]{2,4}', h):
                 cache.append(m.group())
 
+    def _resolve_reference(self, text: str, recent_entities: List[str]) -> str:
+        """Syntax-tree based reference resolution using SyntacticDecomposer output."""
+        if not recent_entities:
+            return text
+        import re
+        ref_patterns = [r'那个', r'这个', r'刚才那个', r'上面那个', r'回到刚才', r'再[看说查]一下']
+        for pat in ref_patterns:
+            if re.search(pat, text):
+                return f"({recent_entities[0]}) {text}"
+        return text
+
     def _resolve(self, pronoun: str, text: str, session_id: str) -> Optional[str]:
         # Same-turn: entity before pronoun
         pos = text.find(pronoun)
@@ -140,15 +151,31 @@ class SyntacticDecomposer:
 
 # ── Stage 3: MacroMicroQuantizer ──
 @dataclass
+@dataclass
 class CohesionScore:
     total: float
     macro: float
     micro: float
     decision: str  # "continue" | "fork" | "gray_zone"
+    # 9 individual dimensions for traceability
+    cos_sim: float = 0.5
+    intent_match: float = 0.5
+    topic_embed: float = 0.5
+    time_decay: float = 0.5
+    entity_overlap: float = 0.5
+    causal_link: float = 0.5
+    subject_cont: float = 0.5
+    ref_inherit: float = 0.5
+    lexical: float = 0.5
 
     @property
     def is_extreme(self) -> bool:
         return self.total > 0.75 or self.total < 0.25
+    
+    def dimension_dict(self) -> dict:
+        return {k: getattr(self, k) for k in
+                ['cos_sim','intent_match','topic_embed','time_decay',
+                 'entity_overlap','causal_link','subject_cont','ref_inherit','lexical']}
 
 
 class MacroMicroQuantizer:
@@ -672,7 +699,38 @@ class DiscourseBlockTreeManager:
         self._injector = HeaderInjector()
         self._decomposer = SyntacticDecomposer()
         self._quantizer = MacroMicroQuantizer()
-        self._last_block: Dict[str, str] = {}  # session_id → last block_id
+        self._last_block: Dict[str, str] = {}
+        import threading
+        self._cold_queue: list = []
+        self._cold_lock = threading.Lock()
+        self._cold_thread: Optional[threading.Thread] = None
+        self._cold_running = False
+
+    def _schedule_cold_compress(self, blocks: list):
+        with self._cold_lock:
+            self._cold_queue.extend(blocks)
+        if not self._cold_running and self._cold_queue:
+            self._cold_running = True
+            self._cold_thread = threading.Thread(target=self._cold_worker, daemon=True)
+            self._cold_thread.start()
+
+    def _cold_worker(self):
+        import time as _time
+        while True:
+            block = None
+            with self._cold_lock:
+                if self._cold_queue:
+                    block = self._cold_queue.pop(0)
+                else:
+                    self._cold_running = False
+                    return
+            if block:
+                try:
+                    block.temperature = 2
+                    block.summarize()
+                except Exception:
+                    pass
+                _time.sleep(0.5)  # 2 blocks/sec rate limit
 
     def feed(self, text: str, session_id: str, history: List[str] = None) -> RouteResult:
         """Process one user turn. Returns route decision."""
@@ -759,6 +817,29 @@ class DiscourseBlockTreeManager:
     def _should_merge(self, prev: EDU, curr: EDU) -> bool:
         cohesion = self._quantizer.compute(prev, curr)
         return cohesion.decision == "continue"
+
+    def get_block_relations(self, session_id: str) -> dict:
+        """Association chain query interface — returns block-level relationship graph."""
+        tree = self._trees.get(session_id)
+        if not tree:
+            return {"session_id": session_id, "blocks": {}, "relations": []}
+        blocks_info = {}
+        for bid, b in tree.blocks.items():
+            blocks_info[bid] = {
+                "parent": b.parent,
+                "children": list(b.children),
+                "edus": len(b.edus),
+                "entities": list(set(e for edu in b.edus for e in getattr(edu, 'entities', []))),
+                "temperature": b.temperature,
+                "summary": b.summary[:100] if b.summary else "",
+            }
+        relations = []
+        for bid, b in tree.blocks.items():
+            if b.parent and b.parent != "_root":
+                relations.append({"from": bid, "to": b.parent, "type": "child_of"})
+            for child in b.children:
+                relations.append({"from": bid, "to": child, "type": "parent_of"})
+        return {"session_id": session_id, "blocks": blocks_info, "relations": relations}
 
     def build_context(self, session_id: str, max_blocks: int = 8) -> str:
         tree = self._trees.get(session_id)
