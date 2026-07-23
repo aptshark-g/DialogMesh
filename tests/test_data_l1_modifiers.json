@@ -1,0 +1,78 @@
+{
+  "tests": [
+    {
+      "id": "simple_svo",
+      "text": "扫描内存地址",
+      "expected_core": {
+        "predicate": "扫描",
+        "object": "内存"
+      },
+      "expected_modifier_count": 1,
+      "note": "单SV动词+复合宾语"
+    },
+    {
+      "id": "associative_modifier",
+      "text": "这个模块的延迟飙升",
+      "expected_core": {
+        "subject": "延迟",
+        "predicate": "飙升"
+      },
+      "expected_modifier_on": {"延迟": 2},
+      "note": "限定成分: det+assmod 修饰主语"
+    },
+    {
+      "id": "imperative_missing_subject",
+      "text": "帮我写一个Python函数处理CSV文件",
+      "expected_core": {
+        "subject": null,
+        "predicate": "写",
+        "object": "函数"
+      },
+      "expected_modifiers_present": ["Python", "CSV"],
+      "note": "祈使句; 主语空但有限定成分修饰宾语"
+    },
+    {
+      "id": "temporal_modifier",
+      "text": "延迟飙了三天",
+      "expected_core": {
+        "subject": "延迟",
+        "predicate": "飙"
+      },
+      "expected_modifier_types": ["temporal_oblique"],
+      "note": "时限obl:tmod 不应视为主语限定"
+    },
+    {
+      "id": "negation_subject_resolution",
+      "text": "我不认为那个API安全",
+      "expected_core": {
+        "subject": "我",
+        "predicate": "认为",
+        "negation": true
+      },
+      "expected_modifier_on": {"API": 1},
+      "note": "否定标记; 限定成分det修饰宾语"
+    },
+    {
+      "id": "no_modifiers",
+      "text": "你好",
+      "expected_modifier_count": 0,
+      "note": "无限定成分的简单句"
+    },
+    {
+      "id": "english_tool_command",
+      "text": "scan 0x401000 and patch with NOP",
+      "expected_core": {
+        "predicate": "scan"
+      },
+      "expected_entity_present": ["0x401000", "NOP"],
+      "note": "英文工具命令; 实体应被正确提取"
+    },
+    {
+      "id": "multi_clause",
+      "text": "分析加密算法后修补二进制文件",
+      "expected_min_modifiers": 1,
+      "expected_core_count": 2,
+      "note": "多子句; 每个子句独立SVO+修饰"
+    }
+  ]
+}
