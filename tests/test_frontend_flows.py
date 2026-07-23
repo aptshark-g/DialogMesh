@@ -85,7 +85,7 @@ def test_key_persistence():
 
     # 1e. Restore original key from provider.yaml
     r = api("PUT", "/v6/gateway/providers/deepseek", {
-        "api_key": "sk-20d76b2a00314beabb73dd8ab9d5743d",
+        "api_key": os.environ.get("DEEPSEEK_API_KEY", ""),
         "base_url": "https://api.deepseek.com",
     })
     check("恢复原始 Key", r["ok"], str(r["status"]))

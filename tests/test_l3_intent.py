@@ -1,28 +1,9 @@
 """L3 Intent Tests — JSON-driven, LLM deadlock tested when DeepSeek available."""
 
-import sys, json, os, urllib.request
+import sys, json, os
 sys.path.insert(0, '.')
 from core.agent.association.l3_intent import MultiPerspectiveValidator, Vote
-
-DEEPSEEK_KEY = os.environ.get("DEEPSEEK_KEY", "")
-
-class DeepSeekLLM:
-    def generate(self, prompt, max_tokens=100):
-        if not DEEPSEEK_KEY:
-            return ""
-        proxy = urllib.request.ProxyHandler({'http':'http://127.0.0.1:7877','https':'http://127.0.0.1:7877'})
-        opener = urllib.request.build_opener(proxy)
-        req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
-            data=json.dumps({"model":"deepseek-chat","messages":[{"role":"user","content":prompt}],"max_tokens":max_tokens,"temperature":0.1}).encode(),
-            headers={"Content-Type":"application/json","Authorization":"Bearer "+DEEPSEEK_KEY})
-        try:
-            resp = opener.open(req, timeout=15)
-            d = json.loads(resp.read())
-            c = d["choices"][0]["message"]["content"]
-            return c[c.index("{"):c.rindex("}")+1] if "{" in c else c
-        except Exception as e:
-            print(f"  LLM error: {e}")
-            return ""
+from tests.test_llm_provider import get_test_llm
 
 
 def test_consensus():
@@ -31,7 +12,7 @@ def test_consensus():
 
     for s in data["scenarios"]:
         # LLM only when test expects it
-        provider = DeepSeekLLM() if s["checks"].get("llm_called") else None
+        provider = get_test_llm() if s["checks"].get("llm_called") else None
         v = MultiPerspectiveValidator(llm_provider=provider)
 
         result = v.validate(
