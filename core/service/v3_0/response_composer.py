@@ -18,7 +18,7 @@ import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from core.agent.v3_0.data_models import IntentCategory, Intent_v3
+from core.agent.v3_legacy.data_models import IntentCategory, Intent_v3
 
 logger = logging.getLogger(__name__)
 

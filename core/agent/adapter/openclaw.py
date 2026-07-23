@@ -45,7 +45,7 @@ class OpenClawAdapter:
                         self.wfile.write(b'{"error":"text required"}')
                         return
                     try:
-                        from core.agent.v4.event_ir import DialogAdapter
+                        from core.agent.events.event_ir import DialogAdapter
                         ad = DialogAdapter()
                         session = body.get("session_id", "openclaw")
                         turn = body.get("turn", 1)

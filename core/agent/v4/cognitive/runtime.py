@@ -68,7 +68,7 @@ def run_cognitive_loop(
     ws.state = "PERCEIVING"
     if engine:
         try:
-            from core.agent.v4.event_ir import DialogAdapter
+            from core.agent.events.event_ir import DialogAdapter
             ad = DialogAdapter()
             engine.on_event(ad.adapt(question, session_id=trace.session_id, turn_number=1))
             ctx = getattr(engine, 'last_context', None)
@@ -92,7 +92,7 @@ def run_cognitive_loop(
         ws.state = "REASONING"
         if engine:
             try:
-                from core.agent.v4.event_ir import DialogAdapter
+                from core.agent.events.event_ir import DialogAdapter
                 ad = DialogAdapter()
                 prompt = f"{question}\n\n[Context: active objects = {ws.active_objects}, hypotheses = {len(ws.hypotheses)}]"
                 resp = engine.on_event(ad.adapt(prompt, session_id=trace.session_id, turn_number=iteration + 2))

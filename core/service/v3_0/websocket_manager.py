@@ -33,7 +33,7 @@ except ImportError:
     WebSocket = None
     WebSocketDisconnect = Exception
 
-from core.agent.v3_0.data_models import WebSocketEvent, WebSocketEventBuilder, EventType
+from core.agent.v3_legacy.data_models import WebSocketEvent, WebSocketEventBuilder, EventType
 
 logger = logging.getLogger(__name__)
 

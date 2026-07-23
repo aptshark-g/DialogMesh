@@ -20,8 +20,8 @@ from core.agent.monitor.span_tracer import get_tracer
 from pydantic import BaseModel, field_validator, Field
 import uvicorn
 
-from core.agent.v4.event_ir import EventIR
-from core.agent.v4.api_event_log import EventLog
+from core.agent.events.event_ir import EventIR
+from core.agent.api.api_event_log import EventLog
 
 # ══════════ P0 Security: Input validation + Auth + Key masking ══════════
 

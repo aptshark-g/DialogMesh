@@ -26,7 +26,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core.agent.v3_common.models import IntentCategory, TaskStatus
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     Ambiguity_v3,
     EventType,
     Intent_v3,
@@ -165,7 +165,7 @@ class AgentService_v3:
         graph.add_node(node1)
         graph.add_node(node2)
         # 添加顺序依赖
-        from core.agent.v3_0.data_models import TaskEdge_v3
+        from core.agent.v3_legacy.data_models import TaskEdge_v3
         from core.agent.v3_common.models import DependencyType
         graph.add_edge(TaskEdge_v3(source_id=node1.id, target_id=node2.id, dep_type=DependencyType.SEQUENTIAL))
         return graph

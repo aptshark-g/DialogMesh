@@ -39,7 +39,7 @@ except ImportError:
     Request = None
     Depends = None
 
-from core.agent.v3_0.data_models import EventType, WebSocketEvent, WebSocketEventBuilder
+from core.agent.v3_legacy.data_models import EventType, WebSocketEvent, WebSocketEventBuilder
 from core.service.v3_0.data_models import (
     ClarifyRequest,
     CloseSessionRequest,

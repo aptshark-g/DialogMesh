@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from core.agent.v3_common.models import DependencyType, TaskStatus
-from core.agent.v3_0.data_models import TaskGraph_v3, TaskNode_v3, TaskEdge_v3
+from core.agent.v3_legacy.data_models import TaskGraph_v3, TaskNode_v3, TaskEdge_v3
 from core.agent.planner.fallback import FallbackPlanner
 from core.agent.planner.models import ExecutionCheckpoint, PlanResult
 
@@ -524,7 +524,7 @@ if __name__ == "__main__":
             return f"ok:{node.name}"
 
         # 构建测试图: A -> B -> C; A -> D
-        from core.agent.v3_0.data_models import TaskEdge_v3, TaskGraph_v3, TaskNode_v3
+        from core.agent.v3_legacy.data_models import TaskEdge_v3, TaskGraph_v3, TaskNode_v3
         graph = TaskGraph_v3()
         a = TaskNode_v3(name="A", layer=3)
         b = TaskNode_v3(name="B", layer=3)

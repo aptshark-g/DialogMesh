@@ -17,7 +17,7 @@ import numpy as np
 sys.path.insert(0, '.')
 
 from core.agent.runtime.engine import CognitiveRuntimeEngine
-from core.agent.v4.event_ir import DialogAdapter
+from core.agent.events.event_ir import DialogAdapter
 
 
 def cohens_d(group_a: list, group_b: list) -> float:

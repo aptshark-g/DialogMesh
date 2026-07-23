@@ -16,8 +16,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from core.agent.v4.event_ir import EventIR
-from core.agent.v4.api_event_log import EventLog
+from core.agent.events.event_ir import EventIR
+from core.agent.api.api_event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

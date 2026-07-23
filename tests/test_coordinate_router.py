@@ -4,7 +4,7 @@ import sys, time, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.agent.v4.coordinate_router import (
+from core.agent.router.coordinate_router import (
     CognitiveCoordinate, SyntacticTerrain, MoodClassifier, CoordinateProjector
 )
 

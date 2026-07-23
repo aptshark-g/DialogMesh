@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class V4EventLog:
 
     def _init_log(self) -> None:
         """Lazy-init the EventLog."""
-        from core.agent.v4.api_event_log import EventLog
+        from core.agent.api.api_event_log import EventLog
         self._log = EventLog(
             db_path=self._config.db_path,
             retention_hours=self._config.retention_hours,

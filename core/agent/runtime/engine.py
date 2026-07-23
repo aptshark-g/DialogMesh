@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 from core.agent.runtime.adapter import (
     RuntimeAdapter, RuntimeContext, AdapterResult,
 )
@@ -201,13 +201,13 @@ class CognitiveRuntimeEngine:
         self._session_active = True
         from core.agent.state.global_decider import GlobalDecider, Command, EventType
         self._decider = GlobalDecider()
-        from core.agent.v4.api_event_log import EventLog
-        from core.agent.v4.event_bus import EventBus, Event, EventType as ET
+        from core.agent.api.api_event_log import EventLog
+        from core.agent.events.event_bus import EventBus, Event, EventType as ET
         self._event_log = EventLog()
         self._event_bus = EventBus()
-        from core.agent.v4.meta_subscriber import MetaSubscriber
+        from core.agent.meta.meta_subscriber import MetaSubscriber
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
-        from core.agent.v4.assoc_subscriber import AssociationSubscriber
+        from core.agent.assoc_subscriber import AssociationSubscriber
         self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
         logger.info('EventLog+EventBus ready, Meta+Assoc subscribers active')
         self._init_pcr()
@@ -717,7 +717,7 @@ class CognitiveRuntimeEngine:
             try:
                 intent = parse_result.intent if hasattr(parse_result, 'intent') else None
                 if intent:
-                    from core.agent.v3_0.data_models import IntentContext_v3
+                    from core.agent.v3_legacy.data_models import IntentContext_v3
                     from core.agent.planner.skill_registry import SkillRegistry
                     plan_ctx = IntentContext_v3()
                     if pcr_output:
@@ -2080,7 +2080,7 @@ class CognitiveRuntimeEngine:
 
 
     def _make_event(self, text: str) -> object:
-        from core.agent.v4.event_ir import DialogAdapter
+        from core.agent.events.event_ir import DialogAdapter
         return DialogAdapter().adapt(text, session_id="cog_session", turn_number=1)
 
 
@@ -3250,7 +3250,7 @@ class CognitiveRuntimeEngine:
 
     def _init_router_v4(self):
         try:
-            from core.agent.v4.router_v4 import RouterV4
+            from core.agent.router.router_v4 import RouterV4
             self._router_v4 = RouterV4()
             logger.info('RouterV4 ready (StructuralFeatures+Y, BGE mood+Z, 6-zone)')
         except Exception as e:

@@ -14,7 +14,7 @@ from core.agent.v4.cognitive.monitor_report import MonitorReport
 
 from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
-from core.agent.v4.event_ir import DialogAdapter
+from core.agent.events.event_ir import DialogAdapter
 from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
 
 

@@ -145,7 +145,7 @@ class V4CLI:
 
     def send_event(self, text: str) -> str:
         self._init_world()
-        from core.agent.v4.event_ir import DialogAdapter
+        from core.agent.events.event_ir import DialogAdapter
         e = self._engine
         ad = DialogAdapter()
         resp = e.on_event(ad.adapt(text, session_id="cli_session", turn_number=1))

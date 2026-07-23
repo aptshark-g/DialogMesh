@@ -314,7 +314,7 @@ class LLMProvider_v3(ABC):
         health = ProviderHealth.HEALTHY if self._stats.success_rate > 0.8 else (
             ProviderHealth.DEGRADED if self._stats.success_rate > 0.3 else ProviderHealth.UNHEALTHY
         )
-        from core.agent.v3_0.data_models import ComponentHealth, ComponentType
+        from core.agent.v3_legacy.data_models import ComponentHealth, ComponentType
         return ProviderHealthReport(
             provider_name=self.name,
             health=health,

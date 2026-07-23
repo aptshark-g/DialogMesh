@@ -52,7 +52,7 @@ from core.agent.v3_0.cognitive_tree.models import (
     CogType,
 )
 from core.agent.context.manager import ContextManager
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     AgentMessage_v3,
     IntentContext_v3,
     Intent_v3,
@@ -625,7 +625,7 @@ Cognitive Tree 统计：{tree_stats}
 
     def _fallback_task_graph(self, turn_ctx: TurnContext) -> None:
         """规划失败的降级路径：生成单任务任务图。"""
-        from core.agent.v3_0.data_models import TaskGraph_v3, TaskNode_v3
+        from core.agent.v3_legacy.data_models import TaskGraph_v3, TaskNode_v3
         intent_id = turn_ctx.intent_result.id if turn_ctx.intent_result else None
         tg = TaskGraph_v3(intent_id=intent_id)
         node = TaskNode_v3(name="fallback_execution", goal=f"Execute intent", layer=2)

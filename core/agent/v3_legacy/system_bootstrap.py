@@ -90,7 +90,7 @@ def load_agent_config(path: Optional[str] = None) -> Dict[str, Any]:
     logger.warning("No agent_config.yaml found, using empty config")
     return {}
 
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     ComponentHealth,
     ComponentType,
     HealthStatus,

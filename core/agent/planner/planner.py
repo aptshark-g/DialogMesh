@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.agent.v3_common.models import DependencyType, IntentCategory, TaskStatus
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     IntentContext_v3,
     Intent_v3,
     TaskEdge_v3,

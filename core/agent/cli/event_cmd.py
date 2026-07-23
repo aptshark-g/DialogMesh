@@ -5,7 +5,7 @@ from __future__ import annotations
 def _event_history(engine, limit: int = 20, kind: str = None):
     """Show event history from EventLog."""
     try:
-        from core.agent.v4.api_event_log import EventLog
+        from core.agent.api.api_event_log import EventLog
         el = EventLog("data/event_log.db")
         el.open()
         events = el.replay_unconsumed(limit=limit * 2)  # Get more for filtering
@@ -33,8 +33,8 @@ def _event_history(engine, limit: int = 20, kind: str = None):
 def _event_replay(engine, unconsumed_only: bool = True):
     """Replay unconsumed events."""
     try:
-        from core.agent.v4.api_event_log import EventLog
-        from core.agent.v4.event_ir import EventIR
+        from core.agent.api.api_event_log import EventLog
+        from core.agent.events.event_ir import EventIR
 
         el = EventLog("data/event_log.db")
         el.open()

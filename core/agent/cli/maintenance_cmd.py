@@ -46,7 +46,7 @@ def _maintenance_stats(engine):
 
         # Event log stats
         try:
-            from core.agent.v4.api_event_log import EventLog
+            from core.agent.api.api_event_log import EventLog
             el = EventLog("data/event_log.db")
             el.open()
             es = el.stats

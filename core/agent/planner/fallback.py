@@ -25,7 +25,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from core.agent.v3_common.models import DependencyType, TaskStatus
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     Intent_v3,
     TaskEdge_v3,
     TaskGraph_v3,

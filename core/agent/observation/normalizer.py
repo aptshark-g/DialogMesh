@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict
 
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 
 
 class Normalizer:

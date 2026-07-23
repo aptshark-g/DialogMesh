@@ -31,7 +31,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     CognitiveProfile_v3,
     Intent_v3,
     TaskGraph_v3,

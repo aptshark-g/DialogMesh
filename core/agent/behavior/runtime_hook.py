@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 from core.agent.behavior.adapter import BehaviorGraphAdapter
 from core.agent.behavior.causal_adapter import CausalSubstrateAdapter
 

@@ -8,7 +8,7 @@ os.environ['DIALOGMESH_MONITOR'] = '1'
 from core.agent.v4.cognitive.monitor_report import MonitorReport
 from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
-from core.agent.v4.event_ir import DialogAdapter
+from core.agent.events.event_ir import DialogAdapter
 
 PROVIDER = {
     'api_key': 'lm-studio', 'base_url': 'http://127.0.0.1:1234/v1',

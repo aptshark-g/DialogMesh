@@ -1,7 +1,7 @@
 """Tests for Normalizer."""
 import pytest
 from core.agent.observation.normalizer import Normalizer
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 
 
 class TestNormalizer:

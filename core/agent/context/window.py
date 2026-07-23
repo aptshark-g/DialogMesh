@@ -27,7 +27,7 @@ from core.agent.context.models import (
     TruncationStrategy,
     WindowConfig,
 )
-from core.agent.v3_0.data_models import Intent_v3
+from core.agent.v3_legacy.data_models import Intent_v3
 
 logger = logging.getLogger(__name__)
 

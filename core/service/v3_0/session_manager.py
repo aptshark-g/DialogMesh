@@ -31,7 +31,7 @@ from core.agent.context.models import (
     EntityResolutionState,
     WindowConfig,
 )
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     AgentMessage_v3,
     Intent_v3,
     SessionState_v3,
@@ -314,4 +314,4 @@ class SessionManager_v3:
 
 
 # 避免循环导入：在文件底部显式导入 MessageRole
-from core.agent.v3_0.data_models import MessageRole
+from core.agent.v3_legacy.data_models import MessageRole

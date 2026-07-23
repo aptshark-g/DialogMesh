@@ -1,6 +1,6 @@
 """MoodClassifier test (standalone)."""
 import sys; sys.path.insert(0, '.')
-from core.agent.v4.coordinate_router import MoodClassifier
+from core.agent.router.coordinate_router import MoodClassifier
 
 tests = [
     ("这个地址是不是虚函数表指针？给出确切答案", True, False, 1.0),

@@ -61,7 +61,7 @@ class MBTIEvaluator:
         """Run evaluation and return results."""
         from core.agent.runtime.engine import CognitiveRuntimeEngine
         from core.agent.llm_providers.mock_provider import MockProvider
-        from core.agent.v4.event_ir import DialogAdapter
+        from core.agent.events.event_ir import DialogAdapter
 
         results = {}
 

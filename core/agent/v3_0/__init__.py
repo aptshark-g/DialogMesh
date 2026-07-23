@@ -11,7 +11,7 @@ from __future__ import annotations
 
 __version__ = "3.0.0"
 
-from core.agent.v3_0.system_bootstrap import SystemBootstrap, DialogMeshSystem, SystemStartupError
+from core.agent.v3_legacy.system_bootstrap import SystemBootstrap, DialogMeshSystem, SystemStartupError
 
 __all__ = [
     "SystemBootstrap",

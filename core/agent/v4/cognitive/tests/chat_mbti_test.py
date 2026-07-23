@@ -10,7 +10,7 @@ os.environ['DIALOGMESH_MONITOR'] = '1'
 from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.llm_providers.switch_provider import SwitchGatewayProvider
-from core.agent.v4.event_ir import DialogAdapter
+from core.agent.events.event_ir import DialogAdapter
 from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
 from core.agent.v4.cognitive.monitor_report import MonitorReport
 from core.agent.v4.cognitive.ocean_profile import DIMENSIONS

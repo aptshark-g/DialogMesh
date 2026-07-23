@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     AgentMessage_v3,
     CognitiveProfile_v3,
     EventType,
@@ -584,7 +584,7 @@ class Orchestrator:
             # 转换实体
             raw_entities = getattr(raw_intent, "entities", [])
             if raw_entities:
-                from core.agent.v3_0.data_models import Entity_v3
+                from core.agent.v3_legacy.data_models import Entity_v3
 
                 intent.entities = [
                     Entity_v3(

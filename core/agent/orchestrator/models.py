@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.agent.v3_0.data_models import (
+from core.agent.v3_legacy.data_models import (
     AgentMessage_v3,
     CognitiveProfile_v3,
     IntentContext_v3,

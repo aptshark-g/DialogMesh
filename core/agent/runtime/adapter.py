@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from core.agent.v4.event_ir import EventIR
+from core.agent.events.event_ir import EventIR
 
 logger = logging.getLogger(__name__)
 
