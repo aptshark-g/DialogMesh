@@ -393,7 +393,16 @@ class PCRRouterV2:
         except Exception:
             pass
 
-        # Fallback: entity density (structural only)
+        # Fallback: NRC-VAD for English, entity_density for Chinese
+        import re
+        english_words = re.findall(r'[a-zA-Z]+', text)
+        if english_words and len(english_words) > len(text.split()) * 0.5:
+            # English-dominant text → NRC-VAD word rarity
+            cls._load_vad_lexicon()
+            if cls._vad_lexicon:
+                known = sum(1 for w in english_words if w.lower() in cls._vad_lexicon)
+                rarity = 1.0 - (known / max(1, len(english_words)))
+                return min(1.0, entity_density * 0.3 + rarity * 0.7)
         return min(1.0, entity_density * 0.5 + 0.3)
 
     @classmethod
