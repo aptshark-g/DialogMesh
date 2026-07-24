@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any
 import time, logging, threading
 
 from core.agent.persistence.unified_event_log import UnifiedEventLog
-from core.agent.persistence.sqlite_store import SQLiteSessionStore
+from core.agent.persistence.lsm_store import LSMStore
 from core.agent.persistence.models import Session, TurnRecord
 
 logger = logging.getLogger(__name__)
@@ -61,9 +61,10 @@ class UnifiedPersistenceBroker:
         )
 
         # Layer 2: Structured Stores
-        self.session_store = SQLiteSessionStore(
-            db_path=f"{data_dir}/sessions.db"
+        self.store = LSMStore(
+            db_path=f"{data_dir}/lsm.db"
         )
+        self.store.open()
 
         self._state = PersistenceState()
         self._lock = threading.Lock()
@@ -89,7 +90,7 @@ class UnifiedPersistenceBroker:
                     "intact" if self._state.chain_intact else "BROKEN")
 
         # Restore sessions
-        sessions = self.session_store.list_active_sessions(limit=100)
+        sessions = self.store.list_sessions(limit=100)
         self._state.sessions = len(sessions)
 
         # Start GC tier manager (JVM-style promotion/demotion)
@@ -109,13 +110,13 @@ class UnifiedPersistenceBroker:
         verify = self.event_log.verify()
         logger.info("Shutdown verify: chain_intact=%s, events=%d",
                     verify["chain_intact"], verify["total"])
-        self.session_store.close()
+        self.store.close()
 
     def _gc_tick(self):
         """Periodic GC: demote stale, clean expired, strip cold data."""
         try:
             # Session TTL cleanup
-            self.session_store.cleanup_expired(self._ttl_seconds)
+            self.store.cleanup(self._ttl_seconds)
             
             # Reschedule
             if hasattr(self, '_gc_timer'):
@@ -145,13 +146,7 @@ class UnifiedPersistenceBroker:
     def persist_turn(self, session_id: str, role: str, content: str, 
                      sequence: int, metadata: dict = None):
         """Persist a conversation turn."""
-        from core.agent.persistence.models import TurnRecord
-        turn = TurnRecord(
-            role=role, content=content, sequence=sequence,
-            timestamp=time.time(),
-            metadata=metadata or {},
-        )
-        self.session_store.save_turn(session_id, turn)
+        self.store.put_turn(session_id, sequence, role, content, metadata or {})
 
     # ── Chain 03: MultiIntent ──
 
@@ -220,15 +215,9 @@ class UnifiedPersistenceBroker:
 
     # ── Chain 10: Orchestrator ──
 
-    def persist_session(self, session_id: str, user_id: str = "", version: int = 1):
+    def persist_session(self, session_id: str, user_id: str = ""):
         """Persist session metadata."""
-        session = Session(
-            session_id=session_id,
-            user_id=user_id,
-            version=version,
-            last_activity_at=time.time(),
-        )
-        self.session_store.save_session(session)
+        self.store.put_session(session_id, {"user_id": user_id}, user_id)
 
     # ── Bulk operations ──
 
@@ -236,7 +225,7 @@ class UnifiedPersistenceBroker:
         """Full integrity check: event chain + graph + sessions."""
         return {
             "event_chain": self.event_log.verify(),
-            "sessions": self.session_store.list_active_sessions(limit=1),
+            "sessions": self.store.list_sessions(limit=1),
             "events_total": len(self.event_log.replay_all()),
         }
 
