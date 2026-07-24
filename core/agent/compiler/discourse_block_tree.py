@@ -853,9 +853,19 @@ class DiscourseBlockTreeManager:
 
     def build_context(self, session_id: str, max_blocks: int = 8) -> str:
         tree = self._trees.get(session_id)
-        if not tree or not tree.current_branch:
+        if not tree or not tree.blocks:
             return ""
-        return tree.serialize_for_context(tree.current_branch, max_blocks)
+        
+        # Temperature-based context via SummaryEngine
+        from core.agent.discourse_block_tree.summary_engine import SummaryEngine
+        engine = SummaryEngine()
+        
+        # Update summaries before building context
+        current_turn = getattr(tree, '_turn_count', 0)
+        for block in tree.blocks[:max_blocks]:
+            engine.check_upgrade(block, current_turn)
+        
+        return engine.build_context(tree.blocks[:max_blocks])
 
     def get_tree(self, session_id: str) -> Optional[DiscourseBlockTree]:
         return self._trees.get(session_id)
