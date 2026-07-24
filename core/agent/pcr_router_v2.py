@@ -264,6 +264,15 @@ class PCRRouterV2:
 
         # Zone routing
         zone = cls._zone_from_xyz(x, y, z)
+        
+        # LLM Collaborative Review (local model auto-detect, remote model optional)
+        reviewed = cls._llm_review(text, x, y, z, sf)
+        if reviewed:
+            x2, y2, z2 = reviewed["x"], reviewed["y"], reviewed["z"]
+            if any(abs(a-b) > 0.3 for a,b in [(x,x2),(y,y2),(z,z2)]):
+                zone = cls._zone_from_xyz(x2, y2, z2)
+                x, y, z = x2, y2, z2
+                logger.debug("PCR reviewed: new zone=%s", zone)
 
         return PCRResult(
             x_axis=x, y_axis=y, z_axis=z, zone=zone,
@@ -381,6 +390,70 @@ class PCRRouterV2:
         if x > 0.4 and y < 0.4 and z <= 0:
             return "EXPLORE"       # far + simple + explore → retrieval + open-ended
         return "MIXED"
+
+    # ── LLM Collaborative Review (nemotron / small model) ──
+
+    _llm_review_enabled: bool = None  # None=auto-detect, True/False=override
+    _llm_review_provider = None
+
+    @classmethod
+    def _auto_detect_llm(cls) -> bool:
+        """Auto-detect local small model (LM Studio). No key needed."""
+        try:
+            import urllib.request
+            req = urllib.request.Request("http://127.0.0.1:1234/v1/models")
+            urllib.request.urlopen(req, timeout=2)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def enable_llm_review(cls, provider=None):
+        """Enable LLM review. Pass provider for remote model (DeepSeek)."""
+        cls._llm_review_provider = provider
+        cls._llm_review_enabled = True
+
+    @classmethod
+    def _should_review(cls) -> bool:
+        if cls._llm_review_enabled is not None:
+            return cls._llm_review_enabled
+        detected = cls._auto_detect_llm()
+        cls._llm_review_enabled = detected
+        return detected
+
+    @classmethod
+    def _llm_review(cls, text: str, x: float, y: float, z: float, sf) -> Optional[dict]:
+        """LLM reviews PCR output and returns corrected (x,y,z) if needed."""
+        if not cls._should_review():
+            return None
+        
+        prompt = f"""Review this routing result for a conversation agent.
+
+INPUT: "{text[:200]}"
+PCR: X={x:.2f}(familiar→expert, entities={sf.entity_count}) Y={y:.2f}(simple→complex, verbs={sf.verb_count}) Z={z:+.2f}(venting→solution)
+Output ONLY: X <num> Y <num> Z <num>"""
+
+        try:
+            import urllib.request, json, re
+            provider = cls._llm_review_provider
+            if provider:
+                resp = provider.generate(prompt, max_tokens=100, temperature=0.1)
+            else:
+                req = urllib.request.Request(
+                    "http://127.0.0.1:1234/v1/chat/completions",
+                    data=json.dumps({"model":"nvidia/nemotron-3-nano-4b","messages":[{"role":"user","content":prompt}],"max_tokens":100,"temperature":0.1}).encode(),
+                    headers={"Content-Type":"application/json"})
+                r = urllib.request.urlopen(req, timeout=10)
+                data = json.loads(r.read())
+                resp = data["choices"][0]["message"].get("content","") or \
+                       data["choices"][0]["message"].get("reasoning_content","")
+            
+            nums = [float(t) for t in re.findall(r'[-]?\d+\.?\d*', str(resp))]
+            if len(nums) >= 3:
+                return {"x": max(0, min(1, nums[0])), "y": max(0, min(1, nums[1])), "z": max(-1, min(1, nums[2]))}
+        except Exception:
+            pass
+        return None
 
     @classmethod
     def _cognitive_level(cls, x: float, y: float, z: float) -> str:
