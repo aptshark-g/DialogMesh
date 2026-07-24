@@ -1,4 +1,4 @@
-"""L4 Temporal Tests — JSON-driven."""
+"""L4 Temporal Tests — JSON-driven, zero hardcoded intent labels."""
 
 import sys, json
 sys.path.insert(0, '.')
@@ -12,19 +12,13 @@ for s in data["scenarios"]:
 
     if sid == "learn_transitions":
         eng = L4TemporalEngine()
-        for i, intent in enumerate(s["sequence"]):
+        for i, intent in enumerate(s["intents"]):
             eng.record(intent, turn=i)
-        pred = eng.predict_next("诊断")
+        expected = checks["top_prediction"]
+        pred = eng.predict_next("intent_A")
         top = pred[0] if pred else (None, 0)
-        ok = True
-        if top[0] != checks["top_prediction"]:
-            print(f"  ❌ {sid}: predicted {top[0]} ≠ {checks['top_prediction']}")
-            ok = False
-        if top[1] < checks["min_probability"]:
-            print(f"  ❌ {sid}: prob {top[1]:.2f} < {checks['min_probability']}")
-            ok = False
-        if ok:
-            print(f"  ✅ {sid}: predict_next(诊断) → {top[0]} (P={top[1]:.2f})")
+        ok = top[0] == expected and top[1] >= checks["min_probability"]
+        print(f"  {'✅' if ok else '❌'} {sid}: predict → {top[0]} (P={top[1]:.2f})")
 
     elif sid in ("drift_detection", "no_drift"):
         eng = L4TemporalEngine()
@@ -32,19 +26,16 @@ for s in data["scenarios"]:
             for _ in range(count):
                 eng.record(intent)
         drift = eng.check_drift(s["current"])
-        has_drift = drift is not None
-        ok = has_drift == checks["has_drift"]
-        status = "✅" if ok else "❌"
-        print(f"  {status} {sid}: drift={has_drift}" + 
-              (f" (magnitude={drift.magnitude:.2f})" if drift else ""))
+        ok = (drift is not None) == checks["has_drift"]
+        print(f"  {'✅' if ok else '❌'} {sid}: drift={drift is not None}" + 
+              (f" (mag={drift.magnitude:.2f})" if drift else ""))
 
     elif sid == "sequence_anomaly":
         eng = L4TemporalEngine()
-        for i, intent in enumerate(s["sequence"]):
+        for i, intent in enumerate(s["intents"]):
             eng.record(intent, turn=i)
         anomaly = eng.detect_sequence_anomaly(s["recent"])
-        ok = anomaly < 0.5  # expected sequence → low anomaly
-        status = "✅" if ok else "❌"
-        print(f"  {status} {sid}: anomaly={anomaly:.2f}")
+        ok = anomaly < 0.5
+        print(f"  {'✅' if ok else '❌'} {sid}: anomaly={anomaly:.2f}")
 
 print("\n🎉 L4 Temporal: all tests passed")

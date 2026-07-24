@@ -2,26 +2,71 @@
   "scenarios": [
     {
       "id": "learn_transitions",
-      "sequence": ["诊断", "修复", "诊断", "修复", "诊断", "探索", "诊断", "修复", "诊断", "修复"],
-      "checks": {"top_prediction": "修复", "min_probability": 0.5}
+      "intents": [
+        "intent_A",
+        "intent_B",
+        "intent_A",
+        "intent_B",
+        "intent_A",
+        "intent_C",
+        "intent_A",
+        "intent_B",
+        "intent_A",
+        "intent_B"
+      ],
+      "checks": {
+        "top_prediction": "intent_B",
+        "min_probability": 0.5
+      }
     },
     {
       "id": "drift_detection",
-      "historical": {"诊断": 8, "修复": 6, "探索": 2},
-      "current": {"诊断": 2, "修复": 2, "吐槽": 6},
-      "checks": {"has_drift": true, "min_magnitude": 0.3}
+      "historical": {
+        "intent_A": 8,
+        "intent_B": 6,
+        "intent_C": 2
+      },
+      "current": {
+        "intent_A": 2,
+        "intent_B": 2,
+        "intent_D": 6
+      },
+      "checks": {
+        "has_drift": true,
+        "min_magnitude": 0.3
+      }
     },
     {
       "id": "no_drift",
-      "historical": {"诊断": 8, "修复": 6},
-      "current": {"诊断": 0.7, "修复": 0.3},
-      "checks": {"has_drift": false}
+      "historical": {
+        "intent_A": 8,
+        "intent_B": 6
+      },
+      "current": {
+        "intent_A": 0.7,
+        "intent_B": 0.3
+      },
+      "checks": {
+        "has_drift": false
+      }
     },
     {
       "id": "sequence_anomaly",
-      "sequence": ["诊断", "修复", "诊断", "修复", "诊断", "修复"],
-      "recent": ["诊断", "修复"],
-      "checks": {"anomaly_low": true}
+      "recent": [
+        "intent_A",
+        "intent_B"
+      ],
+      "checks": {
+        "anomaly_low": true
+      },
+      "intents": [
+        "intent_A",
+        "intent_B",
+        "intent_A",
+        "intent_B",
+        "intent_A",
+        "intent_B"
+      ]
     }
   ]
 }

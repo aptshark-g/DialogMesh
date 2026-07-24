@@ -1,8 +1,8 @@
 {
   "rule": {
     "llm_calls": 0,
-    "total_entities": 14,
-    "total_beliefs": 6
+    "total_entities": 8,
+    "total_beliefs": 8
   },
   "llm": {
     "llm_calls": 3,
