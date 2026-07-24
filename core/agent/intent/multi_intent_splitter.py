@@ -46,18 +46,14 @@ class MultiIntentSplitter:
                 is_multi=False, split_confidence=1.0, fusion_method="single",
             )
 
-        # Step 2: Verify each segment with literal chain
+        # Step 2: Trust LLM split — no fragment verification (nemotron rejects partial fragments)
         candidates = []
         for i, seg in enumerate(segments):
-            si = SubIntent(id=f"s{i}", text=seg, entities=entities[:3], confidence=0.5)
-            ctx = VerifyContext(history=history)
-            ctx.literal = text  # full text as context
-            vote = self.literal.verify(si, ctx)
-            si.chain_votes["literal"] = vote.confidence
-            si.confidence = vote.confidence
+            si = SubIntent(id=f"s{i}", text=seg, entities=entities[:3],
+                          confidence=0.85)  # LLM already decided multi=true
             candidates.append(si)
-
-        accepted = [c for c in candidates if c.confidence > 0.3]
+        
+        accepted = candidates  # trust LLM
 
         return MultiIntentResult(
             sub_intents=accepted,
