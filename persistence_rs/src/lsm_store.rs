@@ -162,6 +162,24 @@ impl PyLSMStore {
         Ok(())
     }
 
+    pub fn put_turns_batch(&self, session_id: String, turns: Vec<(i64, String, String, String)>) -> PyResult<()> {
+        // Bulk insert turns — single transaction, single FFI call.
+        let conn = self.conn.lock().unwrap();
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+        conn.execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "INSERT INTO turns (session_id, sequence, role, content, data, timestamp) VALUES (?1,?2,?3,?4,?5,?6)"
+        ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        for (seq, role, content, data) in &turns {
+            stmt.execute(rusqlite::params![session_id, seq, role, content, data, ts])
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        }
+        conn.execute("COMMIT", [])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn get_turns(&self, session_id: String, limit: i64) -> PyResult<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
