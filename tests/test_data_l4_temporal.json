@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "id": "learn_transitions",
+      "sequence": ["诊断", "修复", "诊断", "修复", "诊断", "探索", "诊断", "修复", "诊断", "修复"],
+      "checks": {"top_prediction": "修复", "min_probability": 0.5}
+    },
+    {
+      "id": "drift_detection",
+      "historical": {"诊断": 8, "修复": 6, "探索": 2},
+      "current": {"诊断": 2, "修复": 2, "吐槽": 6},
+      "checks": {"has_drift": true, "min_magnitude": 0.3}
+    },
+    {
+      "id": "no_drift",
+      "historical": {"诊断": 8, "修复": 6},
+      "current": {"诊断": 0.7, "修复": 0.3},
+      "checks": {"has_drift": false}
+    },
+    {
+      "id": "sequence_anomaly",
+      "sequence": ["诊断", "修复", "诊断", "修复", "诊断", "修复"],
+      "recent": ["诊断", "修复"],
+      "checks": {"anomaly_low": true}
+    }
+  ]
+}

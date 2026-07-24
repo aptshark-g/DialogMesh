@@ -1,0 +1,176 @@
+"""L4 Temporal Pattern — intent transition prediction + drift detection.
+
+Design: docs/v5/DESIGN_ASSOCIATION_CHAIN_L1_L4.md §L4
+Frontier: T-BN (时序贝叶斯), HyperHawkes (超图Hawkes), DZ-TDPO (时序对齐)
+
+Core: P(intent_t+1 | intent_t, intent_t-1, ...) from conversation history.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+import math
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class IntentTransition:
+    """One observed intent transition."""
+    from_intent: str
+    to_intent: str
+    turn: int
+    confidence: float = 1.0
+
+
+@dataclass
+class DriftEvent:
+    """Detected intent drift."""
+    turn: int
+    from_distribution: Dict[str, float]
+    to_distribution: Dict[str, float]
+    magnitude: float          # 0-1, how different
+    likely_cause: str = ""
+
+
+class L4TemporalEngine:
+    """Temporal intent pattern detection and prediction.
+
+    T-BN: temporal Bayesian network — learns P(next | current) from history.
+    Drift: detects when intent distribution shifts significantly.
+
+    Usage:
+        l4 = L4TemporalEngine()
+        l4.record_transition("诊断", "修复", turn=5)
+        next_intent = l4.predict_next("诊断")  # → "修复" with P=0.72
+        drift = l4.check_drift(current_distribution)  # → None or DriftEvent
+    """
+
+    def __init__(self, window_size: int = 10):
+        self.window = window_size
+        self._transitions: List[IntentTransition] = []
+        self._intent_sequence: List[str] = []
+        self._transition_counts: Dict[str, Dict[str, int]] = {}  # from→to→count
+        self._intent_distribution: Dict[str, int] = {}           # intent→count
+        self._drift_history: List[DriftEvent] = []
+        self._total_turns: int = 0
+
+    def record(self, intent: str, confidence: float = 1.0, turn: int = 0):
+        """Record an intent observation for this turn."""
+        self._total_turns = max(self._total_turns, turn)
+
+        # Record sequence
+        if self._intent_sequence:
+            prev = self._intent_sequence[-1]
+            if prev != intent:
+                self._add_transition(prev, intent, turn, confidence)
+        self._intent_sequence.append(intent)
+
+        # Keep window
+        if len(self._intent_sequence) > self.window * 3:
+            self._intent_sequence = self._intent_sequence[-self.window * 2:]
+
+        # Update distribution
+        self._intent_distribution[intent] = self._intent_distribution.get(intent, 0) + 1
+
+    def _add_transition(self, from_intent: str, to_intent: str, turn: int, confidence: float):
+        """Record a transition with counting."""
+        if from_intent not in self._transition_counts:
+            self._transition_counts[from_intent] = {}
+        self._transition_counts[from_intent][to_intent] = \
+            self._transition_counts[from_intent].get(to_intent, 0) + 1
+        self._transitions.append(IntentTransition(
+            from_intent=from_intent, to_intent=to_intent, turn=turn, confidence=confidence
+        ))
+
+    def predict_next(self, current_intent: str, top_k: int = 3) -> List[Tuple[str, float]]:
+        """T-BN: predict most likely next intent given current.
+
+        Returns [(intent, probability), ...] sorted by descending probability.
+        """
+        counts = self._transition_counts.get(current_intent, {})
+        total = sum(counts.values())
+        if total == 0:
+            return []
+        
+        probs = [(to, cnt / total) for to, cnt in counts.items()]
+        probs.sort(key=lambda x: -x[1])
+        return probs[:top_k]
+
+    def transition_matrix(self) -> Dict[str, Dict[str, float]]:
+        """Full transition probability matrix P(next | current)."""
+        matrix = {}
+        for from_intent, to_counts in self._transition_counts.items():
+            total = sum(to_counts.values())
+            matrix[from_intent] = {to: cnt / total for to, cnt in to_counts.items()}
+        return matrix
+
+    def check_drift(self, current_distribution: Dict[str, float]) -> Optional[DriftEvent]:
+        """Detect if current intent distribution has drifted from historical.
+
+        Uses Jensen-Shannon divergence between current and historical distributions.
+        """
+        if not self._intent_distribution or not current_distribution:
+            return None
+
+        # Normalize historical distribution
+        hist_total = sum(self._intent_distribution.values())
+        hist_norm = {k: v / max(1, hist_total) for k, v in self._intent_distribution.items()}
+
+        # JS divergence
+        jsd = self._jensen_shannon(current_distribution, hist_norm)
+
+        if jsd > 0.3:  # significant drift
+            return DriftEvent(
+                turn=self._total_turns,
+                from_distribution=hist_norm,
+                to_distribution=current_distribution,
+                magnitude=jsd,
+                likely_cause=f"Intent shift detected (JSD={jsd:.2f})"
+            )
+        return None
+
+    def _jensen_shannon(self, p: Dict[str, float], q: Dict[str, float]) -> float:
+        """Jensen-Shannon divergence between two distributions."""
+        all_keys = set(p.keys()) | set(q.keys())
+        
+        def kl_div(a, b):
+            return sum(a.get(k, 0.01) * math.log(a.get(k, 0.01) / max(0.001, b.get(k, 0.01)))
+                      for k in all_keys)
+        
+        m = {k: (p.get(k, 0.01) + q.get(k, 0.01)) / 2 for k in all_keys}
+        return math.sqrt((kl_div(p, m) + kl_div(q, m)) / 2)
+
+    def detect_sequence_anomaly(self, recent_intents: List[str]) -> float:
+        """Check if recent intent sequence is anomalous given history.
+        
+        Returns: anomaly score 0-1. Higher = more anomalous.
+        """
+        if len(recent_intents) < 2:
+            return 0.0
+        
+        anomaly_scores = []
+        for i in range(len(recent_intents) - 1):
+            a, b = recent_intents[i], recent_intents[i + 1]
+            preds = self.predict_next(a)
+            pred_intents = [p[0] for p in preds] if preds else []
+            
+            if b in pred_intents:
+                idx = pred_intents.index(b)
+                anomaly_scores.append(idx / len(pred_intents))  # 0=expected, 1=surprising
+            else:
+                anomaly_scores.append(1.0)  # completely unexpected
+        
+        return sum(anomaly_scores) / len(anomaly_scores) if anomaly_scores else 0.0
+
+    def status(self) -> dict:
+        """Engine status for monitoring."""
+        return {
+            "total_transitions": len(self._transitions),
+            "unique_intents": len(self._intent_distribution),
+            "intent_distribution": self._intent_distribution,
+            "transition_matrix": self.transition_matrix(),
+            "recent_drifts": len(self._drift_history),
+            "window": self.window,
+        }
