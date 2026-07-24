@@ -164,6 +164,70 @@ class L4TemporalEngine:
         
         return sum(anomaly_scores) / len(anomaly_scores) if anomaly_scores else 0.0
 
+    # ── LLM collaboration (dual-track) ──
+
+    def explain_drift_with_llm(self, drift: DriftEvent, llm) -> str:
+        """LLM explains why intent distribution drifted."""
+        if not llm or not drift:
+            return "No drift or LLM unavailable"
+        
+        prompt = f"""Intent distribution shift detected. Explain likely cause.
+
+HISTORICAL: {drift.from_distribution}
+CURRENT:    {drift.to_distribution}
+MAGNITUDE:  {drift.magnitude:.2f} (Jensen-Shannon divergence)
+
+What caused this shift? Output one sentence explanation."""
+        
+        try:
+            import re
+            resp = llm.generate(prompt, max_tokens=100, temperature=0.1)
+            return str(resp)[:200]
+        except Exception as e:
+            return f"LLM unavailable: {e}"
+
+    def verify_transition_with_llm(self, from_intent: str, to_intent: str, 
+                                   probability: float, llm) -> dict:
+        """LLM verifies if a predicted transition is semantically plausible."""
+        if not llm:
+            return {"plausible": True, "reason": "no LLM"}
+
+        prompt = f"""Is this intent transition plausible?
+
+FROM: {from_intent}
+TO:   {to_intent}
+PROB: {probability:.2f} (from historical data)
+
+Output JSON: {{"plausible": true/false, "reason": "brief"}}"""
+        
+        try:
+            import json, re
+            resp = llm.generate(prompt, max_tokens=100, temperature=0.1)
+            cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
+            cleaned = re.sub(r'\n?```', '', cleaned).strip()
+            s = cleaned.find('{'); e = cleaned.rfind('}')
+            if s >= 0 and e > s:
+                return json.loads(cleaned[s:e+1])
+        except Exception:
+            pass
+        return {"plausible": True, "reason": "default"}
+
+    def predict_with_llm_review(self, current_intent: str, llm,
+                                top_k: int = 3) -> List[Tuple[str, float, str]]:
+        """T-BN predicts → LLM reviews each candidate.
+
+        Returns [(intent, probability, llm_verdict), ...]
+        """
+        preds = self.predict_next(current_intent, top_k)
+        if not preds or not llm:
+            return [(p[0], p[1], "no review") for p in preds]
+        
+        reviewed = []
+        for intent, prob in preds:
+            verdict = self.verify_transition_with_llm(current_intent, intent, prob, llm)
+            reviewed.append((intent, prob, verdict.get("reason", "")))
+        return reviewed
+
     def status(self) -> dict:
         """Engine status for monitoring."""
         return {
