@@ -851,6 +851,39 @@ class DiscourseBlockTreeManager:
                 relations.append({"from": bid, "to": child, "type": "parent_of"})
         return {"session_id": session_id, "blocks": blocks_info, "relations": relations}
 
+    def find_block_by_reference(self, session_id: str, reference: str):
+        """Find block by entity name or key phrase. Returns block_id or None."""
+        tree = self._trees.get(session_id)
+        if not tree: return None
+        ref_lower = reference.lower()
+        for block in tree.blocks.values():
+            for e in getattr(block, 'entities', []):
+                name = e.name if hasattr(e, 'name') else str(e)
+                if name.lower() in ref_lower or ref_lower in name.lower():
+                    return getattr(block, 'block_id', '')
+        for block in tree.blocks.values():
+            if ref_lower in (getattr(block, 'raw_text', '') or '').lower():
+                return getattr(block, 'block_id', '')
+        return None
+
+    def compress_cold_blocks(self, session_id: str, llm=None):
+        """Background task: upgrade cold blocks to v4 summary."""
+        tree = self._trees.get(session_id)
+        if not tree: return 0
+        from core.agent.discourse_block_tree.summary_engine import SummaryEngine
+        engine = SummaryEngine(llm=llm)
+        upgraded = 0
+        current = getattr(tree, '_turn_count', 0)
+        for block in list(tree.blocks.values()):
+            if getattr(block, 'status', 'active') in ('cold', 'frozen'): continue
+            if current - getattr(block, 'last_active_turn', 0) > 10:
+                if engine.check_upgrade(block, current):
+                    upgraded += 1
+        if upgraded:
+            import logging
+            logging.getLogger(__name__).info('Compressed %d cold blocks', upgraded)
+        return upgraded
+
     def build_context(self, session_id: str, max_blocks: int = 8) -> str:
         tree = self._trees.get(session_id)
         if not tree or not tree.blocks:
