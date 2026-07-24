@@ -40,6 +40,13 @@ impl PyChainedEventLog {
         Ok(serde_json::to_string(&event).unwrap_or_default())
     }
 
+    pub fn append_text(&self, event_type: &str, data_json_str: &str) -> PyResult<String> {
+        let data_json: serde_json::Value = serde_json::from_str(data_json_str).unwrap_or_default();
+        let mut log = self.inner.lock().unwrap();
+        let event = log.append(event_type, data_json);
+        Ok(serde_json::to_string(&event).unwrap_or_default())
+    }
+
     pub fn verify(&self) -> PyResult<String> {
         let log = self.inner.lock().unwrap();
         let result = log.verify();
