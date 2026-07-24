@@ -109,3 +109,6 @@ class SummaryEngine:
             # Frozen (t=3): skip — retrieval only
 
         return "\n".join(parts)[:max_tokens]
+
+
+SUMMARY_ENGINE = SummaryEngine()
