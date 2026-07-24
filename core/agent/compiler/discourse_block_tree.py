@@ -862,10 +862,11 @@ class DiscourseBlockTreeManager:
         
         # Update summaries before building context
         current_turn = getattr(tree, '_turn_count', 0)
-        for block in tree.blocks[:max_blocks]:
+        block_list = list(tree.blocks.values())[:max_blocks]
+        for block in block_list:
             engine.check_upgrade(block, current_turn)
         
-        return engine.build_context(tree.blocks[:max_blocks])
+        return engine.build_context(block_list)
 
     def get_tree(self, session_id: str) -> Optional[DiscourseBlockTree]:
         return self._trees.get(session_id)
