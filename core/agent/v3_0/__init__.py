@@ -11,7 +11,7 @@ from __future__ import annotations
 
 __version__ = "3.0.0"
 
-from core.agent.v3_legacy.system_bootstrap import SystemBootstrap, DialogMeshSystem, SystemStartupError
+# system_bootstrap moved to un_use/ — no longer auto-imported
 
 __all__ = [
     "SystemBootstrap",
