@@ -178,3 +178,36 @@ Output JSON: {{"decision": "accept" or "reject", "best_topic": "topic_name", "co
         except Exception:
             pass
         return matches[0].topic if matches else None
+    def dual_track_match(self, query: str, llm) -> dict:
+        matches, _ = self.match(query, top_k=3)
+        bm25_topic = matches[0].topic if matches else None
+        bm25_score = matches[0].score if matches else 0.0
+        llm_topic = self.verify_with_llm(query, matches, llm) if llm else bm25_topic
+        if not bm25_topic and not llm_topic:
+            return {'topic': None, 'drift': False, 'confidence': 0.0}
+        drifted = bm25_topic and llm_topic and bm25_topic != llm_topic and bm25_score > 0
+        if drifted:
+            self._record_drift(query, bm25_topic, llm_topic)
+        return {'topic': llm_topic or bm25_topic, 'drift': drifted,
+                'confidence': bm25_score if bm25_topic == llm_topic else 0.5}
+    
+    def _record_drift(self, query, from_topic, to_topic):
+        if not hasattr(self, '_drift_log'):
+            self._drift_log = {}
+        key = f'{from_topic}->{to_topic}'
+        self._drift_log.setdefault(key, []).append(query[:100])
+        if len(self._drift_log[key]) >= 3:
+            self._migrate(from_topic, to_topic, self._drift_log[key])
+            self._drift_log[key] = []
+    
+    def _migrate(self, from_topic, to_topic, queries):
+        moved = 0
+        for i, doc in enumerate(self._documents):
+            if self._doc_topics[i][0] == from_topic:
+                for q in queries:
+                    if any(t in doc for t in self._tokenize(q)):
+                        self._doc_topics[i] = [to_topic]
+                        moved += 1
+                        break
+        if moved:
+            logger.info('Migrated: %s->%s (%d docs)', from_topic, to_topic, moved)
