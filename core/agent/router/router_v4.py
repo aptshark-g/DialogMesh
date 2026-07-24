@@ -1,14 +1,13 @@
-"""CoordinateRouter V4.0 — stanza STC (Y-axis) + BGE mood (Z-axis) + coordinate routing.
+"""Router V4 — DEPRECATED. Use PCR V2 (core/agent/pcr_router_v2.py) instead.
 
-Wires all three axes via lightweight computation:
-  X: cognitive distance (SVO heuristic, BGE pending)
-  Y: operational granularity (stanza STC)
-  Z: feedback expectation (BGE mood vectors)
+This module is kept for backward compatibility only. PCR V2 has:
+- Zero hardcoded keywords (vs V4's Stanza STC + MoodClassifier)
+- LLM collaborative review (vs V4's pure algorithm)
+- Model-size detection (small/medium/large strategy selection)
+- Dual-track entity extraction (structural + LLM gap-fill)
 
-Routes to 6-zone strategy via 3D coordinate space.
+All new routing should go through PCRRouterV2.route().
 """
-
-from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 import time, logging
