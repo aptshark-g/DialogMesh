@@ -109,55 +109,14 @@ class SyntacticTerrain:
 
 
 class MoodClassifier:
-    """Z-axis signal A: syntactic mood → feedback expectation.
-    
-    Zero LLM. Pure syntactic pattern matching on question forms.
-    """
-    
-    SOLUTION_MARKERS = {"吗", "几个", "在哪", "是不是", "是否有"}
-    EXPLORE_MARKERS = {"如何", "怎么", "为什么", "为何", "怎样", "可否", "有没有", "有什么"}
-    MIRROR_MARKERS = {"烂透了", "太棒了", "太烦了", "崩溃", "疯了", "受不了",
-                      "无语", "服了", "废了", "好累", "不想", "太难了"}
-    
-    # English equivalents
-    SOLUTION_EN = {"is", "are", "do", "does", "did", "will", "can", "could",
-                   "what is", "where is", "how many", "how much"}
-    EXPLORE_EN = {"how", "why", "what if", "how to", "explain"}
+    """Z-axis mood: structural detection, zero keyword lists."""
     
     @classmethod
     def classify(cls, text: str, has_question: bool, has_imperative: bool) -> float:
-        """Returns Z contribution from mood: -1.0 ~ +1.0."""
-        text_lower = text.lower()
-        
-        # Mirror check first: emotional outbursts
-        for m in cls.MIRROR_MARKERS:
-            if m in text:
-                return -1.0
-        
-        # Exploration: "how" / "why" / "怎么" questions (check before solution)
-        for m in cls.EXPLORE_MARKERS:
-            if m in text:
-                return 0.0
-        for m in cls.EXPLORE_EN:
-            if f" {m} " in f" {text_lower} " or text_lower.startswith(m+" "):
-                return 0.0
-        
-        # Solution-seeking: direct questions expecting facts
-        for m in cls.SOLUTION_MARKERS:
-            if m in text:
-                return 1.0
-        for m in cls.SOLUTION_EN:
-            if f" {m} " in f" {text_lower} " or text_lower.startswith(m+" "):
-                return 1.0
-        
-        # Imperative = solution demand
-        if has_imperative:
-            return 0.7
-        
-        # Fallback
-        if has_question:
-            return 0.0
-        
+        """Structural mood. PCR V2 handles semantic mood via nomic."""
+        if has_question and has_imperative: return 1.0
+        if has_question: return 0.0
+        if has_imperative: return 0.5
         return 0.0
 
 
