@@ -254,6 +254,13 @@ class PCRRouterV2:
 
         # Y-axis: operational granularity from structural features
         sf = StructuralFeatures.extract(text)
+        
+        # LLM entity gap-fill: regex misses Chinese technical terms
+        if sf.entity_count == 0 and len(text) > 10:
+            llm_ents = cls._llm_entities(text)
+            if llm_ents:
+                sf.entity_count = max(sf.entity_count, llm_ents)
+        
         y = cls._compute_granularity(sf)
 
         # Z-axis: feedback expectation from mood vectors
@@ -395,6 +402,32 @@ class PCRRouterV2:
 
     _llm_review_enabled: bool = None  # None=auto-detect, True/False=override
     _llm_review_provider = None
+
+    # ── LLM Entity Extraction (structural first, LLM fills gaps) ──
+
+    @classmethod
+    def _llm_entities(cls, text: str) -> int:
+        """Use LLM to identify specialized entities that regex misses.
+        Only called when StructuralFeatures finds 0 entities in text > 10 chars."""
+        if not cls._should_review():
+            return 0
+        try:
+            import urllib.request, json, re
+            provider = cls._llm_review_provider
+            prompt = f"List ONLY domain-specific terms/tools/algorithms in this text. Comma-separated, max 5: {text[:200]}"
+            if provider:
+                resp = provider.generate(prompt, max_tokens=50, temperature=0.1)
+            else:
+                req = urllib.request.Request("http://127.0.0.1:1234/v1/chat/completions",
+                    data=json.dumps({"model":"nvidia/nemotron-3-nano-4b","messages":[{"role":"user","content":prompt}],"max_tokens":50,"temperature":0.1}).encode(),
+                    headers={"Content-Type":"application/json"})
+                r = urllib.request.urlopen(req, timeout=10)
+                resp = json.loads(r.read())["choices"][0]["message"].get("content","") or \
+                       json.loads(r.read())["choices"][0]["message"].get("reasoning_content","")
+            terms = [t.strip() for t in re.split(r'[,，\n]', str(resp)) if len(t.strip()) > 1]
+            return len(terms)
+        except Exception:
+            return 0
 
     @classmethod
     def _auto_detect_llm(cls) -> bool:
