@@ -359,27 +359,67 @@ class PCRRouterV2:
 
     @classmethod
     def _compute_distance(cls, text: str) -> float:
-        """X-axis: 0 = near (familiar domain), 1 = far (novel domain).
+        """X-axis: 0=near(familiar), 1=far(novel). Design: BGE(S,O)cos.
 
-        Uses NRC-VAD rarity + entity density as proxy."""
+        Upgraded: nomic 768d (S,O) cosine proxy for BGE + IDF correction.
+        Fallback: entity_density (structural only).
+        """
         if not text or not text.strip():
             return 0.3
 
-        # Entity density → more entities = more specific domain = potentially farther
         sf = StructuralFeatures.extract(text)
         entity_density = sf.entity_count / max(1, sf.word_count)
 
-        # NRC-VAD word rarity
-        cls._load_vad_lexicon()
-        rarity = 0.3  # default: moderate distance
-        if cls._vad_lexicon is not None:
-            words = re.findall(r'[a-zA-Z]+', text.lower())
-            if words:
-                known = sum(1 for w in words if w in cls._vad_lexicon)
-                rarity = 1.0 - (known / len(words))  # unknown words → farther
+        # Try Stanza SVO → nomic cosine (replaces BGE)
+        try:
+            import stanza, urllib.request, json
+            nlp = cls._get_stanza()
+            if nlp:
+                doc = nlp(text)
+                if doc.sentences:
+                    words = doc.sentences[0].words
+                    s_words = [w.text for w in words if w.deprel and 'nsubj' in w.deprel]
+                    o_words = [w.text for w in words if w.deprel and w.deprel.split(':')[0] == 'obj']
+                    if s_words and o_words:
+                        s_emb = cls._nomic_embed(s_words[0])
+                        o_emb = cls._nomic_embed(o_words[0])
+                        if s_emb and o_emb:
+                            cos = sum(a*b for a,b in zip(s_emb, o_emb)) / (
+                                max(1e-8, sum(x*x for x in s_emb)**0.5 * sum(x*x for x in o_emb)**0.5))
+                            semantic_distance = 1.0 - cos
+                            # IDF: word frequency in corpus
+                            idf_avg = len(set(s_words + o_words)) / max(1, sf.word_count)
+                            return min(1.0, semantic_distance * 0.7 + idf_avg * 0.3)
+        except Exception:
+            pass
 
-        x = entity_density * 0.5 + rarity * 0.5
-        return round(min(max(x, 0.0), 1.0), 3)
+        # Fallback: entity density (structural only)
+        return min(1.0, entity_density * 0.5 + 0.3)
+
+    @classmethod
+    def _nomic_embed(cls, word: str) -> Optional[list]:
+        """Get nomic embedding for a word via LM Studio."""
+        try:
+            import urllib.request, json
+            req = urllib.request.Request("http://127.0.0.1:1234/v1/embeddings",
+                data=json.dumps({"model":"text-embedding-nomic-embed-text-v1.5","input":[word]}).encode(),
+                headers={"Content-Type":"application/json"})
+            resp = urllib.request.urlopen(req, timeout=5)
+            data = json.loads(resp.read())
+            return data["data"][0]["embedding"]
+        except Exception:
+            return None
+
+    @classmethod
+    def _get_stanza(cls):
+        if not hasattr(cls, '_stanza_nlp'):
+            try:
+                import stanza
+                stanza.download('zh', verbose=False)
+                cls._stanza_nlp = stanza.Pipeline('zh', processors='tokenize,pos,lemma,depparse', verbose=False)
+            except Exception:
+                cls._stanza_nlp = None
+        return cls._stanza_nlp
 
     # ── Zone routing ──
 
