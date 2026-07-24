@@ -1,196 +1,178 @@
-# DialogMesh v6 — 端到端业务流
+# DialogMesh v6 — 网状业务流 (Event-Driven Mesh)
 
-> 2026-07-24 · 当前实现 · 全链路
-
----
-
-## 用户输入 → 全链路处理
-
-```
-用户: "先定位延迟，然后修复，顺便评估影响范围"
-
-═══════════════════════════════════════════════════════════════
-Layer 0: 信号采集 (<10ms)
-═══════════════════════════════════════════════════════════════
-
-  InputSanitizer → 安全过滤
-  HeaderInjector → 指代消解 (SyntacticDecomposer 语法检测)
-  SyntacticDecomposer → SVO拆解
-  MacroMicroQuantizer → 9D cohesion
-
-═══════════════════════════════════════════════════════════════
-Layer 1: 认知路由 PCR V2 (<50ms, 可选LLM+200ms)
-═══════════════════════════════════════════════════════════════
-
-  StructuralFeatures → entity_count, verb_count
-  X轴: nomic(S,O)cosine + IDF → 认知距离
-  Y轴: STC syntactic complexity → 操作粒度
-  Z轴: nomic 768d mood → 反馈期望
-  Zone: EXPLORE (远+浅+探索)
-  
-  LLMReview (可选): nemotron 3 二进制信号检验
-  LLMEntityGapFill: "延迟"→entity, "影响范围"→entity
-  
-  ExecutionMode: react (EXPLORE zone)
-  
-  ↓ 路由结果 → Orchestrator
-
-═══════════════════════════════════════════════════════════════
-Layer 2: 意图解析 MultiIntent (~1.2s DeepSeek)
-═══════════════════════════════════════════════════════════════
-
-  热路径 MultiIntentSplitter (~800ms):
-    LLM: "三个独立意图: 定位延迟 + 修复 + 评估影响"
-    → multi=True, segments=["定位延迟","修复","评估影响"]
-
-  冷路径 MultiPerspectiveAnalyzer (后台, ~3s):
-    4视角并行:
-      literal:    accept 0.95 "三个独立动宾语"
-      profile:    accept 0.85 "高C倾向结构化"
-      association: accept 0.85 "实体在不同关系簇"
-      discourse:  accept 0.95 "话题延续"
-    → MASTER合成: multi=True, 0.92
-  
-  如死锁(2:2) → AmbiguityBridge → L2.5信念累积
-
-═══════════════════════════════════════════════════════════════
-Layer 3: 关联链 L1→L4
-═══════════════════════════════════════════════════════════════
-
-  L1 Modifier: Stanza提取修饰语, deprel_config驱动
-  L1.5 Completer: syntax ∩ LLM 共识融合
-  L2 RelationSubstrate: 9种边+EntityNode+2跳遍历
-  L2.5 BeliefAccumulator: 贝叶斯多源累积+7D belief
-  L3 Intent: 4视角投票+LLM死锁解决
-  L4 Temporal:
-    T-BN: P(修复|诊断)=0.8, P(评估|修复)=0.6
-    JS漂移检测: JSD=0.15 → 无异常
-    LLM协同: 验证转移合理性, 调整阈值
-
-═══════════════════════════════════════════════════════════════
-Layer 4: 对话树 DiscourseBlockTree
-═══════════════════════════════════════════════════════════════
-
-  DiscourseBlockTreeManager.feed():
-    → segment_turn (cohesion断崖切分)
-    → route_block (continue/attach/fork/merge)
-    → update_summary (v1→v2→v3→v4 渐进式)
-
-  BM25 TopicQuickMatch (~5ms):
-    jieba分词 → BM25匹配 → "延迟"→"性能故障" 2.75
-
-  BM25→LLM 双轨 (可选):
-    LLM验证匹配 → 漂移检测 → 3次后迁移
-
-  SummaryEngine.build_context():
-    温度分级:
-      Hot blocks: 全文 [Hot·★★★·Near]
-      Warm blocks: entity摘要 [Warm·★★·Mid]
-      Cold blocks: milestone保留
-      Frozen: 索引检索
-
-  ThreeParadigmContext.build():
-    温度×价值×距离 排序 → 结构化标签
-    → "[Hot·★★★·Near] 定位延迟... [Cold·★·Far] 上月例行部署..."
-
-  PosteriorCorrector: 漂移证据累积→节点重新隶属
-
-═══════════════════════════════════════════════════════════════
-Layer 5: 行为链 Behavior
-═══════════════════════════════════════════════════════════════
-
-  BehaviorEdge.record_observation():
-    → 自适应阈值: success_threshold = old*0.9 + rate*0.1
-    → 稳定性判定: rate > threshold AND inst < threshold
-
-  BehaviorLLMCollaborator:
-    explain_drift: LLM解释行为变化
-    discover_patterns: LLM发现异常模式
-    suggest_and_apply: LLM调参→回写edge (70%统计+30%LLM)
-
-═══════════════════════════════════════════════════════════════
-Layer 6: 工程链 Engineering
-═══════════════════════════════════════════════════════════════
-
-  EngineeringChain.snapshot():
-    MCP ClientManager → 可用工具列表
-    ToolRegistry → 注册工具
-    env: {os, python, cwd}
-
-  check_feasibility("定位延迟"):
-    → matching_tools: [gdb, perf, strace]
-    → feasible: True
-
-═══════════════════════════════════════════════════════════════
-Layer 7: 编排 + 规划 Orchestrator + Planner
-═══════════════════════════════════════════════════════════════
-
-  AgentOrchestrator.process():
-    全链路协调: PCR → MultiIntent → L4 → Behavior → Engineering
-    → LLM合成执行计划
-    
-  LLMPlanner.plan():
-    LLM任务分解:
-    {
-      "steps": [
-        {"task": "定位延迟", "tool": "perf", "parallel": false},
-        {"task": "修复", "tool": "gdb", "parallel": false, "depends_on": 0},
-        {"task": "评估影响", "tool": "strace", "parallel": true, "depends_on": 1}
-      ],
-      "confidence": 0.85
-    }
-
-═══════════════════════════════════════════════════════════════
-Layer 8: 认知层 V4/Cognitive (桥接，待激活)
-═══════════════════════════════════════════════════════════════
-
-  Bridge 1: PCR → OceanProfile (route调制OCEAN权重)
-  Bridge 2: Behavior → PatternLearner (不稳定边→模式学习)
-  Bridge 3: Discourse → MemoryExtractor + TagLayer
-  Bridge 4: L4 → BeliefMap (转移→信念)
-  Bridge 5: 全信号 → Fusion (TrackA+B → LLM上下文)
-  Bridge 6: Trigger → Metacognition (事件→回顾审查)
-
-═══════════════════════════════════════════════════════════════
-Layer 9: 监控 + 元认知扳机
-═══════════════════════════════════════════════════════════════
-
-  MetacognitiveTriggerEngine.check(signals):
-    belief_entropy > 0.5 → compressor_ingest
-    intent_drift > 0.3 → l4_explain_drift
-    cold_blocks > 20 → compress_cold_blocks
-    llm_error_rate > 10% → llm_degraded
-    correction_rate > 0.4 → behavior_llm_review
-
-═══════════════════════════════════════════════════════════════
-最终输出
-═══════════════════════════════════════════════════════════════
-
-  给LLM的上下文:
-    [Hot·★★★·Near] 先定位延迟，然后修复，顺便评估影响范围
-    [Warm·★★·Mid]   昨天发现AES密钥硬编码→已修复
-    [Cold·★·Far]    上月v2.3部署→日常
-
-  LLM回答:
-    "好的，我帮你分三步: (1)先定位延迟 (工具:perf)
-     (2)根据定位结果修复 (工具:gdb)
-     (3)评估影响范围 (工具:strace)
-     是否需要我开始第一步？"
-```
+> 2026-07-24 · 当前实现 · 事件驱动微服务
 
 ---
 
-## 模块状态总览
+## 核心拓扑
 
-| 层 | 模块 | 状态 | LLM协同 | 延迟 |
-|----|------|------|---------|------|
-| 0 | 信号采集 | ✅ | 语法检测 | <10ms |
-| 1 | PCR V2 | ✅ | nemotron审查+实体补全 | 50-250ms |
-| 2 | MultiIntent | ✅ | DeepSeek 4视角 | 0.8-3s |
-| 3 | 关联链 L1-L4 | ✅ | L4 LLM协同 | ~200ms |
-| 4 | DiscourseTree | ✅ | Summary+BM25双轨 | ~500ms |
-| 5 | Behavior | ✅ | 自适应+LLM协同 | ~200ms |
-| 6 | Engineering | ✅ | MCP桥接 | ~100ms |
-| 7 | Orchestrator+Planner | ✅ | LLM任务分解 | ~500ms |
-| 8 | V4 Cognitive | 🔗 桥接就绪 | 待激活 | — |
-| 9 | Metacognitive Trigger | ✅ | 7规则监控 | <1ms |
+```
+不是: Layer 1 → Layer 2 → Layer 3 → ...
+而是: EventBus ← 多链并行消费 ← 每个链是独立微服务
+
+                        ┌──────────────────────┐
+                        │     EventBus          │
+                        │  环形缓冲 pub/sub     │
+                        └──────┬───────────────┘
+                               │
+        ┌──────────┬───────────┼───────────┬──────────┬──────────┐
+        ▼          ▼           ▼           ▼          ▼          ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │ Chain01 │ │ Chain02 │ │ Chain05 │ │ Chain06 │ │ Chain08 │ │ Chain09 │
+   │对话树   │ │上下文   │ │行为链   │ │关联链   │ │认知画像 │ │元认知   │
+   │Hot Path │ │Hot Path │ │Async    │ │Fast+Async│ │Slow    │ │Tick延迟 │
+   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
+        │          │           │           │           │          │
+        │  发布新Event          │           │           │          │
+        └──────────────────────┴───────────┴───────────┴──────────┘
+                               │
+                               ▼
+                        ┌─────────────┐
+                        │  StateGraph │
+                        │ 对话树+关联链│
+                        │   网状结构   │
+                        └─────────────┘
+```
+
+## 事件类型与消费关系
+
+```
+MessageReceived
+  → Chain01(对话树): feed block, update cohesion
+  → Chain06(关联链): L1 modifier → L1.5 completer → L2 substrate → L2.5 belief
+  → Chain04(PCR V2): coordinate routing → zone decision
+  → Chain03(MultiIntent): split → segments
+
+IntentLocked (L3 置信度 ≥ 0.85 或 死锁→L2.5累积→锁定)
+  → Chain01: update DiscourseBlock.intent
+  → Chain06: L3 locked → L4 temporal update
+  → Chain08(认知画像): ocean_profile update
+  → Chain07(工程链): constraint check
+
+PatternDiscovered (BehaviorEdge 稳定模式 或 LLM发现)
+  → Chain06: L4 A↔B edge weight update
+  → Chain05: cold_start seed update
+  → Chain08: pattern→profile modulation
+
+MetaVerified (元认知审查通过)
+  → Chain06: L5 伪因果→实因果 晋升
+  → Chain05: edge.is_stable = True
+  → Chain09: review_queue.pop
+```
+
+## 10条链当前实现状态
+
+```
+链01 对话树主线 🟢 完成
+  消费: MessageReceived
+  实现: DiscourseBlockTree (917L)
+        HeaderInjector → SyntacticDecomposer → MacroMicroQuantizer
+        BM25+jieba → LLM双轨 → PosteriorCorrector
+        SummaryEngine v1→v4 → ThreeParadigmContext
+  路径: Hot (<10ms) / Warm (entity摘要) / Cold (llm压缩)
+
+链02 上下文编译 🟢 完成
+  消费: DiscourseBlock变化
+  实现: ContextManager + temperature_patch + ThreeParadigmContext
+  输出: 结构化LLM上下文 [Hot·★★★·Near] 标签
+
+链03 意图解析 🟢 完成
+  消费: MessageReceived + PCR route
+  实现: MultiIntentSplitter (热<1s) + MultiPerspective (冷后台)
+        AmbiguityBridge → L2.5 (死锁→贝叶斯)
+  输出: IntentLocked Event
+
+链04 PCR认知路由 🟢 完成
+  消费: MessageReceived
+  实现: PCR V2 (600L) — nomic X轴 + STC Y轴 + nomic Z轴
+        LLMReview + LLMEntity补全 + ModelSize检测
+  输出: Zone路由 + ExecutionMode
+
+链05 行为链 🟢 完成
+  消费: MessageReceived 后行为记录
+  实现: BehaviorEdge→自适应学习
+        LLMCollaborator→解释+发现+调参
+        ColdStart种子
+  路径: Async Path (后台)
+
+链06 关联链 (微服务) 🟢 完成
+  消费: MessageReceived → IntentLocked → PatternDiscovered
+  实现: L1 modifier → L1.5 completer → L2 substrate → 
+        L2.5 BeliefAccumulator → L3 validator → L4 temporal
+  路径: Fast Path (L1-L2 <5ms) / Async Path (L1.5 LLM)
+        Slow Path (L5因果晋升, 事件驱动)
+
+链07 工程链 🟡 部分完成
+  消费: IntentLocked → PatternDiscovered
+  实现: EngineeringChain (136L) — MCP桥接 + 工具可行性
+  缺失: ConstraintViolated → 元认知推送
+  路径: Hot Path (查询) / Async Path (约束推理)
+
+链08 认知画像 🔗 桥接就绪
+  消费: IntentLocked → PatternDiscovered → MetaVerified
+  实现: v4/cognitive/* (ocean_profile, bfi_calibrator, behavior_discovery)
+        V4CognitiveBridge (6桥接)
+  路径: Slow Path (多轮累积后更新)
+
+链09 元认知 (微服务) 🔗 部分桥接
+  消费: PatternDiscovered → MetaVerified (每Tick, 延迟消费)
+  实现: MetacognitiveTriggerEngine (7规则)
+        v4/metacognition.py (328L, review queue / retrospection)
+  路径: Tick延迟 (积累多个事件后批量处理)
+
+链10 执行编排 🟢 完成
+  消费: 所有链事件 → 综合上下文
+  实现: AgentOrchestrator + LLMPlanner + BlueprintExecutor
+  输出: 分步执行计划 + LLM回答
+```
+
+## StateGraph：网状核心
+
+```
+对话树 (Chain01)                  关联链 (Chain06)
+    │                                  │
+    │  DiscourseBlock                  │  EntityNode
+    │  cohesion edges                  │  Relation edges (9种)
+    │  summary v1-v4                   │  belief_pool (7D)
+    │                                  │
+    └──────────┬───────────────────────┘
+               │
+    ┌──────────▼─────────────────────────┐
+    │         StateGraph                 │
+    │  对话树 + 关联链 = 统一网状结构      │
+    │                                     │
+    │  block.entities → substrate.nodes   │
+    │  block.intent → belief_pool.posterior│
+    │  block.cohesion → transition.weight │
+    └─────────────────────────────────────┘
+              │
+    ┌─────────┼──────────┐
+    ▼         ▼          ▼
+ Chain08   Chain09     Chain10
+ 认知画像   元认知      执行
+```
+
+## 路径分类
+
+```
+Hot Path (<50ms, 同步):
+  PCR V2 route | Discourse feed | BM25 match | L1 modifier
+  → 用户即时响应需要这些
+
+Fast Path (<5ms, 同步):
+  L2 substrate | Context build | Tool feasibility
+  → 不阻塞, 在Hot之后立即完成
+
+Async Path (~500ms, 异步):
+  L1.5 completer (LLM) | BM25→LLM verify | Behavior update
+  → 后台并行, 不阻塞响应
+
+Slow Path (>1s, Tick延迟):
+  OceanProfile update | Pattern learning | Simulation
+  → 积累多轮后批量处理
+
+Tick Path (每Tick, 事件驱动):
+  MetacognitiveTrigger.check → MetaVerified
+  L5 causal promotion → PatternDiscovered
+  → 状态机: Command → Decider → Event → evolve → next Tick
+```
