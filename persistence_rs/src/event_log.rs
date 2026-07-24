@@ -27,26 +27,26 @@ pub struct PyChainedEventLog {
 #[pymethods]
 impl PyChainedEventLog {
     #[new]
-    fn new(path: String) -> Self {
+    pub fn new(path: String) -> Self {
         PyChainedEventLog {
             inner: Mutex::new(ChainedEventLog::new(&path)),
         }
     }
 
-    fn append(&self, py: Python, event_type: String, data: &PyDict) -> PyResult<String> {
+    pub fn append(&self, py: Python, event_type: String, data: &PyDict) -> PyResult<String> {
         let data_json: serde_json::Value = py_to_json(data);
         let mut log = self.inner.lock().unwrap();
         let event = log.append(&event_type, data_json);
         Ok(serde_json::to_string(&event).unwrap_or_default())
     }
 
-    fn verify(&self) -> PyResult<String> {
+    pub fn verify(&self) -> PyResult<String> {
         let log = self.inner.lock().unwrap();
         let result = log.verify();
         Ok(serde_json::to_string(&result).unwrap_or_default())
     }
 
-    fn replay(&self) -> PyResult<Vec<String>> {
+    pub fn replay(&self) -> PyResult<Vec<String>> {
         let log = self.inner.lock().unwrap();
         let events: Vec<String> = log.replay_all()
             .iter()
@@ -55,7 +55,7 @@ impl PyChainedEventLog {
         Ok(events)
     }
 
-    fn stats(&self) -> PyResult<String> {
+    pub fn stats(&self) -> PyResult<String> {
         let log = self.inner.lock().unwrap();
         Ok(serde_json::to_string(&log.stats()).unwrap_or_default())
     }
@@ -138,7 +138,7 @@ impl ChainedEventLog {
         self.events.last().unwrap()
     }
 
-    fn verify(&self) -> serde_json::Value {
+    pub fn verify(&self) -> serde_json::Value {
         let mut prev = String::from("genesis");
         let mut broken = Vec::new();
         for e in &self.events {
@@ -161,7 +161,7 @@ impl ChainedEventLog {
         &self.events
     }
 
-    fn stats(&self) -> serde_json::Value {
+    pub fn stats(&self) -> serde_json::Value {
         let mut by_type = HashMap::new();
         for e in &self.events {
             *by_type.entry(&e.event_type).or_insert(0u64) += 1;

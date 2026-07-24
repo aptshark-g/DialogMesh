@@ -12,7 +12,7 @@ pub struct PySQLiteStore {
 #[pymethods]
 impl PySQLiteStore {
     #[new]
-    fn new(db_path: String) -> PyResult<Self> {
+    pub fn new(db_path: String) -> PyResult<Self> {
         let conn = Connection::open(&db_path)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -46,7 +46,7 @@ impl PySQLiteStore {
         })
     }
 
-    fn save_session(&self, session_id: String, user_id: String, data: String) -> PyResult<bool> {
+    pub fn save_session(&self, session_id: String, user_id: String, data: String) -> PyResult<bool> {
         let conn = self.conn.lock().unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -66,7 +66,7 @@ impl PySQLiteStore {
         Ok(true)
     }
 
-    fn load_session(&self, session_id: String) -> PyResult<Option<String>> {
+    pub fn load_session(&self, session_id: String) -> PyResult<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT data FROM sessions WHERE session_id = ?1"
@@ -84,7 +84,7 @@ impl PySQLiteStore {
         }
     }
 
-    fn save_turn(&self, session_id: String, sequence: i64, role: String,
+    pub fn save_turn(&self, session_id: String, sequence: i64, role: String,
                  content: String, data: String) -> PyResult<bool> {
         let conn = self.conn.lock().unwrap();
         let ts = std::time::SystemTime::now()
@@ -101,7 +101,7 @@ impl PySQLiteStore {
         Ok(true)
     }
 
-    fn load_turns(&self, session_id: String, limit: i64) -> PyResult<Vec<String>> {
+    pub fn load_turns(&self, session_id: String, limit: i64) -> PyResult<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT data FROM turns WHERE session_id = ?1 ORDER BY sequence DESC LIMIT ?2"
@@ -121,7 +121,7 @@ impl PySQLiteStore {
         Ok(turns)
     }
 
-    fn list_sessions(&self, limit: i64) -> PyResult<Vec<String>> {
+    pub fn list_sessions(&self, limit: i64) -> PyResult<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT session_id FROM sessions ORDER BY updated_at DESC LIMIT ?1"
@@ -141,7 +141,7 @@ impl PySQLiteStore {
         Ok(sessions)
     }
 
-    fn close(&self) -> PyResult<()> {
+    pub fn close(&self) -> PyResult<()> {
         // Connection closed on drop
         Ok(())
     }

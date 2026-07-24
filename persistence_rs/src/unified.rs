@@ -3,13 +3,13 @@ use pyo3::types::{PyDict, PyList};
 use std::sync::Mutex;
 
 use crate::event_log::PyChainedEventLog;
-use crate::sqlite_store::PySQLiteStore;
+use crate::lsm_store::PyLSMStore;
 
 /// Unified persistence broker — single entry point for all 10 chains
 #[pyclass]
 pub struct PyUnifiedBroker {
     event_log: Mutex<PyChainedEventLog>,
-    sqlite: Mutex<PySQLiteStore>,
+    sqlite: Mutex<PyLSMStore>,
     startup_events: Mutex<u64>,
 }
 
@@ -25,7 +25,7 @@ impl PyUnifiedBroker {
 
         Ok(PyUnifiedBroker {
             event_log: Mutex::new(PyChainedEventLog::new(events_path)),
-            sqlite: Mutex::new(PySQLiteStore::new(db_path)?),
+            sqlite: Mutex::new(PyLSMStore::new(db_path)?),
             startup_events: Mutex::new(0),
         })
     }
@@ -67,12 +67,14 @@ impl PyUnifiedBroker {
                     content: String) -> PyResult<bool> {
         let sqlite = self.sqlite.lock().unwrap();
         let data = format!(r#"{{"sequence":{},"role":"{}","content":"{}"}}"#, sequence, role, content);
-        sqlite.save_turn(session_id, sequence, role, content, data)
+        sqlite.put_turn(session_id, sequence, role, content, data)?;
+        Ok(true)
     }
 
     fn persist_session(&self, session_id: String, user_id: String) -> PyResult<bool> {
         let sqlite = self.sqlite.lock().unwrap();
-        sqlite.save_session(session_id, user_id, "{}".to_string())
+        sqlite.put_session(session_id, user_id, "{}".to_string())?;
+        Ok(true)
     }
 
     // ── Chain 03-10: Generic event append ──

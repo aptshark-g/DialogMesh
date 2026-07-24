@@ -1,0 +1,10 @@
+implementation=CPython
+version=3.11
+shared=true
+abi3=false
+lib_name=python311
+lib_dir=C:\Users\APTShark\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\libs
+executable=C:\Users\APTShark\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
+pointer_width=64
+build_flags=
+suppress_build_script_link_lines=false
