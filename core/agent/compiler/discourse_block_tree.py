@@ -28,21 +28,20 @@ class HeaderInjector:
     def __init__(self):
         self._sessions: Dict[str, List[str]] = {}
         self._decomposer = SyntacticDecomposer()
-    # No semantic IMP markers — imperative detected structurally by SyntacticDecomposer
-    PRONOUNS = ["它", "他", "这", "那", "this", "that", "it"]  # structural deictic resolution
-
-    def __init__(self):
         self._entity_cache: Dict[str, List[str]] = {}  # session_id → entities
+        # Structural pronoun markers — NOT semantic keywords
+        self._pronouns = ["它", "他", "她", "这", "那", "这个", "那个"]
+        self._last_entity: Dict[str, str] = {}
         self._last_entity: Dict[str, Optional[str]] = {}
 
     def inject(self, text: str, session_id: str, history: List[str] = None) -> str:
         if history:
             self._update_cache(session_id, history)
-        for pronoun in self.PRONOUNS:
+        for pronoun in self._pronouns:
             if pronoun in text:
                 resolved = self._resolve(pronoun, text, session_id)
                 if resolved:
-                    return text.replace(pronoun, f"[{resolved}]", 1)
+                    return text.replace(pronoun, resolved, 1)
         return text
 
     def _update_cache(self, session_id: str, history: List[str]):
@@ -50,30 +49,38 @@ class HeaderInjector:
         for h in history[-5:]:
             for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', h):
                 cache.append(m.group())
-            for m in re.finditer(r'[\u4e00-\u9fff]{2,4}', h):
-                cache.append(m.group())
+            # Chinese: only keep the LAST matched phrase (tends to be the object)
+            zh = re.findall(r'[\u4e00-\u9fff]{2,3}', h)
+            if zh:
+                cache.append(zh[-1])  # last short phrase = most likely object
 
     def _resolve_reference(self, text: str, recent_entities: List[str]) -> str:
         """Structural reference resolution via SyntacticDecomposer output.
-        Zero hardcoded demonstrative patterns — purely syntactic: empty subject + has object = reference to prior entity."""
+        If subject is empty/trivial and object exists, this is a reference — return the entity cleanly."""
         if not recent_entities:
             return text
         try:
             edus = self._decomposer.decompose(text)
-            if edus and (not edus[0].subject or len(edus[0].subject or '') <= 2) and edus[0].object:
-                return f"({recent_entities[0]}) {text}"
+            if edus and (not edus[0].subject or len(edus[0].subject or '') <= 2) and edus[0].obj:
+                return recent_entities[0]
         except Exception:
             pass
         return text
 
     def _resolve(self, pronoun: str, text: str, session_id: str) -> Optional[str]:
-        # Same-turn: entity before pronoun
+        # Same-turn: check content before pronoun for entities
         pos = text.find(pronoun)
         if pos > 0:
             before = text[:pos]
+            # English proper nouns
             ents = re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', before)
-            if ents:
-                return ents[-1]
+            if ents: return ents[-1]
+            # Chinese trailing phrase (last 2+ char word before pronoun)
+            zh = re.findall(r'[\u4e00-\u9fff]{2,}', before)
+            if zh: return zh[-1]
+        # Session entity cache from history
+        cache = self._entity_cache.get(session_id, [])
+        return cache[-1] if cache else None
         # Session recent
         last = self._last_entity.get(session_id)
         if last:
