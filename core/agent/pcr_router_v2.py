@@ -423,24 +423,17 @@ class PCRRouterV2:
 
     @classmethod
     def _llm_review(cls, text: str, x: float, y: float, z: float, sf) -> Optional[dict]:
-        """Dual-track review: grammar tags + PCR output → LLM verifies."""
+        """LLM reviews PCR — 3 minimal signals replace full grammar tags."""
         if not cls._should_review():
             return None
         
-        # Track 1: Grammar tags (structural)
-        try:
-            from core.agent.pcr.grammar_tagger import tag_text, GrammarTags
-            tags = tag_text(text)
-            tag_str = tags.to_tag_string() if tags else ""
-        except Exception:
-            tag_str = ""
+        # 3 binary signals (2 tokens each, not 10+ token grammar tags)
+        mood = ""
+        if "?" in text or "？" in text: mood += " [question]"
+        if "!" in text or "！" in text: mood += " [emotion]"
         
-        prompt = f"""Review routing for agent. Grammar tags + PCR output.
-
-TEXT: "{text[:200]}"
-GRAMMAR: {tag_str or '(stanza unavailable)'}
-PCR: X={x:.2f}(familiar→expert, entities={sf.entity_count}) Y={y:.2f}(simple→complex, verbs={sf.verb_count}) Z={z:+.2f}(venting→solution)
-
+        prompt = f"""Review routing. PCR: X={x:.2f}(familiar→expert) Y={y:.2f}(simple→complex) Z={z:+.2f}(venting→solution)
+TEXT: "{text[:150]}"{mood}
 Output ONLY: X <num> Y <num> Z <num>"""
 
         try:
