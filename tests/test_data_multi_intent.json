@@ -1,0 +1,24 @@
+{
+  "scenarios": [
+    {
+      "id": "single_intent",
+      "text": "帮我分析这个加密算法",
+      "expect": {"is_multi": false, "min_subs": 1}
+    },
+    {
+      "id": "explicit_sequential",
+      "text": "先定位哪个模块延迟，然后帮我看看怎么修",
+      "expect": {"is_multi": true, "min_subs": 2}
+    },
+    {
+      "id": "explicit_parallel",
+      "text": "帮我看看这个漏洞，顺便评估一下影响范围",
+      "expect": {"is_multi": true, "min_subs": 2}
+    },
+    {
+      "id": "explicit_causal",
+      "text": "监控没加所以告警没触发，因此找不到根因",
+      "expect": {"is_multi": true, "min_subs": 2}
+    }
+  ]
+}
