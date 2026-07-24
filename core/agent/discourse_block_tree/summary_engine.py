@@ -76,13 +76,30 @@ class SummaryEngine:
         return milestones[:5]
 
     def _llm_compress(self, block) -> Optional[str]:
+        """Algorithm extracts structure → LLM compresses with context."""
         if not self.llm:
             return None
         try:
-            text = (getattr(block.summary, 'v3_milestone', '') or
-                    getattr(block.summary, 'v2_entity', '') or
-                    getattr(block.summary, 'v1_raw', '')[:200])
-            prompt = f"Compress to one sentence (<80 chars) preserving key actions/entities:\n{text}"
+            # Algorithm pre-processing: extract structured context
+            entities = [e.name for e in getattr(block, 'entities', [])][:5]
+            intent = getattr(block, 'primary_intent', '')
+            edus = getattr(block, 'atomic_units', [])
+            actions = [getattr(e, 'predicate', '') or getattr(e, 'raw_text', '')[:20]
+                      for e in edus[-5:] if getattr(e, 'predicate', '')]
+            
+            v3 = (getattr(block.summary, 'v3_milestone', '') or
+                  getattr(block.summary, 'v2_entity', '') or
+                  getattr(block.summary, 'v1_raw', '')[:200])
+            
+            # Structured context for LLM
+            struct = f"intent: {intent} | entities: {', '.join(entities)} | actions: {' → '.join(actions[:3])}"
+            
+            prompt = f"""Compress this conversation block to one sentence (<80 chars). Use the structured context to preserve key semantics.
+
+CONTEXT: {struct}
+CONTENT: {v3[:200]}
+
+Output only the compressed sentence."""
             resp = self.llm.generate(prompt, max_tokens=100, temperature=0.1)
             return resp[:150] if resp else None
         except Exception as e:
@@ -95,8 +112,8 @@ class SummaryEngine:
         Hot blocks: full text | Warm: entity summary | Cold: milestone | Frozen: skip.
         """
         parts = []
-        for b in sorted(blocks, key=lambda b: getattr(b, 'temperature', 0)):
-            t = getattr(b, 'temperature', 0)
+        for b in sorted(blocks, key=lambda b: self._temperature(b)):
+            t = self._temperature(b)
             if t == 0:   # Hot
                 text = getattr(b, 'raw_text', '') or ''
                 parts.append(f"[Hot] {text[:200]}")
@@ -109,6 +126,11 @@ class SummaryEngine:
             # Frozen (t=3): skip — retrieval only
 
         return "\n".join(parts)[:max_tokens]
+    
+    def _temperature(self, block) -> int:
+        """Map block status to temperature tier."""
+        status = getattr(block, 'status', 'active')
+        return {"active": 0, "paused": 1, "cold": 2, "frozen": 3}.get(status, 0)
 
 
 SUMMARY_ENGINE = SummaryEngine()
