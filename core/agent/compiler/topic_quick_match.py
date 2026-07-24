@@ -1,3 +1,4 @@
+from core.agent.llm_config import DEFAULT as _LLM_CFG
 """Topic Quick-Match — BM25 + Kurtosis fallback for LLM summary.
 
 Design: docs/BUSINESS_CHAIN_02_APPENDIX_TOPIC_MATCH.md
@@ -6,6 +7,7 @@ Pattern: recursive convergence — BM25 search → kurtosis gate → decompose o
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+from core.agent.llm_config import DEFAULT as _LLM_CFG
 from typing import Dict, List, Optional, Tuple
 import re, math, logging
 
@@ -165,7 +167,7 @@ Output JSON: {{"decision": "accept" or "reject", "best_topic": "topic_name", "co
         
         try:
             import re
-            response = llm.generate(prompt, max_tokens=150, temperature=0.1)
+            response = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(response))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             cleaned = cleaned.replace("\\'", "'")

@@ -4,6 +4,7 @@ Algorithm computes → structured context → LLM reasons → corrections → up
 """
 
 from __future__ import annotations
+from core.agent.llm_config import DEFAULT as _LLM_CFG
 from typing import Dict, List, Optional, Tuple
 import logging
 
@@ -55,7 +56,7 @@ Output JSON: {{"confirm": true/false, "new_threshold": 0.0-1.0, "reason": "brief
 
         try:
             import re
-            resp = self.llm.generate(prompt, max_tokens=150, temperature=0.1)
+            resp = self.llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')
@@ -113,7 +114,7 @@ Output JSON: [{{"intent": ..., "accepted": ..., "adj_prob": ...}}, ...]"""
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=200, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('['); e = cleaned.rfind(']')
@@ -160,7 +161,7 @@ Output JSON: {{"explanation": "why anomalous", "suggestion": "what to do",
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=150, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')

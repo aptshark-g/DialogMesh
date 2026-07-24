@@ -5,6 +5,7 @@ Input: BehaviorEdge statistics → LLM reasons → feedback → adjust.
 """
 
 from __future__ import annotations
+from core.agent.llm_config import DEFAULT as _LLM_CFG
 from typing import List, Dict, Optional, Any
 import logging
 
@@ -53,7 +54,7 @@ Output JSON: {{"explanation": "brief cause", "severity": 0.0-1.0, "suggestion": 
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=150, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')
@@ -86,7 +87,7 @@ Output JSON array: [{{"pattern": "description", "confidence": 0.0-1.0, "action":
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=300, temperature=0.2)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('['); e = cleaned.rfind(']')
@@ -111,7 +112,7 @@ Output JSON: {{"success_threshold": 0.0-1.0, "instability_threshold": 0.0-1.0, "
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=100, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')
@@ -163,7 +164,7 @@ Output JSON: {{"success_threshold": 0.0-1.0, "instability_threshold": 0.0-1.0, "
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=100, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')
@@ -191,7 +192,7 @@ Output JSON: {{"root_cause": "explanation", "suggested_fix": "what to change", "
 
         try:
             import re
-            resp = llm.generate(prompt, max_tokens=150, temperature=0.1)
+            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             s = cleaned.find('{'); e = cleaned.rfind('}')

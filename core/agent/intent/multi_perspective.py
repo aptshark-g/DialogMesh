@@ -5,6 +5,7 @@ Each perspective: decision + reasoning chain + confidence.
 """
 
 from __future__ import annotations
+from core.agent.llm_config import DEFAULT as _LLM_CFG
 from dataclasses import dataclass, field
 from typing import List, Optional
 import logging
@@ -135,7 +136,7 @@ Output JSON: {{"decision": "accept"/"reject"/"undecided", "confidence": 0.0-1.0,
         """Call LLM for one perspective's analysis."""
         try:
             import json, re
-            response = self.llm.generate(prompt, max_tokens=250, temperature=0.1)
+            response = self.llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(response))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             cleaned = cleaned.replace("\\'", "'")
@@ -183,7 +184,7 @@ Output JSON:
 {{"multi": true/false, "segments": ["sub-intent1", "sub-intent2"], "confidence": 0.0-1.0, "synthesis": "your synthesis reasoning, explaining which perspectives you weighted and why"}}"""
 
         try:
-            response = self.llm.generate(prompt, max_tokens=400, temperature=0.1)
+            response = self.llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
             cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(response))
             cleaned = re.sub(r'\n?```', '', cleaned).strip()
             cleaned = cleaned.replace("\\'", "'")

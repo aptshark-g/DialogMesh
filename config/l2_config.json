@@ -71,5 +71,17 @@
       "lock_threshold": 0.85,
       "force_crystal_turns": 5
     }
+  },
+  "llm_call": {
+    "max_tokens": 300,
+    "temperature": 0.1,
+    "diverge_temperature": 0.8,
+    "converge_temperature": 0.1,
+    "verify_max_tokens": 150,
+    "compress_max_tokens": 100,
+    "explain_max_tokens": 150,
+    "discover_max_tokens": 300,
+    "suggest_max_tokens": 100,
+    "synthesis_max_tokens": 300
   }
 }
