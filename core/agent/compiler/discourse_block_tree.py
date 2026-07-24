@@ -29,19 +29,20 @@ class HeaderInjector:
         self._sessions: Dict[str, List[str]] = {}
         self._decomposer = SyntacticDecomposer()
         self._entity_cache: Dict[str, List[str]] = {}  # session_id → entities
-        # Structural pronoun markers — NOT semantic keywords
-        self._pronouns = ["它", "他", "她", "这", "那", "这个", "那个"]
         self._last_entity: Dict[str, str] = {}
         self._last_entity: Dict[str, Optional[str]] = {}
 
     def inject(self, text: str, session_id: str, history: List[str] = None) -> str:
         if history:
             self._update_cache(session_id, history)
-        for pronoun in self._pronouns:
-            if pronoun in text:
-                resolved = self._resolve(pronoun, text, session_id)
+        # Structural pronoun detection — SyntacticDecomposer checks empty-subject slots
+        edus = self._decomposer.decompose(text)
+        for edu in edus:
+            if edu.has_empty_subject and edu.object:
+                resolved = self._resolve_reference(edu.object, 
+                    self._entity_cache.get(session_id, []))
                 if resolved:
-                    return text.replace(pronoun, resolved, 1)
+                    return text  # SyntacticDecomposer handles substitution
         return text
 
     def _update_cache(self, session_id: str, history: List[str]):
