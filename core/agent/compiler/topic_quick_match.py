@@ -120,6 +120,43 @@ class TopicQuickMatcher:
         if entities:
             summary_parts.append("entities: " + ", ".join(entities[:5]))
         if key_terms:
-            summary_parts.append(" ".join(key_terms[:8]))
+            summary_parts.append("terms: " + ", ".join(key_terms[:5]))
+        return " | ".join(summary_parts)
+
+    def verify_with_llm(self, query: str, matches: List[TopicMatch], llm) -> Optional[str]:
+        """BM25 fast match → LLM slow verification. LLM makes final decision.
+
+        Returns: confirmed topic name, or None if LLM rejects all BM25 matches.
+        """
+        if not llm or not matches:
+            return matches[0].topic if matches else None
         
-        return " → ".join(summary_parts)[:120]
+        import json
+        match_desc = "\n".join(
+            f"  {i+1}. {m.topic} (BM25 score={m.score:.2f})"
+            for i, m in enumerate(matches[:5])
+        )
+        
+        prompt = f"""BM25 matched these topics for a user message. Verify which is correct.
+
+QUERY: "{query[:200]}"
+BM25 MATCHES:
+{match_desc}
+
+Output JSON: {{"decision": "accept" or "reject", "best_topic": "topic_name", "confidence": 0.0-1.0, "reason": "brief"}}"""
+        
+        try:
+            import re
+            response = llm.generate(prompt, max_tokens=150, temperature=0.1)
+            cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(response))
+            cleaned = re.sub(r'\n?```', '', cleaned).strip()
+            cleaned = cleaned.replace("\\'", "'")
+            s = cleaned.find('{'); e = cleaned.rfind('}')
+            if s >= 0 and e > s:
+                cleaned = cleaned[s:e+1]
+            data = json.loads(cleaned)
+            if data.get("decision") == "accept" and data.get("best_topic"):
+                return data["best_topic"]
+        except Exception:
+            pass
+        return matches[0].topic if matches else None
