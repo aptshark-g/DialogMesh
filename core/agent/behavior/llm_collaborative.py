@@ -97,6 +97,52 @@ Output JSON array: [{{"pattern": "description", "confidence": 0.0-1.0, "action":
         return []
 
     def suggest_thresholds(self, statistics: dict, llm=None) -> dict:
+        """LLM suggests threshold adjustments based on error rates."""
+        llm = llm or self.llm
+        if not llm:
+            return statistics
+
+        import json
+        prompt = f"""Behavior prediction thresholds need tuning.
+
+STATS: {json.dumps(statistics, ensure_ascii=False)}
+More FP → lower success threshold. More FN → raise it.
+Output JSON: {{"success_threshold": 0.0-1.0, "instability_threshold": 0.0-1.0, "reason": "brief"}}"""
+
+        try:
+            import re
+            resp = llm.generate(prompt, max_tokens=100, temperature=0.1)
+            cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
+            cleaned = re.sub(r'\n?```', '', cleaned).strip()
+            s = cleaned.find('{'); e = cleaned.rfind('}')
+            return json.loads(cleaned[s:e+1]) if s >= 0 and e > s else statistics
+        except Exception:
+            return statistics
+
+    def suggest_and_apply(self, edge, llm=None) -> dict:
+        """LLM suggests thresholds → applied to edge → edge learns.
+
+        Full feedback loop: statistics → LLM → suggestions → edge parameters.
+        """
+        stats = {
+            "false_positives": getattr(edge, 'failure_count', 0),
+            "false_negatives": getattr(edge, 'correction_count', 0),
+            "current_success_threshold": getattr(edge, 'success_threshold', 0.7),
+            "current_instability_threshold": getattr(edge, 'instability_threshold', 0.3),
+            "sample_count": getattr(edge, 'sample_count', 0),
+        }
+        
+        suggestion = self.suggest_thresholds(stats, llm)
+        
+        # Apply LLM feedback to edge (70% statistical + 30% LLM)
+        if hasattr(edge, 'apply_llm_feedback') and suggestion:
+            edge.apply_llm_feedback(suggestion)
+            logger.debug("LLM feedback applied to edge %s: thresholds %.2f/%.2f",
+                        getattr(edge, 'edge_key', '?'),
+                        getattr(edge, 'success_threshold', 0.7),
+                        getattr(edge, 'instability_threshold', 0.3))
+        
+        return suggestion
         """LLM建议调整行为判定阈值。
 
         statistics: {"false_positives": N, "false_negatives": N, 

@@ -65,6 +65,56 @@ class BehaviorEdge:
         if correction:
             self.correction_count += 1
         self.last_updated = time.time()
+        # Adaptive threshold learning
+        self._adapt_thresholds()
+
+    def _adapt_thresholds(self):
+        """Learn thresholds from history. No hardcoded constants."""
+        if self.sample_count < 5:
+            return  # not enough data
+        
+        rate = self.success_rate
+        inst = self.instability_ratio
+        
+        # Success threshold: moving average with recency bias
+        old = getattr(self, 'success_threshold', 0.7)
+        self.success_threshold = old * 0.9 + rate * 0.1
+        
+        # Instability threshold: punish high corrections
+        old_inst = getattr(self, 'instability_threshold', 0.3)
+        self.instability_threshold = old_inst * 0.9 + min(inst * 1.5, 0.8) * 0.1
+        
+        # Stability: edge becomes stable when success > threshold AND low corrections
+        self.is_stable = (rate > self.success_threshold and 
+                          inst < self.instability_threshold)
+
+    def apply_llm_feedback(self, feedback: dict):
+        """Apply LLM-verified threshold adjustments."""
+        if "success_threshold" in feedback:
+            suggested = feedback["success_threshold"]
+            current = getattr(self, 'success_threshold', 0.7)
+            # Blend: 70% statistical, 30% LLM-suggested
+            self.success_threshold = current * 0.7 + suggested * 0.3
+        
+        if "instability_threshold" in feedback:
+            suggested = feedback["instability_threshold"]
+            current = getattr(self, 'instability_threshold', 0.3)
+            self.instability_threshold = current * 0.7 + suggested * 0.3
+
+    def to_dict(self) -> dict:
+        """Serializable for persistence."""
+        return {
+            "edge_id": self.edge_id,
+            "from": self.from_step_id,
+            "to": self.to_step_id,
+            "success_rate": self.success_rate,
+            "instability": self.instability_ratio,
+            "sample_count": self.sample_count,
+            "correction_count": self.correction_count,
+            "is_stable": self.is_stable,
+            "success_threshold": getattr(self, 'success_threshold', 0.7),
+            "instability_threshold": getattr(self, 'instability_threshold', 0.3),
+        }
 
 
 @dataclass
