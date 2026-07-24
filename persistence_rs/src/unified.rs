@@ -154,6 +154,42 @@ impl PyUnifiedBroker {
         self.event_log.lock().unwrap().append_text(&event_type, &data_json)
     }
 
+    // ── Remaining chain methods ──
+
+    pub fn persist_block_split(&self, original_id: String, new_ids: Vec<String>) -> PyResult<String> {
+        self.event_log.lock().unwrap().append_text("NodeSplit", &serde_json::json!({
+            "original_id": original_id, "new_ids": new_ids
+        }).to_string())
+    }
+
+    pub fn persist_belief_update(&self, intent_key: String, belief_7d: String) -> PyResult<String> {
+        self.event_log.lock().unwrap().append_text("ParameterChanged", &serde_json::json!({
+            "param": format!("belief.{}", intent_key), "old": "", "new": belief_7d, "author": "l2_5"
+        }).to_string())
+    }
+
+    pub fn persist_pattern_feedback(&self, pattern_key: String, accepted: bool) -> PyResult<String> {
+        self.event_log.lock().unwrap().append_text("PatternFeedback", &serde_json::json!({
+            "pattern": pattern_key, "accepted": accepted
+        }).to_string())
+    }
+
+    pub fn persist_profile_drift(&self, dimension: String, drift: f64) -> PyResult<String> {
+        self.event_log.lock().unwrap().append_text("ProfileDrifted", &serde_json::json!({
+            "dimension": dimension, "drift": drift
+        }).to_string())
+    }
+
+    pub fn verify_integrity(&self) -> PyResult<String> {
+        let chain = self.event_log.lock().unwrap().verify().unwrap_or_default();
+        let sessions = self.store.lock().unwrap().list_sessions(10).unwrap_or_default();
+        Ok(serde_json::json!({
+            "event_chain": serde_json::from_str::<serde_json::Value>(&chain).unwrap_or_default(),
+            "sessions": sessions,
+            "events_total": *self.startup_events.lock().unwrap(),
+        }).to_string())
+    }
+
     // ── Graph ──
 
     pub fn put_node(&self, node_id: String, node_type: String, data: String) -> PyResult<()> {
