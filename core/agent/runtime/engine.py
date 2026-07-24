@@ -1658,17 +1658,13 @@ class CognitiveRuntimeEngine:
             return None
 
     def _infer_expectation(self, text: str) -> dict:
-        """Lightweight expectation classifier.
-        TOOL=imperative, ADVISOR=analysis, COMPANION=social.
-        """
-        tl = text.lower()
-        if any(k in tl for k in ["执行","运行","读取","打开","创建","删除","修改","配置","安装","启动","停止","run","start"]):
-            return "TOOL"
-        if any(k in tl for k in ["你觉得","你怎么看","聊聊","讨论","看法","感觉","随便看看","怎么样"]):
-            return "COMPANION"
-        if any(k in tl for k in ["分析","解释","是什么","为什么","怎么看","介绍","说明","讲讲","讲一下"]):
+        """Delegate to PCR V2 — zero hardcoded keywords."""
+        try:
+            from core.agent.pcr_router_v2 import PCRRouterV2
+            result = PCRRouterV2.route(text)
+            return result.zone  # zone maps to TOOL/ADVISOR/COMPANION/PRECISION/EXPLORE
+        except Exception:
             return "ADVISOR"
-        return "ADVISOR"
 
     def _infer_profile_snapshot(self, text: str, response: str) -> dict:
         """Infer profile signals using BGE semantic similarity.
@@ -1682,9 +1678,11 @@ class CognitiveRuntimeEngine:
         sentences = re.split(r'[。！？.!?\n]', text)
         lens = [len(s) for s in sentences if len(s) > 3]
         divergence = 0.3 if len(lens) < 2 else min(1.0, max(lens) / max(1, sum(lens) / len(lens)) / 3)
-        has_analysis = any(k in text for k in ['分析','解释','为什么','怎么看'])
-        is_exploration = any(k in text for k in ['你觉得','讨论','聊聊'])
-        style = "analytical" if has_analysis else ("exploratory" if is_exploration else "neutral")
+        # Style inferred from PCR zone, not hardcoded keywords
+        zone = self._infer_expectation(text)
+        style_map = {"ATOMIC": "neutral", "PRECISION": "analytical", "EXPLORE": "exploratory",
+                     "PSYCHE": "social", "MIXED": "neutral"}
+        style = style_map.get(zone, "neutral")
 
         # BGE semantic enhancement
         try:
