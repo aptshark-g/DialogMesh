@@ -228,6 +228,42 @@ Return JSON: {{"resolved": "intent_name", "reason": "..."}}"""
             self.LOCK_THRESHOLD = t.get('lock_threshold', 0.85)
             self.FORCE_CRYSTAL_TURNS = t.get('force_crystal_turns', 5)
 
+    # ── Ambiguity evidence bridge (multi-perspective → belief) ──
+
+    def ingest_ambiguity_evidence(self, evidence):
+        """Accept ambiguity evidence from multi-perspective analysis deadlock."""
+        if not hasattr(self, '_ambiguity_belief'):
+            self._ambiguity_belief = {"multi_intent_split": 0.5, "single_intent": 0.5}
+        
+        intent = evidence.intent if hasattr(evidence, 'intent') else "multi_intent_split"
+        conf = evidence.confidence if hasattr(evidence, 'confidence') else 0.5
+        
+        # Bayesian update for ambiguity belief
+        prior = self._ambiguity_belief.get(intent, 0.5)
+        posterior = prior + (1.0 - prior) * conf * 0.5  # dampened update
+        self._ambiguity_belief[intent] = min(posterior, 0.99)
+        
+        # Counter-intent gets inverse
+        other = "single_intent" if intent == "multi_intent_split" else "multi_intent_split"
+        self._ambiguity_belief[other] = max(0.01, self._ambiguity_belief.get(other, 0.5) * (1 - conf * 0.3))
+
+    def get_ambiguity_belief(self) -> dict:
+        """Get current ambiguity belief state."""
+        if not hasattr(self, '_ambiguity_belief'):
+            return {}
+        
+        multi = self._ambiguity_belief.get("multi_intent_split", 0.5)
+        single = self._ambiguity_belief.get("single_intent", 0.5)
+        locked = multi > self.LOCK_THRESHOLD or single > self.LOCK_THRESHOLD
+        
+        return {
+            "multi_intent_split": multi,
+            "single_intent": single,
+            "locked": locked,
+            "is_multi": multi > single,
+            "confidence": max(multi, single),
+        }
+
     def _best_intent(self) -> str:
         return max(self.priors, key=self.priors.get)
     
