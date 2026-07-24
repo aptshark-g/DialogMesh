@@ -40,8 +40,18 @@ class UnifiedPersistenceBroker:
         broker.shutdown()  # final snapshot + verify
     """
 
-    def __init__(self, data_dir: str = "data/dialogmesh"):
+    def __init__(self, data_dir: str = "data/dialogmesh",
+                 gc_interval: float = 3600.0, ttl_seconds: float = 604800.0):
+        """Initialize persistence broker.
+
+        Args:
+            data_dir: Root data directory
+            gc_interval: GC cycle interval in seconds (default: 1 hour)
+            ttl_seconds: Session TTL in seconds (default: 7 days)
+        """
         self._dir = data_dir
+        self._gc_interval = gc_interval
+        self._ttl_seconds = ttl_seconds
         import os
         os.makedirs(data_dir, exist_ok=True)
 
@@ -82,16 +92,39 @@ class UnifiedPersistenceBroker:
         sessions = self.session_store.list_active_sessions(limit=100)
         self._state.sessions = len(sessions)
 
+        # Start GC tier manager (JVM-style promotion/demotion)
+        self._gc_timer = threading.Timer(self._gc_interval, self._gc_tick)
+        self._gc_timer.daemon = True
+        self._gc_timer.start()
+
         elapsed = (time.time() - t0) * 1000
         logger.info("PersistenceBroker started in %.0fms: %s", elapsed, self._state)
         return self._state
 
     def shutdown(self):
-        """Final integrity check. Called at process exit."""
+        """Final integrity check + GC flush. Called at process exit."""
+        # Cancel GC timer
+        if hasattr(self, '_gc_timer') and self._gc_timer:
+            self._gc_timer.cancel()
+
         verify = self.event_log.verify()
         logger.info("Shutdown verify: chain_intact=%s, events=%d",
                     verify["chain_intact"], verify["total"])
         self.session_store.close()
+
+    def _gc_tick(self):
+        """Periodic GC: demote stale, clean expired, strip cold data."""
+        try:
+            # Session TTL cleanup
+            self.session_store.cleanup_expired(self._ttl_seconds)
+            
+            # Reschedule
+            if hasattr(self, '_gc_timer'):
+                self._gc_timer = threading.Timer(self._gc_interval, self._gc_tick)
+                self._gc_timer.daemon = True
+                self._gc_timer.start()
+        except Exception as e:
+            logger.debug("GC tick failed: %s", e)
 
     # ── Chain 01: DiscourseTree ──
 
