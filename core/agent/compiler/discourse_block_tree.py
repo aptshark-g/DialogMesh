@@ -38,7 +38,7 @@ class HeaderInjector:
         # Structural pronoun detection — SyntacticDecomposer checks empty-subject slots
         edus = self._decomposer.decompose(text)
         for edu in edus:
-            if edu.has_empty_subject and edu.object:
+            if edu.subject is None and edu.obj:
                 resolved = self._resolve_reference(edu.object, 
                     self._entity_cache.get(session_id, []))
                 if resolved:
