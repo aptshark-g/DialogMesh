@@ -41,17 +41,35 @@ class TopicQuickMatcher:
         self._doc_topics.extend([[topic]] * len(documents))
         self.avg_doc_length = sum(len(d.split()) for d in self._documents) / max(1, len(self._documents))
     
+    def _tokenize(self, text: str) -> List[str]:
+        """Tokenize text — whitespace for English, jieba for Chinese."""
+        # Try jieba for Chinese segmentation
+        try:
+            import jieba
+            return [t for t in jieba.cut(text) if len(t.strip()) > 1]
+        except ImportError:
+            pass
+        # Fallback: character n-grams for Chinese + whitespace for English
+        tokens = []
+        for word in text.lower().split():
+            if any('\u4e00' <= c <= '\u9fff' for c in word):
+                # Chinese word → 2-char n-grams
+                tokens.extend(word[i:i+2] for i in range(len(word)-1))
+            else:
+                tokens.append(word)
+        return tokens
+
     def _build_term_freq(self, docs: List[str]) -> Dict[str, int]:
         tf: Dict[str, int] = {}
         for doc in docs:
-            for word in set(doc.lower().split()):
+            for word in set(self._tokenize(doc)):
                 tf[word] = tf.get(word, 0) + 1
         return tf
     
     def _bm25_score(self, query: str, document: str) -> float:
         """BM25 scoring: tf-idf with length normalization."""
-        query_terms = query.lower().split()
-        doc_terms = document.lower().split()
+        query_terms = self._tokenize(query)
+        doc_terms = self._tokenize(document)
         doc_len = len(doc_terms)
         
         score = 0.0
@@ -59,7 +77,7 @@ class TopicQuickMatcher:
             if term not in doc_terms:
                 continue
             tf = doc_terms.count(term)
-            df = sum(1 for d in self._documents if term in d.lower().split())
+            df = sum(1 for d in self._documents if term in self._tokenize(d))
             idf = math.log((len(self._documents) - df + 0.5) / max(1, df + 0.5) + 1.0)
             numerator = tf * (self.k1 + 1)
             denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / max(1, self.avg_doc_length))
