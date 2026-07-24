@@ -423,14 +423,24 @@ class PCRRouterV2:
 
     @classmethod
     def _llm_review(cls, text: str, x: float, y: float, z: float, sf) -> Optional[dict]:
-        """LLM reviews PCR output and returns corrected (x,y,z) if needed."""
+        """Dual-track review: grammar tags + PCR output → LLM verifies."""
         if not cls._should_review():
             return None
         
-        prompt = f"""Review this routing result for a conversation agent.
+        # Track 1: Grammar tags (structural)
+        try:
+            from core.agent.pcr.grammar_tagger import tag_text, GrammarTags
+            tags = tag_text(text)
+            tag_str = tags.to_tag_string() if tags else ""
+        except Exception:
+            tag_str = ""
+        
+        prompt = f"""Review routing for agent. Grammar tags + PCR output.
 
-INPUT: "{text[:200]}"
+TEXT: "{text[:200]}"
+GRAMMAR: {tag_str or '(stanza unavailable)'}
 PCR: X={x:.2f}(familiar→expert, entities={sf.entity_count}) Y={y:.2f}(simple→complex, verbs={sf.verb_count}) Z={z:+.2f}(venting→solution)
+
 Output ONLY: X <num> Y <num> Z <num>"""
 
         try:

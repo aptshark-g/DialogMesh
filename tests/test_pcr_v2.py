@@ -5,6 +5,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.agent.pcr_router_v2 import PCRRouterV2, StructuralFeatures
 
+# Skip LLM review in tests (adds latency, not needed for structural correctness)
+PCRRouterV2._llm_review_enabled = False
+
 
 def test_structural():
     """Test StructuralFeatures extraction."""
