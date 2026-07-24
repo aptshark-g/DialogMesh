@@ -103,7 +103,6 @@ class UnifiedPersistenceBroker:
 
     def shutdown(self):
         """Final integrity check + GC flush. Called at process exit."""
-        # Cancel GC timer
         if hasattr(self, '_gc_timer') and self._gc_timer:
             self._gc_timer.cancel()
 
