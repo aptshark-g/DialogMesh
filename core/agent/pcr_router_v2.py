@@ -398,14 +398,37 @@ class PCRRouterV2:
 
     @classmethod
     def _auto_detect_llm(cls) -> bool:
-        """Auto-detect local small model (LM Studio). No key needed."""
+        """Auto-detect local model and return size category: 'small','medium','large',None."""
         try:
-            import urllib.request
+            import urllib.request, json, re
             req = urllib.request.Request("http://127.0.0.1:1234/v1/models")
-            urllib.request.urlopen(req, timeout=2)
-            return True
+            data = json.loads(urllib.request.urlopen(req, timeout=2).read())
+            # Try to find model name from LM Studio response
+            models = data.get("data", []) if isinstance(data, dict) else data
+            name = ""
+            for m in models:
+                name = m.get("id", "") if isinstance(m, dict) else str(m)
+                if name: break
+            
+            # Known model sizes
+            SMALL = ["1b","3b","qwen-1","tiny","small"]
+            MEDIUM = ["7b","8b","13b","qwen-7","llama-3","mistral","gemma-2"]
+            LARGE = ["70b","72b","405b","deepseek","claude","gpt"]
+            
+            nl = name.lower()
+            for p in LARGE:
+                if p in nl: return "large"
+            for p in MEDIUM:
+                if p in nl: return "medium"
+            for p in SMALL:
+                if p in nl: return "small"
+            return "small"  # unknown = assume small
         except Exception:
-            return False
+            return None
+
+    _llm_review_enabled: bool = None
+    _llm_review_provider = None
+    _model_size: str = None
 
     @classmethod
     def enable_llm_review(cls, provider=None):
@@ -417,23 +440,38 @@ class PCRRouterV2:
     def _should_review(cls) -> bool:
         if cls._llm_review_enabled is not None:
             return cls._llm_review_enabled
-        detected = cls._auto_detect_llm()
-        cls._llm_review_enabled = detected
-        return detected
+        size = cls._auto_detect_llm()
+        cls._model_size = size
+        cls._llm_review_enabled = size is not None
+        return cls._llm_review_enabled
 
     @classmethod
     def _llm_review(cls, text: str, x: float, y: float, z: float, sf) -> Optional[dict]:
-        """LLM reviews PCR — 3 minimal signals replace full grammar tags."""
+        """LLM reviews PCR. Strategy depends on model size:
+           small (<7B): 3 minimal signals  |  medium (7-13B): full grammar tags  |  large: PCR only"""
         if not cls._should_review():
             return None
         
-        # 3 binary signals (2 tokens each, not 10+ token grammar tags)
-        mood = ""
-        if "?" in text or "？" in text: mood += " [question]"
-        if "!" in text or "！" in text: mood += " [emotion]"
+        size = cls._model_size or "small"
+        
+        if size == "medium":
+            # Full grammar tags for medium models (structural anchors help)
+            try:
+                from core.agent.pcr.grammar_tagger import tag_text
+                tags = tag_text(text)
+                extra = f"\nGRAMMAR: {tags.to_tag_string()}" if tags else ""
+            except Exception:
+                extra = ""
+        elif size == "small":
+            # 3 minimal signals for small models (avoid prompt bloat)
+            extra = ""
+            if "?" in text or "？" in text: extra += " [question]"
+            if "!" in text or "！" in text: extra += " [emotion]"
+        else:
+            extra = ""  # large model: just PCR numbers
         
         prompt = f"""Review routing. PCR: X={x:.2f}(familiar→expert) Y={y:.2f}(simple→complex) Z={z:+.2f}(venting→solution)
-TEXT: "{text[:150]}"{mood}
+TEXT: "{text[:150]}"{extra}
 Output ONLY: X <num> Y <num> Z <num>"""
 
         try:
