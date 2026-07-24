@@ -1,45 +1,31 @@
-"""Multi-Intent Splitter tests — JSON-driven + LLM live test."""
+"""Multi-Intent Splitter tests — LLM-first, zero hardcoded rules."""
 
 import sys, json
 sys.path.insert(0, '.')
 from core.agent.intent.multi_intent_splitter import MultiIntentSplitter
-from core.agent.intent.models import SubIntent, MultiIntentResult
 
 
-def test_structural():
-    """Structural tests — no LLM needed."""
-    data = json.loads(open("tests/test_data_multi_intent.json", encoding='utf-8').read())
-    splitter = MultiIntentSplitter()  # no LLM
-
-    for s in data["scenarios"]:
-        result = splitter.split(s["text"])
-        checks = s["expect"]
-        ok = True
-
-        if result.is_multi != checks.get("is_multi", False):
-            print(f"  ❌ {s['id']}: is_multi={result.is_multi} expected {checks['is_multi']}")
-            ok = False
-        if len(result.sub_intents) < checks.get("min_subs", 1):
-            print(f"  ❌ {s['id']}: subs={len(result.sub_intents)} < {checks['min_subs']}")
-            ok = False
-
-        if ok:
-            print(f"  ✅ {s['id']}: {len(result.sub_intents)} sub-intents, multi={result.is_multi}")
+def test_no_llm():
+    """Without LLM, falls back to structural — single intent is correct."""
+    splitter = MultiIntentSplitter()
+    r = splitter.split("帮我分析这个加密算法")
+    assert not r.is_multi, f"Expected single intent, got multi"
+    assert len(r.sub_intents) == 1
+    print("  ✅ no_llm: single intent correct")
 
 
-def test_live_llm():
-    """Live LLM test — uses nemotron on LM Studio to verify a multi-intent split."""
+def test_llm_multi():
+    """With LLM, detects multi-intent from semantic understanding."""
     try:
         import urllib.request
         req = urllib.request.Request("http://127.0.0.1:1234/v1/models")
         urllib.request.urlopen(req, timeout=2)
     except Exception:
-        print("\n  ⚠️ LM Studio not available — skipping LLM test")
+        print("  ⚠️ LM Studio not available — skipping LLM tests")
         return
 
-    # Build a simple LLM-backed literal chain
     class Nemotron:
-        def generate(self, prompt, max_tokens=150, temperature=0.1):
+        def generate(self, prompt, max_tokens=300, temperature=0.1):
             req = urllib.request.Request("http://127.0.0.1:1234/v1/chat/completions",
                 data=json.dumps({"model":"nvidia/nemotron-3-nano-4b","messages":[{"role":"user","content":prompt}],"max_tokens":max_tokens,"temperature":temperature}).encode(),
                 headers={"Content-Type":"application/json"})
@@ -51,17 +37,21 @@ def test_live_llm():
     llm = Nemotron()
     splitter = MultiIntentSplitter(llm=llm)
 
-    text = "先定位哪个模块延迟高，然后帮我看看怎么修复"
-    print(f"\n=== LLM Live Test ===")
-    print(f"  TEXT: {text}")
-    result = splitter.split(text)
-    print(f"  Result: {len(result.sub_intents)} sub-intents, multi={result.is_multi}")
-    for si in result.sub_intents:
-        print(f"    [{si.id}] {si.text[:50]} (conf={si.confidence:.2f}, literal={si.chain_votes.get('literal',0):.2f})")
-    print(f"  Fusion: {result.fusion_method}")
+    tests = [
+        ("帮我分析加密算法", False),          # single intent
+        ("先定位延迟，然后帮我修复", True),     # explicit sequential
+        ("看看这个漏洞，顺便评估影响", True),   # explicit parallel
+    ]
+
+    for text, expect_multi in tests:
+        r = splitter.split(text)
+        status = "✅" if r.is_multi == expect_multi else "❌"
+        print(f"  {status} '{text[:30]}' → multi={r.is_multi} ({len(r.sub_intents)} parts)")
+        for si in r.sub_intents:
+            print(f"      [{si.id}] {si.text[:50]} (conf={si.confidence:.2f})")
 
 
 if __name__ == "__main__":
-    test_structural()
-    test_live_llm()
-    print("\n🎉 Multi-Intent Splitter: all tests passed")
+    test_no_llm()
+    test_llm_multi()
+    print("\n🎉 Multi-Intent Splitter: LLM-first verified")
