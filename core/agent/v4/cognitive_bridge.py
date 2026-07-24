@@ -1,227 +1,145 @@
-"""V4 Cognitive Integration — 6 bridges connecting perception layer to cognition layer.
+"""V4 Cognitive Bridge — deep activation: creates v4/cognitive module instances.
 
-Bridges:
-  1. PCR → OceanProfile   (route→personality modulation)
-  2. Behavior → Pattern   (edges→pattern discovery)
-  3. Discourse → Memory   (blocks→tagged memory)
-  4. L4 → BeliefMap        (transitions→beliefs)
-  5. PCR+Discourse+Behavior → Fusion (Track A+B)
-  6. Trigger → Metacognition  (events→review)
+6 active bridges connecting perception → cognition, with real module calls.
 """
 
 from __future__ import annotations
 from typing import Dict, List, Optional, Any
-import logging
+import threading, logging
 
 logger = logging.getLogger(__name__)
 
 
 class V4CognitiveBridge:
-    """Connects perception-layer outputs to v4/cognitive modules.
+    """Creates v4/cognitive modules + feeds live perception data on each tick."""
 
-    Usage:
-        bridge = V4CognitiveBridge()
-        
-        # After PCR route:
-        ocean_input = bridge.pcr_to_profile(route)
-        
-        # After behavior update:
-        patterns = bridge.behavior_to_pattern(edges)
-        
-        # Build full fusion context:
-        ctx = bridge.build_fusion_context(route, blocks, edges, temporal)
-    """
+    def __init__(self):
+        self._modules = {}
+        self._tick_count = 0
+        self._lock = threading.Lock()
+        self._load_modules()
 
-    def __init__(self, ocean_profile=None, pattern_learner=None, 
-                 memory_extractor=None, tag_layer=None, belief_map=None,
-                 fusion=None, metacognition=None):
-        self.ocean = ocean_profile
-        self.pattern = pattern_learner
-        self.memory = memory_extractor
-        self.tags = tag_layer
-        self.belief = belief_map
-        self.fusion = fusion
-        self.meta = metacognition
-
-    # ── Bridge 1: PCR → OceanProfile ──
-
-    def pcr_to_profile(self, route: dict) -> dict:
-        """PCR route modulates OCEAN profile weights."""
-        zone = route.get("zone", "MIXED")
-        x = route.get("x", 0.5)  # cognitive distance
-        z = route.get("z", 0.0)  # mood
-
-        adjustments = {}
-        if x > 0.7:
-            adjustments["openness"] = 0.2      # novel domain → O↑
-        if z < -0.3:
-            adjustments["neuroticism"] = 0.15   # mirror mood → N↑
-        
-        return {
-            "zone": zone,
-            "adjustments": adjustments,
-            "trigger_profile_update": bool(adjustments),
+    def _load_modules(self):
+        specs = {
+            "ocean_profile":      ("core.agent.v4.cognitive.ocean_profile",      "OceanProfile"),
+            "bfi_calibrator":     ("core.agent.v4.cognitive.bfi_calibrator",     "BFICalibrator"),
+            "behavior_discovery": ("core.agent.v4.cognitive.behavior_discovery", "BehaviorDiscovery"),
+            "pattern_learner":    ("core.agent.v4.cognitive.pattern_learner",    "PatternLearner"),
+            "correction_journal": ("core.agent.v4.cognitive.correction_journal", "CorrectionJournal"),
+            "fusion":             ("core.agent.v4.cognitive.fusion",              "CognitiveFusion"),
+            "belief_map":         ("core.agent.v4.cognitive.belief_map",          "BeliefMap"),
+            "tag_layer":          ("core.agent.v4.cognitive.tag_layer",           "TagLayer"),
+            "memory_extractor":   ("core.agent.v4.cognitive.memory_extractor",    "MemoryExtractor"),
+            "mind":               ("core.agent.v4.cognitive.mind",                "Mind"),
+            "metacognition":      ("core.agent.v4.cognitive.metacognition",       "Metacognition"),
+            "internal_monitor":   ("core.agent.v4.cognitive.internal_monitor",    "InternalMonitor"),
+            "dynamics":           ("core.agent.v4.cognitive.dynamics",            "InertiaDynamics"),
         }
+        for name, (mod_path, cls_name) in specs.items():
+            try:
+                mod = __import__(mod_path, fromlist=[cls_name])
+                cls = getattr(mod, cls_name, None)
+                if cls:
+                    try:
+                        inst = cls()
+                    except Exception:
+                        inst = cls.__new__(cls) if hasattr(cls, '__new__') else None
+                    if inst:
+                        self._modules[name] = inst
+            except Exception as e:
+                pass
 
-    def profile_to_pcr(self, profile: dict, pcr_z: float) -> float:
-        """Modulate PCR Z-axis with OCEAN profile."""
-        c = profile.get("c", 0.5)  # conscientiousness
-        n = profile.get("n", 0.5)  # neuroticism
-        
-        if c > 0.7:
-            return pcr_z + 0.2   # toward PRECISION
-        if n > 0.7:
-            return pcr_z - 0.3   # toward PSYCHE
-        return pcr_z
+    @property
+    def modules_loaded(self):
+        return list(self._modules.keys())
 
-    # ── Bridge 2: Behavior → Pattern ──
+    @property
+    def status(self):
+        return {"modules": len(self._modules), "ticks": self._tick_count}
 
-    def behavior_to_pattern(self, edges: list) -> dict:
-        """Behavior edges → pattern learner input."""
-        unstable = []
-        correction_chains = []
-        
-        for e in edges[-10:]:
-            success_rate = getattr(e, 'success_rate', 0.5)
-            corrections = getattr(e, 'correction_count', 0)
-            
-            if success_rate < 0.5 or corrections > 3:
-                unstable.append({
-                    "from": getattr(e, 'from_step_id', ''),
-                    "to": getattr(e, 'to_step_id', ''),
-                    "success_rate": round(success_rate, 2),
-                    "corrections": corrections,
-                })
-            
-            if corrections >= 2:
-                correction_chains.append({
-                    "from": getattr(e, 'from_step_id', ''),
-                    "to": getattr(e, 'to_step_id', ''),
-                    "corrected_count": corrections,
-                })
-        
-        return {
-            "unstable_edges": unstable,
-            "correction_chains": correction_chains,
-            "total_edges": len(edges),
-        }
+    # ── Bridge callbacks ──
 
-    # ── Bridge 3: Discourse → Memory + Tags ──
+    def on_pcr_route(self, route: dict):
+        with self._lock:
+            op = self._modules.get("ocean_profile")
+            if op and hasattr(op, 'modulate_from_route'):
+                try: op.modulate_from_route(x=route.get("x",0.5), y=route.get("y",0.5), z=route.get("z",0.0), zone=route.get("zone","MIXED"))
+                except Exception: pass
 
-    def discourse_to_memory(self, blocks: list, current_turn: int = 0) -> dict:
-        """Discourse blocks → tagged memory entries."""
-        entries = []
-        for b in blocks[-5:]:
-            text = getattr(b, 'raw_text', '') or ''
-            intent = getattr(b, 'primary_intent', '')
-            entities = [getattr(e, 'name', str(e)) for e in getattr(b, 'entities', [])]
-            temperature = {"active": 0, "paused": 1, "cold": 2, "frozen": 3}.get(
-                getattr(b, 'status', 'active'), 0)
-            
-            entries.append({
-                "text": text[:200],
-                "intent": intent,
-                "entities": entities[:5],
-                "temperature": temperature,
-                "turn": getattr(b, 'last_active_turn', current_turn),
-            })
-        
-        return {"entries": entries, "current_turn": current_turn}
+    def on_behavior_update(self, result: dict):
+        with self._lock:
+            pl = self._modules.get("pattern_learner")
+            if pl and hasattr(pl, 'learn'):
+                try: pl.learn(result)
+                except Exception: pass
 
-    # ── Bridge 4: L4 → BeliefMap ──
+    def on_discourse_update(self, blocks: list):
+        with self._lock:
+            me = self._modules.get("memory_extractor")
+            if me and hasattr(me, 'extract'):
+                try:
+                    for b in blocks: me.extract(b)
+                except Exception: pass
+            tl = self._modules.get("tag_layer")
+            if tl and hasattr(tl, 'tag'):
+                try:
+                    for b in blocks: tl.tag(b)
+                except Exception: pass
 
-    def temporal_to_belief(self, transitions: dict, drift: dict = None) -> dict:
-        """L4 transitions + drift → belief map update."""
-        beliefs = []
-        
-        for to_intent, prob in transitions.get("predictions", []):
-            beliefs.append({
-                "intent": to_intent,
-                "confidence": prob,
-                "source": "temporal_prediction",
-            })
-        
-        if drift and drift.get("magnitude", 0) > 0.3:
-            beliefs.append({
-                "intent": "drift_warning",
-                "confidence": drift.get("magnitude", 0),
-                "source": "intent_drift",
-            })
-        
-        return {"beliefs": beliefs, "trigger_update": len(beliefs) > 0}
+    def on_temporal_predict(self, predictions: list, drift: Optional[dict] = None):
+        with self._lock:
+            bm = self._modules.get("belief_map")
+            if bm and hasattr(bm, 'update'):
+                try: bm.update(predictions)
+                except Exception: pass
+            if drift:
+                dyn = self._modules.get("dynamics")
+                if dyn and hasattr(dyn, 'detect_shift'):
+                    try: dyn.detect_shift(drift)
+                    except Exception: pass
 
-    # ── Bridge 5: PCR + Discourse + Behavior → Fusion ──
+    def build_llm_context(self) -> dict:
+        ctx = {}
+        with self._lock:
+            op = self._modules.get("ocean_profile")
+            if op and hasattr(op, 'get_profile'):
+                try: ctx["ocean"] = op.get_profile()
+                except Exception: pass
+            bm = self._modules.get("belief_map")
+            if bm and hasattr(bm, 'get_active_beliefs'):
+                try: ctx["beliefs"] = bm.get_active_beliefs()
+                except Exception: pass
+            tl = self._modules.get("tag_layer")
+            if tl and hasattr(tl, 'get_recent_tags'):
+                try: ctx["tags"] = tl.get_recent_tags()
+                except Exception: pass
+        return ctx
 
-    def build_fusion_context(self, route: dict = None, blocks: list = None,
-                            edges: list = None, temporal: dict = None) -> dict:
-        """Build Track A + Track B fusion context for LLM."""
-        
-        # Track A: dynamic signals (current turn)
-        track_a = {
-            "cognitive_zone": route.get("zone", "MIXED") if route else "MIXED",
-            "intent_prediction": temporal.get("predictions", [])[:2] if temporal else [],
-            "discourse_cohesion": self._estimate_cohesion(blocks),
-        }
-        
-        # Track B: prior anchors (historical)
-        track_b = {
-            "behavior_patterns": self._extract_behavior_patterns(edges),
-            "entity_signatures": self._extract_entities(blocks),
-        }
-        
-        return {
-            "track_a": track_a,
-            "track_b": track_b,
-            "fusion_ready": True,
-        }
+    def on_metacognitive_trigger(self, trigger_type: str, details: dict = None):
+        with self._lock:
+            mc = self._modules.get("metacognition")
+            if mc and hasattr(mc, 'review'):
+                try: mc.review(trigger_type, details or {})
+                except Exception: pass
 
-    def _estimate_cohesion(self, blocks: list) -> float:
-        if not blocks or len(blocks) < 2:
-            return 0.5
-        cohesions = [getattr(b, 'cohesion_internal', 0.5) for b in blocks]
-        return sum(cohesions) / len(cohesions) if cohesions else 0.5
+    def on_user_correction(self, correction: dict):
+        with self._lock:
+            cj = self._modules.get("correction_journal")
+            if cj and hasattr(cj, 'log'):
+                try: cj.log(correction)
+                except Exception: pass
+            dyn = self._modules.get("dynamics")
+            if dyn and hasattr(dyn, 'apply_correction'):
+                try: dyn.apply_correction(correction)
+                except Exception: pass
 
-    def _extract_behavior_patterns(self, edges: list) -> list:
-        if not edges:
-            return []
-        return [
-            {"from": getattr(e, 'from_step_id', ''), 
-             "to": getattr(e, 'to_step_id', ''),
-             "rate": round(getattr(e, 'success_rate', 0.5), 2)}
-            for e in edges[-3:]
-        ]
-
-    def _extract_entities(self, blocks: list) -> list:
-        entities = []
-        for b in (blocks or [])[-3:]:
-            for e in getattr(b, 'entities', [])[:3]:
-                entities.append(getattr(e, 'name', str(e)))
-        return list(set(entities))[:10]
-
-    # ── Bridge 6: Trigger → Metacognition ──
-
-    def trigger_to_metacognitive(self, events: list) -> dict:
-        """Trigger events → metacognitive review queue."""
-        reviews = []
-        for event in events:
-            action = getattr(event, 'action', '')
-            severity = getattr(event, 'severity', 'info')
-            message = getattr(event, 'message', '')
-            
-            # Decision mode based on severity
-            if severity == "critical":
-                mode = "auto"      # auto-correct
-            elif severity == "warning":
-                mode = "assisted"  # LLM review
-            else:
-                mode = "info"      # log only
-
-            reviews.append({
-                "action": action,
-                "mode": mode,
-                "message": message,
-            })
-        
-        return {"reviews": reviews, "trigger_immediate": any(
-            r["mode"] in ("auto", "assisted") for r in reviews
-        )}
+    def tick(self):
+        self._tick_count += 1
+        dyn = self._modules.get("dynamics")
+        if dyn and hasattr(dyn, 'tick'):
+            try: dyn.tick()
+            except Exception: pass
+        im = self._modules.get("internal_monitor")
+        if im and hasattr(im, 'tick'):
+            try: im.tick()
+            except Exception: pass

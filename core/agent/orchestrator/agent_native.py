@@ -25,7 +25,7 @@ class AgentOrchestrator:
 
     def __init__(self, pcr_router=None, intent_splitter=None, l4_engine=None,
                  behavior_collab=None, engineering_chain=None, llm=None,
-                 discourse_tree=None):
+                 discourse_tree=None, cognitive_bridge=None):
         self.pcr = pcr_router
         self.intent = intent_splitter
         self.l4 = l4_engine
@@ -33,6 +33,7 @@ class AgentOrchestrator:
         self.engineering = engineering_chain
         self.llm = llm
         self.discourse = discourse_tree
+        self.cognitive = cognitive_bridge or self._try_load_bridge()
 
     def process(self, text: str, session_id: str = "default") -> dict:
         """Full pipeline: PCR → Intent → L4 → Behavior → Engineering → Plan.
@@ -53,6 +54,9 @@ class AgentOrchestrator:
                     "y": getattr(route, 'y', 0.5),
                     "z": getattr(route, 'z', 0.0),
                 }
+                # === Cognitive: PCR → OceanProfile ===
+                if self.cognitive:
+                    self.cognitive.on_pcr_route(result["route"])
             except Exception as e:
                 logger.debug("PCR failed: %s", e)
                 result["route"] = {"zone": "MIXED", "error": str(e)}
@@ -90,12 +94,22 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.debug("L4 failed: %s", e)
 
+        # === Cognitive: L4 → BeliefMap ===
+        if self.cognitive:
+            preds = result.get("temporal", {}).get("predictions", [])
+            drift = result.get("temporal", {}).get("drift")
+            self.cognitive.on_temporal_predict(preds, drift)
+
         # 4. Behavior — insight
         if self.behavior:
             try:
                 result["behavior"] = {"available": True}
             except Exception:
                 result["behavior"] = {"available": False}
+
+        # === Cognitive: Behavior → Pattern Learner ===
+        if self.cognitive:
+            self.cognitive.on_behavior_update(result.get("behavior", {}))
 
         # 5. Engineering — tool feasibility
         if self.engineering:
@@ -112,6 +126,11 @@ class AgentOrchestrator:
 
         # 6. LLM Synthesis — master coordination
         if self.llm:
+            # === Cognitive: build context for LLM ===
+            if self.cognitive:
+                cognitive_ctx = self.cognitive.build_llm_context()
+                result["cognitive"] = cognitive_ctx
+                self.cognitive.tick()
             result["plan"] = self._llm_synthesize(result)
 
         result["latency_ms"] = round((time.time() - start) * 1000)
@@ -127,6 +146,7 @@ class AgentOrchestrator:
             "intents": context.get("intents", {}),
             "temporal_predictions": context.get("temporal", {}).get("predictions", []),
             "available_tools": context.get("tools", {}).get("total", 0),
+            "cognitive_context": context.get("cognitive", {}),
         }
 
         prompt = f"""You are an agent coordinator. Based on the pipeline analysis, create an execution plan.
@@ -147,3 +167,12 @@ Output a JSON execution plan:
         except Exception as e:
             logger.debug("LLM synthesis failed: %s", e)
             return {"fallback": True, "error": str(e)}
+
+    @staticmethod
+    def _try_load_bridge():
+        """Lazy-load v4 cognitive bridge if available."""
+        try:
+            from core.agent.v4.cognitive_bridge import V4CognitiveBridge
+            return V4CognitiveBridge()
+        except Exception:
+            return None
