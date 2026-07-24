@@ -802,20 +802,26 @@ class CognitiveRuntimeEngine:
         # ---- Context Engineering: compile CrossDomainContextIR ----
         self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result, unified_result=unified_result)
         
-        # ---- DiscourseBlockTree context injection ----
+        # ---- DiscourseBlockTree context injection (3-paradigm compass) ----
         if self._discourse_tree and self._last_context:
             try:
                 session_id = getattr(event, 'session_id', 'default')
-                discourse_ctx = self._discourse_tree.build_context(session_id, max_blocks=5)
-                if discourse_ctx and self._last_context:
-                    from core.agent.context.cross_domain_ir import ContextEntry
-                    entry = ContextEntry(
-                        source="discourse_tree",
-                        content=discourse_ctx,
-                        relevance=0.7,
-                    )
-                    self._last_context.entries.append(entry)
-                    logger.debug('Discourse context injected: %s chars', len(discourse_ctx))
+                tree = self._discourse_tree._trees.get(session_id)
+                if tree and tree.blocks:
+                    from core.agent.compiler.three_paradigm_context import ThreeParadigmContext
+                    compass = ThreeParadigmContext(topic_tree=self._topic_tree)
+                    block_list = list(tree.blocks.values())[:8]
+                    discourse_ctx = compass.build(block_list, current_text=text,
+                                                 max_tokens=2000)
+                    if discourse_ctx:
+                        from core.agent.context.cross_domain_ir import ContextEntry
+                        entry = ContextEntry(
+                            source="discourse_tree",
+                            content=discourse_ctx,
+                            relevance=0.7,
+                        )
+                        self._last_context.entries.append(entry)
+                        logger.debug('Compass context injected: %s chars', len(discourse_ctx))
             except Exception as e:
                 logger.debug('Discourse context injection skipped: %s', e)
 
