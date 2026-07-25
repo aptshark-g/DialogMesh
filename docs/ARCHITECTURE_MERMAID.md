@@ -1,7 +1,7 @@
 # DialogMesh — 架构全景图 (Mermaid)
 
 ```mermaid
-graph TB
+flowchart TB
     subgraph USER["输入"]
         U["用户输入"]
     end
@@ -81,7 +81,7 @@ graph TB
     EB -.->|"subscribe 8种事件"| MS
     EB -.->|"subscribe 6种事件"| A
 
-    %% 横切
+    %% 横切（无箭头连接，表示依赖关系）
     MM --- P
     MM --- A
     MM --- C
@@ -167,7 +167,7 @@ graph LR
 # 三层部署视图
 
 ```mermaid
-graph TB
+flowchart TB
     subgraph L1["微服务层 · 冷路径 · 防广播风暴"]
         direction LR
         EB1["EventLog<br/>append-only"]
