@@ -86,19 +86,32 @@ class AgentOrchestrator:
                 logger.debug("PCR failed: %s", e)
                 result["route"] = {"zone": "MIXED", "error": str(e)}
 
-        # 2. MultiIntent
+        # 2. Intent — DualTrack hot/cold (replaces direct splitter)
         if self.intent:
             try:
-                split_result = self.intent.split(text)
+                # DualTrack: hot path returns immediately, cold path optimizes in background
+                dt_result = self.intent.process(text)
                 result["intents"] = {
-                    "multi": split_result.multi,
-                    "segments": [s.text for s in split_result.segments],
-                    "confidence": split_result.confidence,
+                    "multi": dt_result.is_multi,
+                    "segments": dt_result.segments,
+                    "confidence": dt_result.confidence,
+                    "source": dt_result.source,
+                    "cold_enqueued": dt_result.cold_enqueued,
                 }
                 self._publish("INTENT_PARSED", result["intents"])
             except Exception as e:
-                logger.debug("Intent failed: %s", e)
-                result["intents"] = {"multi": False, "segments": [text]}
+                # Fallback: direct splitter
+                logger.debug("DualTrack failed: %s", e)
+                try:
+                    split_result = self.intent.split(text)
+                    result["intents"] = {
+                        "multi": split_result.multi,
+                        "segments": [s.text for s in split_result.segments],
+                        "confidence": split_result.confidence,
+                        "source": "fallback",
+                    }
+                except Exception:
+                    result["intents"] = {"multi": False, "segments": [text], "source": "fallback"}
 
         # 3. L4 Temporal
         if self.l4:
@@ -187,6 +200,11 @@ class AgentOrchestrator:
                 pass
 
         result["latency_ms"] = round((time.time() - start) * 1000)
+
+        # DualTrack status
+        if self.intent and hasattr(self.intent, 'status'):
+            result["dual_track"] = self.intent.status()
+
         return result
 
     def _llm_synthesize(self, context: dict) -> dict:
