@@ -1,164 +1,168 @@
-# -*- coding: utf-8 -*-
-"""
-core/agent/cognitive_compiler/compiler.py
-──────────────────────────────────────
-Cognitive compiler orchestrator.
+"""Cognitive Compiler — v3.0 ENGINEERING_COGNITIVE_COMPILER §5.
 
-设计要点：
-  - 编译器只负责解析→补全→粘合度计算，不判断意图，不内部调用话题树/双结构
-  - 三级模式：fast(<2ms, 纯规则) → hybrid(灰区调1.5B LLM, <30ms) → full(完整LLM)
-  - 编译器输出 cohesion_score，话题路由由调用方显式执行
+Single entry point for writing to the Cognitive Tree.
+Compiles 6 LLM instance outputs into CognitiveTreeNode nodes.
+Manages lifecycle, edges, access control, and event notification.
 """
 
 from __future__ import annotations
-
-import time
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
+import logging
+import time
 
-from core.agent.cognitive_compiler.decomposer import SyntacticDecomposer, ParsedClause
-from core.agent.cognitive_compiler.injector import HeaderInjector
-from core.agent.cognitive_compiler.scorer import CohesionScorer
+logger = logging.getLogger(__name__)
 
 
-class CompilerMode(Enum):
-    """编译器运行模式。"""
-    FAST = "fast"       # 纯规则，<2ms
-    HYBRID = "hybrid"   # 规则+LLM辅助，<30ms
-    FULL = "full"       # 完整LLM，<200ms
-    AUTO = "auto"       # 根据输入复杂度自动选择
+@dataclass
+class CompileInput:
+    """Input from one LLM instance."""
+    llm_instance: str          # "pcr"/"intent"/"meta"/"planning"/"answer"/"reflective"
+    content: str
+    node_type: str             # PERCEPTION/HYPOTHESIS/REASONING/DECISION/ACTION/...
+    confidence: float = 0.5
+    evidence: List[str] = field(default_factory=list)
+    action: Optional[str] = None
+    action_result: Optional[str] = None
+    cross_refs: List[str] = field(default_factory=list)  # node_ids
 
 
-@dataclass(frozen=False)
-class CompiledInput:
-    """编译后的结构化输入。"""
-    query: str = ""                          # 补全后的查询文本
-    raw_query: str = ""                    # 原始查询文本
-    cohesion_score: float = 0.0              # 与当前话题的粘合度 (0-1)
-    # 编译器不填 topic_node_id，由调用方利用 cohesion_score 执行路由
-    topic_node_id: Optional[str] = None
-    timeline_event_id: Optional[str] = None
-    # 解析产物
-    clauses: List[ParsedClause] = field(default_factory=list)
-    injected_headers: Dict[str, Any] = field(default_factory=dict)
-    # 编译元信息
-    compilation_time_ms: float = 0.0
-    mode_used: str = ""
-    parse_trace: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "query": self.query,
-            "raw_query": self.raw_query,
-            "cohesion_score": self.cohesion_score,
-            "topic_node_id": self.topic_node_id,
-            "timeline_event_id": self.timeline_event_id,
-            "clauses": [c.to_dict() for c in self.clauses],
-            "injected_headers": self.injected_headers,
-            "compilation_time_ms": self.compilation_time_ms,
-            "mode_used": self.mode_used,
-            "parse_trace": self.parse_trace,
-            "metadata": self.metadata,
-        }
+@dataclass
+class CompileResult:
+    """Result of one compile cycle."""
+    nodes_created: int = 0
+    edges_created: int = 0
+    nodes_archived: int = 0
+    events_emitted: List[str] = field(default_factory=list)
+    latency_ms: float = 0.0
 
 
 class CognitiveCompiler:
+    """ENGINEERING_COGNITIVE_COMPILER §5 — bridges 6 LLMs → CognitiveTree.
+
+    Principle: Cognitive Tree is the shared mental space of all LLMs.
+    The compiler is the ONLY entry point for information entering that space.
     """
-    认知编译器。
-    将原始用户输入编译为结构化、实体补全、粘合度标注的输入。
-    """
 
-    def __init__(
-        self,
-        decomposer: Optional[SyntacticDecomposer] = None,
-        injector: Optional[HeaderInjector] = None,
-        scorer: Optional[CohesionScorer] = None,
-        mode: CompilerMode = CompilerMode.AUTO,
-    ):
-        self.decomposer = decomposer or SyntacticDecomposer()
-        self.injector = injector or HeaderInjector()
-        self.scorer = scorer or CohesionScorer()
-        self.mode = mode
+    MAX_NODES = 1000
+    DEFAULT_DEPTH_LIMIT = 20
 
-    def compile(
-        self,
-        user_input: str,
-        turn_index: int,
-        session_history: Optional[List[Dict[str, Any]]] = None,
-        entity_cache: Optional[Any] = None,
-    ) -> CompiledInput:
+    def __init__(self, tree_store=None, access_control=None,
+                 event_bus=None, lifecycle_manager=None, edge_manager=None):
+        self._store = tree_store
+        self._access = access_control
+        self._bus = event_bus
+        self._lifecycle = lifecycle_manager
+        self._edges = edge_manager
+
+        # Lazy-load from v3_0 if not provided
+        if self._store is None:
+            self._store = self._make_tree_store()
+        if self._access is None:
+            self._access = self._make_access_control()
+        if self._bus is None:
+            self._bus = self._make_event_bus()
+
+    def compile(self, inputs: List[CompileInput], session_id: str = "default") -> CompileResult:
+        """Process multiple LLM outputs into Cognitive Tree nodes.
+
+        Flow: validate → create nodes → create edges → notify → archive stale.
         """
-        编译用户输入。
-        三阶段：句法分解 → 头文件引入 → 粘合度计算。
-        """
-        start = time.time()
-        session_history = session_history or []
+        t0 = time.time()
+        result = CompileResult()
 
-        result = CompiledInput(raw_query=user_input)
+        if not self._store:
+            return result
 
-        # Step 1: 确定模式
-        mode = self._select_mode(user_input, turn_index)
-        result.mode_used = mode.value
+        for inp in inputs:
+            # 1. Access control: can this LLM write?
+            if self._access and not self._access.can_write(inp.llm_instance, inp.node_type):
+                logger.debug("Access denied: %s→%s", inp.llm_instance, inp.node_type)
+                continue
 
-        # Step 2: 句法分解
-        clauses, parse_trace = self.decomposer.decompose(user_input, mode=mode)
-        result.clauses = clauses
-        result.parse_trace.extend(parse_trace)
+            # 2. Create node
+            node = self._create_node(inp, session_id)
+            if node:
+                self._store.add_node(node)
+                result.nodes_created += 1
 
-        # Step 3: 头文件引入（实体补全 + 代词消解）
-        injected, headers = self.injector.inject(
-            clauses, session_history, entity_cache=entity_cache
-        )
-        result.injected_headers = headers
+                # 3. Create edges (cross-reference connections)
+                for ref_id in inp.cross_refs:
+                    if self._store.get_node(ref_id):
+                        edge_id = f"{node.node_id}_{ref_id}_CROSS_REF"
+                        self._store.add_edge(edge_id, node.node_id, ref_id, "CROSS_REF")
+                        result.edges_created += 1
 
-        # 将本轮提取的实体压入 entity_cache（供下一轮回溯）
-        if entity_cache is not None:
-            entities = self._extract_entities_from_clauses(injected)
-            if entities:
-                entity_cache.push(turn_index, entities)
+                # 4. Notify
+                if self._bus:
+                    self._bus.publish("NODE_CREATED", {
+                        "node_id": node.node_id,
+                        "type": inp.node_type,
+                        "source_llm": inp.llm_instance,
+                        "confidence": inp.confidence,
+                    })
+                    result.events_emitted.append("NODE_CREATED")
 
-        # 重建查询文本
-        result.query = self._rebuild_query(injected)
+            # 5. Lifecycle: archive nodes past depth limit
+            if self._lifecycle:
+                archived = self._lifecycle.prune_beyond_depth(self.DEFAULT_DEPTH_LIMIT)
+                result.nodes_archived += archived
 
-        # Step 4: 粘合度计算
-        cohesion = self.scorer.calculate(result.query, session_history)
-        result.cohesion_score = cohesion
-        result.parse_trace.append(f"[COHESION] score={cohesion:.3f}")
-
-        result.compilation_time_ms = (time.time() - start) * 1000
+        result.latency_ms = (time.time() - t0) * 1000
         return result
 
-    def _extract_entities_from_clauses(self, clauses: List[ParsedClause]) -> List[Dict[str, Any]]:
-        """从子句列表中提取实体，用于压入 entity_cache。"""
-        entities = []
-        for c in clauses:
-            if c.backfilled and c.backfill_source:
-                # 被回溯补全的实体，标记来源
-                entities.append({"value": c.subject, "type": "backfilled", "source": c.backfill_source})
-            if c.subject and not c.backfilled:
-                entities.append({"value": c.subject, "type": "subject"})
-            if c.object:
-                entities.append({"value": c.object, "type": "object"})
-        return entities
+    def _create_node(self, inp: CompileInput, session_id: str):
+        """Create CognitiveTreeNode from LLM output."""
+        try:
+            from core.agent.v3_0.cognitive_tree.models import (
+                CognitiveTreeNode, CogNodeStatus, CogNodeType
+            )
+            node_id = f"{session_id}_{inp.llm_instance}_{int(time.time()*1000)}"
+            return CognitiveTreeNode(
+                node_id=node_id,
+                cog_type=CogNodeType.PERCEPTION,  # default, can be refined
+                source_llm=inp.llm_instance,
+                timestamp=time.time(),
+                content=inp.content,
+                confidence=inp.confidence,
+                evidence=inp.evidence,
+                action=inp.action,
+                action_result=inp.action_result,
+                status=CogNodeStatus.ACTIVE,
+            )
+        except Exception as e:
+            logger.debug("Node creation failed: %s", e)
+            return None
 
-    def _select_mode(self, user_input: str, turn_index: int) -> CompilerMode:
-        """根据输入复杂度选择编译模式。"""
-        if self.mode != CompilerMode.AUTO:
-            return self.mode
+    def get_tree_stats(self) -> dict:
+        if self._store:
+            return self._store.stats() if hasattr(self._store, 'stats') else {}
+        return {}
 
-        # 极简输入 → fast
-        if len(user_input) < 20 and turn_index < 3:
-            return CompilerMode.FAST
+    # ═══ Factory methods ═══
 
-        # 复杂输入（长句、多从句、多主语）→ full
-        if self.decomposer._is_complex_input(user_input) or self.decomposer._has_multiple_subjects(user_input):
-            return CompilerMode.FULL
+    @staticmethod
+    def _make_tree_store():
+        try:
+            from core.agent.v3_0.cognitive_compiler.compiler import CognitiveTreeStore
+            return CognitiveTreeStore()
+        except Exception:
+            return None
 
-        # 默认 hybrid
-        return CompilerMode.HYBRID
+    @staticmethod
+    def _make_access_control():
+        try:
+            from core.agent.v3_0.cognitive_tree.models import AccessControlMatrix
+            return AccessControlMatrix()
+        except Exception:
+            return None
 
-    def _rebuild_query(self, clauses: List[ParsedClause]) -> str:
-        """从分解后的子句重建查询文本。"""
-        return " | ".join(c.to_query() for c in clauses)
+    @staticmethod
+    def _make_event_bus():
+        try:
+            from core.agent.v3_0.cognitive_compiler.event_bus import EventBus
+            bus = EventBus()
+            bus.start()
+            return bus
+        except Exception:
+            return None
