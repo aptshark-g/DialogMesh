@@ -417,3 +417,51 @@ Event Log + Dual Pipeline (Sync/Async)
 | V3.3 Algorithm | 完整算法设计: 收敛/发散/递归/启发 |
 | V4 Knowledge Refinement | 知识精炼: 从Observation到Knowledge的蒸馏管 |
 | Cognitive Dynamics V6 | 认知动力学v6: 惯性/注意力/情绪/信任计算 |
+
+
+## 十五、ENGINEERING 文档层 — 设计到实现的真正断层
+
+### 15.1 发现
+```
+27篇ENGINEERING_*.md, 22,800行 → 全部标记"工程待实现"
+这是介于DESIGN_*.md和代码之间的"施工蓝图"层
+
+ENGINEERING_DATA_MODEL.md (1,621L):
+  全系统数据模型规范 — 14个section, 从Layer0到Layer3+横切
+  状态: 工程待实现
+
+ENGINEERING_PERSISTENCE.md (1,320L):
+  分层存储规范 — Hot/Warm/Cold + GraphStore + EntityIndex + CognitiveTree存储
+  状态: 工程待实现（部分已有代码）
+
+ENGINEERING_INTEGRATION.md (745L):
+  全系统整合 — 15组件依赖, 6阶段启动, 配置/数据流/部署
+  状态: 工程待实现
+
+ENGINEERING_COGNITIVE_COMPILER.md (995L):
+  6个LLM实例→CognitiveTree编译规范
+  状态: 工程待实现（数据模型已定义）
+
+其他23篇:
+  ENGINEERING_MULTILAYER_LLM(1,724L), ENGINEERING_PLANNING_SKILL(1,641L),
+  ENGINEERING_SERVICE_LAYER(1,521L), ENGINEERING_TOOL_REGISTRY(1,216L),
+  ENGINEERING_TOPIC_TREE(909L), ENGINEERING_INTENT_PARSER(909L),
+  ENGINEERING_PCR(907L), ENGINEERING_V3_3_BEHAVIOR_GRAPH(907L),
+  ENGINEERING_LLM_PROVIDERS(886L), ENGINEERING_CONTEXT_MANAGER(879L),
+  ENGINEERING_OBSERVABILITY(864L), ENGINEERING_V3_3_BEHAVIOR_EMBEDDING(809L),
+  ENGINEERING_API_DOC_PREPROCESSOR(764L), ENGINEERING_V3_3_REWARDER(586L),
+  ENGINEERING_V3_3_PREDICTOR(573L), ENGINEERING_V3_3_COMPILER(407L),
+  ENGINEERING_COGNITIVE_PROFILE_V2(2,034L)
+  → 全部: 工程待实现
+```
+
+### 15.2 三段式设计体系 (现已完整提取)
+```
+DESIGN_*.md        (概念设计, "做什么")      → 35篇, ~8,000行 ← 已读完
+ENGINEERING_*.md   (施工蓝图, "怎么做")      → 27篇, 22,800行 ← 刚发现
+代码               (实际实现)                 → ~540.py, 126,000行
+
+断层在 ENGINEERING → 代码之间:
+  ENGINEERING定义了完整接口/数据流/组件依赖/启动顺序
+  代码有部分实现(stub+数据模型), 但从未按ENGINEERING规格完整构建
+```
