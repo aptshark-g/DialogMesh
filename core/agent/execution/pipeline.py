@@ -292,10 +292,9 @@ class StructuredSynthesizer:
 class ExecutionPipeline:
     """End-to-end execution pipeline — wires all phases together.
 
-    Usage:
-        pipe = ExecutionPipeline(atm, engine, plan_gate)
-        result = await pipe.run(plan, checkpoint)
-    """
+    Bulkhead: max_queued_tasks prevents overload."""
+
+    MAX_QUEUED = 50
 
     def __init__(self, tree_manager: "AgentTreeManager" = None,
                  engine: "ExecutionEngine" = None,
@@ -312,12 +311,20 @@ class ExecutionPipeline:
         self._memory = MemoryNode(self._atm)
         self._react = ReActRetryEngine(param_registry, self._atm.meta)
         self._synth = StructuredSynthesizer(param_registry)
+        self._queued = 0  # Bulkhead counter
 
     async def run(self, plan: dict, checkpoint: "PlanCheckpoint" = None) -> dict:
         """Execute a plan with all phases wired.
 
         Returns: {status, summary, results, retry_log, tree_stats}
         """
+        # Bulkhead: queue limit
+        if self._queued >= self.MAX_QUEUED:
+            return {"status": "overloaded",
+                    "summary": f"Busy ({self._queued} queued). Try later.",
+                    "results": []}
+
+        self._queued += 1
         t0 = time.time()
 
         # 1. Check user approval
@@ -402,6 +409,7 @@ class ExecutionPipeline:
                                   for r in retry_logs]
         synthesis["tree_stats"] = {s.tree_name: s.total_nodes
                                    for s in self._atm.get_all_stats()}
+        self._queued -= 1
         return synthesis
 
     # ═══ Dual-Path Resolver ═══

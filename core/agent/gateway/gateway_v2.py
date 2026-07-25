@@ -84,27 +84,40 @@ class ProviderConfig:
 class ConnectionPool:
     """Per-provider connection pool with keep-alive reuse."""
 
-    def __init__(self, max_idle: int = 10, idle_timeout: float = 30.0):
+    def __init__(self, max_idle: int = 10, idle_timeout: float = 30.0,
+                 max_active: int = 10):
         self._idle: List[Tuple[Any, float]] = []  # (connection, last_used)
         self._max_idle = max_idle
         self._idle_timeout = idle_timeout
+        self._max_active = max_active
+        self._active_count = 0
         self._total_created = 0
         self._total_reused = 0
+        self._total_throttled = 0
 
     async def get(self, provider: ProviderConfig) -> Optional[Any]:
-        """Get a connection from pool or create new."""
+        """Get a connection from pool or create new. Bulkhead: max_active limit."""
         self._cleanup()
 
-        # Try pool
+        # Try pool first
         for i, (conn, _) in enumerate(self._idle):
             try:
-                # Simple check: if connection still alive
                 self._idle.pop(i)
+                self._active_count += 1
                 self._total_reused += 1
                 return conn
             except Exception:
                 pass
 
+        # Bulkhead: cap active connections
+        if self._active_count >= self._max_active:
+            self._total_throttled += 1
+            logger.warning("Connection pool full (%d/%d), throttling",
+                          self._active_count, self._max_active)
+            return None
+
+        self._active_count += 1
+        self._total_created += 1
         # Create new
         self._total_created += 1
         try:
