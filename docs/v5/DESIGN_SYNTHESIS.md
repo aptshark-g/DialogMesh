@@ -272,3 +272,66 @@ Anchor-First, Graph-Second:
 Layer 0-3架构 + 认知画像v2 + 记忆系统 + 可观测性 + 完整数据流生命周期
 → 这是整个DialogMesh的宪法级文档
 ```
+
+
+## 十二、v3.0 设计文档 (第二批次, 6篇刚读完)
+
+### 12.1 Design Overview (merge/DESIGN_00) — 10个核心洞察
+
+```
+Memory ≠ 文本, Memory = 类型化边 (Typed Edge)
+知识 ≠ 概念节点, 知识 = 推理轨迹 (Reasoning Graph)
+Context ≠ 全文拼接, Context = 子图编译 (Subgraph Compilation)
+Semantic Object ≠ Node, Node = 世界的入口, 不是终点
+Retrieval ≠ 找相关文本, Retrieval = 世界视图渲染 (World View)
+```
+
+### 12.2 Multilayer LLM Cognitive (1,077L, 63KB) — 认知双工
+
+```
+v2: 算法为主, LLM为仆 (主从式)
+v3: 算法 = LLM的神经加速层 (认知双工)
+
+双树架构:
+  Discourse Tree (外部对话树) — 用户可见, 人机交互
+  Cognitive Tree (LLM心智树) — 10种节点+8种边, LLM内部推理空间
+
+三层LLM: 专业LLM(6实例) → 穿透LLM(回答) → 审视LLM(元认知)
+```
+
+### 12.3 Observation Compiler (629L, 23KB) — 投影层
+
+```
+不是Parser — 是投影层 (Projection Layer):
+  Event IR (白光) → Observation Compiler (棱镜) → 多域Observation (光谱)
+
+五层递进: Event → Normalize → Interpret → Project → Bundle
+6个DomainAdapter: Dialogue/Engineering/Behavior/Document/User/Memory
+```
+
+### 12.4 Semantic World Model — 从RAG到世界运行时
+
+```
+范式转变: RAG(文本→Chunk→Embedding→Top-K) → World Runtime(构建世界→对象化→关系化→多尺度观察→编译)
+
+LLM不直接面对信息碎片, 通过可缩放世界接口观察
+Node ≠ Object — Node是子图入口
+Context ≠ 拼接 — Context = 世界视图 (World View)
+```
+
+### 12.5 TieredActionResolver — 共享分类内核
+
+```
+所有分类场景共享同一内核: f(domain_context, input) → ranked_candidates
+消费者: DialogueInterpreter / EngineeringInterpreter / BehaviorInterpreter 
+       / IntentParser / NegativeKB / Projector
+三级: Rule(fast) → Embedding(mid) → LLM(slow)
+```
+
+### 12.6 Unified Graph Store — 通用图持久化
+
+```
+替代 per-domain 存储: 一张 graph_nodes 表, domain-tagged
+5域: T(Topic) / E(Engineering) / B(Behavior) / K(Knowledge) / P(Profile)
+JVM GC分层: Hot/Warm/Cold/Archive, 自动迁移
+```
