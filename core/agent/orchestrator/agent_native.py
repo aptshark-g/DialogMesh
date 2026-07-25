@@ -176,6 +176,14 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.debug("Cognition hub failed: %s", e)
 
+        # === RECORD: feed turn into DiscourseManager ===
+        if self._context_assembly:
+            try:
+                response_text = str(result.get("plan", ""))
+                self._context_assembly.record_turn(text, response_text, session_id)
+            except Exception as e:
+                logger.debug("record_turn failed: %s", e)
+
         result["latency_ms"] = round((time.time() - start) * 1000)
         return result
 

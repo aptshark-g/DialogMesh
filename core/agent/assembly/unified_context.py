@@ -149,13 +149,13 @@ class UnifiedContext:
             }
         }
 
-    def record_turn(self, text: str, response: str, session_id: str = "default",
+    def record_turn(self, text: str, response: str = None, session_id: str = "default",
                     metadata: dict = None):
         """Record a conversation turn into DiscourseManager."""
         self._ensure_loaded()
         if self._discourse_manager:
             try:
-                self._discourse_manager.add_turn(text, response, session_id)
+                self._discourse_manager.process_turn(text)
             except Exception as e:
                 logger.debug("record_turn failed: %s", e)
 
