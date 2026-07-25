@@ -122,18 +122,78 @@ Command → Decider → Event → State → evolve → 下一Tick
 | Multi-Agent Debate | Du 2023 | 5链=5个LLM视角 |
 | Tool-Augmented | OpenAI/Anthropic | LLM是协调者,工具是执行者 |
 
-## 九、关键发现：设计一致性
+## 九、新增发现 (从7篇补充设计)
 
-从13篇设计文档提取的共性规律：
+### 9.1 多信号意图 (DESIGN_MULTI_SIGNAL_INTENT)
+```
+5路弱信号 → 贝叶斯融合:
+  S1: SVO向量距离 (cos(S_vec, O_vec))
+  S2: 主题峰度 (kurtosis)
+  S3: 用户状态 (OCEAN+DMN)
+  S4: 时间加权 (recency+习惯曲线)
+  S5: 画像后验 (历史意图分布)
 
-1. **每条链都独立** — 不依赖其他链的完成，只读共享数据
-2. **决策门控统一** — conf<0.6进入LLM, conf<0.3询问用户
-3. **子图是核心抽象** — 共享数据×视角×预算=子图
-4. **蓝图是编排中枢** — 预设约束模板, LLM在约束内操作
-5. **状态转移>当前状态** — 元认知分析Transition, 不是分析State
-6. **双速通道贯穿全部** — 不是"LLM-first"或"规则优先", 是"根据置信度路由"
+→ 替代当前单LLM意图分类
+```
+
+### 9.2 3D路由矩阵 (DESIGN_V3.2_ROUTING_MATRIX)
+```
+语义距离(X) × 句法复杂度(Y) × 用户偏置(Z)
+  STC (Syntactic Terrain Complexity): nesting_depth + info_density + clauses
+  替代当前PCR V2的纯nomic embedding X轴
+```
+
+### 9.3 NoiseSpan (DESIGN_NOISESPAN)
+```
+7种噪声类型 × char级标记:
+  TYPO | AMBIGUOUS_ANAPHORA | JARGON_ABUSE | UNRELATED_FLUFF | 
+  LOGICAL_LEAP | PROMPT_INJECTION | CONTEXT_BREAK
+→ 替代全局 noise_level: float
+```
+
+### 9.4 Topic Tree 距离衰减 (DESIGN_TOPIC_TREE_GRANULARITY)
+```
+4层摘要: L1(near,200t) → L2(mid,100t) → L3(far,50t) → Lroot(global,30t)
+effective_distance = tree_distance / max(1, heat)
+```
+
+### 9.5 TRACEABILITY 完整缺口
+```
+已吸收: 28个设计点 ✅
+等效替代: 14个 ⚡
+未实现: 17个 (Subgraph跨链, Engineering约束推理, TopicTree分支切换,
+               Planner蒸馏, NoiseSpan, CognitiveCompiler, ObservationCompiler,
+               HypothesisEngine, SemanticWorld, SkillLayer, ABC完整,
+               Cold→Hot回写, DeepPath蒸馏, SoftConfig, Workspace,
+               Observer, ExecutionTrace, PerspectivePlanner)
+```
+
+### 9.6 ALIGNMENT 验证——EventBus曾工作
+```
+EventBus: 13 subscribers, 0 dropped, 96/96 tests ✅
+→ 证明冷路径(EventSourcing)设计可行
+→ 但当前agent_native未接EventBus, 走了线性管线
+```
+
+## 十、设计 vs 实现差距总表
+
+| 设计存在, 代码完备, 未接线 | 设计存在, 代码零 | 设计存在, 改为等效方案 |
+|---------------------------|-----------------|---------------------|
+| SubgraphCompiler(176L) | Subgraph跨链通信 | PCR离散→3D连续 |
+| Engineering(812L) | Engineering约束推理 | Intent规则→LLM协同 |
+| Planner(7,908L) | Planner蒸馏 | 关键词→结构特征 |
+| cognitive_compiler(1,444L) | NoiseSpan | Emotion词表→BGE向量 |
+| observation(1,355L) | TopicTree分支切换 | NRC-VAD→BGE优先 |
+| hypothesis(742L) | TopicTree双层摘要 | |
+| world(1,182L) | CognitiveWorkspace | |
+| tool_registry(3,442L) | Observer | |
+| state(914L) | ExecutionTrace | |
+| runtime/engine(3,519L) | PerspectivePlanner | |
+| ABC系统(480L) | Do-Calculus因果 | |
+| service(3,680L) | Cold→Hot回写 | |
+| context_manager(2,560L) | DeepPath蒸馏 | |
 
 ---
 
-> 待读: 105篇 v3.0设计, 6篇 merge归档, ~80篇其他
-> 以上从已读的13篇核心设计提取
+> 已读: 20篇设计 (10链 + AI Agent Book Ch3 + 7篇v5 + 2篇对齐核查)
+> 待读: ~100篇 v3.0设计, 6篇 merge归档, ~80篇其他
