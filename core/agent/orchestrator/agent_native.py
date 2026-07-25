@@ -1,17 +1,12 @@
 """Agent-Native Orchestrator — LLM-driven full pipeline coordination.
 
-Pipeline: PCR V2 → MultiIntent → L4 Temporal → Behavior → Context → Engineering.
-LLM is the coordinator: routes, plans, and adapts.
-
-Cold→Hot Feedback (Layer 1-3):
-  Layer 1: Meta urgent corrections → next Tick PCR params
-  Layer 2: Cognition evidence → threshold-triggered actions
-  Layer 3: Pattern drift → Blueprint/parameter micro-adjustments
-  Philosophy: "Don't block current response. Learn for the next one."
+Pipeline: Compass → PCR → Intent → L4 → Behavior → Context → Engineering → LLM.
+Cold→Hot: Meta corrections feed back through FeedbackBridge (3-layer).
+All modules lazy-loaded; pipeline degrades gracefully on missing deps.
 """
 
 from __future__ import annotations
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any
 import logging
 import time
 
@@ -19,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
-    """LLM-driven agent orchestrator — full pipeline coordination."""
+    """LLM-driven orchestrator — 9-stage pipeline with cold→hot feedback."""
 
     def __init__(self, pcr_router=None, intent_splitter=None, l4_engine=None,
                  behavior_collab=None, engineering_chain=None, llm=None,
                  discourse_tree=None, cognitive_bridge=None, event_log=None,
                  context_assembly=None, cognition_hub=None,
-                 feedback_bridge=None):
+                 feedback_bridge=None, compass_selector=None):
         self.pcr = pcr_router
         self.intent = intent_splitter
         self.l4 = l4_engine
@@ -38,10 +33,10 @@ class AgentOrchestrator:
         self._context_assembly = context_assembly or self._try_load_context()
         self._cognition_hub = cognition_hub or self._try_load_cognition()
         self._feedback_bridge = feedback_bridge or self._try_load_feedback()
+        self._compass = compass_selector or self._try_load_compass()
         self._tick = 0
 
     def _publish(self, kind: str, payload: dict):
-        """Fire-and-forget publish to EventLog."""
         if self._event_log:
             try:
                 self._tick += 1
@@ -51,21 +46,29 @@ class AgentOrchestrator:
                 pass
 
     def process(self, text: str, session_id: str = "default") -> dict:
-        """Full pipeline with Cold→Hot feedback consumption.
-
-        Returns: {route, intents, context, cognition, plan, correction?, ...}
-        """
         start = time.time()
         result = {"text": text, "session": session_id}
 
-        # === COLD→HOT Layer 1: check for urgent correction ===
+        # Cold→Hot Layer 1: urgent correction
         correction = None
         if self._feedback_bridge:
             correction = self._feedback_bridge.consume()
             if correction:
                 result["correction"] = correction
 
-        # 1. PCR V2 — cognitive routing
+        # 0. Compass — multi-dimensional signal measurement
+        if self._compass:
+            try:
+                cr = self._compass.measure(text)
+                result["compass"] = {
+                    "lenses": cr.selected_lenses,
+                    "signal": cr.summary(),
+                    "dimensions": cr.dimensions,
+                }
+            except Exception as e:
+                logger.debug("Compass failed: %s", e)
+
+        # 1. PCR V2
         if self.pcr:
             try:
                 route = self.pcr.route(text,
@@ -83,7 +86,7 @@ class AgentOrchestrator:
                 logger.debug("PCR failed: %s", e)
                 result["route"] = {"zone": "MIXED", "error": str(e)}
 
-        # 2. MultiIntent — split if needed
+        # 2. MultiIntent
         if self.intent:
             try:
                 split_result = self.intent.split(text)
@@ -94,7 +97,7 @@ class AgentOrchestrator:
                 }
                 self._publish("INTENT_PARSED", result["intents"])
             except Exception as e:
-                logger.debug("Intent split failed: %s", e)
+                logger.debug("Intent failed: %s", e)
                 result["intents"] = {"multi": False, "segments": [text]}
 
         # 3. L4 Temporal
@@ -102,24 +105,18 @@ class AgentOrchestrator:
             try:
                 current_intent = result.get("intents", {}).get("segments", [text])[0]
                 preds = self.l4.predict_next(current_intent)
-                result["temporal"] = {
-                    "predictions": [(p[0], round(p[1], 2)) for p in preds],
-                    "anomaly": None,
-                }
+                result["temporal"] = {"predictions": [(p[0], round(p[1], 2)) for p in preds]}
                 intent_dist = {current_intent: 1.0}
                 drift = self.l4.check_drift(intent_dist)
                 if drift:
-                    result["temporal"]["drift"] = {
-                        "magnitude": round(drift.magnitude, 3),
-                        "cause": drift.likely_cause,
-                    }
+                    result["temporal"]["drift"] = {"magnitude": round(drift.magnitude, 3),
+                                                    "cause": drift.likely_cause}
             except Exception as e:
                 logger.debug("L4 failed: %s", e)
-
         if self.cognitive:
-            preds = result.get("temporal", {}).get("predictions", [])
-            drift = result.get("temporal", {}).get("drift")
-            self.cognitive.on_temporal_predict(preds, drift)
+            self.cognitive.on_temporal_predict(
+                result.get("temporal", {}).get("predictions", []),
+                result.get("temporal", {}).get("drift"))
             if result.get("temporal"):
                 self._publish("L4_PREDICTED", result["temporal"])
 
@@ -134,29 +131,25 @@ class AgentOrchestrator:
         if result.get("behavior"):
             self._publish("BEHAVIOR_RECORDED", result["behavior"])
 
-        # 5. Context — UnifiedContext assembly
+        # 5. Context assembly
         if self._context_assembly:
             try:
                 ctx_result = self._context_assembly.assemble(result)
-                result["context"] = {
-                    "dialogue": ctx_result.get("dialogue_context", ""),
-                    "meta": ctx_result.get("meta_context", ""),
-                    "stats": ctx_result.get("stats", {}),
-                }
+                result["context"] = {"dialogue": ctx_result.get("dialogue_context", ""),
+                                     "meta": ctx_result.get("meta_context", ""),
+                                     "stats": ctx_result.get("stats", {})}
                 self._publish("CONTEXT_COMPILED", result["context"].get("stats", {}))
             except Exception as e:
-                logger.debug("Context assembly failed: %s", e)
+                logger.debug("Context failed: %s", e)
 
         # 6. Engineering
         if self.engineering:
             try:
                 state = self.engineering.snapshot()
                 feasibility = self.engineering.check_feasibility(text, state)
-                result["tools"] = {
-                    "total": feasibility.get("total_tools", 0),
-                    "matching": feasibility.get("matching_tools", 0),
-                    "feasible": feasibility.get("feasible", 0),
-                }
+                result["tools"] = {"total": feasibility.get("total_tools", 0),
+                                   "matching": feasibility.get("matching_tools", 0),
+                                   "feasible": feasibility.get("feasible", 0)}
                 self._publish("TOOLS_CHECKED", result["tools"])
             except Exception as e:
                 logger.debug("Engineering failed: %s", e)
@@ -164,59 +157,55 @@ class AgentOrchestrator:
         # 7. LLM Synthesis
         if self.llm:
             if self.cognitive:
-                cognitive_ctx = self.cognitive.build_llm_context()
-                result["cognitive"] = cognitive_ctx
+                result["cognitive"] = self.cognitive.build_llm_context()
                 self.cognitive.tick()
             result["plan"] = self._llm_synthesize(result)
             self._publish("PLAN_GENERATED", result.get("plan", {}))
 
-        # === COLD→HOT Layer 2: cognition belief update ===
+        # Cold→Hot Layer 2: belief
         if self._cognition_hub and self._cognition_hub.is_loaded:
             try:
-                # Inject any pending belief from feedback bridge
                 if self._feedback_bridge:
                     belief = self._feedback_bridge.consume_belief()
                     if belief:
                         result["belief_action"] = belief
-                cog_result = self._cognition_hub.converge()
-                result["cognition"] = cog_result
+                result["cognition"] = self._cognition_hub.converge()
             except Exception as e:
-                logger.debug("Cognition hub failed: %s", e)
+                logger.debug("Cognition failed: %s", e)
 
-        # === COLD→HOT Layer 3: parameter drift → consumed by Blueprint selector ===
+        # Cold→Hot Layer 3: drift
         if self._feedback_bridge:
             drift = self._feedback_bridge.consume_drift()
             if drift:
                 result["parameter_drift"] = drift
 
-        # Record turn for DiscourseManager
+        # Record turn
         if self._context_assembly:
             try:
-                response_text = str(result.get("plan", ""))
-                self._context_assembly.record_turn(text, response_text, session_id)
-            except Exception as e:
-                logger.debug("record_turn failed: %s", e)
+                self._context_assembly.record_turn(text, str(result.get("plan", "")), session_id)
+            except Exception:
+                pass
 
         result["latency_ms"] = round((time.time() - start) * 1000)
         return result
 
     def _llm_synthesize(self, context: dict) -> dict:
         import json, re
-        ctx = {
-            "user_message": context["text"],
-            "cognitive_route": context.get("route", {}),
-            "intents": context.get("intents", {}),
-            "temporal_predictions": context.get("temporal", {}).get("predictions", []),
-            "available_tools": context.get("tools", {}).get("total", 0),
-            "cognitive_context": context.get("cognitive", {}),
-            "assembled_context": context.get("context", {}).get("dialogue", "")[:1000],
-        }
+        ctx = {"user_message": context["text"],
+               "compass": context.get("compass", {}).get("signal", ""),
+               "cognitive_route": context.get("route", {}),
+               "intents": context.get("intents", {}),
+               "temporal_predictions": context.get("temporal", {}).get("predictions", []),
+               "available_tools": context.get("tools", {}).get("total", 0),
+               "cognitive_context": context.get("cognitive", {}),
+               "assembled_context": context.get("context", {}).get("dialogue", "")[:2000],
+               "correction": context.get("correction", {}),}
         prompt = f"""You are an agent coordinator. Based on the pipeline analysis, create an execution plan.
 
 CONTEXT: {json.dumps(ctx, ensure_ascii=False)}
 
 Output a JSON execution plan:
-{{"steps": [{{"action": "name", "tool": "tool_name", "reason": "why"}}], 
+{{"steps": [{{"action": "...", "tool": "...", "reason": "..."}}],
   "self_check": "did you review all modules?"}}"""
         try:
             resp = self.llm.generate(prompt, max_tokens=300, temperature=0.1)
@@ -225,37 +214,30 @@ Output a JSON execution plan:
             s = cleaned.find('{'); e = cleaned.rfind('}')
             return json.loads(cleaned[s:e+1]) if s >= 0 and e > s else {}
         except Exception as e:
-            logger.debug("LLM synthesis failed: %s", e)
+            logger.debug("LLM failed: %s", e)
             return {"fallback": True, "error": str(e)}
 
     @staticmethod
     def _try_load_bridge():
-        try:
-            from core.agent.v4.cognitive_bridge import V4CognitiveBridge
-            return V4CognitiveBridge()
-        except Exception:
-            return None
+        try: from core.agent.v4.cognitive_bridge import V4CognitiveBridge; return V4CognitiveBridge()
+        except: return None
 
     @staticmethod
     def _try_load_context():
-        try:
-            from core.agent.assembly.unified_context import UnifiedContext
-            return UnifiedContext()
-        except Exception:
-            return None
+        try: from core.agent.assembly.unified_context import UnifiedContext; return UnifiedContext()
+        except: return None
 
     @staticmethod
     def _try_load_cognition():
-        try:
-            from core.agent.cognition.hub import CognitionHub
-            return CognitionHub()
-        except Exception:
-            return None
+        try: from core.agent.cognition.hub import CognitionHub; return CognitionHub()
+        except: return None
 
     @staticmethod
     def _try_load_feedback():
-        try:
-            from core.agent.meta.feedback_bridge import FeedbackBridge
-            return FeedbackBridge()
-        except Exception:
-            return None
+        try: from core.agent.meta.feedback_bridge import FeedbackBridge; return FeedbackBridge()
+        except: return None
+
+    @staticmethod
+    def _try_load_compass():
+        try: from core.agent.perception.compass import create_default_compass; return create_default_compass()
+        except: return None
