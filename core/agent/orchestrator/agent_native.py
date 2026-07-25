@@ -223,10 +223,10 @@ Output a JSON execution plan:
 
     @staticmethod
     def _try_load_context():
-        """Lazy-load context assembly if available."""
+        """Lazy-load unified context if available."""
         try:
-            from core.agent.assembly.context_assembly import ContextAssembly
-            return ContextAssembly()
+            from core.agent.assembly.unified_context import UnifiedContext
+            return UnifiedContext()
         except Exception:
             return None
 
