@@ -158,3 +158,232 @@ class PlanningBridge:
     # - Blueprint engine (BLUEPRINT_SYSTEM, code zero) — P0
     # - Skill lifecycles (DistillationEngine, existing code in planner/)
     # - CognitiveScheduler integration (existing code by not wired)
+
+
+# ═══ CONTEXT_MANAGER (ENGINEERING_CONTEXT_MANAGER.md, 880L) ═══
+
+class ContextManagerBridge:
+    """ENGINEERING_CONTEXT_MANAGER §5: Hot/Warm/Cold context assembly.
+
+    Existing: UnifiedContext + context/ pipeline. DiscourseManager isolated (v3 legacy).
+    """
+
+    def __init__(self, unified_context=None):
+        self._ctx = unified_context
+
+    def _ensure(self):
+        if self._ctx is None:
+            try:
+                from core.agent.assembly.unified_context import UnifiedContext
+                self._ctx = UnifiedContext()
+            except Exception:
+                pass
+
+    def get_hot_context(self, session_id: str, turns: int = 5) -> list:
+        self._ensure()
+        return getattr(self._ctx, '_hot_turns', []) if self._ctx else []
+
+    def get_warm_context(self, session_id: str, topic: str = None) -> list:
+        return []  # Warm layer: SQLite retrieval (existing in persistence/)
+
+    def get_cold_context(self, key: str) -> dict:
+        return {}  # Cold layer: archived data
+
+    def assemble(self, perception: dict, budget: int = 2000) -> dict:
+        self._ensure()
+        return self._ctx.assemble(perception, budget) if self._ctx else {"dialogue_context": ""}
+
+
+# ═══ TOOL_REGISTRY (ENGINEERING_TOOL_REGISTRY.md, 1,217L) ═══
+
+class ToolRegistryBridge:
+    """ENGINEERING_TOOL_REGISTRY §4: ToolRegistry → ToolSchema contract.
+
+    Existing: tool_registry/ (10 files, 3,442L) — complete implementation.
+    """
+
+    def __init__(self):
+        self._registry = None
+
+    def _ensure(self):
+        if self._registry is None:
+            try:
+                from core.agent.tool_registry.registry import ToolRegistry
+                self._registry = ToolRegistry()
+            except Exception:
+                pass
+
+    def list_tools(self, tags: list = None) -> list:
+        self._ensure()
+        return getattr(self._registry, 'list_all', lambda: [])() if self._registry else []
+
+    def register(self, definition: dict) -> bool:
+        self._ensure()
+        try:
+            if self._registry and hasattr(self._registry, 'register_sync'):
+                self._registry.register_sync(definition)
+                return True
+        except Exception:
+            pass
+        return False
+
+    def discover(self, query: str) -> list:
+        return []  # Dynamic discovery (existing code, needs wiring)
+
+
+# ═══ SERVICE_LAYER (ENGINEERING_SERVICE_LAYER.md, 1,522L) ═══
+
+class ServiceLayerBridge:
+    """ENGINEERING_SERVICE_LAYER §4: WebSocket + HTTP + Auth service layer.
+
+    Existing: api/ (5f, 2,868L) + service/ (17f, 3,680L).
+    """
+
+    @staticmethod
+    def health() -> dict:
+        try:
+            from core.agent.service.http_controller import ServiceController
+            return ServiceController().health()
+        except Exception:
+            return {"status": "service_layer_not_loaded"}
+
+    @staticmethod
+    def is_running(port: int = 8000) -> bool:
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.1)
+            s.connect(('127.0.0.1', port))
+            s.close()
+            return True
+        except Exception:
+            return False
+
+
+# ═══ COGNITIVE_PROFILE (ENGINEERING_COGNITIVE_PROFILE_V2.md, 2,035L) ═══
+
+class CognitiveProfileBridge:
+    """ENGINEERING_COGNITIVE_PROFILE_V2 §5: dual-track OCEAN + BFI + Dynamics.
+
+    Existing: v4/cognitive/OCEANProfile + BFIGenerator + dynamics (bridge wired).
+    """
+
+    def __init__(self):
+        self._ocean = None
+        self._bfi = None
+        self._dynamics = None
+
+    def _ensure(self):
+        if self._ocean is None:
+            try:
+                from core.agent.v4.cognitive.profile_ocean import OCEANProfile
+                self._ocean = OCEANProfile()
+            except Exception:
+                pass
+        if self._bfi is None:
+            try:
+                from core.agent.v4.cognitive.profile_bfi import BFIGenerator
+                self._bfi = BFIGenerator()
+            except Exception:
+                pass
+        if self._dynamics is None:
+            try:
+                from core.agent.v4.cognitive.dynamics import DynamicsComputer
+                self._dynamics = DynamicsComputer()
+            except Exception:
+                pass
+
+    def get_profile(self) -> dict:
+        self._ensure()
+        return {
+            "ocean": getattr(self._ocean, 'get_profile', lambda: {})() if self._ocean else {},
+            "bfi": getattr(self._bfi, 'generate', lambda: {})() if self._bfi else {},
+            "dynamics": getattr(self._dynamics, 'tick', lambda: {})() if self._dynamics else {},
+        }
+
+    def update_from_route(self, route: dict):
+        self._ensure()
+        if self._ocean and hasattr(self._ocean, 'apply_pcr_route'):
+            self._ocean.apply_pcr_route(route)
+
+
+# ═══ TOPIC_TREE (ENGINEERING_TOPIC_TREE.md, 910L) ═══
+
+class TopicTreeBridge:
+    """ENGINEERING_TOPIC_TREE §4: TopicTree V2 → cohesive topic graph.
+
+    Existing: topic_tree/manager_v2.py (1,091L).
+    """
+
+    def __init__(self):
+        self._tree = None
+
+    def _ensure(self):
+        if self._tree is None:
+            try:
+                from core.agent.topic_tree.manager_v2 import TopicTreeManagerV2
+                self._tree = TopicTreeManagerV2()
+                self._tree.activate([])
+            except Exception:
+                pass
+
+    def get_current_branch(self) -> list:
+        self._ensure()
+        return getattr(self._tree, 'get_active_path', lambda: [])() if self._tree else []
+
+    def get_summary(self, level: int = 2) -> dict:
+        return {}  # Distance-decay summary (existing code, needs wiring)
+
+
+# ═══ OBSERVABILITY (ENGINEERING_OBSERVABILITY.md, 865L) ═══
+
+class ObservabilityBridge:
+    """ENGINEERING_OBSERVABILITY §4: Metrics + Logger + Tracer + Alert.
+
+    Existing: observability/ (merged from v3_common metrics.py).
+    """
+
+    @staticmethod
+    def record_latency(chain: str, ms: float):
+        try:
+            from core.agent.observability.metrics import Metrics
+            Metrics.record_latency(chain, ms)
+        except Exception:
+            pass
+
+    @staticmethod
+    def get_snapshot() -> dict:
+        try:
+            from core.agent.observability.metrics import Metrics
+            return Metrics.snapshot()
+        except Exception:
+            return {"error": "metrics_not_available"}
+
+
+# ═══ BEHAVIOR_GRAPH (ENGINEERING_V3_3_BEHAVIOR_GRAPH.md, 908L) ═══
+
+class BehaviorGraphBridge:
+    """ENGINEERING_V3_3_BEHAVIOR_GRAPH §4: BehaviorChain + BehaviorGraph.
+
+    Existing: behavior/ (16 files, 1,728L).
+    """
+
+    def __init__(self):
+        self._engine = None
+
+    def _ensure(self):
+        if self._engine is None:
+            try:
+                from core.agent.behavior.llm_collaborative import BehaviorCollaborative
+                self._engine = BehaviorCollaborative()
+            except Exception:
+                pass
+
+    def record_observation(self, pattern: dict):
+        self._ensure()
+        if self._engine and hasattr(self._engine, 'record_observation'):
+            self._engine.record_observation(pattern)
+
+    def get_patterns(self) -> list:
+        self._ensure()
+        return getattr(self._engine, 'get_patterns', lambda: [])() if self._engine else []
