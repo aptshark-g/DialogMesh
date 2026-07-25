@@ -45,7 +45,15 @@ class AgentOrchestrator:
             except Exception:
                 pass
 
-    def process(self, text: str, session_id: str = "default") -> dict:
+    def process(self, text: str, trace_id: str = None, instrument: bool = True):
+        if instrument:
+            try:
+                from core.agent.monitor.trace_log import PipelineObserver, get_tracer
+                observer = PipelineObserver()
+                tr = observer.start_request(text[:100])
+                trace_id = tr["trace_id"]
+            except: pass
+        start = time.time(); session_id = str(uuid.uuid4())[:8]; result = {}
         start = time.time()
         result = {"text": text, "session": session_id}
 
