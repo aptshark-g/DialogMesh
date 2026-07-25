@@ -1,206 +1,234 @@
-# DialogMesh v6 — 全版本模块库存 (v3_0 × v4/cognitive × v6 current)
+# DialogMesh v6 — 全版本全模块最终库存
 
-> 2026-07-24 · 清点全部 80+ 模块，标注功能重叠/设计丢失/可迁移
-
----
-
-## 一、v3_0/cognitive_tree + cognitive_compiler (知识超图引擎, 8,909L)
-
-### cognitive_tree/ — LLM认知空间
-
-| 模块 | 行数 | 功能 | v6中对应/重叠 | 状态 |
-|------|------|------|--------------|------|
-| models.py | 479L | 10种CogType + 8种CogEdgeType + 6种生命周期 | RelationEdge(3×4硬编码) | **设计更优, 未迁移** |
-| manager.py | 683L | CognitiveTree CRUD + 查询 + 遍历 | SubgraphCompiler(176L, 弱) | **功能超集, 待迁移** |
-| cross_ref.py | 384L | 跨节点引用 + 证据链 | DiscourseBlockTree.GroupReference | **功能重叠, 可合并** |
-
-### cognitive_compiler/ — 编译与推理
-
-| 模块 | 行数 | 功能 | v6中对应 | 状态 |
-|------|------|------|----------|------|
-| compiler.py | 331L | 6个LLM实例推理→CognitiveTree统一入口 | agent_native(线性流程) | **多LLM编译, v6无** |
-| edge_manager.py | 173L | 8种推理边显式管理 | RelationSubstrate(3种kind) | **语义更丰富, 待迁移** |
-| event_bus.py | 213L | 认知事件总线 | EventBus(设计存在) | **可整合** |
-| lifecycle.py | 187L | 节点生命周期 + 状态机 | 无 | **缺, 应迁移** |
-| expertise_probe_v3.py | 151L | 冷启动专业度探测(通用特征, 无词表) | llm_expertise.py(LLM版) | **LLM版更优** |
-| reflective.py | 78L | 系统偏见检测器 | MetaCognition(弱) | **可注入Meta** |
-| tree_health.py | 78L | TreeHealthAnalyzer | 无 | **缺** |
-| profile_updater.py | 138L | 用户画像深度更新器 | OCEANProfile(265L) | **设计重叠** |
-| meta_cognitive.py | 97L | 事实性校验器 | MetaCognition(328L) | **v4版更全** |
-| access_control.py | 47L | LLM访问权限矩阵 | 无 | **蓝图系统需要** |
-| rule_conflict.py | 48L | 规则冲突检测 | 无 | **缺** |
-| pcr_feedback.py | 46L | PCR反馈回路 | PCR V2(无反馈) | **缺闭环** |
-
-### llm_providers/ — 旧LLM Provider层 (已废弃)
-
-| 模块 | 行数 | v6对应 | 状态 |
-|------|------|--------|------|
-| base.py | 438L | core/agent/llm_providers/ | **重复, 当前v6版本在用** |
-| openai_provider.py | 428L | 同上 | **重复** |
-| hybrid_router.py | 407L | DeepSeek直连(当前用) | **过时** |
-| failover_provider.py | 206L | — | **未迁移** |
-
-### observability/ — 旧观测层
-
-| 模块 | 行数 | v6对应 | 状态 |
-|------|------|--------|------|
-| metrics.py | 321L | observability/metrics.py | **已合并** |
-| logger.py | 320L | observability/logger.py | **已合并** |
-| store.py | 510L | persistence/sqlite_store.py | **已升级** |
-| telemetry.py | 372L | 无 | **缺** |
-| tracer.py | 207L | 无 | **缺** |
-| alert.py | 252L | metacognitive_trigger.py | **已升级, v3版可删** |
+> 2026-07-24 · v3_0 + v4 + v6 + 设计文档 · 200+ 模块
 
 ---
 
-## 二、v4/cognitive — 认知子系统 (36文件, ~7,000L)
+## 总览
 
-### Layer 1: 用户认知
+```
+代码:   约 200 个 .py 文件, 约 80,000 行
+设计:   约 230 篇 .md 文档
+Rust:   5 文件, 1,007 行
 
-| 模块 | 行数 | 功能 | 接入状态 |
-|------|------|------|----------|
-| ocean_profile.py | 265L | OCEAN 10维 + MBTI转换 | ✅ 桥接已接 |
-| bfi_calibrator.py | 201L | BFI-10文献锚定校准 | ✅ 桥接已接 |
-| structural_signals.py | 220L | 结构信号提取(NS+FT) | ❌ 未接 |
-| correction_journal.py | 156L | 用户修正日志+漂移检测 | ✅ 桥接已接 |
-| dynamics.py | 172L | 认知动态计算 | ✅ 桥接已接 |
-| convergence.py | 176L | 收敛引擎(电容模型) | ❌ 未接 |
+分层:
+  v3_0:    ~9,000L  (cognitive tree + compiler + observability + llm providers)
+  v4:      ~13,000L (cognitive + scheduler + substrate + world)
+  v6:      ~50,000L (pcr + intent + association + behavior + discourse + persistence + memory + planner + context + engineering)
+  设计:    ~230 篇  (v3.0:105篇, v5:18篇, 根级:40篇, 其他:60+)
+```
 
-### Layer 2: 融合与检索
+---
 
-| 模块 | 行数 | 功能 | 接入状态 |
-|------|------|------|----------|
-| fusion.py | 105L | TrackA+B融合→LLM上下文 | ✅ 桥接已接 |
-| belief_map.py | 305L | 信念累积器+递归粒度 | ✅ 桥接已接 |
-| tag_layer.py | 319L | L1+L2标签获取+g因子 | ✅ 桥接已接 |
-| memory_extractor.py | 288L | MemoryPoint上下文提取 | ✅ 桥接已接 |
-| subgraph_compiler.py | 176L | 跨链上下文编译(双视角) | ❌ 未接 |
-| signal_filter.py | 160L | TrackA+B协调器 | ❌ 未接 |
-| llm_profile_analyst.py | 186L | 三源融合画像 | ❌ 未接 |
+## 一、planner/ (28f, 7,908L) — 规划+技能生命周期
 
-### Layer 3: 元认知与自省
-
-| 模块 | 行数 | 功能 | 接入状态 |
-|------|------|------|----------|
-| metacognition.py | 328L | 审查优先级+回顾+自审 | ✅ 桥接已接 |
-| internal_monitor.py | 189L | 内部状态监控 | ✅ 桥接已接 |
-| scheduler.py | 143L | 元认知调度 | ❌ 未接 |
-| runtime.py | 132L | LLM推理循环 | ❌ 未接 |
-| workspace.py | 143L | 认知工作空间图 | ❌ 未接 |
-| version_control.py | 202L | Git风格版本控制 | ❌ 未接 |
-
-### ABC 系统 (3层决策)
+此目录实现了一个**完整的 Skill 生命周期管理系统**，包含规划、执行、蒸馏、验证四大环节：
 
 | 模块 | 行数 | 功能 |
 |------|------|------|
-| abc_orchestrator.py | 140L | 三层决策: C(神经符号)→B(LLM适配)→A(规则) |
-| neuro_symbolic.py | 265L | C层: 可组合规则引擎 |
-| llm_adapter.py | 75L | B层: 规则不足时LLM生成新规则 |
+| models.py | 1,197L | 规划数据模型(Plan, Task, Skill, Artifact) — **核心** |
+| planner.py | 793L | 主规划器 |
+| executor.py | 582L | 对话树执行器 |
+| skill_engine.py | 545L | 技能执行引擎 |
+| optimizer.py | 421L | 规划优化器 |
+| strategy_selector.py | 409L | 策略选择器 |
+| scheduler.py | 344L | 规划调度器 |
+| skill_registry.py | 326L | 技能注册表 |
+| fallback.py | 317L | 降级回退引擎 |
+| decomposition.py | 287L | 任务分解 |
+| dependency_resolver.py | 228L | 依赖解析器 |
+| skill_matcher.py | 201L | 技能匹配器 |
+| distillation_engine.py | 198L | **蒸馏引擎**: v4存储扫描→Skill候选 |
+| agent_allocator.py | 177L | Agent分配器 |
+| skill_pool.py | 55L | Skill池生命周期(Candidate→Verified→Core) |
+| evaluation_engine.py | 33L | 多维信念评估 |
 
-### 行为与学习
-
-| 模块 | 行数 | 功能 |
-|------|------|------|
-| behavior_discovery.py | 242L | 3阶段行为发现 Pipeline |
-| pattern_learner.py | 183L | 模式学习+策略建议 |
-| simulation_engine.py | 238L | 内部模拟→评估→学习 |
-
-### Mind (持久化认知结构)
-
-| 模块 | 行数 | 功能 |
-|------|------|------|
-| mind.py | 137L | 统一认知结构: Relation+Attention+Mistakes |
-| mind_attention.py | 100L | 用户注意力模式 |
-| mind_relation.py | 178L | 关系增信学习 |
-| mind_mistakes.py | 128L | 失败模式学习 |
-
-### 其他
-
-| 模块 | 行数 | 功能 |
-|------|------|------|
-| inertia_graph.py | 232L | 跨链惯性权重图 |
-| models.py | 196L | UserTag + MemoryPoint + MemoryChunk |
-| contextual_strategy.py | 193L | 策略×上下文匹配 |
-| p2_advanced.py | 252L | 因果晋升+TTL+子图缓存 |
-| reasoning_policy.py | 202L | 结构化反馈→系统推理方式 |
-| policy_prompt.py | 107L | LLM动态策略生成 |
-| quality_scorer.py | 126L | 内部质量评分 |
-| monitor_report.py | 162L | 统一基准监控+回放 |
+**v6当前用 llm_planner.py(66L)** — 仅薄封装。这个完整系统未接入。
 
 ---
 
-## 三、v6 Current — 当前实现
+## 二、context/ (19f, 5,418L) — 上下文工程完整管线
 
-### 已在管线中 (agent_native wired)
+| 模块 | 行数 | 功能 |
+|------|------|------|
+| source.py | 835L | **ContextSource抽象接口** — 多知识域上下文检索基类 |
+| manager.py | 724L | 上下文管理器主类 |
+| window.py | 425L | 上下文窗口管理 |
+| assembler.py | 373L | 上下文聚合+排序 |
+| pruner.py | 303L | 子图溢出裁剪(4轮trim+3步landing) |
+| graph_source.py | 351L | ConceptGraph子图编译源 |
+| cross_domain_ir.py | 279L | **跨域IR**: intent感知的中间表示 |
+| models.py | 250L | 上下文数据模型 |
+| budget_allocator.py | 217L | 三层预算分配 |
+| topic_tree_source.py | 183L | TopicTree上下文源(带回溯) |
+| cross_ref_builder.py | 106L | 跨域cross_ref生成 |
+| domain_selector.py | 100L | 意图感知域选择矩阵 |
+| cross_domain_expander.py | 58L | Event ID多域扩展stub |
+| store.py | 450L | 上下文存储 |
 
-| 模块 | 行数 | 上接(消费) | 下接(产出) |
-|------|------|-----------|-----------|
-| pcr_router_v2.py | — | MessageReceived | Routed |
-| multi_intent_splitter.py | — | MessageReceived | IntentLocked |
-| l4_temporal.py | — | IntentLocked | TemporalPredict |
-| l4_collaborative.py | — | TemporalPredict | VerifiedTransition |
-| behavior/models.py | — | IntentLocked | BehaviorObserved |
-| engineering/chain.py | — | IntentLocked | ToolPlan |
-| agent_native.py | 169L | All | Plan |
-| metacognitive_trigger.py | 168L | BlockUpdated | MetaTriggered |
-| v4/cognitive_bridge.py | 200L | All perception | CognitiveContext |
-| persistence/broker.py | 234L | All events | persisted |
-
-### 已完成未接入
-
-| 模块 | 行数 | 缺接入 |
-|------|------|--------|
-| llm_relation_extractor.py | 203L | L2 relation分类 |
-| dual_track.py | — | hot+cold intent |
-| multi_perspective.py | — | 4视角分析 |
-| ambiguity_bridge.py | — | 死锁→信念桥 |
-| three_paradigm_context.py | 173L | 温度×距离×价值→LLM |
-| posterior_corrector.py | 141L | 后验修正 |
-| ragraph.py | 176L | RAG+图检索 |
-| federated_index.py | 192L | 6源联邦索引 |
-| compression_router.py | 136L | P×I存储路由 |
-| strategy_federation.py | 276L | 策略联邦 |
-| xml_cards.py | 305L | XML记忆卡 |
-| cluster_map.py | 173L | 聚类可视化 |
-| subgraph_compiler.py | 176L | 跨链上下文 |
+**v6当前未使用** — 全部走 discourse_block_tree.build_context()。这个管线更完整。
 
 ---
 
-## 四、功能重叠矩阵 (需要整合)
+## 三、topic_tree/ (11f, 2,120L) — 话题树自适应热模型
 
-| 功能域 | v3_0实现 | v4/cognitive实现 | v6实现 | 选哪一个 |
-|--------|----------|------------------|--------|----------|
-| 知识图引擎 | CognitiveTree(683L, 10节点+8边) | SubgraphCompiler(176L, 弱) | RelationSubstrate(453L, 3×4) | **v3_0 CognitiveTree** |
-| 关系分类 | — | — | RelationSubstrate._infer_strength + LLMRelationExtractor | **LLMRelationExtractor** |
-| 多LLM编译 | CognitiveCompiler(331L, 6LLM) | — | agent_native(169L, 线性) | **CognitiveCompiler** |
-| EventBus | cog/event_bus(213L) | — | EventBus(设计存在, 未实现) | **整合作业** |
-| 蓝图编排 | — | ABC三层(abc_orchestrator) | agent_native(硬编码) | **ABC + 蓝图** |
-| 用户画像 | ProfileUpdater(138L) | OCEANProfile(265L)+BFI(201L) | — | **v4版** |
-| 元认知 | MetaCog(97L) | MetaCognition(328L) | MetaTrigger(168L) | **v4主+v3补充** |
-| 版本控制 | — | VersionControl(202L) | — | **v4版** |
-| LLM Providers | 5个provider(1798L) | — | DeepSeek直连 | **当前v6** |
-| 观测 | 5个module(1982L) | MonitorReport(162L) | metrics+logger(已合并) | **v6版, 缺telemetry/tracer** |
+| 模块 | 行数 | 功能 |
+|------|------|------|
+| manager_v2.py | 1,091L | **TopicTree V2** — 核心话题管理器 |
+| heat_model.py | 171L | 自适应热模型(ARC启发+拓扑加权) |
+| models.py | 153L | 话题树/图数据模型 |
+| context.py | 121L | 双视角+多视角+行为锚上下文组装 |
+| manager.py | 122L | 引擎集成层 |
+| fact_store.py | 103L | 不变事实+可变关系存储 |
+| compass_patch.py | 29L | 三范式罗盘补丁 |
+
+**v6当前用 discourse_block_tree** — topic_tree是另一个并行话题系统。
 
 ---
 
-## 五、结论: 三类缺口
+## 四、engineering/ (15f, 812L) — 工程知识图谱
 
-### A. 设计存在, v3有实现, v6丢失 (5个)
-- Cognitive Tree 知识超图 (10节点+8边) → RelationSubstrate 降级为3×4
-- CognitiveCompiler 6LLM编译入口 → agent_native 降级为线性
-- AccessControl 权限矩阵 → 缺失
-- Lifecycle 节点生命周期 → 缺失
-- ExpertProbe(通用特征版) → 被LLM版替代
+| 模块 | 行数 | 功能 |
+|------|------|------|
+| chain.py | 135L | 工程链主干 |
+| knowledge_graph.py | 95L | 5层知识图(约束/模式/决策/质量/反模式) |
+| constraint_engine.py | 66L | 类型匹配+反模式检测 |
+| models.py | 65L | 工程数据模型 |
+| type_system.py | 41L | 类型注册+is_a推导 |
+| registry.py | 42L | 模块注册表 |
+| persistence.py | 53L | 持久化适配 |
+| persistence_full.py | 53L | 全量持久化 |
+| monitor.py | 24L | 管线监控 |
 
-### B. v4有, v6未充分用 (8个)
-- ABC 三层决策系统
-- SimulationEngine 内部模拟
-- Mind(注意力+错误+关系)
-- NeuroSymbolic 规则引擎
-- VersionControl
-- Workspace+ExecutionTrace
-- ContextualStrategy
-- InertiaWeightGraph
+**v6当前用 engineering/chain.py(135L)** — 仅MCP桥接基础。
 
-### C. v6新建, 独立待接入 (13个)
-- 见上文"已完成未接入"列表
+---
+
+## 五、llm_providers/ (24f, 3,672L) 
+
+### 基础设施
+
+| 模块 | 行数 | 功能 |
+|------|------|------|
+| openai_provider.py | 358L | OpenAI兼容Provider |
+| local_provider.py | 327L | 本地LM Studio Provider |
+| provider_manager.py | 325L | Provider管理器 |
+| streaming.py | 292L | 流式响应 |
+| circuit_breaker.py | 380L | 断路器+降级 |
+| base.py | 191L | Provider基类 |
+| gateway_provider.py | 163L | Switch Gateway路由 |
+| failover_provider.py | 139L | Failover提供商 |
+| provider_factory.py | 100L | Provider工厂 |
+
+### 6个专用LLM实例 (llm_instances/)
+
+| 模块 | 功能 |
+|------|------|
+| answer_llm.py | 回答生成器 |
+| intent_llm.py | 意图分析师 |
+| meta_cognitive_llm.py | 元认知监督者 |
+| pcr_llm.py | 认知分析师 |
+| planning_llm.py | 规划师 |
+| reflective_llm.py | 系统复盘师 |
+
+**v6当前: DeepSeek直连** — 6LLM多实例设计了但未使用。
+
+---
+
+## 六、v3_common/ (13f, 5,131L) — 共享基础层
+
+| 模块 | 行数 | 状态 |
+|------|------|------|
+| data_models.py | 886L | ✅ 保留 (共享数据契约) |
+| orchestrator.py | 668L | ➡️ un_use/ |
+| expertise_probe.py | 703L | ➡️ un_use/ → llm_expertise替代 |
+| gates.py | — | ✅ 保留 (三层门控) |
+| blueprints.py | — | ✅ 保留 (蓝图设计) |
+| plugin_system.py | 210L | ➡️ discourse_block_tree/ |
+| integration_bridge.py | — | ✅ 保留 |
+| health_check.py | — | ✅ 保留 |
+| adaptive_threshold.py | — | ✅ 保留 |
+| serialization.py | — | ✅ 保留 |
+| intent_rule_registry.py | 304L | ➡️ un_use/ |
+| metrics.py | 221L | ➡️ observability/ (已合并) |
+| structured_logger.py | 108L | ➡️ un_use/ |
+
+---
+
+## 七、v4/ (非cognitive, ~30模块, 多数 <100行stub)
+
+| 目录/文件 | 行数 | 功能 |
+|----------|------|------|
+| cognitive_scheduler/ | 1,659L | **完整认知调度系统**(9文件) |
+| causal_substrate/ | 270L | 因果基座(3文件) |
+| persistence/ | 95L | v4持久化适配 |
+| skill_layer/ | 84L | 技能层(distillation_engine+skill_pool) |
+| causal/ | 53L | 因果推理 |
+| context/ | 49L | v4上下文适配 |
+| optimizer/ | 47L | 优化器 |
+| world/ | 42L | 世界模型 |
+| runtime/ | 41L | 运行时 |
+| chunking/ | 26L | chunking |
+| behavior_graph/ | 24L | 行为图 |
+| document/ | 20L | 文档处理 |
+| event_log/ | 18L | 事件日志 |
+| observation_compiler/ | 15L | 观察编译器 |
+| hypothesis_engine/ | 14L | 假设引擎 |
+| adapter/ | 6L | 适配器 |
+| cli/ | 4L | CLI入口 |
+| tiered/ | 1L | 分层 |
+| un_use/ | 311L | 废弃模块(4文件) |
+
+---
+
+## 八、docs/ 设计文档未读清单
+
+### 最关键的未读设计 (design not yet mapped to implementation)
+
+| 文档 | 内容 |
+|------|------|
+| BUSINESS_CHAIN_STATE_MACHINE.md | 全局状态机, 16状态字段 |
+| BUSINESS_CHAIN_2.1_TOPIC_TREE.md | 话题树完整设计 |
+| BUSINESS_CHAIN_1.5_PLANNING.md | 蓝图系统+技能生命周期 |
+| BUSINESS_CHAIN_02_CONTEXT.md | 上下文工程完整管线 |
+| BUSINESS_CHAIN_05_BEHAVIOR.md | 行为链设计 |
+| BUSINESS_CHAIN_07_ENGINEERING.md | 工程链设计 |
+| DESIGN_SPECIFICATION.md | v6完整规格说明 |
+
+### docs/v3.0/ 105篇设计
+
+包括: DDD领域设计, cognitive_compiler详细设计, discourse_block_tree四空间, cognitive_profile_v2, association链设计, 等等。
+
+### docs/merge/ 6篇归档
+
+包括: COGNITIVE_PIPELINE, OBSERVATION_COMPILER, etc.
+
+---
+
+## 九、重叠与重复 (需整合)
+
+| 功能域 | v3_0 | v4 | v6 | 选择 |
+|--------|------|----|----|------|
+| **规划+技能** | — | skill_layer(stub) | llm_planner(66L) | **planner/(7,908L)** |
+| **上下文工程** | — | context(stub) | discourse.build_context | **context/(5,418L)** |
+| **话题树** | — | — | discourse_block_tree | **topic_tree/(2,120L) 或 discourse, 二选一** |
+| **LLM Providers** | 5p(1798L) | — | DeepSeek直连 | **llm_providers/(3,672L) 或 DeepSeek** |
+| **6LLM实例** | — | llm_instances/6文件 | — | **v4设计, v6未用** |
+| **EventBus** | cog/event_bus(213L) | — | 设计存在 | **v3版可迁移** |
+| **因果推理** | — | causal_substrate(270L) | — | **v4版** |
+| **蓝图系统** | — | ABC层 | — | **v3_common/blueprints + v4/ABC** |
+
+---
+
+## 十、十个未接入的重量级系统
+
+1. **planner/** — 完整Skill生命周期(7,908L) — 仅llm_planner薄层在用
+2. **context/** — 完整上下文管线(5,418L) — 未用
+3. **topic_tree/** — 自适应热模型(2,120L) — 未用
+4. **cognitive_scheduler/** — 认知调度(1,659L) — 未用
+5. **causal_substrate/** — 因果推理(270L) — 未用
+6. **llm_providers/ 6LLM实例** — 多LLM分工 — 仅DeepSeek在用
+7. **v3_0/cognitive_tree** — 知识超图(8,909L) — 未迁移
+8. **v3_0/observability** — 观测+遥测(1,982L) — telemetry/tracer丢失
+9. **v4/world** — 世界模型(42L stub) — 设计存在,代码为空
+10. **engineering/ 知识图谱**(812L) — constraint_engine+knowledge_graph — 基础版在用
