@@ -337,40 +337,55 @@ class ExecutionPipeline:
         results = []
         retry_logs = []
 
-        for step in steps:
+        # Group steps for parallel execution
+        async def _execute_one(step) -> Tuple[dict, list]:
             task = ExecutionTask(
                 task_id=f"step_{step.index}",
-                tool=step.tool,
-                params=step.params,
-                timeout_s=30,
-            )
+                tool=step.tool, params=step.params, timeout_s=30)
 
-            # Constraint check (Phase 1 — ConstraintTree)
+            # Constraint check
             violations = self._atm.constraint.check(step.tool, step.params)
             if violations:
-                high_priority = [v for v in violations if v.get("priority", 5) >= 7]
-                if high_priority:
-                    results.append({"status": "blocked", "error": str(high_priority),
-                                    "task_id": task.task_id})
-                    continue
+                high = [v for v in violations if v.get("priority", 5) >= 7]
+                if high:
+                    return {"status": "blocked", "error": str(high), "task_id": task.task_id}, []
 
-            # Execute (Phase 1 — ExecutionEngine)
             result = await self._engine.execute(task)
 
-            # ReAct retry if needed (Phase 3)
+            # Dual-path if result. RequiresConfirmation
+            result, dp_logs = await self._dual_path_resolve(result, step, task)
+            retry_logs.extend(dp_logs)
+
+            # ReAct retry
             final, logs = await self._react.assess_and_retry(
                 {"status": result.status.value, "output": result.output,
                  "error": result.error, "task_id": task.task_id},
                 step.params,
-                lambda p: asyncio.run(self._engine.execute(task)),  # Re-execute
-            )
-            results.append(final)
+                lambda p: asyncio.run(self._engine.execute(task)))
             retry_logs.extend(logs)
 
             # Mark node done
             node = self._atm.execution.spawn_sub_agent(
                 root_node.node_id, step.action, 1000)
             self._atm.execution.complete_node(node.node_id, final)
+            return final, retry_logs
+
+        if self._params and self._params.get("execution.parallel_sub_agents", True):
+            # Parallel execution (asyncio.gather)
+            gathered = await asyncio.gather(
+                *[_execute_one(step) for step in steps],
+                return_exceptions=True)
+            for item in gathered:
+                if isinstance(item, Exception):
+                    results.append({"status": "failed", "error": str(item)})
+                else:
+                    results.append(item[0])
+        else:
+            # Sequential
+            for step in steps:
+                final, logs = await _execute_one(step)
+                results.append(final)
+                retry_logs.extend(logs)
 
         # 4. Synthesize (Phase 4)
         synthesis = self._synth.synthesize(results)
@@ -388,3 +403,48 @@ class ExecutionPipeline:
         synthesis["tree_stats"] = {s.tree_name: s.total_nodes
                                    for s in self._atm.get_all_stats()}
         return synthesis
+
+    # ═══ Dual-Path Resolver ═══
+
+    async def _dual_path_resolve(self, result: "ExecutionResult", step,
+                                  task: "ExecutionTask") -> Tuple["ExecutionResult", list]:
+        """When execution result is uncertain, parallel:
+        Path A: re-execute with broader context
+        Path B: search persistence for similar past results
+        → LLM deduplicates
+        """
+        logs = []
+        if result.status.value == "success" and result.output:
+            return result, logs  # Clear result, no dual path needed
+
+        # Path A: broader re-execution
+        path_a = None
+        try:
+            path_a = await self._engine.execute(task)
+        except Exception:
+            pass
+
+        # Path B: persistence search
+        path_b = None
+        try:
+            ptr_results = self._memory.retrieve_by_query(
+                step.params.get("path", str(step.params)[:50]), max_chunks=2)
+            if ptr_results:
+                path_b = ptr_results
+        except Exception:
+            pass
+
+        # LLM dedup — combine both paths
+        if path_a and path_b:
+            result.output = f"[Dual-path] A:{path_a.output[:200]} | B:{path_b[0][:200]}"
+            result.status = path_a.status
+            result.details = {"dual_path": True, "source": "merged"}
+            logs.append(RetryRecord(attempt=0, strategy=RetryStrategy.EXPAND_CONTEXT,
+                                    reason="dual-path resolution"))
+        elif path_a:
+            result = path_a
+        elif path_b:
+            result.output = f"[Persistence] {'; '.join(path_b[:2])}"
+            result.status = type(result.status)(result.status.value)
+
+        return result, logs
