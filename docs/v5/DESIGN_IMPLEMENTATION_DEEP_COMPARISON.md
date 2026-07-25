@@ -1,146 +1,133 @@
-# DialogMesh v6 — 设计×实现 深度对照 (从40+篇设计文档提取)
+# DialogMesh v6 — 核心设计哲学 × 实现状态
 
-> 2026-07-24 · 读完 ARCHITECTURE.md, architecture/ARCHITECTURE.md, HYBRID_ARCHITECTURE, 关联链/三范式/信息论压缩 等核心设计
-
----
-
-## 表一：设计全貌 (42 核心设计点)
-
-### A. 架构模式
-
-| 设计要点 | 来源 | 描述 |
-|----------|------|------|
-| 热路径直连 | DESIGN_HYBRID_ARCHITECTURE.md | 8链直连 <10ms, 不经过EventBus |
-| 冷路径EventSourcing | DESIGN_HYBRID_ARCHITECTURE.md | Meta+Association 两条链走EventBus, 避免广播风暴 |
-| LLM是协调者 | agent_native.py docstring | 不是"算法LLM兜底", 是"算法前置滤波, LLM决策" |
-| 事件溯源 | DESIGN_EVENT_SOURCING_CQRS.md | EventLog+Snapshot+Replay, SHA256链 |
-| 网状非线形 | BUSINESS_CHAIN_06_ASSOCIATION.md | 10链并行消费EventBus, 非L1→L2→L3 |
-
-### B. 核心公式/范式
-
-| 设计要点 | 来源 | 公式 |
-|----------|------|------|
-| 信息价值 | DESIGN_INFO_THEORETIC_COMPRESSION.md | I(x) = -log₂ P(x), 罕见事件→高价值 |
-| 温度×距离正交 | DESIGN_THREE_PARADIGM_LLM_CONTEXT.md | Temp(Hot/Cold) ⟂ Dist(Near/Far) ⟂ Value(Rare/Common) |
-| 压缩分治 | DESIGN_L5_LONG_TERM_MEMORY.md | 高频→压缩成规则, 低频高价值→RAG |
-| 三范式注入 | DESIGN_THREE_PARADIGM_LLM_CONTEXT.md | 模式C推荐: 自然语言三元组标注 |
-
-### C. 关联链 5层漏斗
-
-| 层 | 输入 | 处理 | 输出 | 用户可见 |
-|----|------|------|------|----------|
-| L1 句法 | 原始文本 | Stanza+SVO | 三元组 | ❌ |
-| L1.5 补全 | 三元组 | 快(画像+上文)+慢(轻量LLM) | 补全语义 | ✅ |
-| L2 语义 | 补全语义 | 类型兼容+KG映射 | 实体关系 | ✅ |
-| L2.5 信念 | 实体关系 | 跨轮贝叶斯后验 | 锁定意图 | ❌ |
-| L3 语用 | 锁定意图 | 主题锁定+行为标签 | 意图链 | 桥接 |
-| L4 时序 | 意图链 | 马尔可夫+JS漂移 | 时序预测 | 桥接 |
-| L5 因果 | 证据链 | 伪因果→实因果晋升 | 因果链 | ✅ |
-
-### D. 对话树
-
-| 设计要点 | 来源 |
-|----------|------|
-| 树投影(推理)+图关联(记忆) | architecture/ARCHITECTURE.md |
-| 局部热区: 当前+2祖先+1后代 | architecture/ARCHITECTURE.md |
-| MAX_DEPTH=6, 超深触发压缩 | architecture/ARCHITECTURE.md |
-| 认知画像继承(子继父,可覆盖) | architecture/ARCHITECTURE.md |
-| BM25+jieba快匹配+LLM双轨 | topic_quick_match.py |
-
-### E. PCR 路由
-
-| 设计要点 | 来源 |
-|----------|------|
-| 期望识别3级级联: 规则→历史→LLM | architecture/ARCHITECTURE.md |
-| 3D坐标路由(X/Y/Z) | BUSINESS_CHAIN_00_PCR.md |
-| X轴: nomic(S,O)cosine×0.7 + IDF×0.3 | PCR V2 |
-| 模型规模感知: <7B/7-13B/>70B | PCR V2 |
-
-### F. 元认知
-
-| 设计要点 | 来源 |
-|----------|------|
-| 消费8条链, 产出review→修正/降级 | DESIGN_HYBRID_ARCHITECTURE.md |
-| 7条默认规则+冷却期 | metacognitive_trigger.py |
-| 审查优先级+排程+回顾+自审 | metacognition.py |
-
-### G. 联邦索引
-
-| 设计要点 | 来源 |
-|----------|------|
-| 6源并行: RAG+Discourse+Behavior+Association+Engineering+Meta | federated_index.py |
-| 温度LRU排序 | federated_index.py |
-| 嵌入式聚类+LLM验证 | llm_relation_extractor.py |
+> 2026-07-24 · 重写: 纠正"LLM-first vs 规则优先"的伪二分
 
 ---
 
-## 表二：实现对照 (39 实现 + 3 缺口)
-
-### ✅ 设计↔实现一致
-
-| 设计 | 实现 | 状态 |
-|------|------|------|
-| PCR 3D路由 | pcr_router_v2.py | ✅ |
-| Sentence拆分 | discourse_block_tree/segmenter.py | ✅ |
-| L4 时序预测 | association/l4_temporal.py + l4_collaborative.py | ✅ |
-| 行为自适应 | behavior/models.py + llm_collaborative.py | ✅ |
-| 多意图拆分(LLM-first) | intent/multi_intent_splitter.py | ✅ |
-| 对话树 | compiler/discourse_block_tree.py | ✅ |
-| BM25+jieba | compiler/topic_quick_match.py | ✅ |
-| 元认知触发器 | observability/metacognitive_trigger.py | ✅ |
-| 持久化(SHA256+SQLite) | persistence/broker.py + lsm_store.py | ✅ |
-| Rust持久化 | persistence_rs/src/ | ✅ |
-| V4认知桥(6桥接) | v4/cognitive_bridge.py | ✅ |
-| V4认知模块(13/13) | v4/cognitive/*.py | ✅ |
-| 联邦索引(Python) | memory/federated_index.py | ✅ |
-| 联邦索引(Rust) | persistence_rs/src/federated_index.rs | ✅ |
-| 压缩路由器 | memory/compression_router.py | ✅ |
-| 策略联邦 | memory/strategy_federation.py | ✅ |
-| XML记忆卡 | memory/xml_cards.py | ✅ |
-| RAG+图并行 | memory/ragraph.py | ✅ |
-| L2 LLM-native关系 | compiler/llm_relation_extractor.py | ✅ |
-| 三范式上下文 | compiler/three_paradigm_context.py | ✅ |
-| 后验修正 | compiler/posterior_corrector.py | ✅ |
-| 评估框架 | tests/eval_memory.py | ✅ |
-| orchestator | orchestrator/agent_native.py | ✅ |
-
-### ⚠️ 设计有, 实现简化为LLM-first
-
-| 设计 | 当前实现 | 差距 |
-|------|----------|------|
-| 21条regex规则+优先级 | MultiIntentSplitter(LLM-first) | 规则层被跳过 — 设计是"规则95%, LLM5%", 实现是"LLM100%" |
-| 3级级联(规则→历史→LLM) | PCR直接LLM | 历史缓存/规则fallback未实现 |
-| 歧义检测6类(架构设计) | 无歧义检测 | 设计存在, 代码为零 |
-| 任务图DAG+拓扑排序 | 无 | 蓝图系统存在于设计,未实现 |
-
-### ❌ 设计存在, 实现为零
-
-| 设计 | 来源 | 缺口描述 |
-|------|------|----------|
-| Topic Tree深度防御 | architecture/ARCHITECTURE.md | MAX_DEPTH=6压缩, 树投影+图关联未实现 |
-| 认知画像继承(子继父) | architecture/ARCHITECTURE.md | discourse_block_tree无继承机制 |
-| 热/冷路径分叉 | DESIGN_HYBRID_ARCHITECTURE.md | agent_native是线性管线, 无EventBus分叉 |
-| 用户可修改L1.5/L2/L5 | BUSINESS_CHAIN_06_ASSOCIATION.md | 所有层对用户不可见不可改 |
-| WebSocket 事件注册表 | architecture/ARCHITECTURE.md | Layer 3 前端协议层未实现 |
-| SessionManager(Redis) | architecture/ARCHITECTURE.md | 当前仅SQLite, 无Redis支持 |
-| Bayesian GP阈值自适应 | architecture/ARCHITECTURE.md | 设计存在, 未实现 |
-| ContextManager温度排序 | BUSINESS_CHAIN_02_CONTEXT.md | 文件不存在 |
-
----
-
-## 表三：根本矛盾 — 设计哲学冲突
+## 一、真正内核：一切皆为行为
 
 ```
-设计文档 (2026-07-19):
-  "规则优先, LLM兜底"
-  "95%请求走规则路径(<5ms)"
-  "21条规则分类器(regex+优先级+冲突检测)"
-  "确定性第一, LLM仅用于选择不发明"
+每个操作 = 一次行为(Behavior)
 
-当前实现 (2026-07-24):
-  LLM-first: MultiIntent是LLM调用, PCR是LLM分类, 关系提取是LLM开放命名
-  零regex规则, 零硬编码分类器
-  
-这是根本性冲突 — 不是"少实现了一个模块", 是两条完全不同的路径。
-需要决策: 继续LLM-first(符合前沿), 还是回到规则优先(设计原文)?
+LLM → call(规则)    = 行为
+规则 → trigger(LLM)   = 行为
+LLM → call(LLM)     = 行为 (子任务委派)
+用户 → edit(节点)     = 行为
+用户 → review(规则)   = 行为
+算法 → notify(LLM)    = 行为
+```
+
+没有"LLM-first"也没有"规则优先"。**编排系统是唯一的调度者**——它从蓝图中选择执行模式。
+
+## 二、四层调用权限模型
+
+```
+┌──────────────────────────────────────────────┐
+│  编排系统 (AgentNativeOrchestrator)           │
+│  选择蓝图 → 调度行为 → 记录结果               │
+├──────────────────────────────────────────────┤
+│                                              │
+│  蓝图1: 规则直连 (0ms LLM)                   │
+│    用户输入 → regex分类器 → 确定性回答        │
+│    适用: 会员号查询、简单事实、高频模式        │
+│                                              │
+│  蓝图2: LLM+规则协同 (1次LLM)                 │
+│    LLM分析 → 选择规则 → 规则执行 → LLM审查    │
+│    适用: 意图分类、实体消歧、路由决策          │
+│                                              │
+│  蓝图3: LLM多步推理 (2-5次LLM)                │
+│    LLM→工具→观察→LLM→决策→执行               │
+│    适用: 复杂任务分解、多意图、开放域           │
+│                                              │
+│  蓝图4: 联邦并行 (多次LLM+规则并行)            │
+│    6源并行搜索 → 结果合并 → LLM仲裁           │
+│    适用: 跨域检索、长记忆、多视角决策          │
+│                                              │
+│  蓝图5: 用户交互 (LLM暂停, 等用户)             │
+│    LLM提出候选 → 用户选择/编辑 → LLM继续       │
+│    适用: 歧义消解、关键决策、关系标注          │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+## 三、蓝图的本质：约束模式
+
+```
+蓝图不是"固定流程" — 是"约束模板"
+
+Blueprint {
+  "max_llm_calls": 3,         // 不希望无限循环
+  "min_confidence": 0.7,       // 低置信不走规则
+  "allowed_callers": ["LLM","user"],  // 权限控制
+  "hot_path_first": true,      // 先试热路径
+  "fallback": "blueprint_3",   // 失败→升级蓝图
+}
+```
+
+编排器根据当前状态(用户画像/信念/上下文)选择蓝图，LLM在蓝图约束内自由操作。
+
+## 四、当前实现对照
+
+### ✅ 已完成
+
+| 行为类型 | 实现 | 状态 |
+|----------|------|------|
+| LLM→call(LLM) | V4 MetaCognition submit→review→decision | ✅ 桥接接通 |
+| LLM→call(算法) | PCR调用jieba+BM25+向量搜索 | ✅ |
+| 算法→notify(LLM) | L4 drift检测→LLM verify_transition | ✅ |
+| 用户→edit(节点) | correction_journal.record() | ✅ |
+| LLM→多源并行 | federated_index 6源搜索 | ✅ |
+| LLM→存储 | persistence broker 10链 | ✅ |
+
+### 📋 未实现
+
+| 行为类型 | 缺口 |
+|----------|------|
+| 规则→trigger(LLM) | regex分类器已移除, 需重建为可调用工具 |
+| 蓝图选择引擎 | design存在, 代码为零 — 编排器直接硬编码了蓝图1 |
+| 权限控制 | 无调用者身份验证 |
+| 蓝图DSL | 蓝图定义格式存在于设计, 未序列化实现 |
+| 用户→review(关系) | RelationSubstrate改完, 但无用户界面 |
+| 规则→notify(规则) | 链式规则触发未实现 |
+
+### 🔑 漏掉的根源：蓝图编排系统
+
+```
+当前 agent_native.py:
+  process() { PCR → Intent → L4 → Behavior → Engineering → LLM }
+  ↑ 硬编码了蓝图1的线性流程
+
+设计意图:
+  process() { 读蓝图 → 调度行为 → 监控 → 动态切换蓝图 }
+  ↑ 编排器不预设流程
+```
+
+## 五、需要补的核心缺口（按优先级）
+
+```
+P0 — 蓝图选择引擎
+  当前: agent_native 硬编码流程
+  目标: AgentNativeOrchestrator 从 blueprint_registry 选择蓝图
+
+P0 — 规则工具注册
+  当前: regex分类器已移除
+  目标: IntentClassifier 注册为可调用工具, LLM可选调
+
+P1 — 权限 + 调用者追踪
+  当前: 无
+  目标: 每个行为记录 source(LLM/rule/user), blueprint_version
+
+P1 — 蓝图热切换
+  当前: 无
+  目标: 低置信→自动升级蓝图 (blueprint_1→blueprint_3)
+```
+
+---
+
+## 六、修正后的全模块对照
+
+```
+文档版本: v2 — 修正后
+上一版(DESIGN_IMPLEMENTATION_DEEP_COMPARISON.md)的"LLM-first vs 规则优先"错误
+→ 正确: 编排系统统一调度, LLM/规则/用户/算法是平等的行为主体
 ```
