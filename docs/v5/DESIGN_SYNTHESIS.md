@@ -396,3 +396,24 @@ Skill ≠ 结构化Prompt。是Capability Blueprint。
 双Compiler架构: ContextCompiler + ObservationCompiler
 Event Log + Dual Pipeline (Sync/Async)
 ```
+
+
+## 十四、v3.0 设计文档 (第四批次, 15篇扫读)
+
+| 文档 | 核心 |
+|------|------|
+| API Event Log | HTTP API + append-only持久化事件日志 |
+| CLI Inspect | ps/top/ls风格文本表格查看v4模块 |
+| CLI Reference | 完整CLI命令参考(运行/编排/查看/运维) |
+| DialogueTree Persistence | 树=内存刚结构, 持久化=图; 适配层bridging |
+| Document Ingestion | 文档摄取层: 外部文件→DocumentNode树 |
+| Engineering Ontology | 工程本体: 7类节点+正负边+约束推理 |
+| Frontend | 澄清UI+多模态+WebSocket+TaskGraph可视化 |
+| Graph Fallback | LSH→HNSW→BFS→BGE 四层检索, O(log N) |
+| Interaction Model | Event Layer + Multi-Projection(多投影交互) |
+| Semantic Object | 语义对象: 结构化世界实体, 非文本Chunk |
+| Tiered Parser | 三层递进解析: stanza→统计→LLM, 中文优先 |
+| TUI | 终端仪表盘, 实时显示v4认知管线 |
+| V3.3 Algorithm | 完整算法设计: 收敛/发散/递归/启发 |
+| V4 Knowledge Refinement | 知识精炼: 从Observation到Knowledge的蒸馏管 |
+| Cognitive Dynamics V6 | 认知动力学v6: 惯性/注意力/情绪/信任计算 |
