@@ -78,17 +78,31 @@ class Subscription:
             yield msg
 
     def _deliver(self, msg: Event):
-        """Internal: deliver message to this subscription."""
+        """Internal: deliver message to this subscription.
+
+        Unlike NATS: we NEVER drop. Slow consumer → EventLog persists,
+        subscriber catches up via replay, GC cleans old events later.
+        """
         if not self._active:
             return
         if self._pending >= self._max_pending:
-            # Slow consumer — drop oldest
-            logger.warning("Slow consumer %s: dropping msg", self.subject)
+            # Slow consumer — not dropped, queued for later delivery
+            # EventLog already persisted this event (immutable)
+            logger.warning(
+                "Slow consumer %s (%d pending), will catch up via replay",
+                self.subject, self._pending)
+            # Try non-blocking put
             try:
-                self._queue.get_nowait()
-                self._pending -= 1
-            except asyncio.QueueEmpty:
-                pass
+                self._queue.put_nowait(msg)
+                self._pending += 1
+            except asyncio.QueueFull:
+                # Queue full — subscriber must catch up via EventLog replay
+                logger.warning(
+                    "Queue full for %s, subscriber should replay from %s",
+                    self.subject, msg.subject)
+        else:
+            self._queue.put_nowait(msg)
+            self._pending += 1
 
         msg.sid = self.sid
         self._queue.put_nowait(msg)
