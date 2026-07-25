@@ -526,3 +526,71 @@ ENGINEERING 层: 27篇 (全部标注"工程待实现")
           10条链 + 双速通道 + 蓝图系统 + 子图织物 + Decider状态机
 实现缺口: 75%代码存在, ~15%实际接入, ENGINEERING规格全未按蓝图构建
 ```
+
+
+## 十七、v5 + v6 近期设计 (刚读完, ~10篇)
+
+### 17.1 Event Sourcing + CQRS — 内核架构
+``"
+根因: v4 EventBus从未建造。v5状态分散+v6广播风暴都是"EventBus缺失"的并发症。
+方案: 写侧强一致EventLog → publish → EventBus → 读侧多副本
+```
+
+### 17.2 Derivation Compression V2 — 启发链
+``"
+规则归纳 = 过拟合 (等价LSTM窗口拟合)
+正确路径: 发散(t=0.8, LLM无约束猜测) → 收敛(t=0.1, 筛选) → 启发链(条件+反例+路径)
+```
+
+### 17.3 V4.0 Cognitive Coordinate Router
+``"
+范式跃迁: 离散标签 → 3D连续坐标(X=novelty, Y=structural complexity, Z=emotional load)
+6个zone区域映射到路由策略, 无数意图点映射到同一坐标系
+```
+
+### 17.4 Global State Machine + System Scheduler
+``"
+36条push路径 → 6条Tick序列 (串行化防广播风暴)
+5硬核风险: CRDT合并, 因果锚点, WAL持久化, 快照读, EventScheduler
+```
+
+### 17.5 Implementation Reality + Completeness Audit
+``"
+10条链覆盖 ✅ (文档+API+代码都存在)
+实际接入: 01(90%), 02(70%), 03-04(70%), 05(70%), 06(65%), 07-10(50-70%)
+不是"70%未实现"—是文档未更新
+```
+
+### 17.6 Profile V2 — 画像即惯性权重图
+``"
+v1: OCEAN 10维浮点数 → 扁平
+v2: 画像 = 惯性模式的加权图 (稳定=高权重, 多视角共识=证实, 打破惯性=最强信号)
+```
+
+### 17.7 Unified Intent Pipeline — 3 Tier + 5 Layer
+``"
+合并 BUSINESS_CHAIN_01_INTENT + 06_ASSOCIATION
+Tier0: StructuralFeatures → Tier1: BGE/SVO → Tier2: LLM few-shot
+5层漏斗: L1句法→L1.5补全→L2语义→L2.5信念→L3语用→L4时序
+```
+
+---
+
+## 最终: 设计文档全貌 (100% 覆盖)
+
+```
+✅ DESIGN层:    35篇 (merge/5 + CHAIN/22 + v5/22) = 全部读完
+✅ ENGINEERING: 27篇 = 全部确认为"工程待实现"  
+✅ 架构根级:    15篇 (ARCHITECTURE/STATE/SCHEDULER/SPEC/CQRS/IMPL/...) = 读完
+✅ 审计报告:     8篇 (P0/COMPLETENESS/IMPLEMENTATION/DESIGN_VS_IMPL/...) = 读完
+✅ 博客公开:     2篇 (chapter1/2) = 读完
+
+总阅读: ~87篇核心设计, 100%覆盖
+归档跳过: 105篇v3.0已在merge中吸收
+
+关键数字:
+  设计总模块数: ~60 (4层×15子系统)
+  代码文件存在: 75% (~45文件)
+  实际接入: ~15-70% (按链不等)
+  ENGINEERING完整规格: 27篇22,800行, 全未按蓝图构建
+```
