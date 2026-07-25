@@ -206,7 +206,7 @@
 |------|---------|----------|
 | Perception | 00, 01, 03 | 感知层: 原始→结构化 |
 | Assembly | 02, 10 | 组装层: 编译子图→LLM上下文 |
-| Cognition | 05, 06, 07 | 认知层: 假设→共识 |
+| Cognition | 05, 06, 07, 08 | 认知层: 假设→共识 + 画像 |
 | Meta | 04, 09 | 反思层: Transition→修正 |
 | Memory | — | 存储层: 4对象持久化 |
 | Orchestration | 1.5 | 调度层: Blueprint+Decider |
