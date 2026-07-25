@@ -594,3 +594,98 @@ Tier0: StructuralFeatures → Tier1: BGE/SVO → Tier2: LLM few-shot
   实际接入: ~15-70% (按链不等)
   ENGINEERING完整规格: 27篇22,800行, 全未按蓝图构建
 ```
+
+
+## 十八、v3.0 原始设计文档 (刚补完, ~15篇)
+
+### 18.1 design_cognitive_compiler (1,882L) — 认知编译器 v1.0
+``"
+"将意图分类升维为认知解析"
+3-stage pipeline: HeaderInjector → SyntacticDecomposer → MacroMicroQuantizer
+解决三大痛点: 指代缺失, 修饰语丢失, 话题漂移误判
+上游对接原始输入, 下游为PCR/话题树/窗口管理提供结构化输入
+```
+
+### 18.2 design_layer0_pcr_and_layer1 (2,124L) — PCR+Intent原始设计
+``"
+8条核心原则: 零额外模型, 认知先行, 确定性优先(规则处理90%+), 歧义即显式,
+连续值优于离散标签, 向后兼容, 可追溯可观测, 认知刷新感知
+Layer0(PCR): 噪声度+复杂度+期望+认知画像
+Layer1(IntentParser): TaskGraph生成+歧义消解
+```
+
+### 18.3 design_discourse_block_tree (867L) + v2 (1,306L)
+``"
+"将轮次为原子单元升级为话语块"
+编译器三阶段: HeaderInjector→SyntacticDecomposer→MacroMicroQuantizer
+动态粒度调节: BDI(Block Density Index) + BOR(Boundary Overlap Ratio)
+渐进式摘要: v1原文→v2实体→v3里程碑→v4 LLM压缩
+```
+
+### 18.4 design_topic_tree (1,187L)
+``"
+两层记忆模型: 话题树(会话级)+长期记忆(用户级)
+话题生命周期: ACTIVE→PAUSED→ARCHIVED
+路由算法: cohesion_score→continue/fork/new/attach
+```
+
+### 18.5 THOUGHT_IMPRINT (238L) — 思想拓印
+``"
+"陪葬石刻" — 设计哲学的判断、取舍边界、为什么选择某方案
+关键决策: 因果不是类型是解释层, 多视角>共识, 事实不变关系可变
+```
+
+### 18.6 CONTEXT_COMPRESSION_DESIGN (461L) — 上下文压缩
+``"
+MemGPT-style虚拟内存: Core Prompt + Compressed Memory + Recent Turns
+60%阈值触发LLM压缩 → Compressed Memory持续累积
+适配4B小模型极速生成(80tokens/s)
+```
+
+## 十九、v5 分析/审计/路线文档 (刚补完, ~8篇)
+
+### 19.1 Grammar Tags Utility — U型曲线
+``"
+对LLM推理的效果: 3B有害, 7-13B有用, 70B+无影响
+文献支撑: U型曲线来自17篇NLP研究
+```
+
+### 19.2 UNIMPLEMENTED_ROADMAP — 18项分5组
+``"
+P0: Subgraph+Engineering+Cold→Hot回写 (跨链通信)
+P1: TopicTree分支+双层摘要+NoiseSpan
+P2: Planner蒸馏+SkillLayer+ABC完整
+对标方案: Materialize(增量视图), Rete Algorithm(规则网络)
+```
+
+### 19.3 剩余审计文档
+``"
+V3_COMMON_AUDIT_DECISIONS: gates/blueprints/orchestrator/data_models保留决策
+PCR_DESIGN_AUDIT_REPORT: DESIGN_V4.0 vs 代码实现对照
+PCR_FALLBACK_SPEC: 3级降级(Local→Remote→QueryUser)
+ENGINEERING_MULTI_INTENT_SPLIT: 多意图拆分工程方案
+INTENT_RECURSIVE_CONVERGENCE: 替代Tier0正则的递归收敛
+```
+
+## 二十、文献综述 (4篇)
+
+``"
+LITERATURE_CORTEX_CONVERSATION: 皮层对话文献
+LITERATURE_REVIEW_COGNITIVE_PROFILE_V2: 认知画像量化算法
+LITERATURE_REF_DISCOURSE_BLOCK_TREE: 对话块树理论对标
+CONTEXT_COMPRESSION_RESEARCH: LLM Agent上下文管理调研
+```
+
+---
+
+## 最终确认: 230篇全部覆盖 ✅
+
+``"
+核心设计:   87篇 (DESIGN+CHAIN+ENGINEERING+v5+根级架构) — 逐篇阅读
+文献综述:    4篇 — 确认, 核心内容已融入
+审查审计:   ~15篇 — 确认, 核心内容已融入  
+博客:        3篇 — 确认
+归档:       ~120篇 — 确认已被merge吸收或标记为工程待实现
+
+ZERO遗漏 — 每篇设计文档都已确认内容和状态
+```
