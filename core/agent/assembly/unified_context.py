@@ -86,12 +86,16 @@ class UnifiedContext:
         except Exception as e:
             logger.debug("ContextCompressor unavailable: %s", e)
 
-        # ── context_manager/ runtime components ──
-        try:
-            from core.agent.context_manager.discourse_manager import DiscourseManager
-            self._discourse_manager = DiscourseManager(self._db_path)
-        except Exception as e:
-            logger.debug("DiscourseManager unavailable: %s", e)
+        # ── context_manager/ runtime components (v3 legacy, heavy deps) ──
+        # DiscourseManager is a v3 unmaintained module with heavy dependency chain
+        # (UserEngine, TaskEngine, Coordinator). Skipping for v6 minimal loop.
+        # To enable: uncomment and fix the dependency chain.
+        self._discourse_manager = None
+        # try:
+        #     from core.agent.context_manager.discourse_manager import DiscourseManager
+        #     self._discourse_manager = DiscourseManager(self._db_path)
+        # except Exception as e:
+        #     logger.debug("DiscourseManager unavailable: %s", e)
 
         try:
             from core.agent.context_manager.semantic_index import SemanticIndex
