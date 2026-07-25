@@ -195,5 +195,80 @@ EventBus: 13 subscribers, 0 dropped, 96/96 tests ✅
 
 ---
 
-> 已读: 20篇设计 (10链 + AI Agent Book Ch3 + 7篇v5 + 2篇对齐核查)
-> 待读: ~100篇 v3.0设计, 6篇 merge归档, ~80篇其他
+> 已读: 26篇设计 (10链 + AI Agent Book Ch3 + 7篇v5 + 2篇对齐核查 + 6篇v3.0)
+> 待读: ~95篇 v3.0, 6篇 merge, ~80篇其他
+
+---
+
+## 十一、v3.0 设计文档新发现 (6篇刚读完)
+
+### 11.1 Cognitive Runtime — OS类比
+
+```
+Observer = CPU (调度资源)
+Workspace = Process (执行任务)
+ExecutionTrace = strace (trace→replay→debug→meta-learn)
+CognitiveScheduler = 优先级调度, 替代线性Pipeline
+7种认知任务: PERCEIVE|RETRIEVE|EXPAND|REASON|REFLECT|VERIFY|COMMIT
+```
+
+### 11.2 Cognitive Workspace — 四空间模型
+
+```
+External World → Perceptual Space → Cognitive Space → Semantic Space → Action Space
+
+核心洞见: "系统缺失的不是RAG/Context——而是LLM推理过程中无处可'想'的内部认知空间"
+→ Cognitive Space 是 Hypothesis + Reasoning + Belief 的容器
+```
+
+### 11.3 Hypothesis Engine — 共识形成
+
+```
+不是"计算置信度", 是"共识形成":
+  Multiple Interpretations → Vote → Decay → Resolve → Knowledge freeze
+
+Belief Vector 7维: origin/trace/support/conflict/independence/stability/recency
+冻结条件: belief_score > θ_freeze AND consensus_ratio > θ_consensus
+```
+
+### 11.4 Cognitive Scheduler — 调度与执行分离
+
+```
+三条线: Queue → Scheduler → Worker → Policy
+Policy 决定: "哪个任务先跑, 跑多久, 以什么优先级"
+当前问题: 6个模块各有自己的调度(HypothesisPipeline/DecayResolve/GraphTier/Distillation/…)
+→ 互不感知, 无统一决策层
+```
+
+### 11.5 Competitor Absorption — 5竞品吸收
+
+```
+来源: MemWalker / Hermes-Agent / M-FLOW / MRAgent / VeritasGraph
+吸收点:
+  P0: 来源追溯独立层 (VeritasGraph+M-FLOW) — 每个结论标注source_events
+  P0: 指代消解前置 (MRAgent) — 新能力
+  P1: 冲突检测+版本追踪 — 设计存在,未独立
+  P1: Pipeline Trace结构化输出 — 新能力
+  P2: Cone Graph动态检索深度 — 设计可增强
+  P2: 因果发现自动化管线 — 新能力
+```
+
+### 11.6 Graph Fallback — 大规模检索策略
+
+```
+Anchor-First, Graph-Second:
+  Tier1: LSH bucket → Tier2: HNSW → Tier3: BFS → Tier4: BGE precise
+
+已有代码未接入: lsh_index(114L) + hnsw_index(396L) + hybrid_index(196L) + faiss_store(205L)
+→ O(N) → O(log N + k×branch^depth)
+```
+
+### 11.7 FULL_CONCEPT — 完整系统规格 (1,548L, 77KB)
+
+```
+设计哲学: "对话不是一问一答, 而是基于用户认知模型的持续推断与自适应"
+四原则: 认知优先 / 正交解耦 / 渐进抽象 / 自适应演进
+
+Layer 0-3架构 + 认知画像v2 + 记忆系统 + 可观测性 + 完整数据流生命周期
+→ 这是整个DialogMesh的宪法级文档
+```
