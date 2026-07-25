@@ -20,13 +20,11 @@ class AgentOrchestrator:
                  behavior_collab=None, engineering_chain=None, llm=None,
                  discourse_tree=None, cognitive_bridge=None, event_log=None,
                  context_assembly=None, cognition_hub=None,
-                 feedback_bridge=None, compass_selector=None):
-        self.pcr = pcr_router
-        self.intent = intent_splitter
-        self.l4 = l4_engine
-        self.behavior = behavior_collab
-        self.engineering = engineering_chain
-        self.llm = llm
+                 feedback_bridge=None, compass_selector=None,
+                 plan_gate=None):
+        self.pcr = pcr_router; self.intent = intent_splitter
+        self.l4 = l4_engine; self.behavior = behavior_collab
+        self.engineering = engineering_chain; self.llm = llm
         self.discourse = discourse_tree
         self.cognitive = cognitive_bridge or self._try_load_bridge()
         self._event_log = event_log
@@ -34,6 +32,7 @@ class AgentOrchestrator:
         self._cognition_hub = cognition_hub or self._try_load_cognition()
         self._feedback_bridge = feedback_bridge or self._try_load_feedback()
         self._compass = compass_selector or self._try_load_compass()
+        self._plan_gate = plan_gate or self._try_load_gate()
         self._tick = 0
 
     def _publish(self, kind: str, payload: dict):
@@ -174,6 +173,17 @@ class AgentOrchestrator:
                 self.cognitive.tick()
             result["plan"] = self._llm_synthesize(result)
             self._publish("PLAN_GENERATED", result.get("plan", {}))
+
+            # === CHECKPOINT: human-in-the-loop plan review ===
+            if self._plan_gate and result.get("plan", {}).get("steps"):
+                checkpoint = self._plan_gate.create_checkpoint(
+                    result["plan"], session_id)
+                result["checkpoint"] = checkpoint.to_frontend()
+                if checkpoint.requires_review:
+                    result["requires_user_review"] = True
+                    result["plan_status"] = "pending_review"
+                    result["latency_ms"] = round((time.time() - start) * 1000)
+                    return result  # Pause pipeline, return to frontend
 
         # Cold→Hot Layer 2: belief
         if self._cognition_hub and self._cognition_hub.is_loaded:
