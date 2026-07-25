@@ -1,18 +1,22 @@
 """RelationSubstrate — unified relation layer beneath SemanticObject.
 
 Design: docs/v3.0/DESIGN_RELATION_SUBSTRATE.md v2.0
-
-Replaces the scattered relation representations (ConceptGraph typed edges,
-BehaviorGraph, CausalSubstrate) with a single substrate. All relations are
-stored as RelationEdges with evidence chains. Causal is not a type — it's
-an explanation layer (high confidence + multi-source evidence + mechanism).
+V3: LLM-native open-type relations replace hardcoded 3×4 classification.
 """
+
 from __future__ import annotations
-import re
-import time
-import logging
-from typing import Dict, List, Optional, Set
+import re, time, logging
+from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass, field
+
+# Import LLM-native extraction
+try:
+    from core.agent.compiler.llm_relation_extractor import (
+        LLMRelationExtractor, RelationClusterer, OpenRelation
+    )
+    _LLM_AVAILABLE = True
+except ImportError:
+    _LLM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +46,13 @@ class RelationEdge:
     source: str
     target: str
 
-    # Two orthogonal dimensions
-    relation_kind: str       # "structural" | "behavioral" | "temporal"
-    semantic_strength: str   # "association" | "reference" | "dependency" | "implementation"
-
     # RDF semantics
     predicate: str           # "depends_on" | "contains" | "calls" | "produces" | ...
     inverse: str             # "depended_by" | "contained_by" | ...
+
+    # Two orthogonal dimensions (nullable — LLM may not always classify)
+    relation_kind: Optional[str] = None      # "structural" | "behavioral" | "temporal" | None
+    semantic_strength: Optional[str] = None  # "association" | "reference" | "dependency" | "implementation" | None
 
     confidence: float = 0.3
     evidence: List[Evidence] = field(default_factory=list)
@@ -91,12 +95,15 @@ class RelationSubstrate:
       by confidence → "show high-confidence structural edges"
     """
 
-    def __init__(self, params=None):
+    def __init__(self, params=None, llm_fn=None):
         self._edges: Dict[str, RelationEdge] = {}
         self._by_source: Dict[str, Set[str]] = {}
         self._by_target: Dict[str, Set[str]] = {}
         self._params = params
-        self._entities: Dict[str, EntityNode] = {}  # L2: conversation entities
+        self._entities: Dict[str, EntityNode] = {}
+        self._llm_fn = llm_fn  # LLM call function for relation classification
+        self._inverse_cache: Dict[str, str] = {}  # predicate → inverse (LLM or heuristic)
+        self._clusterer = RelationClusterer() if _LLM_AVAILABLE else None
 
     # ---- L2 Conversation Entity Methods ----
 
@@ -124,10 +131,10 @@ class RelationSubstrate:
         edge = RelationEdge(
             identity=edge_id,
             source=source_id, target=target_id,
-            relation_kind="temporal" if predicate in ("sequential","co_occurrence") else "structural",
-            semantic_strength="association",
             predicate=predicate,
             inverse="associated_with",
+            relation_kind="temporal" if predicate in ("sequential","co_occurrence") else "structural",
+            semantic_strength="association",
             confidence=max(bm25_score, llm_confidence, 0.3),
             evidence=evidence,
         )
@@ -190,8 +197,8 @@ class RelationSubstrate:
                 eid = f"ext:{src}:{pred}:{tgt}"
                 edge = RelationEdge(
                     identity=eid, source=src, target=tgt,
-                    relation_kind="structural", semantic_strength="dependency",
                     predicate=pred, inverse=inv,
+                    relation_kind="structural", semantic_strength="dependency",
                     confidence=conf,
                     evidence=[Evidence(
                         evidence_id=f"ext_ev_{eid}", source="extraction",
@@ -226,10 +233,10 @@ class RelationSubstrate:
                 edge = RelationEdge(
                     identity=f"cg:{name}→{target_name}:{rel_type}",
                     source=name, target=target_name,
-                    relation_kind="structural",
-                    semantic_strength=self._infer_strength(rel_type),
                     predicate=predicate,
                     inverse=inverse_map.get(rel_type, f"inv_{rel_type}"),
+                    relation_kind="structural",
+                    semantic_strength=self._heuristic_strength(rel_type),
                     confidence=self._get("concept_graph.typed_edge_confidence", 0.5),
                     evidence=[Evidence(
                         evidence_id=f"cg:{name}→{target_name}",
@@ -263,10 +270,10 @@ class RelationSubstrate:
             edge = RelationEdge(
                 identity=f"hdr:{parent_name}→{child_name}",
                 source=parent_name, target=child_name,
-                relation_kind="structural",
-                semantic_strength="dependency",
                 predicate="contains",
                 inverse="contained_by",
+                relation_kind="structural",
+                semantic_strength="dependency",
                 confidence=self._get("heading.contains_confidence", 0.4),
                 evidence=[Evidence(
                     evidence_id=f"hdr:{parent_name}→{child_name}",
@@ -338,8 +345,8 @@ class RelationSubstrate:
         eid = f"bhv:{source}→{target}:{int(time.time())}"
         edge = RelationEdge(
             identity=eid, source=source, target=target,
-            relation_kind="behavioral", semantic_strength="association",
             predicate="navigated_to", inverse="navigated_from",
+            relation_kind="behavioral", semantic_strength="association",
             confidence=self._get("behavior.default_confidence", 0.2),
             ttl=self._get("behavior.ttl_seconds", 300),
             decay_rate=self._get("behavior.decay_rate", 0.05),
@@ -376,10 +383,10 @@ class RelationSubstrate:
             edge = RelationEdge(
                 identity=f"seed:{nid}",
                 source=f"L{level}", target=name,  # L0→Double-Loop Learning
-                relation_kind="structural",
-                semantic_strength="dependency",
                 predicate="defines",
                 inverse="defined_in",
+                relation_kind="structural",
+                semantic_strength="dependency",
                 confidence=0.9,
                 evidence=[Evidence(
                     evidence_id=f"seed:ev:{nid}", source="ontology",
@@ -399,10 +406,10 @@ class RelationSubstrate:
                     identity=f"link:{link.get('from')}→{link.get('to')}:{pred}",
                     source=link.get("from", ""),
                     target=link.get("to", ""),
-                    relation_kind="structural",
-                    semantic_strength="dependency",
                     predicate=pred,
                     inverse=f"inv_{pred}",
+                    relation_kind="structural",
+                    semantic_strength="dependency",
                     confidence=weight,
                     evidence=[Evidence(
                         evidence_id=f"link:ev:{link.get('from')}",
@@ -442,12 +449,99 @@ class RelationSubstrate:
             return self._params.get(key, default)
         return default
 
+    # ── V3: LLM-native relation classification ──
+
+    def infer_relation_kind(self, predicate: str, context: str = "") -> tuple:
+        """Infer relation_kind + semantic_strength via LLM or heuristic fallback.
+
+        Returns: (kind, strength) — either may be None if LLM uncertain.
+        """
+        # Try LLM first
+        if self._llm_fn:
+            try:
+                prompt = (
+                    f"Classify this relation predicate into kind and strength.\n"
+                    f"Predicate: '{predicate}'\n"
+                    f"Context: '{context}'\n\n"
+                    f"Respond ONLY with JSON: {{\"kind\": \"structural|behavioral|temporal\", "
+                    f"\"strength\": \"association|reference|dependency|implementation\"}}"
+                )
+                result = self._llm_fn(prompt)
+                import json
+                d = json.loads(result) if isinstance(result, str) else result
+                return (d.get("kind"), d.get("strength"))
+            except Exception:
+                pass
+
+        # Heuristic fallback (preserves backward compatibility)
+        return (self._heuristic_kind(predicate), self._heuristic_strength(predicate))
+
+    def infer_inverse(self, predicate: str) -> str:
+        """Generate inverse predicate — LLM or heuristic."""
+        if predicate in self._inverse_cache:
+            return self._inverse_cache[predicate]
+
+        # Heuristic suffix patterns (covers 80% of cases)
+        known = {
+            "depends_on": "depended_by", "calls": "called_by", "contains": "contained_by",
+            "produces": "produced_by", "implements": "implemented_by", "extends": "extended_by",
+            "references": "referenced_by", "constrains": "constrained_by",
+            "triggers": "triggered_by", "creates": "created_by", "leads_to": "led_by",
+            "controls": "controlled_by", "modifies": "modified_by",
+        }
+        inv = known.get(predicate)
+        if not inv:
+            # Generate: "validates_output_of" → "validated_by_output"
+            if "_by_" in predicate:
+                inv = predicate.replace("_by_", "_")
+            elif predicate.endswith("ed"):
+                inv = predicate[:-2] + "ing"
+            elif predicate.endswith("s"):
+                inv = predicate[:-1] + "ed_by"
+            else:
+                inv = f"inverse_of_{predicate}"
+        
+        self._inverse_cache[predicate] = inv
+        return inv
+
+    def cluster_predicates(self) -> dict:
+        """Cluster accumulated predicates into families. Returns cluster summary."""
+        if not self._clusterer:
+            return {"clusters": 0}
+        # Build OpenRelation list from stored edges
+        rels = []
+        for e in self._edges.values():
+            if e.predicate:
+                rels.append(OpenRelation(
+                    identity=e.identity, source=e.source, target=e.target,
+                    predicate=e.predicate, confidence=e.confidence, direction="directed"
+                ))
+        clusters = self._clusterer.cluster(rels)
+        return {
+            "total_clusters": len(clusters),
+            "clusters": [(c.canonical_name, c.frequency) for c in clusters[:10]],
+        }
+
+    # ── Heuristic fallbacks (preserve backward compatibility) ──
+
     @staticmethod
-    def _infer_strength(rel_type: str) -> str:
-        if rel_type in ("calls", "implements", "creates"):
+    def _heuristic_kind(predicate: str) -> Optional[str]:
+        word = predicate.lower().replace("_", " ")
+        if any(w in word for w in ("depend", "call", "implement", "contain", "create", "define", "extend")):
+            return "structural"
+        if any(w in word for w in ("navigat", "click", "visit", "select", "prefer")):
+            return "behavioral"
+        if any(w in word for w in ("before", "after", "sequence", "trigger", "lead to", "follow")):
+            return "temporal"
+        return None  # LLM-unclassified — leave null
+
+    @staticmethod
+    def _heuristic_strength(predicate: str) -> Optional[str]:
+        word = predicate.lower().replace("_", " ")
+        if any(w in word for w in ("call", "implement", "creat")):
             return "implementation"
-        if rel_type in ("depends_on", "constrains", "contains"):
+        if any(w in word for w in ("depend", "constrain", "contain", "require")):
             return "dependency"
-        if rel_type in ("references", "extends", "triggers"):
+        if any(w in word for w in ("refer", "extend", "trigger", "instantiat", "validat")):
             return "reference"
-        return "association"
+        return "association"  # default
