@@ -6,7 +6,7 @@ from typing import Optional
 
 @dataclass
 class EDU:
-    """Elementary Discourse Unit ? ??????"""
+    """Elementary Discourse Unit — minimal discourse atom."""
     index: int
     raw_text: str
     subject: str = ""
@@ -18,6 +18,13 @@ class EDU:
     question: bool = False
     attrs: dict = field(default_factory=dict)
     entities: list = field(default_factory=list)
+    # Extended fields for quantizer
+    intent_label: str = ""
+    turn_index: int = 0
+    embedding: Optional[list] = None
+    macro_dimensions: Optional["MacroDimensions"] = None
+    micro_dimensions: Optional["MicroDimensions"] = None
+    raw_entities: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"index": self.index, "text": self.raw_text,
@@ -25,6 +32,31 @@ class EDU:
                 "object": self.obj, "negation": self.negation,
                 "imperative": self.imperative, "question": self.question,
                 "entities": self.entities}
+
+
+@dataclass
+class MacroDimensions:
+    """4 macro dimensions for inter-EDU cohesion."""
+    M1: float = 0.0  # semantic similarity (embedding cosine)
+    M2: float = 0.0  # intent consistency
+    M3: float = 0.0  # entity overlap (Jaccard)
+    M4: float = 0.0  # time window cohesion (temporal decay)
+
+    def composite(self) -> float:
+        return (0.35 * self.M1 + 0.25 * self.M2 + 0.20 * self.M3 + 0.20 * self.M4)
+
+
+@dataclass
+class MicroDimensions:
+    """5 micro dimensions for intra-EDU density."""
+    μ1: float = 0.0  # entity density
+    μ2: float = 0.0  # causal marker density
+    μ3: float = 0.0  # reference resolution density
+    μ4: float = 0.0  # temporal coherence density
+    μ5: float = 0.0  # voice alignment density
+
+    def composite(self) -> float:
+        return (0.30 * self.μ1 + 0.20 * self.μ2 + 0.20 * self.μ3 + 0.15 * self.μ4 + 0.15 * self.μ5)
 
 
 @dataclass

@@ -21,23 +21,18 @@ def bootstrap(pcr_router=None, intent_pipeline=None, l4_engine=None,
               llm=None, discourse_tree=None, event_log_db=None) -> "AgentOrchestrator":
     """Create and wire a complete AgentOrchestrator.
 
-    All parameters are optional — missing modules gracefully degrade.
-    Only the LLM is needed for full functionality.
+    All parameters optional — missing modules gracefully degrade.
+    LLM auto-detects DeepSeek key if available.
 
-    Args:
-        pcr_router:          PCRV2Router instance
-        intent_pipeline:     DualTrackIntentPipeline instance (or MultiIntentSplitter fallback)
-        l4_engine:           L4TemporalEngine instance
-        behavior_collab:     BehaviorCollaborative instance
-        engineering_chain:   EngineeringChain instance
-        llm:                 LLM provider (DeepSeek, etc.)
-        discourse_tree:      DiscourseBlockTreeManager instance
-        event_log_db:        SQLite path for EventLog (default: data/event_log.db)
-
-    Returns:
-        Fully wired AgentOrchestrator
+    Usage:
+        orch = bootstrap()                  # auto-detect everything
+        orch = bootstrap(llm=my_provider)    # custom LLM
+        result = orch.process("user input")
     """
     from core.agent.orchestrator.agent_native import AgentOrchestrator
+
+    # ═══ LLM auto-detect ═══
+    llm = llm or _auto_detect_llm()
 
     # ═══ EventLog (cold path) ═══
     event_log = None
@@ -132,6 +127,23 @@ def _load_cognitive_bridge():
     except Exception as e:
         logger.debug("V4CognitiveBridge: %s", e)
         return None
+
+
+def _auto_detect_llm():
+    """Auto-detect available LLM: check env key first, then quick connectivity."""
+    import os
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        logger.info("LLM: none (set DEEPSEEK_API_KEY for DeepSeek)")
+        return None
+    try:
+        from core.agent.llm_providers.deepseek_direct import DeepSeekProvider
+        llm = DeepSeekProvider(api_key=api_key)
+        logger.info("LLM: DeepSeek (%s)", llm.model)
+        return llm
+    except Exception as e:
+        logger.debug("DeepSeek: %s", e)
+    return None
 
 
 def _log_module_status(orch):
