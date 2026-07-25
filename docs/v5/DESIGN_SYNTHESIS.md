@@ -335,3 +335,64 @@ Context ≠ 拼接 — Context = 世界视图 (World View)
 5域: T(Topic) / E(Engineering) / B(Behavior) / K(Knowledge) / P(Profile)
 JVM GC分层: Hot/Warm/Cold/Archive, 自动迁移
 ```
+
+## 十三、v3.0 设计文档 (第三批次, 9篇刚读完)
+
+### 13.1 PerspectivePlanner — 从Context到Perspective
+```
+范式转变: Context Engineering(找相关文本) → Perspective Engineering(构造正确世界)
+四个空间: Document / Concept / Knowledge / Capability
+World Renderer: 根据视角+视野+语义路径+世界模型, 动态渲染局部世界
+```
+
+### 13.2 PlanningSkill Layer (1,783L) — Planning≠Tools
+```
+Planning方法与工具集正交解耦。混合编排引擎: Rule/Template/Hybrid/LLM/Recovery
+7个通用规划原语: decompose/sequence/parallel/conditional/iterate/fallback/delegate
+```
+
+### 13.3 Dynamic Task Planning (1,478L) — 静态Blueprint是瓶颈
+```
+问题: Blueprint是frozen dataclass, LLM只能选不能发明
+方案: LLM动态生成TaskGraph, 运行时工具发现, 参数动态推断
+```
+
+### 13.4 Multi-Tier Pipeline — 精度-算力谱系
+```
+不是快/慢二元。是可配置的连续谱系。每层输出→下层种子。修正反馈闭环。
+UpgradePolicy控制升级条件, 每个模块独立配置tier数量。
+```
+
+### 13.5 V3.1 Behavior Summary (2,430L, 115KB) — 最大设计文档
+```
+四核心改造: 行为推演树 + 双层摘要 + 在线训练闭环 + 融合器升级
+隐性约束补全编译器: HybridCompiler(快慢双通道)
+v3.2: 因果基地(从概率关联到结构因果)
+```
+
+### 13.6 Skill Layer — 能力蒸馏
+```
+Skill ≠ 结构化Prompt。是Capability Blueprint。
+双轨: External(导入) + Internal(蒸馏)
+生命周期: Candidate → Verified → Core (借鉴Hypothesis共识模型)
+```
+
+### 13.7 State Evolution System — 统一状态对象
+```
+根因诊断: 6个模块各自维护状态 = 缺少统一StateObject
+核心缺失: Mind(长期心智)
+状态演化: State → Transition → New State (Event Sourcing)
+```
+
+### 13.8 Cognitive System V5 — 从反应式到主动式
+```
+架构升级: Reactive→Active, Prediction→Simulation, BehaviorGraph→Cognitive Trace
+核心理念: LLM不等待用户输入 — 自主模拟、预测、主动干预
+```
+
+### 13.9 V4 Context Engineering (421L) — 10个洞察
+```
+为什么AI越跑越笨: Memory不是越多越好, Context才是关键
+双Compiler架构: ContextCompiler + ObservationCompiler
+Event Log + Dual Pipeline (Sync/Async)
+```
