@@ -4,25 +4,26 @@
 
 ---
 
-## 一、核心模型：树图混合 + 双树并行
+## 一、核心模型：多树并行
 
 ```
-                    ┌── 子Agent1 (文件读取)
-根Agent ←──────────┼── 子Agent2 (代码编辑)    ← 执行树
-(TaskGraph)        └── 子Agent3 (命令执行)
-     │
-     │ 并行映射
-     ▼
-┌─────────────────────────────────────────────┐
-│ ConstraintTree  │ BehaviorTree │ MetaTree   │ ← 多树并行
-│ (Engineering)   │ (行为约束)   │ (审计轨迹) │    跨树约束映射
-│                 │              │            │    RelationSubstrate
-│ 规则: 不能删     │  偏好: 简洁  │  决策记录   │    类型化边
-│ 系统文件         │  代码风格    │  归档/回档  │
-└─────────────────────────────────────────────┘
-```
+DiscourseBlockTree (基类 — 节点/分支/摘要 通用)
+  │
+  ├── ExecutionTree    最活跃: 任务分解, 派生子Agent, 执行工具
+  ├── ConstraintTree   EngineeringChain: 规则, 工程约束, 文件/命令限制
+  ├── AssociationTree  RelationSubstrate: 实体关系, 跨模块映射
+  ├── BehaviorTree     行为模式: 用户偏好, 工具使用习惯, 修正历史
+  ├── MetaTree         元认知仲裁: 审计轨迹, 决策记录, 归约产出
+  └── ProfileTree      用户画像: OCEAN 演化, 惯性变化
 
-**多树继承 DiscourseBlockTree**: 每棵树 = 继承 DiscourseBlock + 域特定字段。节点格式统一 (EDU → Block → 摘要)。
+六棵树并行 — 不是双树
+  每棵树 = DiscourseBlockTree 子类 + 域特定字段
+  所有树共享节点格式 (EDU → Block → 摘要)
+
+跨树映射:
+  ExecutionTree 节点 X ←→ ConstraintTree 节点 Y
+  通过 RelationSubstrate.EntityEdge(type=constraint_mapping)
+  MetaTree 读取所有映射 → 发现冲突 → 归约裁决
 
 ---
 
@@ -173,9 +174,9 @@ Meta 树
 
 ---
 
-## 五、多Agent 通信总线
+## 五、跨树通信与映射
 
-### 5.1 四种通信路径
+### 5.1 六棵树间的四种通信路径
 
 ```
 同树内 近邻:
@@ -256,8 +257,9 @@ Compass → PCR → Intent → L4 → Context → LLM Plan
   FederatedIndex       — 全局query
 
 待建:
-  AgentTreeManager     — 多树生命周期 (继承→创建→归档→回档)
-  StructuredSynthesizer — 重要性评估 + 多级归约
+  AgentTreeManager        — 六棵树生命周期 (Execution/Constraint/Association/
+                            Behavior/Meta/Profile: 继承→创建→归档→回档)
+  StructuredSynthesizer   — 重要性评估 + 多级归约
 ```
 
 ---
@@ -265,8 +267,9 @@ Compass → PCR → Intent → L4 → Context → LLM Plan
 ## 八、实施序列
 
 ```
-Phase 1: AgentTreeManager (多树继承)
-  继承 DiscourseBlockTree → ExecutionTree + ConstraintTree + MetaTree
+Phase 1: AgentTreeManager (六棵树继承)
+  继承 DiscourseBlockTree → ExecutionTree + ConstraintTree + AssociationTree
+                          + BehaviorTree + MetaTree + ProfileTree
 
 Phase 2: Memory Node 降级检索
   上下文阈值触发 → Chunking → Memory Node → query/pointer 检索
