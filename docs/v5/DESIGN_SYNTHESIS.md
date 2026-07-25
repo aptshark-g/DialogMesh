@@ -465,3 +465,64 @@ ENGINEERING_*.md   (施工蓝图, "怎么做")      → 27篇, 22,800行 ← 刚
   ENGINEERING定义了完整接口/数据流/组件依赖/启动顺序
   代码有部分实现(stub+数据模型), 但从未按ENGINEERING规格完整构建
 ```
+
+
+## 十六、剩余设计文档 (第四批次 — 根级+博客+审计)
+
+### 16.1 CURRENT_FLOW (278L) — 实际运行中的系统
+```
+4组件: Frontend(Vite) → API(:8000,40+端点) → Gateway(:8080,Go) → RuntimeEngine
+CognitiveRuntimeEngine.on_event() → 40+子系统管道 → LLM → 回答
+这是当前实际运行的流程, 非设计文档
+```
+
+### 16.2 DESIGN_SPECIFICATION (426L, RFC级) — 四种核心对象
+``"
+"DialogMesh的核心不是模块列表，而是四种对象及其转化关系"
+Information(原始输入) → Event(状态变化) → Observation(被识别) → Knowledge(持久化)
+Event Log = WAL, 是所有下游处理的唯一事实源
+```
+
+### 16.3 DESIGN_VS_IMPL_AUDIT (271L) — 实现率量化
+``"
+实现率: 75%代码存在(~45文件), ~15%实际接入(~8个)
+Layer 0 PCR: 0%实现率
+最严重: NoiseDetector/ExpectationInfer/CognitiveQuickScan/RouteDecision 全未实现
+```
+
+### 16.4 IMPROVEMENTS (310L) — 改进路线
+``"
+三项改进: 高阶关联(HyperMem GroupReference), 复杂性感知检索(TiMem), LLM证据判断(HiGMem)
+HyperMem: 三级超图 Topic→Episode→Fact + weighted hyperedges
+TiMem: ComplexityScorer 替代时间衰减
+HiGMem: LLM证据判断→ProfileUpdater._judge_evidence()
+```
+
+### 16.5 Blog Content — 设计哲学公开版
+``"
+Chapter1(417L): 为什么对话需要一棵树 — DiscourseBlockTree vs 平铺文本
+Chapter2(575L): 关系不是提示词能给的 — v4认知系统的完整叙事
+```
+
+---
+
+## 最终统计
+
+```
+文档体系 全部读完 ✅
+
+DESIGN 层:      35篇 (merge/5 + BUSINESS_CHAIN/12 + v5/18)
+ENGINEERING 层: 27篇 (全部标注"工程待实现")
+审查/对齐:       3篇 (TRACEABILITY + ALIGNMENT_CHECK + P0_AUDIT)
+架构索引:        2篇 (ARCHITECTURE_INDEX + DESIGN_VS_IMPL_AUDIT)
+规范/流程:       2篇 (DESIGN_SPECIFICATION + CURRENT_FLOW)
+改进/竞品:       1篇 (IMPROVEMENTS)
+博客公开:        2篇 (chapter1 + chapter2)
+
+总列: ~70篇核心设计文档读完
+归档: 105篇v3.0 + 22篇ENGINEERING = 127篇历史参考
+
+设计全貌: 四种对象(Information/Event/Observation/Knowledge)
+          10条链 + 双速通道 + 蓝图系统 + 子图织物 + Decider状态机
+实现缺口: 75%代码存在, ~15%实际接入, ENGINEERING规格全未按蓝图构建
+```
