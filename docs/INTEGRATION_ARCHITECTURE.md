@@ -283,6 +283,7 @@ T=7700   ─── 用户看到完整回答 ───
 系统层:
   ✅ API :8000              ✅ Gateway :8080 (Go)
   ✅ Execution :9100         ✅ EventLog SHA256
+  ✅ EventBus v2             ✅ Guard (背压+限流+断路)
   ✅ Security (auth+sanitize) ✅ Config (l2_config.json)
 
 核心管线:
@@ -299,14 +300,23 @@ T=7700   ─── 用户看到完整回答 ───
   ✅ AgentTreeManager 7树    ✅ ExecutionEngine 7工具
   ✅ MemoryNode              ✅ ReActRetryEngine
   ✅ StructuredSynthesizer   ✅ ExternalToolNormalizer
+  ✅ FileSandbox (snapshot→commit/rollback)
+  ✅ PermissionSystem (pledge+unveil+seccomp)
+  ✅ SemanticDiff (AST级约束)
+  ✅ NodeLifecycle+CausalTracer+UserInLoop+ReActor
 
 工程层:
   ✅ 17/27 ENGINEERING       ✅ ParameterRegistry 39参数
-  ✅ MCP Integration         ✅ API Doc Preprocessor
+  ✅ Blueprint (5策略+5技能)
 
 冷路径:
   ✅ MetaSubscriber          ✅ AssociationSubscriber
-  ✅ EventBus                ✅ cold→hot 回写
+  ✅ EventBus v2             ✅ EventLog SHA256
+  ✅ cold→hot 回写
+
+保护层:
+  ✅ RequestGuard (9 bucket)  ✅ CircuitBreaker (9 circuit)
+  ✅ CascadeDetector          ✅ ParameterRegistry (39 params)
 ```
 
 ---
