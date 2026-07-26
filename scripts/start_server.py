@@ -22,8 +22,10 @@ def start_gateway():
         print("[Gateway] Not found, skipping"); return None
     print("[Gateway] Starting...")
     p = subprocess.Popen([GATEWAY_EXE], cwd=os.path.dirname(GATEWAY_EXE),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(2); return p
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(2)
+    outs, errs = p.communicate(timeout=1) if p.poll() is None else ("", "")
+    return p
 
 
 if __name__ == "__main__":
