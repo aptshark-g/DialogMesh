@@ -268,8 +268,14 @@ async def get_metrics():
 # ═══════════════════════════════════════════════════════
 @router.get("/meta/stats")
 async def get_meta_stats():
-    return {"stats": {"audits": 0, "decisions": 0, "archive_reopens": 0},
-            "self_audit": {"by_verdict": {}}} 
+    return {"stats": {"decisions_total": 0, "pending": 0, "queue_size": 0, "reviewed": 0,
+                      "audits": 0, "archive_reopens": 0},
+            "self_audit": {"by_verdict": {}}}
+
+
+@router.get("/gateway/usage")
+async def get_gateway_usage():
+    return {"all_sessions": {"by_provider": {}}, "current_session": {}} 
 
 @router.get("/meta/queue")
 async def get_meta_queue():
