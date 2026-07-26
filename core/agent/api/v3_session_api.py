@@ -138,6 +138,30 @@ async def send_message(session_id: str, req: SendMessageRequest):
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not content:
             content = str(data)
+
+        # Phase 5: Generate task plan (separate LLM call for structured plan)
+        task_graph = []
+        try:
+            plan_prompt = _build_plan_prompt(req.content, content, cognitive_ctx)
+            plan_body = {
+                "provider": req.provider or "deepseek",
+                "model": req.model or "deepseek-v4-flash",
+                "messages": [
+                    {"role": "system", "content": _PLANNER_SYSTEM},
+                    {"role": "user", "content": plan_prompt},
+                ],
+            }
+            plan_req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data=_json.dumps(plan_body).encode(),
+                headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(plan_req, timeout=60) as rp:
+                plan_data = _json.loads(rp.read())
+            plan_text = plan_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            task_graph = _parse_plan_json(plan_text)
+        except Exception as e:
+            logger.warning("Plan generation failed: %s", e)
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         content = _fallback_reply(req.content)
@@ -151,6 +175,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
         session_id=session_id,
         status="accepted",
         content=content,
+        task_graph=task_graph,
         latency_ms=latency,
     )
 
@@ -225,6 +250,59 @@ def _build_system_prompt(profile_text: str = "", cognitive_ctx: dict = {}) -> st
 def _json_compact(d: dict) -> str:
     import json
     return json.dumps(d, ensure_ascii=False, default=str)[:500]
+
+
+_PLANNER_SYSTEM = """你是 DialogMesh 任务规划器。根据用户消息和助手回复，生成结构化任务计划。
+
+输出格式（严格 JSON 数组）：
+```json
+[
+  {"id":"1","name":"步骤名称","description":"详细说明","status":"PENDING","node_type":"scan|read|write|analyze|ask_user|explain|fallback","depends_on":[],"is_destructive":false},
+  {"id":"2","name":"步骤2","description":"...","status":"PENDING","node_type":"analyze","depends_on":["1"],"is_destructive":false}
+]
+```
+
+规则:
+- id 为数字字符串 "1","2","3"
+- depends_on 列出依赖的前置步骤 id
+- node_type: scan(扫描/收集)/read(读取)/write(写入/修改)/analyze(分析)/ask_user(询问用户)/explain(解释)/fallback(兜底)
+- is_destructive: 是否不可逆操作
+- 步骤控制在 3-7 个
+
+只输出 JSON，不要其他文字。"""
+
+
+def _build_plan_prompt(user_msg: str, reply: str, cognitive_ctx: dict) -> str:
+    intents = cognitive_ctx.get("intents", {})
+    segments = intents.get("segments", [])
+    intent_text = "、".join(segments) if segments else "通用对话"
+    return f"用户消息: {user_msg}\n助手回复摘要: {reply[:300]}\n识别意图: {intent_text}\n\n请生成任务计划。"
+
+
+def _parse_plan_json(text: str) -> list:
+    """Extract JSON array from LLM plan output and normalize to frontend TaskGraphNode."""
+    import json, re
+    match = re.search(r'\[[\s\S]*\]', text)
+    if not match:
+        return []
+    try:
+        raw = json.loads(match.group())
+    except:
+        return []
+    # Normalize LLM output → frontend TaskGraphNode fields
+    nodes = []
+    for n in raw:
+        if not isinstance(n, dict):
+            continue
+        nodes.append({
+            "id": str(n.get("id", "")),
+            "name": n.get("name", ""),
+            "type": n.get("node_type", n.get("type", "generic")),
+            "status": str(n.get("status", "pending")).lower(),
+            "dependencies": n.get("depends_on", n.get("dependencies", [])),
+            "description": n.get("description", ""),
+        })
+    return nodes
 
 
 def _fallback_reply(prompt: str) -> str:
