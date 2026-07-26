@@ -47,20 +47,6 @@ export function interceptFetch() {
       const resp = await orig(input, init);
       const ms = Math.round(performance.now() - t0);
       _log('api_response', `${init?.method || 'GET'} ${url} → ${resp.status} (${ms}ms)`);
-      
-      // ═══ Null normalization — intercept null/404 responses ═══
-      if (resp.status === 404 || resp.status === 500) {
-        return new Response(JSON.stringify({}), {
-          status: 200, headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      const clone = resp.clone();
-      const text = await clone.text();
-      if (text === 'null' || text === '' || text === 'undefined') {
-        return new Response('{}', {
-          status: 200, headers: { 'Content-Type': 'application/json' }
-        });
-      }
       return resp;
     } catch (e) {
       _log('api_error', `${init?.method || 'GET'} ${url} → ${e}`);
