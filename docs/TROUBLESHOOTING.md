@@ -115,3 +115,85 @@ start.bat 检测端口占用 → 跳过 API 启动 → 旧服务器仍在运行�
 ### 解决
 start.bat 现在自动杀旧进程再重启 (2026-07-26 修复)
 或者手动: Ctrl+C 关闭旧 API 窗口 → 重新运行 start.bat
+
+---
+
+## 7. 前端崩盘 — stub ↔ TS 类型不一致 (重复 4+ 次, 2026-07-26)
+
+### 现象
+```
+TypeError: t.map is not a function        (DashboardPage)
+TypeError: Cannot convert undefined or null to object  (CognitiveProfilePage)
+TypeError: Cannot read properties of undefined (reading 'total_patterns')  (BehaviorPage)
+TypeError: Cannot read properties of undefined (reading 'map')  (GatewayPage)
+```
+
+### 根因
+前后端类型不同步。Python stub 返回 `{"profile": {"oceAN_dims": {...}}}` 但 TS 类型声明了 `V6ProfileResponse = { oceAN_dims: ... }`（顶层字段）。AI Agent 凭直觉编造 stub 格式而非对照 TS 源码。
+- 画像：`oceAN_dims` 嵌套在 `profile` 下 → component 读 `data.oceAN_dims` 为 `undefined`
+- 行为：缺少 `total_patterns` 字段 → component 读 `data.total_patterns` → `undefined`
+- 网关：返回 `[]` 裸数组 → component 期望 `{providers: [], active_provider: ""}`
+
+### 根因 — AI Agent 缺陷
+Agent 在"看前端"和"写后端"两步之间断开上下文：
+1. Agent 看到 frontend defs (`getSessions(): Promise<V6SessionListItem[]>`) 
+2. 但写 Python stub 时不交叉校验 `V6SessionListItem` 实际字段
+3. 猜测格式 (`{"sessions": [], "count": 0}`) 而非直接读取 `src/types/api.ts`
+
+### 解决
+(2026-07-26) 全线重写 stubs_api.py，每个端点逐一对标 `frontend/src/types/api.ts` 中的 V6*Response 接口。
+从现在开始，任何改动的纪律：
+1. **先读 src/types/api.ts** 对应 V6*Response 定义
+2. **Python 返回 dict 字段名逐字匹配 TS 字段**
+3. 不假设、不猜测、不自行包装外层 key
+
+### 经验
+```
+错误模式: 前端 GET /v6/xxx 200 → resp.json() → TS component 解构失败 → ErrorBoundary
+规律: console 报 TypeError: *.map is not a function 或 Cannot read * of undefined
+→ 直接 grep TS type 定义 → stub 字段 vs type 字段 diff → 修复
+```
+
+### 42 端点完整对标表
+```
+端点               TS 返回类型            Python stub 格式
+/profile          V6ProfileResponse      {oceAN_dims, mbti, turn_count, ...}  ← 顶层!
+/trace            V6TraceResponse        {reason_distribution, avg_confidence, total}
+/abc              V6AbcResponse          {} (Record)
+/mind             V6MindResponse         {} (Record)
+/graph            V6GraphResponse        {nodes, edges, subgraph_nodes}
+/discourse-tree   V6DiscourseTreeResponse {blocks, total}
+/objects          V6ObjectsResponse      {nodes, edges, total_objects}
+/rules            V6RulesResponse        {rules, total}
+/relations        V6RelationsResponse    {} (Record)
+/causal           V6CausalResponse       {} (Record)
+/behavior         V6BehaviorResponse     {} (Record)
+/behavior/patterns 自定义                 {total_patterns, patterns, frequency_by_type}
+/engineering      V6EngineeringResponse  {} (Record)
+/pipeline         V6PipelineResponse     {} (Record)
+/extraction       V6ExtractionResponse   {} (Record)
+/perspectives     V6PerspectivesResponse {} (Record)
+/parameters       自定义                  {} (Record)
+/context           自定义                  {} (Record)
+/subgraph           自定义                  {} (Record)
+/subgraph/cache   自定义                  {hit_rate, total_queries}
+/persistence        V6PersistenceResponse {annotation_store, unified_store, oceAN_saved, rules_saved}
+/persistence/graphs  V6SessionListItem[] []  (裸数组!)
+/sessions          V6SessionListItem[]    []  (裸数组!)
+/provider          V6ProvidersResponse    {active, failover}
+/router/modes      V6RouterModesResponse  {available, modes, active, force_mode, disabled}
+/metrics           V6MetricsResponse      {} (Record)
+/gateway/providers  V6GatewayProvidersResponse {providers, active_provider, active_model}
+/gateway/config      自定义                {config, stats}
+/gateway/usage       自定义                {all_sessions: {by_provider: {}}}
+/gateway/stats       自定义                {providers, active, requests, errors_by_provider}
+/gateway/health      自定义                {status, gateway, circuits, engine_status}
+/inertia            {by_weight, total}
+/degradation        {level, score}
+/ttl               {ttl_stats, total}
+/recursive-map      {map, count}
+/engineering/modules {modules, count}
+/meta/stats         {stats, self_audit}
+/meta/queue         {queue, pending}
+/versions/profile   {versions, current}
+```
