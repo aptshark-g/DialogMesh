@@ -88,6 +88,9 @@ export interface TaskGraphNode {
   dependencies: string[];
   progress?: number;
   result?: string;
+  // Blueprint 层节点专属 (§十五统一DAG)
+  params?: Record<string, any>;
+  checkpoint?: boolean;
 }
 
 export interface ConnectionStatus {
