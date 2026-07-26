@@ -87,6 +87,10 @@ async def get_perspectives():
 async def get_mind():
     return {"mind_space": {}, "dimensions": 0}
 
+@trace_router.get("/mind/full")
+async def get_mind_full():
+    return {"mind_space": {}, "dimensions": 0, "raw": {}, "projections": []}
+
 @trace_router.get("/abc")
 async def get_abc():
     return {"abc_data": [], "count": 0}
