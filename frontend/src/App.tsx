@@ -3,6 +3,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { ChatPage } from './pages/ChatPage.tsx';
 import { NotFoundPage } from './pages/NotFoundPage.tsx';
+import { initDebug } from './lib/debug';
+
+initDebug();
 import { FloatingActionButton } from './components/FloatingActionButton.tsx';
 import { ContentScriptBridge } from './components/ContentScriptBridge.tsx';
 
