@@ -90,6 +90,7 @@ export function GatewayPage() {
     } catch { return {}; }
   });
   const [testResults, setTestResults] = useState<Record<string, { healthy: boolean; latency: number; error: string | null }>>({});
+  const [testingProvider, setTestingProvider] = useState<string | null>(null); // local — avoids global re-render
   const [activeTab, setActiveTab] = useState<'providers' | 'usage' | 'config' | 'monitor'>('providers');
 
   // ─── 系统运维状态 (引擎 / Provider 切换 / 上下文配置) ───
@@ -356,7 +357,9 @@ export function GatewayPage() {
   };
 
   const handleTest = useCallback(async (name: string) => {
+    setTestingProvider(name);
     const result = await testProvider(name);
+    setTestingProvider(null);
     if (result) {
       setTestResults(prev => ({
         ...prev,
@@ -435,7 +438,7 @@ export function GatewayPage() {
     const isExpanded = expandedProvider === provider.name;
     const isActive = gatewayProviders?.active_provider === provider.name;
     const testResult = testResults[provider.name];
-    const isTesting = testLoading === provider.name;
+    const isTesting = testingProvider === provider.name;
     const isFetchingModels = fetchModelsLoading === provider.name;
     const form = configForms[provider.name] || { apiKey: '', baseUrl: provider.base_url || '' };
 

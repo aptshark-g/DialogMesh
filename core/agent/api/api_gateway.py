@@ -281,50 +281,53 @@ async def remove_provider(name: str):
 
 @router.post("/providers/{name}/test")
 async def test_provider(name: str):
-    """Test connection to provider.
+    """Test connection + measure real latency.
 
-    Keys live in switch, so the honest test reads switch's provider state:
-    key_configured / healthy / circuit_state. Falls back to local config when
-    switch is offline.
+    When switch is online → reads provider config + does real HTTP ping.
+    When switch is offline → falls back to builtin + OpenAIProvider.health_check.
     """
+    # Try switch gateway first
+    sw_info = None
     try:
         req = urllib.request.Request(f"{SWITCH_URL}/v1/providers")
         req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read())
         items = data.get("providers") if isinstance(data, dict) else data
-        sw = next((p for p in (items or []) if p.get("name") == name), None)
-        if sw is None:
-            raise HTTPException(404, f"Unknown provider: {name}")
-        if not sw.get("key_configured") and name not in ("lmstudio", "ollama"):
-            return {"name": name, "healthy": False, "latency_ms": 0,
-                    "error": "API Key 未配置,请先保存 Key"}
-        healthy = sw.get("healthy")
-        circuit = sw.get("circuit_state") or ""
-        err = None if healthy else (f"熔断器状态: {circuit}" if circuit and circuit != "closed"
-                                    else "健康检查未通过(网关尚未探测或目标不可达)")
-        return {"name": name, "healthy": healthy, "latency_ms": 0, "error": err}
-    except HTTPException:
-        raise
+        sw_info = next((p for p in (items or []) if p.get("name") == name), None)
     except Exception:
-        pass  # switch offline → local fallback
+        pass  # switch offline → fallback below
 
-    builtin = BUILTIN_PROVIDERS.get(name)
-    if not builtin:
-        raise HTTPException(404, f"Unknown provider: {name}")
-    saved = _load_provider_config(name)
-    api_key = saved.get("api_key", "local")
-    base_url = saved.get("base_url") or builtin["default_base_url"]
+    if sw_info and not sw_info.get("key_configured") and name not in ("lmstudio", "ollama"):
+        return {"name": name, "healthy": False, "latency_ms": 0,
+                "error": "API Key 未配置"}
 
+    # ═══ Real latency test via HTTP ping ═══
+    base_url = (sw_info or {}).get("base_url", "")
+    api_key = (sw_info or {}).get("api_key", "")
+    if not base_url:
+        # Fallback to builtin
+        builtin = BUILTIN_PROVIDERS.get(name)
+        if not builtin:
+            raise HTTPException(404, f"Unknown provider: {name}")
+        saved = _load_provider_config(name)
+        base_url = saved.get("base_url") or builtin["default_base_url"]
+        api_key = saved.get("api_key", "local")
+
+    t0 = time.time()
     try:
-        from core.agent.llm_providers.openai_provider import OpenAIProvider
-        prov = OpenAIProvider(name, {"api_key": api_key, "base_url": base_url, "model": "x"})
-        t0 = time.time()
-        healthy = prov.health_check() if hasattr(prov, 'health_check') else None
+        # Issue a real HTTP request to the provider
+        hdrs = {"Content-Type": "application/json"}
+        if api_key and api_key != "local":
+            hdrs["Authorization"] = f"Bearer {api_key}"
+        req = urllib.request.Request(f"{base_url.rstrip('/')}/models", headers=hdrs)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()  # consume body
         latency = int((time.time() - t0) * 1000)
-        return {"name": name, "healthy": healthy, "latency_ms": latency, "error": None}
+        return {"name": name, "healthy": True, "latency_ms": latency, "error": None}
     except Exception as e:
-        return {"name": name, "healthy": False, "latency_ms": 0, "error": str(e)[:200]}
+        latency = int((time.time() - t0) * 1000)
+        return {"name": name, "healthy": False, "latency_ms": latency, "error": str(e)[:200]}
 
 
 @router.post("/providers/{name}/models")
