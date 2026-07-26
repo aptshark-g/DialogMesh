@@ -20,6 +20,16 @@ from core.agent.api.chat_api import router as chat_router, set_orchestrator
 from core.agent.api.ws_bridge import ws_handler
 app.include_router(chat_router)
 
+# ═══ Pipeline Parameters ═══
+from core.agent.api.pipeline_api import router as pipeline_router
+app.include_router(pipeline_router)
+
+# ═══ Trace + Meta + Gateway stubs ═══
+from core.agent.api.stubs_api import trace_router, meta_router, gateway_router
+app.include_router(trace_router)
+app.include_router(meta_router)
+app.include_router(gateway_router)
+
 # ═══ Legacy API routes (gracefully) ═══
 _loaded = []
 
