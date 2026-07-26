@@ -113,11 +113,11 @@ async def get_behavior():
 
 @router.get("/behavior/patterns")
 async def get_behavior_patterns():
-    return {"total_patterns": 0, "patterns": [], "frequency_by_type": {}}
+    return {"stats": {"total_patterns": 0, "user_approved": 0, "frequency_by_type": {}}, "patterns": []}
 
 @router.get("/inertia")
 async def get_inertia():
-    return {"by_weight": {}, "total": 0}
+    return {"total_patterns": 0, "stable": 0, "confirmed": 0, "breaking": 0, "by_weight": {}}
 
 
 # ═══════════════════════════════════════════════════════
