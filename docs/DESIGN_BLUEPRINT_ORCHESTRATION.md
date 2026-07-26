@@ -169,3 +169,137 @@ P1: PlanGate → 前端 task_graph 展示 + 编辑 + 回传
 P2: 7-Tree 并行 → Execution Engine (sandbox/permissions/diff)
 P3: Subgraph Compiler → 编译上下文子图 → LLM 注入
 ```
+
+---
+
+## 九、谁负责 Blueprint？Meta LLM 的分层角色
+
+### 热路径: Blueprint 的选择者不是 Meta
+
+```
+用户输入 → SkillRegistry.match(intent) → 选 Blueprint 策略
+         → TEMPLATE / HYBRID / LLM_DRIVEN
+         → LLM 调整节点 → 编译为 DAG
+```
+
+SkillRegistry 在热路径上——它是**快速模式匹配**（模板+意图），不是 LLM 推理。
+决策粒度: 一次请求内完成，延迟预算 <500ms。
+
+### 冷路径: Meta LLM 负责"学"，不负责"跑"
+
+```
+每次执行完成 → EventLog 写入
+              → Meta 异步消费:
+                  - 审计: 本次 DAG 路径是否最优？
+                  - 对比: HYBRID vs TEMPLATE 本次谁更好？
+                  - 修正: CorrectionJournal → 下次选策略的权重调整
+                  - 学习: 新出现意图 → 建议新增 Blueprint 模板
+```
+
+Meta 是**异步的第二大脑**——
+- 不阻塞请求
+- 通过 EventBus 订阅执行结果
+- 输出: 影响**下一次 Tick**的策略选择，不是当前请求
+
+### Blueprint 生命周期
+
+```
+[SkillRegistry] → 匹配 Blueprint  ← Meta 调整权重
+      ↓
+[LLM override]  → 调整节点        ← Meta 审计质量
+      ↓
+[EventBus 执行]  → DAG 跑完
+      ↓
+[EventLog]       → 持久化
+      ↓
+[Meta 异步审计]   → 学习 + 修正
+      ↓
+[下次请求]       → 策略更优
+```
+
+---
+
+## 十、执行模式矩阵 — 三个决策粒度
+
+### Level 1: 模板执行 `RULE_BASED / TEMPLATE`
+
+```
+LLM 零介入 — 确定性跑模板
+适用: 查天气、代码搜索、已知路径
+优势: 极快, 零幻觉
+风险: 覆盖窄, 新场景 fallback 到 Level 2
+```
+
+### Level 2: 单步路由 `HYBRID`（默认）
+
+```
+LLM 在分叉点介入: "下一步去哪？"
+不建全图 — 每次只决定一步
+适用: 复杂分析、多步推理
+模式 = LangGraph conditional_edges
+优势: LLM 做最小决策单元, 不循环
+风险: 局部最优 ≠ 全局最优
+```
+
+### Level 3: 全图构建 `LLM_DRIVEN`
+
+```
+LLM 建完整 DAG → PlanGate 人工审核 → 执行
+适用: 探索性任务、因果推理、新领域
+模式 = BatchDAG
+优势: 全局视角, 主动性
+风险: 迭代多、死循环、质量不可控 ← 见 §十一
+```
+
+---
+
+## 十一、高度放权模式 — 主动性的代价
+
+> 为基础讨论，单独展开。关联: L5 因果链设计。
+
+### 现状: 行业为什么都是最小闭环
+
+| 问题 | 具体表现 |
+|------|---------|
+| **迭代多** | LLM 无限制探索 → 10+ 轮 → 延迟爆炸 |
+| **死循环** | 无终止条件 → 同一模式反复 |
+| **低效果** | 探索宽但没深度 → 不如模板 |
+| **质量漂移** | 每一步自指 → 离初始目标越来越远 |
+
+### 前沿解法对比
+
+| 方案 | 解法 |
+|------|------|
+| **BatchDAG** | LLM 只建图(一次性), 确定性引擎执行, 不循环 |
+| **LangGraph** | conditional_edges 单步决策, 不建全图 |
+| **Hermes** | PlanGate 每高风险步骤 checkpoint |
+| **CrewAI** | @listen() 事件驱动, agent 只响应不主动 |
+
+**共同结论**: 限制 LLM 的自由度 = 提升可靠性。
+
+### DialogMesh 的定位:
+
+**LLM_DRIVEN 不是默认模式——它是"特殊模式, 人工审核准入"。**
+
+```
+LLM_DRIVEN 触发条件(任一):
+  - 意图置信度 >0.8 且 策略历史成功率高
+  - 因果推理任务 (L5 Causal)
+  - 用户手动切换模式
+
+执行保护:
+  - PlanGate: 建图后 → 人工审核 → 才执行
+  - Budget Gate: 节点数上限 (默认 7)
+  - Loop Detector: 重访已执行节点 3 次 → 强制 checkpoint
+  - Quality Gate: 执行后 Meta 评分 → 低于阈值 → 降级到 HYBRID
+```
+
+### 与 L5 因果层的关系
+
+因果推理的难点不是算概率——是**决定"要探索哪种因果路径"**。
+LLM_DRIVEN 在此场景的必要性:
+- 因果假设空间爆炸 → 模板覆盖不了
+- LLM 主动提出假设 → 建 DAG 验证
+- 人类审核假设(不是审核图) → 降低 LLM 的规划负担
+
+这是后续讨论。——标注: §十一 待展开
