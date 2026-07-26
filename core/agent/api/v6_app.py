@@ -21,8 +21,11 @@ app.include_router(debug_router)
 
 # ═══ v6 Chat endpoints ═══
 from core.agent.api.chat_api import router as chat_router, set_orchestrator
+from core.agent.api.v3_session_api import router as v3_session_router
 from core.agent.api.ws_bridge import ws_handler
+
 app.include_router(chat_router)
+app.include_router(v3_session_router)
 
 # ═══ Pipeline Parameters ═══
 from core.agent.api.pipeline_api import router as pipeline_router
