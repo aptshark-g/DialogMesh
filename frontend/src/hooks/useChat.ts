@@ -3,6 +3,7 @@ import type { ChatMessage, V4WebSocketEvent, ThinkingStep } from '../types/api';
 import { sendEvent } from '../api/v4';
 import { sendChatMessage, respondCheckpoint } from '../api/v6';
 import type { ChatResponse, CheckpointRespondRequest } from '../api/v6';
+import { logAction } from '../lib/debug';
 
 interface CheckpointState {
   session_id: string;
@@ -41,6 +42,9 @@ export function useChat(_sessionId?: string | null) {
     setThinkingSteps([]);
     setPendingClarification(null);
     setCheckpoint(null);
+
+    // Debug: log user action
+    logAction('chat_send', { message: content.trim().slice(0, 50), session_id: _sessionId });
 
     try {
       // v6 pipeline entry
@@ -87,6 +91,9 @@ export function useChat(_sessionId?: string | null) {
     stepOverrides?: Record<string, { approved: boolean; params?: Record<string, unknown> }>
   ) => {
     if (!checkpoint) return;
+
+    // Debug: log checkpoint response
+    logAction('checkpoint_respond', { decision, note });
 
     setIsThinking(true);
     try {
