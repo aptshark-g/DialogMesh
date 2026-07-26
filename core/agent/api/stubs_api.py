@@ -307,11 +307,6 @@ async def get_meta_stats():
             "self_audit": {"by_verdict": {}}}
 
 
-@router.get("/gateway/usage")
-async def get_gateway_usage():
-    return {"all_sessions": {"by_provider": {}, "total_tokens": 0},
-            "current_session": {"prompt_tokens": 0, "completion_tokens": 0}} 
-
 @router.get("/meta/queue")
 async def get_meta_queue():
     return {"queue": [], "pending": 0}
@@ -334,7 +329,7 @@ async def get_recursive_map():
 
 
 # ═══════════════════════════════════════════════════════
-# Gateway (separate prefix, routed via legacy api or stubs)
+# Gateway — ALL flat objects matching TS types directly
 # ═══════════════════════════════════════════════════════
 @router.get("/gateway/providers")
 async def get_gateway_providers():
@@ -350,16 +345,36 @@ async def get_gateway_providers():
 
 @router.get("/gateway/config")
 async def get_gateway_config():
-    return {"config": {"failover_chain": []}, "stats": {}}
+    return {
+        "active_provider": "", "active_model": "",
+        "failover_chain": [], "auto_failover": False,
+        "max_retries": 3, "timeout_ms": 30000, "stats": {}
+    }
 
 @router.get("/gateway/usage")
 async def get_gateway_usage():
-    return {"all_sessions": {"by_provider": {}}}
+    return {
+        "current_session": {"provider": "", "model": "", "turns": 0,
+                            "prompt_tokens": 0, "completion_tokens": 0,
+                            "cost_estimate": "$0", "latency_avg_ms": 0},
+        "all_sessions": {
+            "total_tokens": 0, "total_cost": "$0",
+            "by_provider": {}
+        }
+    }
 
 @router.get("/gateway/stats")
 async def get_gateway_stats():
-    return {"providers": 0, "active": 0, "requests": 0, "errors_by_provider": {}}
+    return {
+        "requests": 0, "tokens": 0,
+        "latency_p50": 0, "latency_p95": 0, "latency_p99": 0,
+        "cache_hit_rate": 0, "errors_by_provider": {},
+        "requests_by_model": {}
+    }
 
 @router.get("/gateway/health")
 async def get_gateway_health():
-    return {"status": "ok", "gateway": "v2", "circuits": {}, "engine_status": {}}
+    return {
+        "status": "ok", "providers_total": 0,
+        "providers_healthy": 0, "circuits": {}
+    }
