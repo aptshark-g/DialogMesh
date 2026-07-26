@@ -34,68 +34,67 @@ DialogMesh v6 是一个**网状认知运行时**——不是线性 RAG 管道，
 git clone https://github.com/aptshark-g/DialogMesh.git
 cd DialogMesh
 
-# 配置 DeepSeek API Key
-# 编辑 gateway/provider.yaml → deepseek.api_key: sk-xxx
+# 配置 switch gateway 的 provider.yaml（已预置 DeepSeek 等 9 个厂商）
+# 编辑 gateway/provider.yaml → 填入 API Key
 
-# 一键启动 (Gateway + API + Frontend)
-python scripts/start.py
+# Windows: 双击 start.bat
+# 或命令行:
+python scripts/start_server.py
 ```
 
-- Gateway: http://localhost:8080 (LLM 代理)
-- API: http://localhost:8000/docs (90 端点)
-- GUI: http://localhost:4173 (前端)
+- Switch Gateway: http://localhost:8080 (LLM 代理，9 厂商)
+- API: http://localhost:8000/docs (44 端点)
+- GUI: http://localhost:4173 (React 前端)
+- 前端预览: `cd frontend && npx vite preview --port 4173`
 
 ---
 
 ## 架构
 
 ```
-                      ┌──────────────────────┐
-                      │   switch Gateway     │
-                      │   断路器 · 限流 · 缓存 │
-                      └──────┬───────────────┘
-                             │
-  ┌──────────┬──────────┬────┴─────┬──────────┬──────────┐
-  │ 对话树   │ 行为链   │ 关联链   │ 工程链   │ 画像     │
-  │ 01-04    │ 05       │ 06       │ 07       │ 08       │
-  └────┬─────┴────┬─────┴────┬─────┴────┬─────┴────┬─────┘
-       │          │          │          │          │
-       └──────────┴──────────┴──────────┴──────────┘
-                            │
-              ┌─────────────┴─────────────┐
-              │  子图编译器 (链 10)       │
-              │  元认知第二大脑 (链 09)    │
-              └───────────────────────────┘
+用户输入 → [PCR 路由] → [Intent 意图] → [Profile 画像注入] → [LLM via switch]
+                │                                              │
+                └── [task_graph 规划] ←────────────────────────┘
+                
+已接入:           ✅ PCR · Intent · Profile · LLM · 持久化
+桥接空跑:         ⚠️ Behavior · Association · Meta
+未接入:           ❌ Context (8,000L) · Subgraph · Engineering
 ```
 
 ---
 
 ## 核心能力
 
-| 能力 | 说明 |
-|------|------|
-| 🧠 **10 条业务链** | 对话树 + 行为预测 + 关联漏斗 + 工程约束 + 画像惯性 + 元认知 + 子图 |
-| 🎯 **全局状态机** | Event Sourcing + Decider + ShardedState, 防广播风暴 |
-| 🔗 **关联链五层漏斗** | L1句法 → L1.5补全 → L2语义 → L2.5信念 → L3意图 → L4时序 → L5因果 |
-| 👤 **画像 v2** | 惯性权重图 + 多视角共识 + OCEAN 10维 + BFI-10 校准 |
-| 🛡️ **Git 版本控制** | 8类数据不可变日志, SHA256链, 回滚, 审计 |
-| 📊 **90 端点** | REST API 全覆盖, 含元认知/版本/惯性/行为/因果/调度器 |
-| 🔄 **4 路径调度** | Fast(<50ms) → Async(LLM) → Slow(Checkpoint) → Deep(复盘) |
-| ⚡ **switch Gateway** | 滑动窗口断路器 + Gradient2自适应 + 加权路由 + 请求合并 |
+| 能力 | 状态 |
+|------|:----:|
+| 🧠 **Intent 分析** — DualTrack 意图拆分 + 路由 | ✅ |
+| 👤 **用户画像** — OCEAN 5维 + MBTI + BFI-10 | ✅ |
+| 📋 **任务规划** — LLM 生成 task_graph | ✅ |
+| 💬 **实时对话** — DeepSeek v4 真实回复 | ✅ |
+| 💾 **持久化** — JSON 文件存储，重启不丢失 | ✅ |
+| 🔗 **关联链** — 五层漏斗 L1-L5 | ⚠️ |
+| 🛡️ **Git 版本控制** — SHA256 链事件日志 | ✅ |
+| ⚡ **switch Gateway** — 断路器 + 自适应 + 加权路由 | ✅ |
 
 ---
 
 ## 快速命令
 
 ```bash
-# A/B 画像测试
-.venv-test\Scripts\python core\agent\v4\cognitive\tests\bench_ab_ocean.py
+# 启动后端 (Windows)
+start.bat
 
-# 一键启动 (含 Gateway)
-python scripts\start.py
+# 启动后端 (Mac/Linux)
+python scripts/start_server.py
 
-# 仅 DialogMesh (无 Gateway)
-python scripts\start.py --no-switch
+# 仅 API (无 Gateway)
+python scripts/start_server.py --no-gateway
+
+# 启动前端开发服务器
+cd frontend && npm run dev
+
+# 构建前端
+cd frontend && npx vite build && npx vite preview --port 4173
 ```
 
 ---
