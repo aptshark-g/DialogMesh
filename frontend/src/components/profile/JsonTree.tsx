@@ -41,7 +41,11 @@ interface JsonTreeProps {
 }
 
 export const JsonTree: FC<JsonTreeProps> = ({ value, depth = 0 }) => {
-  if (!isComposite(value)) {
+  if (value === null || value === undefined) {
+    return <span className="text-text-muted italic">null</span>;
+  }
+
+  if (typeof value !== 'object') {
     return (
       <span className="text-xs text-text-secondary break-all">
         {formatPrimitive(value)}

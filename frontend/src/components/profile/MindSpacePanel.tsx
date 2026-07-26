@@ -54,17 +54,17 @@ export const MindSpacePanel: FC<MindSpacePanelProps> = ({ mind, abc }) => {
   // ABC 层统计:数值型顶层字段 → 统计小卡;其余 → 键值行
   const abcNumeric = useMemo(() => {
     if (!abc) return [] as { key: string; value: number }[];
-    return Object.entries(abc)
+    return Object.entries(abc || {})
       .map(([key, v]) => ({ key, value: asNumber(v) }))
       .filter((e): e is { key: string; value: number } => e.value !== null);
   }, [abc]);
 
   const abcRest = useMemo(() => {
     if (!abc) return [] as [string, unknown][];
-    return Object.entries(abc).filter(([, v]) => asNumber(v) === null);
+    return Object.entries(abc || {}).filter(([, v]) => asNumber(v) === null);
   }, [abc]);
 
-  const mindEntries = useMemo(() => (mind ? Object.entries(mind) : []), [mind]);
+  const mindEntries = useMemo(() => (mind ? Object.entries(mind || {}) : []), [mind]);
 
   return (
     <div className="space-y-6">
