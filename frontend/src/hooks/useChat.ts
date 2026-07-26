@@ -1,6 +1,13 @@
 import { useState, useCallback } from 'react';
 import type { ChatMessage, V4WebSocketEvent, ThinkingStep } from '../types/api';
 import { sendEvent } from '../api/v4';
+import { sendChatMessage, respondCheckpoint } from '../api/v6';
+import type { ChatResponse, CheckpointRespondRequest } from '../api/v6';
+
+interface CheckpointState {
+  session_id: string;
+  checkpoint: NonNullable<ChatResponse['checkpoint']>;
+}
 
 export function useChat(_sessionId?: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -11,6 +18,8 @@ export function useChat(_sessionId?: string | null) {
     clarificationId: string;
     questions: { id: string; question: string; type: string; options?: string[]; required: boolean }[];
   } | null>(null);
+  // ═══ PlanGate checkpoint state ═══
+  const [checkpoint, setCheckpoint] = useState<CheckpointState | null>(null);
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages(prev => [...prev, msg]);
@@ -31,25 +40,82 @@ export function useChat(_sessionId?: string | null) {
     setIsThinking(true);
     setThinkingSteps([]);
     setPendingClarification(null);
+    setCheckpoint(null);
 
     try {
-      const res = await sendEvent(content.trim());
+      // v6 pipeline entry
+      const resp = await sendChatMessage({
+        message: content.trim(),
+        session_id: _sessionId || undefined,
+      });
 
-      const assistantMsg: ChatMessage = {
-        id: res.event_id,
-        role: 'assistant',
-        content: res.response ?? '(无回复)',
-        timestamp: Date.now(),
-        status: 'sent',
-      };
-      addMessage(assistantMsg);
+      if (resp.status === 'pending_review' && resp.checkpoint) {
+        // PlanGate checkpoint — user must approve
+        setCheckpoint({
+          session_id: resp.session_id,
+          checkpoint: resp.checkpoint,
+        });
+      } else if (resp.status === 'completed' && resp.answer) {
+        const assistantMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: resp.answer,
+          timestamp: Date.now(),
+          status: 'sent',
+          metadata: {
+            execution: resp.execution,
+            trace_id: resp.trace_id,
+            latency_ms: resp.latency_ms,
+          },
+        };
+        addMessage(assistantMsg);
+      } else {
+        setError(resp.status === 'error' ? 'Pipeline error' : 'Unknown response');
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '发送失败';
       setError(msg);
     } finally {
       setIsThinking(false);
     }
-  }, [addMessage]);
+  }, [addMessage, _sessionId]);
+
+  // ═══ PlanGate checkpoint response ═══
+  const handleCheckpointResponse = useCallback(async (
+    decision: 'approved' | 'adjusted' | 'rejected',
+    note?: string,
+    stepOverrides?: Record<string, { approved: boolean; params?: Record<string, unknown> }>
+  ) => {
+    if (!checkpoint) return;
+
+    setIsThinking(true);
+    try {
+      const resp = await respondCheckpoint({
+        session_id: checkpoint.session_id,
+        checkpoint_id: checkpoint.checkpoint.checkpoint_id,
+        decision,
+        note,
+        steps: stepOverrides,
+      });
+
+      if (resp.answer) {
+        const assistantMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: resp.answer,
+          timestamp: Date.now(),
+          status: 'sent',
+          metadata: { execution: resp.execution, latency_ms: resp.latency_ms },
+        };
+        addMessage(assistantMsg);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '审批提交失败');
+    } finally {
+      setIsThinking(false);
+      setCheckpoint(null);
+    }
+  }, [checkpoint, addMessage]);
 
   const handleClarificationSubmit = useCallback(async (_answers: Record<string, unknown>) => {
     // v4 does not have clarification flow; just clear the state
@@ -116,11 +182,14 @@ export function useChat(_sessionId?: string | null) {
     isThinking,
     thinkingSteps,
     pendingClarification,
+    checkpoint,
     error,
     handleUserMessage,
+    handleCheckpointResponse,
     handleClarificationSubmit,
     handleWebSocketEvent,
     clearError: () => setError(null),
+    clearCheckpoint: () => setCheckpoint(null),
     clearMessages,
   };
 }
