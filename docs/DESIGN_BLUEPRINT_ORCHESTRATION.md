@@ -457,3 +457,206 @@ LLM_DRIVEN 在此场景的必要性:
 | LLM 不可控 (再少 token 也可能跑偏) | 结构性约束 (分支数 = 确定性) |
 | 用户不理解 (token = ?) | 用户理解 (深度 2 → 3) |
 | 只影响单次调用 | 影响整个图结构和执行策略 |
+
+---
+
+## 十四、闭环缺口补齐 — 四段传递协议
+
+### 14.1 全生命周期时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant R as SkillRegistry
+    participant B as BlueprintEngine
+    participant D as Decider/EventBus
+    participant E as ExecutionEngine
+    participant M as Meta LLM
+    participant L as EventLog
+
+    U->>R: 输入文本
+    R->>R: match(intent) → 选策略
+    R->>B: strategy + intent_context
+
+    alt Level 3: LLM_DRIVEN
+        B->>B: 发散LLM (T=0.8) → 假设列表
+        B->>B: 学习检索 (arxiv/源码/framework)
+        B->>B: 收束LLM (T=0.1) → 设计结论
+        B->>U: PlanGate checkpoint → 审核
+        U-->>B: approve/adjust/reject
+    else Level 2: HYBRID
+        B->>B: Template floor + LLM override
+    else Level 1: TEMPLATE
+        B->>B: 直接编译模板
+    end
+
+    B->>B: ConstraintTree 检查 (安全/资源/依赖/权限)
+    B-->>B: 失败 → 回退设计阶段重试(1次)
+    B->>D: 编译为 DAG (BlueprintDAG schema)
+
+    D->>D: 拓扑排序, 检查依赖
+    loop 每个 Tick
+        D->>E: 发射就绪 Task
+        E->>E: 执行 (链→链路由)
+        E-->>D: TaskResult
+        D->>L: EventLog.append
+    end
+
+    D->>E: DAG 完成
+    E->>L: 最终结果
+
+    L->>M: 异步消费 EventLog
+    M->>M: 评分: 本次质量 vs 基线
+    M->>M: 如降级 → 更新 SkillRegistry 权重
+    M->>M: 如学习 → 建议新增 Blueprint 模板
+
+    Note over R,M: 下一次请求: SkillRegistry 权重已更新
+```
+
+### 14.2 设计 → 工程: BlueprintDAG schema
+
+```python
+# 设计阶段输出 → 工程阶段输入
+@dataclass
+class BlueprintDAG:
+    """LLM 构建的执行图 — 编译后送入 EventBus"""
+    nodes: List[BlueprintNode]
+    edges: List[BlueprintEdge]
+    strategy: str             # RULE_BASED | TEMPLATE | HYBRID | LLM_DRIVEN | RECOVERY
+    confidence: float         # 收束LLM的打分
+    design_rationale: str     # 为什么选这个图 (LLM给出的推导)
+
+@dataclass
+class BlueprintNode:
+    node_id: str              # "pcr_0", "intent_1", "context_2"
+    chain: str                # "pcr" | "intent" | "context" | "subgraph" | "llm_reply" | "behavior" | "meta" | ...
+    params: dict              # 该链的调用参数
+    priority: int             # 执行优先级 (0=最高)
+    checkpoint: bool          # 此节点前是否需要 PlanGate 审核
+
+@dataclass
+class BlueprintEdge:
+    from_node: str
+    to_node: str
+    data_key: str             # 传递的数据字段名 (如 "intent_context", "compiled_subgraph")
+    required: bool            # 依赖是否必须 (False = 可选, 可跳过)
+```
+
+**与现有 task_graph 的关系**:
+- `task_graph` = 任务执行层 (scan/read/write/analyze)
+- `BlueprintDAG` = 业务链编排层 (pcr/intent/context/subgraph)
+- BlueprintDAG 的叶子节点 = 触发 task_graph 生成
+- 前端统一用 `TaskPlanningPage` 展示, 通过 `node_type` 区分层级
+
+### 14.3 工程 → 执行: EventBus 订阅表
+
+| Subject | 订阅链 | Tick | 说明 |
+|---------|-------|------|------|
+| `dm.{req}.pcr.route` | 00 PCR | 0 | 路由分析 |
+| `dm.{req}.intent.split` | 03 Intent | 0 | 意图拆分 |
+| `dm.{req}.context.assemble` | 02 Context | 1 | 上下文组装(依赖PCR+Intent) |
+| `dm.{req}.subgraph.compile` | 10 Subgraph | 1 | 子图编译(依赖Context) |
+| `dm.{req}.profile.load` | 08 Profile | 1 | 画像加载 |
+| `dm.{req}.llm.reply` | LLM Reply | 2 | LLM 最终回复(依赖全部) |
+| `dm.{req}.meta.audit` | 09 Meta | async | 异步审计 |
+| `dm.{req}.behavior.learn` | 05 Behavior | async | 行为学习 |
+
+Decider 按 Tick 发射: 同 Tick 内并行, 跨 Tick 串行(依赖保证)。
+
+### 14.4 执行 → 学习: Meta 回写协议
+
+```python
+# EventLog 记录 → Meta 消费 → 回写 SkillRegistry
+@dataclass
+class ExecutionAudit:
+    request_id: str
+    blueprint_id: str
+    strategy: str              # 用了哪个策略
+    dag_quality_score: float   # Meta 评估 (0-1)
+    anomalies: List[str]       # 异常事件 (loop_detect, budget_exceed, ...)
+
+# Meta 回写接口
+class MetaFeedback:
+    def update_strategy_weights(self, intent: str, strategy: str, score: float):
+        """更新 SkillRegistry 中 intent→strategy 的权重"""
+    
+    def suggest_blueprint(self, intent: str, nodes: List[str]):
+        """建议新增 Blueprint 模板"""
+    
+    def trigger_degradation(self, strategy: str):
+        """连续低分 → 降级策略权重 → 从 LLM_DRIVEN 退到 HYBRID"""
+```
+
+### 14.5 学习 → 设计: Blueprint 模板进化
+
+```
+Meta 学习输出:
+  ├── 权重调整: SkillRegistry 里 intent→strategy 的匹配分
+  │   "代码分析" → TEMPLATE:0.9, HYBRID:0.7, LLM_DRIVEN:0.3
+  │   "因果推理" → LLM_DRIVEN:0.8, HYBRID:0.5
+  │
+  ├── 模板建议: 新出现意图 → 建议新建 Blueprint
+  │   用户多次问"对比A和B的设计方案" → 建议新增 compare_designs 模板
+  │
+  └── 节点修正: 某链在此意图下频繁超时 → 标记为 "建议跳过"
+```
+
+
+## 十五、DAG 统一可视化 — BlueprintDAG = TaskGraph 超集
+
+> BlueprintDAG 和 task_graph 用同一前端组件 `TaskPlanningPage` 展示。
+> 用户看到的是统一的任务图, 节点按 `node_type` 区分层级。
+
+### 统一节点类型
+
+| node_type | 层级 | 说明 | 示例 |
+|-----------|------|------|------|
+| `pcr` | Blueprint | PCR路由 | 分析输入属于哪个域 |
+| `intent` | Blueprint | 意图拆分 | 多意图? 置信度? |
+| `context` | Blueprint | 上下文组装 | 从Context链拉discourse |
+| `subgraph` | Blueprint | 子图编译 | 编译当前任务相关子图 |
+| `profile` | Blueprint | 画像注入 | OCEAN/MBTI→prompt |
+| `llm_reply` | Blueprint | LLM回复 | 最终调用switch |
+| `scan` | TaskGraph | 扫描/收集 | 搜索/读取文件 |
+| `read` | TaskGraph | 读取 | 读文件/读配置 |
+| `write` | TaskGraph | 写入/修改 | 改代码/改配置 |
+| `analyze` | TaskGraph | 分析 | 代码分析/数据统计 |
+| `ask_user` | TaskGraph | 询问用户 | 需要用户确认 |
+| `explain` | TaskGraph | 解释 | 输出解释/文档 |
+| `fallback` | TaskGraph | 兜底 | 失败回退 |
+
+### 前端统一渲染
+
+```
+TaskPlanningPage
+  ┌──────────────────────────────────────┐
+  │  [pcr] → [intent] → [context] → ...  │  ← Blueprint 层 (蓝色边框)
+  │     └→ [task_graph: scan→analyze→...] │  ← TaskGraph 层 (绿色边框)
+  │                                       │
+  │  双击节点 → 编辑 / 拖拽 → 重排依赖    │
+  │  修改 → POST → 后端重编译             │
+  └──────────────────────────────────────┘
+```
+
+### 前后端协议
+
+```typescript
+// TaskGraphNode 扩展 — 不加字段, 用 node_type 区分
+interface TaskGraphNode {
+  id: string;
+  name: string;
+  type: string;        // pcr|intent|...|scan|read|write|...
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  dependencies: string[];
+  // Blueprint 专属 (可选)
+  params?: Record<string, any>;
+  checkpoint?: boolean;
+  // TaskGraph 专属 (可选)
+  progress?: number;
+  result?: string;
+}
+```
+
+**结论**: BlueprintDAG 和 task_graph 是同一种图结构的不同层级。
+同一 schema, 同一前端, 同一编辑流程。Blueprint 层节点可以展开为子 task_graph。
+这 = 你在执行层设计的嵌套树结构, 一模一样。
