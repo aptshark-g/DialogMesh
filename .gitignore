@@ -109,3 +109,5 @@ data/chat_session_*.jsonl
 world_fixture*.pkl
 _artifacts/
 .hermes/
+persistence_rs/target/
+persistence_rs/target/
