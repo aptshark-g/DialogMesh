@@ -106,7 +106,7 @@ const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesti
           </div>
           <div className="flex items-center gap-2">
             {isActive && activeModel && (
-              <span className="text-xs text-text-muted font-mono">{gatewayProviders.active_model}</span>
+              <span className="text-xs text-text-muted font-mono">{activeModel}</span>
             )}
             {isExpanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
           </div>
