@@ -1,95 +1,284 @@
-"""v6 Frontend-compatible API stubs.
+"""v6 Frontend-compatible API stubs — EXACT match to frontend TypeScript types.
 
-CRITICAL: Return format MUST match frontend TypeScript types exactly:
-  - getSessions() → V6SessionListItem[]  (bare array, NOT {"sessions":[]})
-  - getTrace() → V6TraceResponse          (object with traces field)
-  - etc.
+Each return dict maps 1:1 to the corresponding V6*Response interface.
+Additions/changes must be verified against src/types/api.ts.
 """
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/v6", tags=["stubs"])
 
 
-# ═══ Format: Bare arrays (frontend expects arrays directly) ═══
-
-@router.get("/sessions")
-async def get_sessions():
-    return []  # NOT {"sessions": []} — frontend expects V6SessionListItem[]
-
-@router.get("/trace")
-async def get_trace():
-    return {"traces": [], "note": "SpanTracer — real data pending"}
-
+# ═══════════════════════════════════════════════════════
+# Profile — V6ProfileResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/profile")
 async def get_profile():
-    return {"profile": {
+    return {
         "oceAN_dims": {"O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
-        "raw_oceAN": {"openness": 0.79, "conscientiousness": 0.78,
-                       "extraversion": 0.39, "agreeableness": 0.41, "neuroticism": 0.75},
-        "bfi_10": {"C": 4.5},
-        "inertia": {"by_weight": {"O": 0.05, "C": 0.03, "N": 0.08}},
-        "applied": {},
-        "corrections": []
-    }}
+        "mbti": "INFJ",
+        "turn_count": 0,
+        "top_dimensions": ["O", "N", "C"],
+        "bfi_history": 0,
+        "bfi_latest": {"C": 4.5},
+    }
 
+
+# ═══════════════════════════════════════════════════════
+# Trace — V6TraceResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/trace")
+async def get_trace():
+    return {
+        "reason_distribution": {},
+        "avg_confidence": 0.0,
+        "total": 0,
+    }
+
+
+# ═══════════════════════════════════════════════════════
+# ABC — V6AbcResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/abc")
 async def get_abc():
-    return {"abc_data": [], "count": 0}
+    return {}
 
+
+# ═══════════════════════════════════════════════════════
+# Mind — V6MindResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/mind")
 async def get_mind():
-    return {"mind_space": {}, "dimensions": 0}
+    return {}
 
 @router.get("/mind/full")
 async def get_mind_full():
-    return {"mind_space": {}, "dimensions": 0, "raw": {}, "projections": []}
+    return {"dimensions": 0, "raw": {}, "projections": []}
 
+
+# ═══════════════════════════════════════════════════════
+# Graph — V6GraphResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/graph")
 async def get_graph():
-    return {"nodes": [], "edges": [], "count": 0}
+    return {"nodes": [], "edges": [], "subgraph_nodes": []}
 
+
+# ═══════════════════════════════════════════════════════
+# Discourse — V6DiscourseTreeResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/discourse-tree")
 async def get_discourse_tree():
-    return {"tree": {}, "nodes": 0}
+    return {"blocks": [], "total": 0}
 
+
+# ═══════════════════════════════════════════════════════
+# Objects — V6ObjectsResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/objects")
 async def get_objects():
-    return {"objects": [], "count": 0}
+    return {"nodes": [], "edges": [], "total_objects": 0}
 
+
+# ═══════════════════════════════════════════════════════
+# Rules — V6RulesResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/rules")
+async def get_rules():
+    return {"rules": [], "total": 0}
+
+
+# ═══════════════════════════════════════════════════════
+# Relations — V6RelationsResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/relations")
 async def get_relations():
-    return {"relations": [], "count": 0}
+    return {}
 
+
+# ═══════════════════════════════════════════════════════
+# Causal — V6CausalResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/causal")
 async def get_causal():
-    return {"chains": [], "count": 0}
+    return {}
 
+
+# ═══════════════════════════════════════════════════════
+# Behavior — V6BehaviorResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/behavior")
 async def get_behavior():
-    return {"patterns": [], "count": 0}
+    return {}
 
 @router.get("/behavior/patterns")
 async def get_behavior_patterns():
-    return {"patterns": [], "count": 0}
+    return {"total_patterns": 0, "patterns": [], "frequency_by_type": {}}
 
 @router.get("/inertia")
 async def get_inertia():
     return {"by_weight": {}, "total": 0}
 
+
+# ═══════════════════════════════════════════════════════
+# Engineering — V6EngineeringResponse
+# ═══════════════════════════════════════════════════════
 @router.get("/engineering")
 async def get_engineering():
-    return {"rules": [], "count": 0}
+    return {}
 
 @router.get("/engineering/modules")
 async def get_engineering_modules():
     return {"modules": [], "count": 0}
 
-@router.get("/rules")
-async def get_rules():
-    return []  # V6RulesResponse expects array
 
+# ═══════════════════════════════════════════════════════
+# Pipeline — V6PipelineResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/pipeline")
+async def get_pipeline_status():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# Extraction — V6ExtractionResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/extraction")
+async def get_extraction():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# Perspectives — V6PerspectivesResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/perspectives")
+async def get_perspectives():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# Parameters — V6ParameterItem wrapper
+# ═══════════════════════════════════════════════════════
+@router.get("/parameters")
+async def get_parameters():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# Context
+# ═══════════════════════════════════════════════════════
+@router.get("/context")
+async def get_context():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# Subgraph
+# ═══════════════════════════════════════════════════════
+@router.get("/subgraph")
+async def get_subgraph():
+    return {}
+
+@router.get("/subgraph/cache")
+async def get_subgraph_cache():
+    return {"hit_rate": 0.0, "total_queries": 0}
+
+
+# ═══════════════════════════════════════════════════════
+# Persistence — V6PersistenceResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/persistence")
+async def get_persistence():
+    return {
+        "annotation_store": {},
+        "unified_store": {},
+        "oceAN_saved": False,
+        "rules_saved": False,
+    }
+
+@router.get("/persistence/graphs")
+async def get_persistence_graphs():
+    return []  # bare array — V6SessionListItem[]
+
+
+# ═══════════════════════════════════════════════════════
+# Sessions — bare array (V6SessionListItem[])
+# ═══════════════════════════════════════════════════════
+@router.get("/sessions")
+async def get_sessions():
+    return []
+
+
+# ═══════════════════════════════════════════════════════
+# Versions
+# ═══════════════════════════════════════════════════════
+@router.get("/versions")
+async def get_versions():
+    return {}
+
+@router.get("/versions/profile")
+async def get_versions_profile():
+    return {"versions": [], "current": "6.0.0"}
+
+
+# ═══════════════════════════════════════════════════════
+# Router — V6RouterModesResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/router/modes")
+async def get_router_modes():
+    return {
+        "available": True,
+        "modes": [{"name": "hybrid", "description": "Rule + LLM"}],
+        "active": "hybrid",
+        "force_mode": None,
+        "disabled": {"remote": False, "small_model": False},
+    }
+
+
+# ═══════════════════════════════════════════════════════
+# Providers — V6ProvidersResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/providers")
+async def get_providers():
+    return {
+        "active": {"name": "", "display_name": "", "kind": "", "base_url": ""},
+        "failover": {
+            "primary": "",
+            "fallback": "",
+            "active_idx": 0,
+            "failures": 0,
+        },
+    }
+
+@router.get("/providers/tokens")
+async def get_providers_tokens():
+    return {"current": {"turns": 0, "est_tokens": 0}}
+
+
+# ═══════════════════════════════════════════════════════
+# Metrics — V6MetricsResponse
+# ═══════════════════════════════════════════════════════
+@router.get("/metrics")
+async def get_metrics():
+    return {}
+
+
+# ═══════════════════════════════════════════════════════
+# MetaCenter
+# ═══════════════════════════════════════════════════════
+@router.get("/meta/stats")
+async def get_meta_stats():
+    return {"stats": {"audits": 0, "decisions": 0, "archive_reopens": 0},
+            "self_audit": {"by_verdict": {}}} 
+
+@router.get("/meta/queue")
+async def get_meta_queue():
+    return {"queue": [], "pending": 0}
+
+
+# ═══════════════════════════════════════════════════════
+# Degradation / TTL / RecursiveMap
+# ═══════════════════════════════════════════════════════
 @router.get("/degradation")
 async def get_degradation():
     return {"level": "none", "score": 0}
@@ -102,80 +291,20 @@ async def get_ttl():
 async def get_recursive_map():
     return {"map": {"by_level": {}}, "count": 0}
 
-@router.get("/pipeline")
-async def get_pipeline_status():
-    return {"status": "idle", "stages": 9}
 
-@router.get("/extraction")
-async def get_extraction():
-    return {"extractions": [], "count": 0}
-
-@router.get("/perspectives")
-async def get_perspectives():
-    return {"perspectives": [], "count": 0}
-
-@router.get("/subgraph")
-async def get_subgraph():
-    return {"subgraph": {}, "cache_hit_rate": 0.0}
-
-@router.get("/subgraph/cache")
-async def get_subgraph_cache():
-    return {"hit_rate": 0.0, "total_queries": 0}
-
-@router.get("/persistence")
-async def get_persistence():
-    return {"graphs": [], "count": 0}
-
-@router.get("/persistence/graphs")
-async def get_persistence_graphs():
-    return []
-
-@router.get("/versions")
-async def get_versions():
-    return {"versions": [], "current": "6.0.0"}
-
-@router.get("/versions/profile")
-async def get_versions_profile():
-    return {"versions": [], "current": "6.0.0"}
-
-@router.get("/metrics")
-async def get_metrics():
-    return {"metrics": {}, "requests": 0}
-
-@router.get("/router/modes")
-async def get_router_modes():
-    return {"modes": ["hybrid", "rule", "llm"], "active": "hybrid"}
-
-@router.get("/providers")
-async def get_providers_list():
-    return []  # V6ProvidersResponse expects array
-
-@router.get("/providers/tokens")
-async def get_providers_tokens():
-    return {"tokens": {}, "count": 0}
-
-
-# ═══ MetaCenter ═══
-
-@router.get("/meta/stats")
-async def get_meta_stats():
-    return {"stats": {"audits": 0, "decisions": 0, "archive_reopens": 0},
-            "self_audit": {"by_verdict": {}}}
-
-@router.get("/meta/queue")
-async def get_meta_queue():
-    return {"queue": [], "pending": 0}
-
-
-# ═══ Gateway (these use the API from stubs, not real gateway) ═══
-
+# ═══════════════════════════════════════════════════════
+# Gateway (separate prefix, routed via legacy api or stubs)
+# ═══════════════════════════════════════════════════════
 @router.get("/gateway/providers")
-async def get_providers():
+async def get_gateway_providers():
     try:
         from core.agent.gateway.gateway_v2 import GatewayV2
-        return GatewayV2().list_providers()
+        result = GatewayV2().list_providers()
+        if isinstance(result, list):
+            return {"providers": result, "active_provider": "", "active_model": ""}
+        return result
     except Exception:
-        return []
+        return {"providers": [], "active_provider": "", "active_model": ""}
 
 @router.get("/gateway/config")
 async def get_gateway_config():
