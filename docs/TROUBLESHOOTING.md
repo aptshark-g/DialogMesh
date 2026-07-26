@@ -101,3 +101,17 @@ ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'
 ```bash
 pip install --force-reinstall pydantic pydantic-core
 ```
+
+---
+
+## 6. start.bat 跳过重启, 新代码未生效
+
+### 现象
+前端正常轮询 → 全部返回旧数据或 404 → 聊天发不出
+
+### 根因
+start.bat 检测端口占用 → 跳过 API 启动 → 旧服务器仍在运行旧代码
+
+### 解决
+start.bat 现在自动杀旧进程再重启 (2026-07-26 修复)
+或者手动: Ctrl+C 关闭旧 API 窗口 → 重新运行 start.bat
