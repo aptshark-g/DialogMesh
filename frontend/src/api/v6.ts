@@ -651,3 +651,66 @@ export function tickTtl(): Promise<V6TtlTickResponse> {
 export function getSubgraphCache(): Promise<V6SubgraphCacheResponse> {
   return apiFetch<V6SubgraphCacheResponse>('/v6/subgraph/cache');
 }
+
+// ═══ v6 Chat Pipeline ═══
+
+export interface ChatRequest {
+  message: string;
+  session_id?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface ChatResponse {
+  session_id: string;
+  status: 'completed' | 'pending_review' | 'error';
+  answer?: string;
+  checkpoint?: {
+    checkpoint_id: string;
+    requires_review: boolean;
+    reasons: string[];
+    steps: Array<{
+      idx: number; action: string; tool: string;
+      risk: string; violated: string[];
+      approved: boolean | null; modified: boolean;
+      params_preview: string; notes: string;
+    }>;
+    decision: string;
+    general_note: string;
+  };
+  latency_ms: number;
+  trace_id?: string;
+  execution?: { status: string; summary: string; results?: unknown[] };
+}
+
+export interface CheckpointRespondRequest {
+  session_id: string;
+  checkpoint_id: string;
+  decision: 'approved' | 'adjusted' | 'rejected';
+  note?: string;
+  steps?: Record<string, { approved: boolean; params?: Record<string, unknown> }>;
+}
+
+export interface CheckpointRespondResponse {
+  session_id: string;
+  status: string;
+  answer?: string;
+  execution?: { status: string; summary: string };
+  latency_ms: number;
+}
+
+export function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
+  return apiFetch<ChatResponse>('/v6/chat', {
+    method: 'POST',
+    body: JSON.stringify(req),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export function respondCheckpoint(req: CheckpointRespondRequest): Promise<CheckpointRespondResponse> {
+  return apiFetch<CheckpointRespondResponse>('/v6/checkpoint/respond', {
+    method: 'POST',
+    body: JSON.stringify(req),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
