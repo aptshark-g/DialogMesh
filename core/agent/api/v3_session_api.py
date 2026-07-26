@@ -220,31 +220,30 @@ async def _fetch_json(url: str) -> dict:
 
 def _build_system_prompt(profile_text: str = "", cognitive_ctx: dict = {}) -> str:
     """Build a system prompt incorporating user profile and cognitive context."""
-    parts = ["你是 DialogMesh v6 认知助手。分析用户输入并提供洞察。\n"]
+    parts = ["你是 DialogMesh v6 认知助手。根据用户画像调整回复风格，保持专业但自然。"]
 
     if profile_text:
         parts.append(profile_text)
-        parts.append("请根据以上用户画像调整回复风格和深度。\n")
 
     if cognitive_ctx:
         intents = cognitive_ctx.get("intents", {})
         route = cognitive_ctx.get("route", {})
         compass = cognitive_ctx.get("compass", {})
-        context = cognitive_ctx.get("context", {})
 
-        if intents.get("multi"):
-            parts.append(f"用户意图: 多意图 - 置信度 {intents.get('confidence', 0):.2f}")
-        else:
-            parts.append(f"用户意图: 单意图 - 置信度 {intents.get('confidence', 0):.2f}")
+        segments = intents.get("segments", [])
+        if segments:
+            parts.append(f"当前用户意图: {'、'.join(segments)} (置信度 {intents.get('confidence', 0):.2f})")
 
-        if route:
-            parts.append(f"路由区域: {route.get('zone', 'N/A')}")
+        compass_signal = compass.get("signal", "")
+        if compass_signal and len(str(compass_signal)) < 200:
+            parts.append(f"信号检测: {str(compass_signal)[:200]}")
 
-        if context:
-            parts.append(f"关联上下文: {_json_compact(context)}")
+        zone = route.get("zone", "")
+        if zone:
+            parts.append(f"路由区域: {zone}")
 
-    parts.append("\n用中文回复。保持专业但自然。")
-    return "\n\n".join(parts)
+    parts.append("用中文回复。支持 Markdown 格式。")
+    return "\n".join(parts)
 
 
 def _json_compact(d: dict) -> str:

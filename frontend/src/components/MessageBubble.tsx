@@ -7,6 +7,28 @@ import { submitFeedback } from '../api/v6';
 import { TaskGraphView } from './TaskGraphView';
 import { Toast } from './ui/Toast';
 
+function renderMarkdown(text: string): string {
+  // Simple inline markdown → HTML (bold, italic, code, tables, headers, lists, links)
+  return text
+    .replace(/### (.+)/g, '<h3 class="text-base font-bold mt-3 mb-1">$1</h3>')
+    .replace(/## (.+)/g, '<h2 class="text-lg font-bold mt-4 mb-2">$1</h2>')
+    .replace(/^# (.+)/gm, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code class="bg-surface-sidebar px-1 rounded text-xs">$1</code>')
+    .replace(/^- (.+)/gm, '<li class="ml-4 list-disc">$1</li>')
+    .replace(/^(\d+)\. (.+)/gm, '<li class="ml-4 list-decimal">$1</li>')
+    .replace(/\|(.+)\|/g, (m) => {
+      const cells = m.split('|').filter(c => c.trim());
+      if (m.includes('---')) return '';
+      const tag = m.includes('---') ? 'th' : 'td';
+      return '<tr>' + cells.map(c => `<${tag} class="border px-2 py-1 text-sm">${c.trim()}</${tag}>`).join('') + '</tr>';
+    })
+    .replace(/(<tr>.*<\/tr>\n?)+/g, (m) => `<table class="border-collapse my-2">${m}</table>`)
+    .replace(/\n\n/g, '<br/><br/>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary underline">$1</a>');
+}
+
 export interface MessageBubbleProps {
   message: ChatMessage;
   className?: string;
@@ -137,9 +159,8 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
             whileHover={{ scale: 1.01 }}
             transition={{ duration: 0.15 }}
           >
-            <span className={message.status === 'streaming' ? 'stream-cursor' : ''}>
-              {message.content}
-            </span>
+            <div className={message.status === 'streaming' ? 'stream-cursor prose prose-sm max-w-none' : 'prose prose-sm max-w-none'}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
 
             {/* Metadata badges */}
             {intent && (
