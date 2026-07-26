@@ -357,6 +357,11 @@ class ExecutionPipeline:
                 if high:
                     return {"status": "blocked", "error": str(high), "task_id": task.task_id}, []
 
+            try:
+                from core.agent.api.ws_bridge import WSBridge
+                import asyncio as _a3
+                _a3.ensure_future(WSBridge.step_start(step.index, step.tool, step.action))
+            except: pass
             result = await self._engine.execute(task)
 
             # Dual-path if result. RequiresConfirmation
@@ -371,6 +376,12 @@ class ExecutionPipeline:
                 lambda p: asyncio.run(self._engine.execute(task)))
             retry_logs.extend(logs)
 
+            # WS broadcast
+            try:
+                from core.agent.api.ws_bridge import WSBridge
+                import asyncio as _a2
+                _a2.ensure_future(WSBridge.step_complete(step.index, final.get("status","?"), 0))
+            except: pass
             # Mark node done
             node = self._atm.execution.spawn_sub_agent(
                 root_node.node_id, step.action, 1000)

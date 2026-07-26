@@ -19,6 +19,10 @@ interface TaskActions {
   setSelectedNode: (id: string | null) => void;
   executeNode: (nodeId: string) => void;
   resetExecution: () => void;
+  // ═══ v6 WS live updates ═══
+  onStepStart: (index: number, tool: string, action: string) => void;
+  onStepComplete: (index: number, status: string, duration_ms: number) => void;
+  onExecutionDone: (summary: string) => void;
 }
 
 export interface TaskStore extends TaskState, TaskActions {}
@@ -58,22 +62,33 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   resetExecution: () => {
     const { taskGraph } = get();
-    if (!taskGraph) {
-      set({ executionStatus: 'idle' });
-      return;
-    }
-
+    if (!taskGraph) { set({ executionStatus: 'idle' }); return; }
     const resetNodes = taskGraph.nodes.map((node) =>
       node.status === 'running' || node.status === 'completed' || node.status === 'failed'
-        ? { ...node, status: 'pending' as TaskNodeStatus }
-        : node
-    );
+        ? { ...node, status: 'pending' as TaskNodeStatus } : node);
+    set({ taskGraph: { ...taskGraph, nodes: resetNodes }, executionStatus: 'idle', selectedNodeId: null });
+  },
 
-    set({
-      taskGraph: { ...taskGraph, nodes: resetNodes },
-      executionStatus: 'idle',
-      selectedNodeId: null,
-    });
+  // ═══ v6 WS live updates ═══
+  onStepStart: (index, tool, action) => {
+    const { taskGraph } = get();
+    if (!taskGraph) return;
+    const updated = taskGraph.nodes.map((n, i) =>
+      i === index ? { ...n, status: 'running' as TaskNodeStatus, data: { ...n.data, tool, action } } : n);
+    set({ taskGraph: { ...taskGraph, nodes: updated }, executionStatus: 'running' });
+  },
+
+  onStepComplete: (index, status, duration_ms) => {
+    const { taskGraph } = get();
+    if (!taskGraph) return;
+    const nodeStatus: TaskNodeStatus = status === 'success' ? 'completed' : 'failed';
+    const updated = taskGraph.nodes.map((n, i) =>
+      i === index ? { ...n, status: nodeStatus, data: { ...n.data, duration_ms } } : n);
+    set({ taskGraph: { ...taskGraph, nodes: updated } });
+  },
+
+  onExecutionDone: (summary) => {
+    set({ executionStatus: 'completed' });
   },
 }));
 

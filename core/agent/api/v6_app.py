@@ -16,7 +16,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
 # ═══ v6 Chat endpoints ═══
-from core.agent.api.chat_api import router as chat_router, set_orchestrator
+from core.agent.api.chat_api import router as chat_router
+from core.agent.api.ws_bridge import ws_handler, set_orchestrator
 app.include_router(chat_router)
 
 # ═══ Legacy API routes (gracefully) ═══
@@ -58,6 +59,10 @@ _try_include("core.agent.api.api_subgraph","router")  # /v6/subgraph
 @app.get("/v3/health")
 async def legacy_health():
     return {"status": "ok", "version": "6.0.0"}
+
+@app.websocket("/v6/ws")
+async def ws_endpoint(ws):
+    await ws_handler(ws)
 
 @app.get("/v6/health")
 async def v6_health():
