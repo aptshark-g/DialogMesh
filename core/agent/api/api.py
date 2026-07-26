@@ -72,8 +72,14 @@ def sanitize_path(path: str) -> str:
     if ".." in path or path.startswith("/"):
         raise HTTPException(400, "Invalid path: .. not allowed")
     return path.replace("\\", "/").strip()
-from core.agent.runtime.engine import CognitiveRuntimeEngine
-from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
+try:
+    from core.agent.runtime.engine import CognitiveRuntimeEngine
+except ImportError:
+    CognitiveRuntimeEngine = None
+try:
+    from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
+except ImportError:
+    gateway_router = None; gateway_init = lambda: None
 from core.agent.v4.api_viz_edit import router as viz_edit_router, init as viz_edit_init
 from core.agent.v4.api_annotate import router as annotate_router, init as annotate_init
 
@@ -119,11 +125,11 @@ _event_log: Optional[EventLog] = None
 from core.agent.api.chat_api import router as chat_router
 app.include_router(chat_router)
 
-app.include_router(gateway_router)
+if gateway_router: app.include_router(gateway_router)
 # Register visualization edit router
-app.include_router(viz_edit_router)
+if viz_edit_router: app.include_router(viz_edit_router)
 # Register annotation router
-app.include_router(annotate_router)
+if annotate_router: app.include_router(annotate_router)
 
 
 # ---- Models (with P0 validators) ----
