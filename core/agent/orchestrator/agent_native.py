@@ -44,6 +44,49 @@ class AgentOrchestrator:
         self._reactor = reactor
         self._tick = 0
 
+
+    def process_resume(self, session_id: str, frontend_response: dict):
+        """Resume pipeline from PlanGate checkpoint."""
+        start = time.time()
+        result = {"session": session_id, "status": "resuming"}
+
+        # Apply user response to checkpoint
+        if self._plan_gate:
+            try:
+                from core.agent.planning.checkpoint import PlanCheckpoint, CheckpointDecision
+                # Reconstruct checkpoint from stored state
+                checkpoint = PlanCheckpoint(
+                    checkpoint_id=frontend_response.get("checkpoint_id", ""),
+                    session_id=session_id,
+                    original_plan={"steps": []})
+                checkpoint.apply_user_changes(frontend_response)
+                result["plan_gate"] = checkpoint.decision.value
+                result["plan_status"] = checkpoint.decision.value
+            except Exception as e:
+                logger.debug("PlanGate resume: %s", e)
+
+        # ═══ Execution ═══ (re-enter pipeline)
+        if self._execution_pipeline and hasattr(self, "_last_plan"):
+            try:
+                import asyncio
+                from core.agent.planning.checkpoint import PlanCheckpoint, CheckpointDecision
+                cp = PlanCheckpoint(checkpoint_id="resume", session_id=session_id,
+                                    original_plan=self._last_plan)
+                cp.apply_user_changes(frontend_response)
+                exec_r = asyncio.run(
+                    self._execution_pipeline.run(self._last_plan, cp))
+                result["execution"] = exec_r
+                self._publish("EXECUTION_COMPLETED", exec_r)
+                result["plan_status"] = "executed"
+            except Exception as e:
+                logger.debug("Execution resume: %s", e)
+                result["execution"] = {"status": "error", "error": str(e)}
+
+        # LLM Answer
+        result["answer"] = "Execution completed"  # Placeholder — real LLM in full pipeline
+        result["latency_ms"] = round((time.time() - start) * 1000)
+        return result
+
     def _publish(self, kind: str, payload: dict):
         # EventBus v2 (NATS-patterned) — primary
         if self._event_bus:
@@ -196,7 +239,8 @@ class AgentOrchestrator:
             if self.cognitive:
                 result["cognitive"] = self.cognitive.build_llm_context()
                 self.cognitive.tick()
-            result["plan"] = self._llm_synthesize(result)
+            self._last_plan = self._llm_synthesize(result)
+            result["plan"] = self._last_plan
             self._publish("PLAN_GENERATED", result.get("plan", {}))
 
             # === CHECKPOINT: human-in-the-loop plan review ===

@@ -116,6 +116,9 @@ _engine: Optional[CognitiveRuntimeEngine] = None
 _event_log: Optional[EventLog] = None
 
 # Register gateway router
+from core.agent.api.chat_api import router as chat_router
+app.include_router(chat_router)
+
 app.include_router(gateway_router)
 # Register visualization edit router
 app.include_router(viz_edit_router)
