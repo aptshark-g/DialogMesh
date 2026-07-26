@@ -82,17 +82,33 @@ async def send_message(session_id: str, req: SendMessageRequest):
     t0 = time.time()
     content = ""
     try:
-        # Try agent_native processing
-        from core.agent.agent_native import AgentOrchestrator
-        orch = AgentOrchestrator()
-        result = orch.process(req.content, session_id=session_id,
-                              provider=req.provider, model=req.model)
-        content = result.get("response", "") or result.get("content", "")
+        # Call switch gateway for real LLM response
+        import urllib.request, json as _json
+        body = {
+            "provider": req.provider or "deepseek",
+            "model": req.model or "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": req.content}],
+        }
+        http_req = urllib.request.Request(
+            "http://127.0.0.1:8080/v1/chat/completions",
+            data=_json.dumps(body).encode(),
+            headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(http_req, timeout=60) as resp:
+            data = _json.loads(resp.read())
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not content:
-            content = str(result)
+            content = str(data)
     except Exception as e:
-        logger.warning("agent_native failed, fallback: %s", e)
-        content = _fallback_reply(req.content)
+        logger.warning("switch LLM call failed: %s, trying agent_native fallback", e)
+        try:
+            from core.agent.orchestrator.agent_native import AgentOrchestrator
+            orch = AgentOrchestrator()
+            result = orch.process(text=req.content)
+            content = str(result.get("result", result))
+        except Exception as e2:
+            logger.warning("agent_native also failed: %s", e2)
+            content = _fallback_reply(req.content)
 
     latency = int((time.time() - t0) * 1000)
     msg_id = str(uuid.uuid4())[:8]
