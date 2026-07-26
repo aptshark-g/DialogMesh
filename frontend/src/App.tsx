@@ -8,6 +8,7 @@ import { initDebug, enableBackendSync } from './lib/debug';
 initDebug();
 enableBackendSync();
 import { FloatingActionButton } from './components/FloatingActionButton.tsx';
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { ContentScriptBridge } from './components/ContentScriptBridge.tsx';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage.tsx').then((m) => ({ default: m.DashboardPage })));
@@ -25,6 +26,7 @@ const EngineeringPage = lazy(() => import('./pages/EngineeringPage.tsx').then((m
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <ContentScriptBridge />
       <Routes>
@@ -47,5 +49,6 @@ export default function App() {
       </Routes>
       <FloatingActionButton />
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

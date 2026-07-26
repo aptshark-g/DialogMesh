@@ -134,3 +134,23 @@ const _logImpl = _log;
 if (typeof window !== 'undefined') {
   (window as Record<string, unknown>).__dm_debug = { getLogs, exportLogs, pauseDebug, resumeDebug, clearLogs, isDebugEnabled };
 }
+
+// ═══ Safe API wrapper — never returns null ═══
+export async function safeFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  try {
+    const resp = await fetch(url, init);
+    if (!resp.ok) {
+      console.warn('[DM:SAFE]', init?.method || 'GET', url, '→', resp.status);
+      return (resp.status === 404 ? {} : {}) as unknown as T;
+    }
+    const data = await resp.json();
+    if (data === null || data === undefined) {
+      console.warn('[DM:SAFE]', url, 'returned null → using {}');
+      return {} as unknown as T;
+    }
+    return data as T;
+  } catch (e) {
+    console.warn('[DM:SAFE]', url, 'fetch failed → using {}', e);
+    return {} as unknown as T;
+  }
+}
