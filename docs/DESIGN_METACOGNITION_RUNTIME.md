@@ -44,6 +44,120 @@
 
 ---
 
+## User-In-Loop: 执行中用户干预 (对标 LangGraph interrupts)
+
+### 触发点
+
+```
+任何节点执行中 → 可触发用户干预:
+
+LLM 主动暂停 (Self-Trigger):
+  ├─ confidence < 阈值 → "我不确定这个修改是否正确"
+  ├─ 检测异常模式 → "输出与历史偏好显著偏离"
+  ├─ 高风险操作 → "这个 edit 影响 50+ 文件"
+  └─ 需要决策 → "有2种等价的实现方案, 需要选择"
+
+用户主动介入 (User-Trigger):
+  └─ 前端 "中断并检视" 按钮 → 任一步骤可暂停
+
+规则触发 (Rule-Trigger):
+  ├─ ConstraintTree 检测到边界违规 → "即将修改 /etc/"
+  ├─ 首次执行某类高风险操作 → "首次调用 mcp_invoke"
+  └─ ReActRetry 3次仍失败 → "需要用户指导"
+```
+
+### 干预窗口
+
+```
+节点 N 执行中 → 暂停 → 用户干预窗口:
+
+前端展示:
+  ┌──────────────────────────────────────────┐
+  │ Agent 正在执行: Step 2/4 - 修改 auth.py    │
+  │                                          │
+  │ 已完成: Step 1 - 读取配置 ✅               │
+  │ 当前:   Step 2 - 修改 auth.py ⏸           │
+  │                                          │
+  │ LLM 推理: "检测到2处SQL注入, 需添加参数化查询" │
+  │ 置信度:   65% (低于阈值80%)                 │
+  │                                          │
+  │ 操作选项:                                 │
+  │  [批准继续]  [调整参数]  [查看详细信息]       │
+  │  [重新推理]  [跳过此步]  [终止任务]          │
+  │                                          │
+  │ 用户备注: [_____________________________]   │
+  └──────────────────────────────────────────┘
+
+用户操作:
+  批准: 继续执行, 记录 "用户批准低置信度操作" → 学习
+  调整: 修改 LLM 的 edit 参数 → 重新执行
+  重推理: 要求 LLM 重新思考 (可附注原因)
+  跳过: 跳过此步 (用户手动处理)
+  终止: 终止整个任务
+
+干预后:
+  管线恢复 → 节点 N 根据用户选择继续/重试/跳过
+  → Transition 记录: { type:"user_interrupt", node, decision, note }
+  → BehaviorTree: 学习用户模式
+  → ParameterRegistry: 调整 confidence_threshold
+```
+
+### LLM 干预决策元信息
+
+```
+LLM 做暂停决策时, 元认知提供:
+
+传递给 LLM 的暂停决策上下文:
+  {
+    current_node: { task, progress, output_so_far },
+    confidence: 0.65,
+    risk: "medium",
+    constraint_hits: [],
+    behavior_hints: ["user_prefers_manual_review_for_auth_files"],
+    cost: { estimated_impact_lines: 15, files_affected: 1 },
+    alternatives: [
+      { approach: "参数化查询", risk: "low", confidence: 0.92 },
+      { approach: "输入转义", risk: "medium", confidence: 0.75 },
+    ],
+  }
+
+LLM 决策: "continue" | "pause_for_user" | "switch_to_alternative"
+  → 含推理: "参数化查询是更优方案, 但用户可能想确认影响范围"
+```
+
+### 与 PlanGate 的区别
+
+```
+PlanGate:        执行前 (Plan 层面)
+  → LLM Plan → 用户审批整个计划 → 执行
+
+User-In-Loop:    执行中 (Step 层面, 对标 LangGraph interrupts)
+  → 任一步骤 → LLM/用户 可暂停 → 修改当前 → 继续
+
+两者互补:
+  PlanGate     — 全局视角: "这5步计划合理吗？"
+  UserInLoop   — 局部视角: "这一步的修改对吗？"
+```
+
+### 接入小环
+
+```
+小环 (节点内) 新增暂停点:
+
+Think → Act → ⏸ Self-Check
+                 │
+                 ├─ 通过 → COMPLETED
+                 └─ LLM 判断需要用户:
+                     → ⏸ 暂停 → 用户干预窗口 → 继续/重试/跳过
+                     → 正确: 修正 → Retry
+                     
+Self-Check LLM 决策:
+  "产出是正确的, 但置信度低 (0.65)"
+  → 检查 behavior_hints: "用户偏好高置信度操作"
+  → 判断: pause_for_user (用户可能想审查)
+  → Transition: { type:"user_interrupt", trigger:"low_confidence" }
+```
+
 ## 二、小环：节点内运行时元认知 (热路径)
 
 ### 2.1 定义
@@ -319,19 +433,20 @@ Transition 记录 (高价值低概率):
 ## 九、与 ReAct/Reflexion/ToT/LATS 的对标
 
 ```
-能力                   ReAct  Reflex  ToT    LATS   我们
-─────────────────────────────────────────────────────────
-节点内重试              ✅      ✅      ✅     ✅     ✅ ReActRetryEngine
-跨节点因果追溯          ❌      ❌      ❌     ❌     ✅ CausalTracer
-冷路径事后审计          ❌      ❌      ❌     ❌     ✅ MetaTree 大环
-死循环检测+自动剥离      ❌      ❌      ❌     ❌     ✅ CascadeDetector
-归档回档+版本链          ❌      ❌      ❌     ❌     ✅ NodeLifecycle
-多树约束冲突消解         ❌      ❌      ❌     ❌     ✅ RelationSubstrate 映射
-自我反思注入热路径       ❌      ✅      ❌     ❌     ⚠️ 部分 (FeedbackBridge)
-思考树搜索 (BFS/DFS)     ❌      ❌      ✅     ✅     ❌ (先验切分, 不需搜索)
-MCTS 模拟回传            ❌      ❌      ❌     ✅     ❌ (成本太高, 不做)
+能力                   ReAct  Reflex  ToT    LATS   LangGr 我们
+──────────────────────────────────────────────────────────────
+节点内重试              ✅      ✅      ✅     ✅     ✅     ✅
+跨节点因果追溯          ❌      ❌      ❌     ❌     ❌     ✅
+冷路径事后审计          ❌      ❌      ❌     ❌     ❌     ✅
+死循环检测+自动剥离      ❌      ❌      ❌     ❌     ❌     ✅
+归档回档+版本链          ❌      ❌      ❌     ❌     ✅     ✅
+多树约束冲突消解         ❌      ❌      ❌     ❌     ❌     ✅
+执行中用户干预           ❌      ❌      ❌     ❌     ✅     ✅
+LLM自触发暂停            ❌      ❌      ❌     ❌     ❌     ✅
+思考树搜索 (BFS/DFS)     ❌      ❌      ✅     ✅     ❌     ❌
+MCTS 模拟回传            ❌      ❌      ❌     ✅     ❌     ❌
 
-独有优势: 小环快速修正 + 大环深度审计 + 死循环自动剥离 + 多树因果关系
+独有优势: 小环修正 + 大环审计 + 死循环剥离 + 多树因果 + LLM自触发暂停
 ```
 
 ---
@@ -342,6 +457,7 @@ MCTS 模拟回传            ❌      ❌      ❌     ✅     ❌ (成本太高
 P0 (本文件):
   NodeLifecycle     — 小环死循环检测 + blocked处理
   CausalTracer      — 逆向因果关系追溯
+  UserInLoop        — LLM自触发暂停 + 用户干预窗口
 
 P1:
   ReActor           — 统一循环入口 + Transition格式化
