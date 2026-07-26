@@ -329,52 +329,6 @@ async def get_recursive_map():
 
 
 # ═══════════════════════════════════════════════════════
-# Gateway — ALL flat objects matching TS types directly
+# Gateway — handled by api_gateway.py (proxies switch gateway)
+# DO NOT define gateway routes here — they conflict.
 # ═══════════════════════════════════════════════════════
-@router.get("/gateway/providers")
-async def get_gateway_providers():
-    try:
-        from core.agent.gateway.gateway_v2 import GatewayV2
-        result = GatewayV2().list_providers()
-        if isinstance(result, list):
-            result = [dict(p, models=p.get("models") or []) for p in result]
-            return {"providers": result, "active_provider": "", "active_model": ""}
-        return result
-    except Exception:
-        return {"providers": [], "active_provider": "", "active_model": ""}
-
-@router.get("/gateway/config")
-async def get_gateway_config():
-    return {
-        "active_provider": "", "active_model": "",
-        "failover_chain": [], "auto_failover": False,
-        "max_retries": 3, "timeout_ms": 30000, "stats": {}
-    }
-
-@router.get("/gateway/usage")
-async def get_gateway_usage():
-    return {
-        "current_session": {"provider": "", "model": "", "turns": 0,
-                            "prompt_tokens": 0, "completion_tokens": 0,
-                            "cost_estimate": "$0", "latency_avg_ms": 0},
-        "all_sessions": {
-            "total_tokens": 0, "total_cost": "$0",
-            "by_provider": {}
-        }
-    }
-
-@router.get("/gateway/stats")
-async def get_gateway_stats():
-    return {
-        "requests": 0, "tokens": 0,
-        "latency_p50": 0, "latency_p95": 0, "latency_p99": 0,
-        "cache_hit_rate": 0, "errors_by_provider": {},
-        "requests_by_model": {}
-    }
-
-@router.get("/gateway/health")
-async def get_gateway_health():
-    return {
-        "status": "ok", "providers_total": 0,
-        "providers_healthy": 0, "circuits": {}
-    }

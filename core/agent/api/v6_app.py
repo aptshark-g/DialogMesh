@@ -42,9 +42,10 @@ def _try_include(import_path: str, router_name: str):
         if router:
             app.include_router(router)
             _loaded.append(import_path)
+            print(f"  ✅ {import_path}")
         return router
     except Exception as e:
-        logger.debug("Skip %s: %s", import_path, e)
+        print(f"  ⚠️  SKIP {import_path}: {e}")
         return None
 
 # v4/v6 legacy routes (frontend expects these)
