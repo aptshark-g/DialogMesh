@@ -168,29 +168,28 @@ async def send_message(session_id: str, req: SendMessageRequest):
         if not content:
             content = str(data)
 
-        # Phase 5: Generate task plan (separate LLM call for structured plan)
+        # Phase 5: BlueprintEngine — build DAG and convert to task_graph
         task_graph = []
         try:
-            plan_prompt = _build_plan_prompt(req.content, content, cognitive_ctx)
-            plan_body = {
-                "provider": req.provider or "deepseek",
-                "model": req.model or "deepseek-v4-flash",
-                "messages": [
-                    {"role": "system", "content": _PLANNER_SYSTEM},
-                    {"role": "user", "content": plan_prompt},
-                ],
-            }
-            plan_req = urllib.request.Request(
-                "http://127.0.0.1:8080/v1/chat/completions",
-                data=_json.dumps(plan_body).encode(),
-                headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(plan_req, timeout=60) as rp:
-                plan_data = _json.loads(rp.read())
-            plan_text = plan_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            task_graph = _parse_plan_json(plan_text)
+            from core.agent.blueprint.engine import BlueprintEngine
+            engine = BlueprintEngine()
+            # Extract intent from cognitive context
+            intent = cognitive_ctx.get("intents", {}).get("primary", "")
+            if not intent:
+                segments = cognitive_ctx.get("intents", {}).get("segments", [])
+                intent = segments[0] if segments else "通用对话"
+            dag = engine.build(req.content, intent=intent)
+            # Convert BlueprintDAG nodes → frontend task_graph format
+            for n in dag.nodes:
+                task_graph.append({
+                    "id": n.node_id,
+                    "name": f"{n.chain}",
+                    "type": n.chain,
+                    "status": "pending",
+                    "dependencies": [e.from_node for e in dag.edges if e.to_node == n.node_id],
+                })
         except Exception as e:
-            logger.warning("Plan generation failed: %s", e)
+            logger.warning("BlueprintEngine failed: %s", e)
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         content = _fallback_reply(req.content)
