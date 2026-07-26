@@ -117,7 +117,13 @@ async def get_behavior_patterns():
 
 @router.get("/inertia")
 async def get_inertia():
-    return {"total_patterns": 0, "stable": 0, "confirmed": 0, "breaking": 0, "by_weight": {}}
+    return {"total_patterns": 0, "stable": 0, "confirmed": 0, "breaking": 0,
+            "by_weight": {}, "constraints": []}
+
+
+@router.get("/behavior/predict")
+async def get_behavior_predictions():
+    return {"recent_actions": [], "predictions": {}}
 
 
 # ═══════════════════════════════════════════════════════
@@ -199,6 +205,22 @@ async def get_persistence():
 @router.get("/persistence/graphs")
 async def get_persistence_graphs():
     return []  # bare array — V6SessionListItem[]
+
+
+# ═══════════════════════════════════════════════════════
+# Annotations + Corrections
+# ═══════════════════════════════════════════════════════
+@router.get("/annotate")
+async def get_annotations():
+    return {"annotations": [], "total": 0}
+
+@router.get("/annotate/stats")
+async def get_annotation_stats():
+    return {"total": 0, "by_author": {}, "by_date": {}}
+
+@router.get("/profile/corrections")
+async def get_profile_corrections():
+    return {"corrections": [], "total": 0}
 
 
 # ═══════════════════════════════════════════════════════
