@@ -1,7 +1,7 @@
 // FILE: src/pages/GatewayPage.tsx
 // Gateway — 服务检测 + Provider 管理 + 配置 + 用量 + 运维
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield,
@@ -433,22 +433,15 @@ export function GatewayPage() {
     );
   };
 
-  // ─── Provider Card ───
-  const ProviderCard = ({ provider }: { provider: V6GatewayProvider }) => {
-    const isExpanded = expandedProvider === provider.name;
-    const isActive = gatewayProviders?.active_provider === provider.name;
-    const testResult = testResults[provider.name];
-    const isTesting = testingProvider === provider.name;
-    const isFetchingModels = fetchModelsLoading === provider.name;
-    const form = configForms[provider.name] || { apiKey: '', baseUrl: provider.base_url || '' };
-
-    return (
+  // ─── Provider Card (memoized — only re-renders when provider data changes) ───
+  const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider }:
+    { provider: V6GatewayProvider; isExpanded: boolean; isActive: boolean; testResult: any; isTesting: boolean; isFetchingModels: boolean; form: {apiKey:string;baseUrl:string}; activeModel: string|undefined; onToggle: (n:string)=>void; onTest: (n:string)=>void; onFetchModels: (n:string)=>void; onSaveConfig: (n:string)=>void; onRemove: (n:string)=>void; saveLoading: boolean; removingProvider: string|null; onSetActive: (p:string,m:string)=>void; onUpdateForm: (p:string,f:string,v:string)=>void }) => (
       <div className={cn(
         'bg-surface-card rounded-xl border transition-colors',
         isActive ? 'border-primary ring-1 ring-primary/20' : 'border-gray-200'
       )}>
         <button
-          onClick={() => toggleExpand(provider.name)}
+          onClick={() => onToggle(provider.name)}
           className="w-full flex items-center justify-between p-4 text-left"
         >
           <div className="flex items-center gap-3">
@@ -484,7 +477,7 @@ export function GatewayPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isActive && gatewayProviders?.active_model && (
+            {isActive && activeModel && (
               <span className="text-xs text-text-muted font-mono">{gatewayProviders.active_model}</span>
             )}
             {isExpanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
@@ -513,7 +506,7 @@ export function GatewayPage() {
                       <input
                         type="password"
                         value={form.apiKey}
-                        onChange={(e) => updateConfigForm(provider.name, 'apiKey', e.target.value)}
+                        onChange={(e) => onUpdateForm(provider.name, 'apiKey', e.target.value)}
                         placeholder={provider.api_key ? '●●●●●●●● (已配置)' : '输入 API Key'}
                         className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
                       />
@@ -523,7 +516,7 @@ export function GatewayPage() {
                       <input
                         type="text"
                         value={form.baseUrl}
-                        onChange={(e) => updateConfigForm(provider.name, 'baseUrl', e.target.value)}
+                        onChange={(e) => onUpdateForm(provider.name, 'baseUrl', e.target.value)}
                         placeholder="https://api.example.com/v1"
                         className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
                       />
@@ -531,7 +524,7 @@ export function GatewayPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleSaveConfig(provider.name)}
+                      onClick={() => onSaveConfig(provider.name)}
                       disabled={saveLoading}
                       className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
                     >
@@ -539,7 +532,7 @@ export function GatewayPage() {
                       {saveLoading ? '保存中...' : '保存'}
                     </button>
                     <button
-                      onClick={() => handleTest(provider.name)}
+                      onClick={() => onTest(provider.name)}
                       disabled={isTesting}
                       className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
                     >
@@ -547,7 +540,7 @@ export function GatewayPage() {
                       {isTesting ? '测试中...' : '测试连接'}
                     </button>
                     <button
-                      onClick={() => handleFetchModels(provider.name)}
+                      onClick={() => onFetchModels(provider.name)}
                       disabled={isFetchingModels}
                       className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
                     >
@@ -555,7 +548,7 @@ export function GatewayPage() {
                       {isFetchingModels ? '拉取中...' : '拉取模型'}
                     </button>
                     <button
-                      onClick={() => handleRemoveProvider(provider.name)}
+                      onClick={() => onRemove(provider.name)}
                       disabled={removingProvider === provider.name}
                       className="ml-auto flex items-center gap-1 rounded-lg border border-status-error/30 px-3 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"
                     >
@@ -590,7 +583,7 @@ export function GatewayPage() {
                     </div>
                     <div className="space-y-1">
                       {provider.models.map((model: V6GatewayModel) => {
-                        const isModelActive = isActive && gatewayProviders?.active_model === model.id;
+                        const isModelActive = isActive && activeModel === model.id;
                         return (
                           <div
                             key={model.id}
@@ -607,7 +600,7 @@ export function GatewayPage() {
                               <span className="text-xs text-text-muted">{model.context.toLocaleString()} ctx</span>
                               <span className="text-xs text-text-muted">${model.cost_in}/M</span>
                               <button
-                                onClick={() => handleSetActive(provider.name, model.id)}
+                                onClick={() => onSetActive(provider.name, model.id)}
                                 disabled={saveLoading}
                                 className={cn(
                                   'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50',
@@ -631,8 +624,7 @@ export function GatewayPage() {
           )}
         </AnimatePresence>
       </div>
-    );
-  };
+    ));
 
   return (
     <div className="min-h-screen bg-surface-main">
@@ -790,7 +782,23 @@ export function GatewayPage() {
                 </div>
               )}
               {gatewayProviders?.providers.map((provider) => (
-                <ProviderCard key={provider.name} provider={provider} />
+                <ProviderCard key={provider.name} provider={provider}
+                isExpanded={expandedProvider === provider.name}
+                isActive={gatewayProviders?.active_provider === provider.name}
+                testResult={testResults[provider.name]}
+                isTesting={testingProvider === provider.name}
+                isFetchingModels={fetchModelsLoading === provider.name}
+                form={configForms[provider.name] || { apiKey: '', baseUrl: provider.base_url || '' }}
+                activeModel={gatewayProviders?.active_model}
+                onToggle={toggleExpand}
+                onTest={handleTest}
+                onFetchModels={handleFetchModels}
+                onSaveConfig={handleSaveConfig}
+                onRemove={handleRemoveProvider}
+                saveLoading={saveLoading}
+                removingProvider={removingProvider}
+                onSetActive={handleSetActive}
+                onUpdateForm={updateConfigForm} />
               ))}
               {gatewayProviders?.providers.length === 0 && (
                 <div className="text-center py-12 text-sm text-text-muted">
