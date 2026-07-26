@@ -80,7 +80,7 @@ export function CognitiveProfilePage() {
   // Radar data: map OCEAN dimensions
   const radarData = useMemo(() => {
     if (!profile) return undefined;
-    return Object.entries(profile.oceAN_dims).map(([dimension, value]) => ({
+    return Object.entries(profile?.oceAN_dims ?? {}).map(([dimension, value]) => ({
       dimension,
       value: Math.round(value * 100),
       fullMark: 100,
@@ -90,7 +90,7 @@ export function CognitiveProfilePage() {
   // Metric cards: top 3 dimensions sorted by value
   const metricCards = useMemo<MetricCardData[]>(() => {
     if (!profile) return [];
-    return Object.entries(profile.oceAN_dims)
+    return Object.entries(profile?.oceAN_dims ?? {})
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([label, value]) => ({
@@ -103,7 +103,7 @@ export function CognitiveProfilePage() {
   // Dimensions for breakdown
   const dimensions = useMemo(() => {
     if (!profile) return [];
-    return Object.entries(profile.oceAN_dims).map(([key, value]) => ({
+    return Object.entries(profile?.oceAN_dims ?? {}).map(([key, value]) => ({
       key,
       label: key,
       value: Math.round(value * 100),

@@ -438,7 +438,7 @@ export function BehaviorPage() {
                     <p className="text-sm text-text-muted">暂无置信度高于阈值的预测</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {Object.entries(predict.predictions)
+                      {Object.entries(predict?.predictions ?? {})
                         .sort(([, a], [, b]) => b.conf - a.conf)
                         .map(([key, pred]) => (
                           <div key={key} className="rounded-lg border border-subtle bg-surface-sidebar p-3">

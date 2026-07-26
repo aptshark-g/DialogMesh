@@ -31,7 +31,7 @@ export const RightPanel: FC<RightPanelProps> = ({
   };
 
   const radarData = profile
-    ? Object.entries(profile.oceAN_dims).map(([k, v]) => ({
+    ? Object.entries(profile?.oceAN_dims ?? {}).map(([k, v]) => ({
         dimension: k,
         value: Math.round(v * 100),
         fullMark: 100,
@@ -39,7 +39,7 @@ export const RightPanel: FC<RightPanelProps> = ({
     : undefined;
 
   const metricCards = profile
-    ? Object.entries(profile.oceAN_dims)
+    ? Object.entries(profile?.oceAN_dims ?? {})
         .sort(([, a], [, b]) => b - a)
         .slice(0, 3)
         .map(([k, v]) => ({

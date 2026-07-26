@@ -496,7 +496,7 @@ export function ConversationGraphPage() {
                       <div className="border-t border-subtle pt-2 mt-2">
                         <span className="text-[10px] font-semibold text-text-primary">State</span>
                         <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
-                          {Object.entries(selectedNodeState).map(([key, value]) => (
+                          {Object.entries(selectedNodeState ?? {}).map(([key, value]) => (
                             <div key={key} className="flex justify-between text-[10px]">
                               <span className="text-text-muted">{key}</span>
                               <span className="text-text-secondary font-mono truncate max-w-[140px]">

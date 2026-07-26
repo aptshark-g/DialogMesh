@@ -117,7 +117,15 @@ async def get_metrics():
 
 @trace_router.get("/profile")
 async def get_profile():
-    return {"profile": {"O": 0.5, "C": 0.5, "E": 0.5, "A": 0.5, "N": 0.5}}
+    return {"profile": {
+        "oceAN_dims": {"O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
+        "raw_oceAN": {"openness": 0.79, "conscientiousness": 0.78, 
+                       "extraversion": 0.39, "agreeableness": 0.41, "neuroticism": 0.75},
+        "bfi_10": {"C": 4.5},
+        "inertia": {"by_weight": {"O": 0.05, "C": 0.03, "N": 0.08}},
+        "applied": {},
+        "corrections": []
+    }}
 
 
 # ═══ MetaCenter ═══

@@ -839,7 +839,7 @@ export function GatewayPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between"><span className="text-sm text-text-secondary">总 Tokens</span><span className="text-sm font-mono text-text-primary">{usage.all_sessions.total_tokens.toLocaleString()}</span></div>
                   <div className="flex justify-between"><span className="text-sm text-text-secondary">总成本</span><span className="text-sm font-medium text-primary">{usage.all_sessions.total_cost}</span></div>
-                  {Object.entries(usage.all_sessions.by_provider).map(([name, data]) => (
+                  {Object.entries(usage?.all_sessions?.by_provider ?? {}).map(([name, data]) => (
                     <div key={name} className="rounded-lg bg-surface-sidebar p-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-medium text-text-primary">{name}</span>
@@ -936,11 +936,11 @@ export function GatewayPage() {
                     <p className="text-sm font-medium text-text-primary">{config.timeout_ms}</p>
                   </div>
                 </div>
-                {config.stats && Object.entries(config.stats).length > 0 && (
+                {config.stats && Object.entries(config?.stats ?? {}).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <span className="text-xs text-text-muted">Provider 统计</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-                      {Object.entries(config.stats).map(([name, s]) => (
+                      {Object.entries(config?.stats ?? {}).map(([name, s]) => (
                         <div key={name} className="bg-surface-sidebar rounded-lg p-3">
                           <span className="text-xs text-text-muted">{name}</span>
                           <p className="text-sm font-medium text-text-primary">{s.calls} 次</p>
@@ -997,11 +997,11 @@ export function GatewayPage() {
                     <span className="text-sm text-text-secondary">Provider</span>
                     <span className="text-sm font-medium text-text-primary">{health.providers_healthy} / {health.providers_total} 健康</span>
                   </div>
-                  {health.circuits && Object.entries(health.circuits).length > 0 && (
+                  {health.circuits && Object.entries(health?.circuits ?? {}).length > 0 && (
                     <div className="mt-2">
                       <span className="text-xs text-text-muted">断路器</span>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
-                        {Object.entries(health.circuits).map(([name, state]) => (
+                        {Object.entries(health?.circuits ?? {}).map(([name, state]) => (
                           <div key={name} className="bg-surface-sidebar rounded-lg p-2">
                             <span className="text-xs text-text-muted">{name}</span>
                             <p className={cn(
@@ -1061,11 +1061,11 @@ export function GatewayPage() {
                       <p className="text-sm font-semibold text-text-primary">{stats.latency_p99}ms</p>
                     </div>
                   </div>
-                  {stats.errors_by_provider && Object.entries(stats.errors_by_provider).length > 0 && (
+                  {stats.errors_by_provider && Object.entries(stats?.errors_by_provider ?? {}).length > 0 && (
                     <div className="mt-2">
                       <span className="text-xs text-text-muted">错误分布</span>
                       <div className="flex gap-2 mt-1">
-                        {Object.entries(stats.errors_by_provider).map(([name, count]) => (
+                        {Object.entries(stats?.errors_by_provider ?? {}).map(([name, count]) => (
                           <span key={name} className="text-xs text-status-error">{name}: {count}</span>
                         ))}
                       </div>
@@ -1085,7 +1085,7 @@ export function GatewayPage() {
                   <span className="text-xs font-semibold">系统指标 (Legacy)</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {Object.entries(metrics).map(([k, v]) => (
+                  {Object.entries(metrics ?? {}).map(([k, v]) => (
                     <div key={k} className="bg-surface-sidebar rounded-lg p-2">
                       <span className="text-xs text-text-muted">{k}</span>
                       <p className="text-sm font-medium text-text-primary">{String(v)}</p>
@@ -1129,7 +1129,7 @@ export function GatewayPage() {
                     <div key={engine} className="bg-surface-sidebar rounded-lg p-3">
                       <span className="text-xs font-semibold text-text-muted">{engine}</span>
                       <div className="mt-2 space-y-1">
-                        {Object.entries(engineStatus[engine] ?? {}).map(([key, value]) => (
+                        {Object.entries(engineStatus?.[engine] ?? {} ?? {}).map(([key, value]) => (
                           <div key={key} className="flex items-start justify-between gap-2 text-xs">
                             <span className="text-text-muted shrink-0">{key}</span>
                             <span className="text-text-primary font-mono text-right break-all">
