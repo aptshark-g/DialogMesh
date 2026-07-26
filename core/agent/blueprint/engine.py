@@ -221,12 +221,72 @@ class BlueprintEngine:
         return blueprint
 
     def _build_hybrid(self, text: str, intent: str, blueprint: BlueprintDAG) -> BlueprintDAG:
-        """HYBRID strategy — template floor + LLM may override nodes.
+        """HYBRID strategy — template floor + LLM node override.
 
-        Currently: returns template directly.
-        Future: LLM suggests add/remove/reorder nodes on top of template.
+        LLM sees the template and user input, suggests:
+          - add: new chains needed (context, subgraph)
+          - remove: unnecessary chains
+          - reorder: priority adjustments
         """
+        # Build prompt showing current template
+        node_list = "\n".join(
+            f"  {n.node_id}: chain={n.chain}, priority={n.priority}, deps={[e.from_node for e in blueprint.edges if e.to_node == n.node_id]}"
+            for n in blueprint.nodes
+        )
+        prompt = (
+            f"用户意图: {intent}\n"
+            f"用户输入: {text[:800]}\n\n"
+            f"当前模板节点:\n{node_list}\n\n"
+            f"请建议调整（可选: add/remove/reorder）。\n"
+            f"输出 JSON: {{\"action\":\"none\"}} 或 {{\"action\":\"modify\",\"add\":[],\"remove\":[],\"reorder\":{{}}}}"
+        )
+
+        system = (
+            "你是 Blueprint 优化器。根据用户意图判断模板是否需要调整。\n"
+            "add: 需要增加的链节点 (如缺少 context 则加 context)\n"
+            "remove: 可移除的冗余节点\n"
+            "reorder: {{node_id: new_priority}}\n"
+            "只在确实需要时修改，大多数情况返回 none。\n"
+            "只输出 JSON。"
+        )
+
+        try:
+            response = self.builder._call_llm(system, prompt, temperature=0.3, max_tokens=500)
+            data = self.builder._extract_json(response)
+            if isinstance(data, dict) and data.get("action") == "modify":
+                self._apply_llm_overrides(blueprint, data)
+                logger.info("HYBRID: LLM suggested modifications to template")
+        except Exception as e:
+            logger.warning("HYBRID LLM override failed: %s", e)
+
         return blueprint
+
+    def _apply_llm_overrides(self, dag: BlueprintDAG, mods: dict):
+        """Apply LLM-suggested node modifications to a template DAG."""
+        # Remove nodes
+        for rm_id in mods.get("remove", []):
+            dag.nodes = [n for n in dag.nodes if n.node_id != rm_id]
+            dag.edges = [e for e in dag.edges if e.from_node != rm_id and e.to_node != rm_id]
+
+        # Add nodes
+        for add_spec in mods.get("add", []):
+            if isinstance(add_spec, dict):
+                new_id = add_spec.get("node_id", f"custom_{len(dag.nodes)}")
+                chain = add_spec.get("chain", "intent")
+                priority = add_spec.get("priority", 1)
+                deps = add_spec.get("deps", [])
+                try:
+                    dag.nodes.append(BlueprintNode(new_id, chain, priority=priority))
+                    for dep in deps:
+                        dag.edges.append(BlueprintEdge(dep, new_id, "data"))
+                except ValueError:
+                    pass
+
+        # Reorder priorities
+        for node_id, new_priority in mods.get("reorder", {}).items():
+            for n in dag.nodes:
+                if n.node_id == node_id:
+                    n.priority = new_priority
 
     def _build_llm_driven(self, text: str, intent: str) -> BlueprintDAG:
         """LLM_DRIVEN strategy — full diverge→learn→converge pipeline.

@@ -198,10 +198,10 @@ class LLMDAGBuilder:
 
     def learn(self, hypotheses: List[Hypothesis], intent: str,
               eventlog_query: Optional[str] = None) -> LearningResult:
-        """Gather external information — arXiv, EventLog, reference docs.
+        """Gather external information — arXiv API + local refs.
 
-        Currently: lightweight implementation (arxiv search + local refs).
-        Full implementation: federated search across multiple sources (§十二).
+        Queries arXiv for papers matching the intent + chain keywords.
+        Falls back to local reference map if arxiv is unreachable.
         """
         result = LearningResult()
         if not hypotheses:
@@ -213,7 +213,24 @@ class LLMDAGBuilder:
             for n in h.nodes:
                 chains_mentioned.add(n.get("chain", ""))
 
-        # Check reference matches — known patterns for each intent
+        # 1. arXiv search (non-blocking, quick timeout)
+        try:
+            import urllib.request, urllib.parse
+            query = urllib.parse.quote(f"{intent} agent orchestration")
+            url = f"http://export.arxiv.org/api/query?search_query=all:{query}&max_results=3&sortBy=relevance"
+            req = urllib.request.Request(url, headers={"User-Agent": "DialogMesh/6.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = resp.read().decode()
+            # Parse arxiv XML for titles
+            import re as _re
+            for m in _re.finditer(r'<title>(.*?)</title>', body):
+                title = m.group(1).strip()
+                if title and "Query" not in title:
+                    result.arxiv_matches.append({"title": title, "source": "arxiv"})
+        except Exception:
+            pass  # arxiv unreachable — continue with local refs
+
+        # 2. Local reference map (always available)
         reference_map = {
             "代码分析": ["TEMPLATE: code_analysis (5节点: pcr→intent→context→subgraph→llm_reply)"],
             "通用对话": ["TEMPLATE: general_chat (4节点: pcr→intent→profile→llm_reply)"],
@@ -226,8 +243,9 @@ class LLMDAGBuilder:
                 result.reference_matches = lines
                 break
 
-        logger.info("Learn: %d ref matches, %d chains mentioned (intent=%s)",
-                     len(result.reference_matches), len(chains_mentioned), intent)
+        logger.info("Learn: %d arxiv hits, %d ref matches, %d chains (intent=%s)",
+                     len(result.arxiv_matches), len(result.reference_matches),
+                     len(chains_mentioned), intent)
         return result
 
     # ─── Phase 3: Converge (收束) ───

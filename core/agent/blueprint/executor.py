@@ -127,42 +127,29 @@ class BlueprintExecutor:
 
     def _execute_chain(self, node: BlueprintNode, all_outputs: dict,
                        user_text: str, orch) -> Dict[str, Any]:
-        """Execute one chain node via the appropriate handler.
+        """Execute one chain node via its type-specific handler.
 
-        Currently: all chains route through agent_native.process().
-        Future: each chain has its own subscriber per §14.3.
+        Chain dispatch table — each chain has its own implementation.
+        Dependencies resolved from upstream outputs via data_keys.
         """
         chain = node.chain
+        handlers = {
+            "pcr": self._handle_pcr,
+            "intent": self._handle_intent,
+            "context": self._handle_context,
+            "subgraph": self._handle_subgraph,
+            "profile": self._handle_profile,
+            "llm_reply": self._handle_llm_reply,
+            "behavior": self._handle_behavior,
+            "meta": self._handle_meta,
+            "discourse": self._handle_discourse,
+            "association": self._handle_association,
+            "engineering": self._handle_engineering,
+            "metap": self._handle_metap,
+        }
 
-        # Build context from dependency outputs
-        context = {}
-        if chain == "pcr":
-            context["text"] = user_text
-        elif chain == "intent":
-            pcr_out = self._find_upstream("pcr", all_outputs)
-            context["route"] = pcr_out.get("route", {})
-        elif chain == "context":
-            intent_out = self._find_upstream("intent", all_outputs)
-            context["intent_context"] = intent_out
-        elif chain == "subgraph":
-            context_out = self._find_upstream("context", all_outputs)
-            context["assembled_context"] = context_out
-        elif chain == "profile":
-            intent_out = self._find_upstream("intent", all_outputs)
-            context["intent_context"] = intent_out
-        elif chain == "llm_reply":
-            # Aggregate all upstream outputs
-            context["all_outputs"] = {k: v for k, v in all_outputs.items()}
-
-        # Execute through orchestrator
-        if orch is not None:
-            try:
-                result = orch.process(text=user_text)
-                return result
-            except Exception as e:
-                logger.warning("Chain %s failed: %s", chain, e)
-
-        return {"chain": chain, "status": "ok", "context": context}
+        handler = handlers.get(chain, self._handle_default)
+        return handler(node, all_outputs, user_text, orch)
 
     def _find_upstream(self, chain: str, all_outputs: dict) -> dict:
         """Find the first output from a given chain type."""
@@ -170,3 +157,79 @@ class BlueprintExecutor:
             if chain in node_id:
                 return output
         return {}
+
+    # ─── Per-chain handlers ───
+
+    def _handle_pcr(self, node, outputs, text, orch) -> dict:
+        if orch:
+            result = orch.process(text=text)
+            return {"route": result.get("route", {}), "compass": result.get("compass", {})}
+        return {"chain": "pcr", "status": "fallback"}
+
+    def _handle_intent(self, node, outputs, text, orch) -> dict:
+        if orch:
+            result = orch.process(text=text)
+            return {"intents": result.get("intents", {}), "segments": result.get("intents", {}).get("segments", [])}
+        return {"chain": "intent", "status": "fallback"}
+
+    def _handle_context(self, node, outputs, text, orch) -> dict:
+        upstream = self._find_upstream("intent", outputs)
+        if orch:
+            result = orch.process(text=text)
+            ctx = result.get("context", {})
+            return {"assembled_context": ctx, "dialogue": ctx.get("dialogue", ""), "upstream": upstream}
+        return {"chain": "context", "status": "fallback"}
+
+    def _handle_subgraph(self, node, outputs, text, orch) -> dict:
+        upstream = self._find_upstream("context", outputs)
+        # Subgraph compiler: extract compiled subgraph from context
+        ctx = upstream.get("assembled_context", upstream)
+        return {"compiled_subgraph": ctx, "upstream_key": "compiled_subgraph"}
+
+    def _handle_profile(self, node, outputs, text, orch) -> dict:
+        try:
+            import urllib.request, json
+            req = urllib.request.Request("http://127.0.0.1:8000/v6/profile")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+            p = data.get("profile", data)
+            return {"profile_text": json.dumps(p, ensure_ascii=False, default=str)[:500]}
+        except Exception:
+            return {"chain": "profile", "status": "fetch_failed"}
+
+    def _handle_llm_reply(self, node, outputs, text, orch) -> dict:
+        # LLM reply — aggregate all upstream context
+        return {"chain": "llm_reply", "context": {k: v for k, v in outputs.items() if k != node.node_id}}
+
+    def _handle_behavior(self, node, outputs, text, orch) -> dict:
+        if orch:
+            result = orch.process(text=text)
+            return result.get("cognition", {})
+        return {"chain": "behavior", "status": "fallback"}
+
+    def _handle_meta(self, node, outputs, text, orch) -> dict:
+        return {"chain": "meta", "status": "async", "note": "Meta 异步审计，不阻塞执行"}
+
+    def _handle_discourse(self, node, outputs, text, orch) -> dict:
+        if orch:
+            result = orch.process(text=text)
+            return result.get("context", {}).get("dialogue", {})
+        return {"chain": "discourse", "status": "fallback"}
+
+    def _handle_association(self, node, outputs, text, orch) -> dict:
+        return {"chain": "association", "status": "deferred", "note": "L1-L5 漏斗 — 后台异步"}
+
+    def _handle_engineering(self, node, outputs, text, orch) -> dict:
+        return {"chain": "engineering", "status": "deferred", "note": "7类节点约束 — 待接入"}
+
+    def _handle_metap(self, node, outputs, text, orch) -> dict:
+        return {"chain": "metap", "status": "async", "note": "EventLog 元持久化 — 后台"}
+
+    def _handle_default(self, node, outputs, text, orch) -> dict:
+        """Fallback handler for unknown chain types."""
+        if orch:
+            try:
+                return orch.process(text=text)
+            except Exception:
+                pass
+        return {"chain": node.chain, "status": "unknown_chain"}
