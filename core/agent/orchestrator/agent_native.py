@@ -22,7 +22,9 @@ class AgentOrchestrator:
                  discourse_tree=None, cognitive_bridge=None, event_log=None,
                  context_assembly=None, cognition_hub=None,
                  feedback_bridge=None, compass_selector=None,
-                 plan_gate=None, execution_pipeline=None):
+                 plan_gate=None, execution_pipeline=None,
+                 file_sandbox=None, permission_guard=None,
+                 semantic_diff=None, event_bus=None, reactor=None):
         self.pcr = pcr_router; self.intent = intent_splitter
         self.l4 = l4_engine; self.behavior = behavior_collab
         self.engineering = engineering_chain; self.llm = llm
@@ -35,9 +37,22 @@ class AgentOrchestrator:
         self._compass = compass_selector or self._try_load_compass()
         self._plan_gate = plan_gate or self._try_load_gate()
         self._execution_pipeline = execution_pipeline or self._try_load_execution()
+        self._file_sandbox = file_sandbox
+        self._permission_guard = permission_guard
+        self._semantic_diff = semantic_diff
+        self._event_bus = event_bus
+        self._reactor = reactor
         self._tick = 0
 
     def _publish(self, kind: str, payload: dict):
+        # EventBus v2 (NATS-patterned) — primary
+        if self._event_bus:
+            try:
+                import asyncio as _a
+                _a.ensure_future(self._event_bus.publish(kind, payload))
+            except Exception:
+                pass
+        # EventLog fallback
         if self._event_log:
             try:
                 self._tick += 1

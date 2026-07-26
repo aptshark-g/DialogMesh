@@ -62,6 +62,15 @@ def bootstrap(pcr_router=None, intent_pipeline=None, l4_engine=None,
     # ═══ Cognitive Bridge (v4) ═══
     cognitive_bridge = _load_cognitive_bridge()
 
+    # ═══ Execution & Safety ═══
+    exec_pipeline = _load_execution_pipeline()
+    file_sandbox = _load_file_sandbox()
+    perm_guard = _load_permission_guard()
+    sem_diff = _load_semantic_diff()
+    evt_bus = _load_event_bus()
+    reactor = _load_reactor()
+    plan_gate = _load_plan_gate()
+
     # ═══ Wire everything ═══
     orch = AgentOrchestrator(
         pcr_router=pcr_router,
@@ -77,6 +86,13 @@ def bootstrap(pcr_router=None, intent_pipeline=None, l4_engine=None,
         cognition_hub=cognition_hub,
         feedback_bridge=feedback_bridge,
         compass_selector=compass,
+        plan_gate=plan_gate,
+        execution_pipeline=exec_pipeline,
+        file_sandbox=file_sandbox,
+        permission_guard=perm_guard,
+        semantic_diff=sem_diff,
+        event_bus=evt_bus,
+        reactor=reactor,
     )
 
     logger.info("DialogMesh v6 bootstrap complete")
@@ -157,9 +173,74 @@ def _log_module_status(orch):
     if orch._event_log: statuses.append("EventLog")
     if orch._cognition_hub: statuses.append("Cognition")
     if orch._feedback_bridge: statuses.append("Feedback")
+    if orch._execution_pipeline: statuses.append("Execution")
+    if orch._file_sandbox: statuses.append("Sandbox")
+    if orch._permission_guard: statuses.append("Permission")
+    if orch._event_bus: statuses.append("EventBus")
+    if orch._reactor: statuses.append("ReActor")
     logger.info("Loaded: %s", ", ".join(statuses))
     if not orch.llm:
         logger.info("(LLM not connected — pipeline runs in structural mode)")
+
+
+def _load_execution_pipeline():
+    try:
+        from core.agent.execution.tree_manager import AgentTreeManager
+        from core.agent.execution.engine import ExecutionEngine
+        from core.agent.execution.pipeline import ExecutionPipeline
+        return ExecutionPipeline(tree_manager=AgentTreeManager(),
+                                engine=ExecutionEngine())
+    except Exception as e:
+        logger.debug("ExecutionPipeline: %s", e)
+        return None
+
+def _load_file_sandbox():
+    try:
+        from core.agent.execution.sandbox import FileSandbox
+        return FileSandbox(os.getcwd())
+    except Exception as e:
+        logger.debug("FileSandbox: %s", e)
+        return None
+
+def _load_permission_guard():
+    try:
+        from core.agent.execution.permissions import PermissionEnforcer
+        return PermissionEnforcer()
+    except Exception as e:
+        logger.debug("PermissionGuard: %s", e)
+        return None
+
+def _load_semantic_diff():
+    try:
+        from core.agent.execution.semantic_diff import SemanticDiffer
+        return SemanticDiffer()
+    except Exception as e:
+        logger.debug("SemanticDiff: %s", e)
+        return None
+
+def _load_event_bus():
+    try:
+        from core.agent.event.event_bus import EventBus
+        return EventBus()
+    except Exception as e:
+        logger.debug("EventBus: %s", e)
+        return None
+
+def _load_reactor():
+    try:
+        from core.agent.execution.closure import ReActor
+        return ReActor()
+    except Exception as e:
+        logger.debug("ReActor: %s", e)
+        return None
+
+def _load_plan_gate():
+    try:
+        from core.agent.planning.checkpoint import PlanGate
+        return PlanGate()
+    except Exception as e:
+        logger.debug("PlanGate: %s", e)
+        return None
 
 
 # ═══ Quick test ═══
