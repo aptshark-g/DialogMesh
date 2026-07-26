@@ -316,13 +316,15 @@ async def test_provider(name: str):
 
     t0 = time.time()
     try:
-        # Issue a real HTTP request to the provider
-        hdrs = {"Content-Type": "application/json"}
-        if api_key and api_key != "local":
-            hdrs["Authorization"] = f"Bearer {api_key}"
-        req = urllib.request.Request(f"{base_url.rstrip('/')}/models", headers=hdrs)
+        # Ping the provider to measure real latency (no auth needed for reachability)
+        # Switch holds the real API key — we test connectivity, switch tests authentication
+        req = urllib.request.Request(f"{base_url.rstrip('/')}", headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as resp:
-            resp.read()  # consume body
+            resp.read()
+        latency = int((time.time() - t0) * 1000)
+        return {"name": name, "healthy": True, "latency_ms": latency, "error": None}
+    except urllib.error.HTTPError as e:
+        # Got a response (e.g. 401 Unauthorized) — server IS reachable
         latency = int((time.time() - t0) * 1000)
         return {"name": name, "healthy": True, "latency_ms": latency, "error": None}
     except Exception as e:

@@ -141,9 +141,14 @@ export function useV6Gateway(autoRefresh: boolean = true, intervalMs: number = 1
     if (!bg) setData(prev => ({ ...prev, providersLoading: true, error: null }));
     try {
       const gatewayProviders = await getGatewayProviders();
-      setData(prev => ({ ...prev, gatewayProviders, providersLoading: bg ? prev.providersLoading : false, error: null }));
+      setData(prev => {
+        // Skip update if data unchanged (prevents full re-render jitter on auto-refresh)
+        if (JSON.stringify(prev.gatewayProviders) === JSON.stringify(gatewayProviders)) {
+          return { ...prev, providersLoading: bg ? prev.providersLoading : false };
+        }
+        return { ...prev, gatewayProviders, providersLoading: bg ? prev.providersLoading : false, error: null };
+      });
     } catch {
-      // Keep previous data on failure; don't overwrite real config with defaults
       setData(prev => ({
         ...prev,
         providersLoading: bg ? prev.providersLoading : false,
