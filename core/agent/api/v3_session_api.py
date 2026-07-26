@@ -1,15 +1,42 @@
 """v3 Session API — bridges old frontend to v6 agent_native backend."""
 
-import uuid, time, logging, traceback
+import uuid, time, logging, traceback, json, os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v3/session")
 
-# Per-session state
-_sessions: Dict[str, Dict[str, Any]] = {}
+# ═══ Persistence ═══
+_SESSIONS_FILE = Path("data/v3_sessions.json")
+_SESSIONS_LOCK = __import__("threading").Lock()
+
+def _load_sessions() -> Dict[str, Dict[str, Any]]:
+    """Load sessions from JSON file."""
+    try:
+        if _SESSIONS_FILE.exists():
+            with open(_SESSIONS_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning("Failed to load sessions: %s", e)
+    return {}
+
+def _save_sessions():
+    """Save sessions to JSON file (thread-safe)."""
+    with _SESSIONS_LOCK:
+        try:
+            _SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = str(_SESSIONS_FILE) + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(_sessions, f, ensure_ascii=False, default=str)
+            os.replace(tmp, str(_SESSIONS_FILE))
+        except Exception as e:
+            logger.warning("Failed to save sessions: %s", e)
+
+# Load sessions at module import time
+_sessions: Dict[str, Dict[str, Any]] = _load_sessions()
 
 
 # ═══ Models ═══
@@ -60,6 +87,7 @@ class ClarifyResponse(BaseModel):
 async def create_session():
     sid = str(uuid.uuid4())[:12]
     _sessions[sid] = {"created_at": time.time(), "messages": []}
+    _save_sessions()
     return CreateSessionResponse(
         session_id=sid,
         created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -78,6 +106,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
     session = _sessions[session_id]
     session["messages"].append({"role": "user", "content": req.content})
+    _save_sessions()
 
     t0 = time.time()
     content = ""
@@ -169,6 +198,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
     latency = int((time.time() - t0) * 1000)
     msg_id = str(uuid.uuid4())[:8]
     session["messages"].append({"role": "assistant", "content": content})
+    _save_sessions()
 
     return SendMessageResponse(
         message_id=msg_id,
