@@ -13,9 +13,10 @@ GATEWAY_EXE = os.path.join(PROJECT_ROOT, "gateway", "gateway.exe")
 def start_gateway():
     import socket
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         s.connect(("127.0.0.1", 8080)); s.close()
-        print("[Gateway] Already running on :8080"); return None
+        print("[Gateway] Already running on :8080 (reusing)"); return None
     except Exception:
         s.close()
     if not os.path.exists(GATEWAY_EXE):
@@ -23,9 +24,18 @@ def start_gateway():
     print("[Gateway] Starting...")
     p = subprocess.Popen([GATEWAY_EXE], cwd=os.path.dirname(GATEWAY_EXE),
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    time.sleep(2)
-    outs, errs = p.communicate(timeout=1) if p.poll() is None else ("", "")
-    return p
+    time.sleep(2); return p
+
+
+def _check_port(port: int) -> bool:
+    """Check if port is already in use."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("127.0.0.1", port)); s.close(); return False
+    except OSError:
+        return True
 
 
 if __name__ == "__main__":
@@ -33,6 +43,13 @@ if __name__ == "__main__":
     gw = None if no_gw else start_gateway()
     if no_gw:
         print("[Gateway] Skipped (--no-gateway)")
+
+    # Check if already running — reuse instead of error
+    if _check_port(8000):
+        print("[API] Port 8000 in use — server may already be running")
+        print("[API] Stop existing process first or use different port")
+        if gw: gw.terminate(); gw.wait()
+        sys.exit(0)
 
     try:
         from core.agent.api.v6_app import app
