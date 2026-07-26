@@ -191,6 +191,18 @@ async def get_subgraph_cache():
 
 
 # ═══════════════════════════════════════════════════════
+# DeepChain — Belief + Subgraph
+# ═══════════════════════════════════════════════════════
+@router.get("/belief")
+async def get_belief(session_id: str = "default"):
+    return {"total_hypotheses": 0, "locked": 0, "avg_evidence": 0, "by_hypothesis": {}}
+
+@router.get("/subgraph/{perspective}")
+async def get_subgraph_by_perspective(perspective: str):
+    return {"perspective": perspective, "domains": {}, "entries": [], "total_tokens": 0, "budget": 0}
+
+
+# ═══════════════════════════════════════════════════════
 # Persistence — V6PersistenceResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/persistence")
@@ -240,7 +252,7 @@ async def get_versions():
 
 @router.get("/versions/profile")
 async def get_versions_profile():
-    return {"versions": [], "current": "6.0.0"}
+    return {"commits": [], "target": None, "current": "6.0.0"}
 
 
 # ═══════════════════════════════════════════════════════
@@ -274,7 +286,7 @@ async def get_providers():
 
 @router.get("/providers/tokens")
 async def get_providers_tokens():
-    return {"current": {"turns": 0, "est_tokens": 0}}
+    return {"current": {"turns": 0, "est_tokens": 0}, "all_sessions": {"est_tokens": 0, "turns": 0}}
 
 
 # ═══════════════════════════════════════════════════════
@@ -297,7 +309,8 @@ async def get_meta_stats():
 
 @router.get("/gateway/usage")
 async def get_gateway_usage():
-    return {"all_sessions": {"by_provider": {}}, "current_session": {}} 
+    return {"all_sessions": {"by_provider": {}, "total_tokens": 0},
+            "current_session": {"prompt_tokens": 0, "completion_tokens": 0}} 
 
 @router.get("/meta/queue")
 async def get_meta_queue():
@@ -329,6 +342,7 @@ async def get_gateway_providers():
         from core.agent.gateway.gateway_v2 import GatewayV2
         result = GatewayV2().list_providers()
         if isinstance(result, list):
+            result = [dict(p, models=p.get("models") or []) for p in result]
             return {"providers": result, "active_provider": "", "active_model": ""}
         return result
     except Exception:
@@ -336,7 +350,7 @@ async def get_gateway_providers():
 
 @router.get("/gateway/config")
 async def get_gateway_config():
-    return {"config": {}, "stats": {}}
+    return {"config": {"failover_chain": []}, "stats": {}}
 
 @router.get("/gateway/usage")
 async def get_gateway_usage():
