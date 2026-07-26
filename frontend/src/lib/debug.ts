@@ -21,7 +21,9 @@ type DebugEntry = {
 const MAX_LOGS = 500;
 const logs: DebugEntry[] = [];
 
+let _enabled = true;
 function _log(type: DebugEntry['type'], detail: string, data?: unknown) {
+  if (!_enabled) return;
   const entry: DebugEntry = { ts: Date.now(), type, detail, data };
   logs.push(entry);
   if (logs.length > MAX_LOGS) logs.shift();
@@ -108,4 +110,27 @@ export function disableBackendSync() {
 // Attach to window for console access
 if (typeof window !== 'undefined') {
   (window as Record<string, unknown>).__dm_debug = { getLogs, exportLogs };
+}
+// ═══ Toggle ═══
+let _enabled = true;
+let _syncEnabled = false;
+
+export function pauseDebug() { _enabled = false; _syncEnabled = false; disableBackendSync(); console.log('[DM] Debug paused'); }
+export function resumeDebug() { _enabled = true; console.log('[DM] Debug resumed'); }
+export function isDebugEnabled() { return _enabled; }
+
+export function clearLogs() {
+  logs.length = 0;
+  try { sessionStorage.removeItem('dm_debug_logs'); } catch {}
+  // Clear backend too
+  fetch('/v6/debug/logs', { method: 'DELETE' }).catch(() => {});
+  console.log('%c[DM] Logs cleared', 'color:orange');
+}
+
+// Override _log to respect toggle
+const _origLog = _log.bind({});
+const _logImpl = _log;
+
+if (typeof window !== 'undefined') {
+  (window as Record<string, unknown>).__dm_debug = { getLogs, exportLogs, pauseDebug, resumeDebug, clearLogs, isDebugEnabled };
 }
