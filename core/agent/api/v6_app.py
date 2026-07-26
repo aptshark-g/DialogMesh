@@ -16,8 +16,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
 # ═══ v6 Chat endpoints ═══
-from core.agent.api.chat_api import router as chat_router
-from core.agent.api.ws_bridge import ws_handler, set_orchestrator
+from core.agent.api.chat_api import router as chat_router, set_orchestrator
+from core.agent.api.ws_bridge import ws_handler
 app.include_router(chat_router)
 
 # ═══ Legacy API routes (gracefully) ═══
