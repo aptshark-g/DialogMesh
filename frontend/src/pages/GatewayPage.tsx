@@ -60,6 +60,200 @@ import { Modal } from '../components/ui/Modal';
 import { Toast } from '../components/ui/Toast';
 import { useUIStore } from '../stores/uiStore';
 
+
+  // ─── Provider Card (memoized — only re-renders when provider data changes) ───
+const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider }:
+    { provider: V6GatewayProvider; isExpanded: boolean; isActive: boolean; testResult: any; isTesting: boolean; isFetchingModels: boolean; form: {apiKey:string;baseUrl:string}; activeModel: string|undefined; onToggle: (n:string)=>void; onTest: (n:string)=>void; onFetchModels: (n:string)=>void; onSaveConfig: (n:string)=>void; onRemove: (n:string)=>void; saveLoading: boolean; removingProvider: string|null; onSetActive: (p:string,m:string)=>void; onUpdateForm: (p:string,f:string,v:string)=>void }) => (
+      <div className={cn(
+        'bg-surface-card rounded-xl border transition-colors',
+        isActive ? 'border-primary ring-1 ring-primary/20' : 'border-gray-200'
+      )}>
+        <button
+          onClick={() => onToggle(provider.name)}
+          className="w-full flex items-center justify-between p-4 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              'h-8 w-8 rounded-lg flex items-center justify-center',
+              provider.configured ? 'bg-primary/10' : 'bg-gray-100',
+              isActive && 'ring-2 ring-primary/30'
+            )}>
+              {provider.configured ? (
+                <CheckCircle className="h-4 w-4 text-primary" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-text-muted" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-text-primary">{provider.display_name}</span>
+                {isActive && (
+                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">当前</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={cn(
+                  'text-xs',
+                  provider.healthy === true ? 'text-status-success' :
+                  provider.healthy === false ? 'text-status-error' : 'text-text-muted'
+                )}>
+                  {provider.healthy === true ? '● 健康' :
+                   provider.healthy === false ? '● 异常' : '● 未配置'}
+                </span>
+                <span className="text-xs text-text-muted">{provider.base_url}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isActive && activeModel && (
+              <span className="text-xs text-text-muted font-mono">{gatewayProviders.active_model}</span>
+            )}
+            {isExpanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
+          </div>
+        </button>
+
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 space-y-4">
+                {/* Config Form */}
+                <div className="rounded-lg border border-gray-100 p-3 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-text-muted">
+                    <KeyRound className="h-3.5 w-3.5" />
+                    配置
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-text-muted">API Key</label>
+                      <input
+                        type="password"
+                        value={form.apiKey}
+                        onChange={(e) => onUpdateForm(provider.name, 'apiKey', e.target.value)}
+                        placeholder={provider.api_key ? '●●●●●●●● (已配置)' : '输入 API Key'}
+                        className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted">Base URL</label>
+                      <input
+                        type="text"
+                        value={form.baseUrl}
+                        onChange={(e) => onUpdateForm(provider.name, 'baseUrl', e.target.value)}
+                        placeholder="https://api.example.com/v1"
+                        className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onSaveConfig(provider.name)}
+                      disabled={saveLoading}
+                      className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      {saveLoading ? '保存中...' : '保存'}
+                    </button>
+                    <button
+                      onClick={() => onTest(provider.name)}
+                      disabled={isTesting}
+                      className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                    >
+                      {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                      {isTesting ? '测试中...' : '测试连接'}
+                    </button>
+                    <button
+                      onClick={() => onFetchModels(provider.name)}
+                      disabled={isFetchingModels}
+                      className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                    >
+                      {isFetchingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
+                      {isFetchingModels ? '拉取中...' : '拉取模型'}
+                    </button>
+                    <button
+                      onClick={() => onRemove(provider.name)}
+                      disabled={removingProvider === provider.name}
+                      className="ml-auto flex items-center gap-1 rounded-lg border border-status-error/30 px-3 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"
+                    >
+                      {removingProvider === provider.name ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      删除
+                    </button>
+                  </div>
+                  {testResult && (
+                    <div className={cn(
+                      'rounded-lg px-3 py-2 text-xs',
+                      testResult.healthy ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'
+                    )}>
+                      {testResult.healthy ? (
+                        <span>✅ 连接成功 · {testResult.latency}ms</span>
+                      ) : (
+                        <span>❌ 连接失败{testResult.error ? `: ${testResult.error}` : ''}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Models */}
+                {provider.models && provider.models.length > 0 && (
+                  <div className="rounded-lg border border-gray-100 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-text-muted mb-2">
+                      <Layers className="h-3.5 w-3.5" />
+                      可用模型 ({provider.models.length})
+                    </div>
+                    <div className="space-y-1">
+                      {provider.models.map((model: V6GatewayModel) => {
+                        const isModelActive = isActive && activeModel === model.id;
+                        return (
+                          <div
+                            key={model.id}
+                            className={cn(
+                              'flex items-center justify-between rounded-lg px-3 py-2 transition-colors',
+                              isModelActive ? 'bg-primary/5 border border-primary/20' : 'hover:bg-gray-50'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-text-primary font-mono">{model.id}</span>
+                              <span className="text-xs text-text-muted">{model.display}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-text-muted">{model.context.toLocaleString()} ctx</span>
+                              <span className="text-xs text-text-muted">${model.cost_in}/M</span>
+                              <button
+                                onClick={() => onSetActive(provider.name, model.id)}
+                                disabled={saveLoading}
+                                className={cn(
+                                  'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50',
+                                  isModelActive
+                                    ? 'bg-primary text-white'
+                                    : 'bg-surface-sidebar border border-subtle text-text-secondary hover:text-primary hover:border-primary/30'
+                                )}
+                              >
+                                {isModelActive ? <CheckCircle className="h-3 w-3" /> : <ArrowRight className="h-3 w-3" />}
+                                {isModelActive ? '当前' : '设为当前'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    ));
+
 export function GatewayPage() {
   const {
     dmStatus, swStatus, statusLoading, servicesDown,
@@ -433,198 +627,6 @@ export function GatewayPage() {
     );
   };
 
-  // ─── Provider Card (memoized — only re-renders when provider data changes) ───
-  const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider }:
-    { provider: V6GatewayProvider; isExpanded: boolean; isActive: boolean; testResult: any; isTesting: boolean; isFetchingModels: boolean; form: {apiKey:string;baseUrl:string}; activeModel: string|undefined; onToggle: (n:string)=>void; onTest: (n:string)=>void; onFetchModels: (n:string)=>void; onSaveConfig: (n:string)=>void; onRemove: (n:string)=>void; saveLoading: boolean; removingProvider: string|null; onSetActive: (p:string,m:string)=>void; onUpdateForm: (p:string,f:string,v:string)=>void }) => (
-      <div className={cn(
-        'bg-surface-card rounded-xl border transition-colors',
-        isActive ? 'border-primary ring-1 ring-primary/20' : 'border-gray-200'
-      )}>
-        <button
-          onClick={() => onToggle(provider.name)}
-          className="w-full flex items-center justify-between p-4 text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'h-8 w-8 rounded-lg flex items-center justify-center',
-              provider.configured ? 'bg-primary/10' : 'bg-gray-100',
-              isActive && 'ring-2 ring-primary/30'
-            )}>
-              {provider.configured ? (
-                <CheckCircle className="h-4 w-4 text-primary" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-text-muted" />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-text-primary">{provider.display_name}</span>
-                {isActive && (
-                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">当前</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className={cn(
-                  'text-xs',
-                  provider.healthy === true ? 'text-status-success' :
-                  provider.healthy === false ? 'text-status-error' : 'text-text-muted'
-                )}>
-                  {provider.healthy === true ? '● 健康' :
-                   provider.healthy === false ? '● 异常' : '● 未配置'}
-                </span>
-                <span className="text-xs text-text-muted">{provider.base_url}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {isActive && activeModel && (
-              <span className="text-xs text-text-muted font-mono">{gatewayProviders.active_model}</span>
-            )}
-            {isExpanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
-          </div>
-        </button>
-
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className="px-4 pb-4 space-y-4">
-                {/* Config Form */}
-                <div className="rounded-lg border border-gray-100 p-3 space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-text-muted">
-                    <KeyRound className="h-3.5 w-3.5" />
-                    配置
-                  </div>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-xs text-text-muted">API Key</label>
-                      <input
-                        type="password"
-                        value={form.apiKey}
-                        onChange={(e) => onUpdateForm(provider.name, 'apiKey', e.target.value)}
-                        placeholder={provider.api_key ? '●●●●●●●● (已配置)' : '输入 API Key'}
-                        className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-text-muted">Base URL</label>
-                      <input
-                        type="text"
-                        value={form.baseUrl}
-                        onChange={(e) => onUpdateForm(provider.name, 'baseUrl', e.target.value)}
-                        placeholder="https://api.example.com/v1"
-                        className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onSaveConfig(provider.name)}
-                      disabled={saveLoading}
-                      className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                      {saveLoading ? '保存中...' : '保存'}
-                    </button>
-                    <button
-                      onClick={() => onTest(provider.name)}
-                      disabled={isTesting}
-                      className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
-                    >
-                      {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                      {isTesting ? '测试中...' : '测试连接'}
-                    </button>
-                    <button
-                      onClick={() => onFetchModels(provider.name)}
-                      disabled={isFetchingModels}
-                      className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
-                    >
-                      {isFetchingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
-                      {isFetchingModels ? '拉取中...' : '拉取模型'}
-                    </button>
-                    <button
-                      onClick={() => onRemove(provider.name)}
-                      disabled={removingProvider === provider.name}
-                      className="ml-auto flex items-center gap-1 rounded-lg border border-status-error/30 px-3 py-1.5 text-xs font-medium text-status-error hover:bg-status-error/10 transition-colors disabled:opacity-50"
-                    >
-                      {removingProvider === provider.name ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      删除
-                    </button>
-                  </div>
-                  {testResult && (
-                    <div className={cn(
-                      'rounded-lg px-3 py-2 text-xs',
-                      testResult.healthy ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'
-                    )}>
-                      {testResult.healthy ? (
-                        <span>✅ 连接成功 · {testResult.latency}ms</span>
-                      ) : (
-                        <span>❌ 连接失败{testResult.error ? `: ${testResult.error}` : ''}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Models */}
-                {provider.models && provider.models.length > 0 && (
-                  <div className="rounded-lg border border-gray-100 p-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-text-muted mb-2">
-                      <Layers className="h-3.5 w-3.5" />
-                      可用模型 ({provider.models.length})
-                    </div>
-                    <div className="space-y-1">
-                      {provider.models.map((model: V6GatewayModel) => {
-                        const isModelActive = isActive && activeModel === model.id;
-                        return (
-                          <div
-                            key={model.id}
-                            className={cn(
-                              'flex items-center justify-between rounded-lg px-3 py-2 transition-colors',
-                              isModelActive ? 'bg-primary/5 border border-primary/20' : 'hover:bg-gray-50'
-                            )}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-text-primary font-mono">{model.id}</span>
-                              <span className="text-xs text-text-muted">{model.display}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-text-muted">{model.context.toLocaleString()} ctx</span>
-                              <span className="text-xs text-text-muted">${model.cost_in}/M</span>
-                              <button
-                                onClick={() => onSetActive(provider.name, model.id)}
-                                disabled={saveLoading}
-                                className={cn(
-                                  'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50',
-                                  isModelActive
-                                    ? 'bg-primary text-white'
-                                    : 'bg-surface-sidebar border border-subtle text-text-secondary hover:text-primary hover:border-primary/30'
-                                )}
-                              >
-                                {isModelActive ? <CheckCircle className="h-3 w-3" /> : <ArrowRight className="h-3 w-3" />}
-                                {isModelActive ? '当前' : '设为当前'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    ));
 
   return (
     <div className="min-h-screen bg-surface-main">
