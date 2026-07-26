@@ -74,6 +74,10 @@ _try_include("core.agent.api.api_subgraph","router")  # /v6/subgraph
 async def legacy_health():
     return {"status": "ok", "version": "6.0.0"}
 
+@app.post("/v3/session")
+async def v3_session():
+    return {"session_id": "demo", "status": "active"}
+
 @app.websocket("/v6/ws")
 async def ws_endpoint(ws):
     await ws_handler(ws)

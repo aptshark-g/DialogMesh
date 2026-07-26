@@ -119,13 +119,59 @@ async def get_metrics():
 async def get_profile():
     return {"profile": {
         "oceAN_dims": {"O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
-        "raw_oceAN": {"openness": 0.79, "conscientiousness": 0.78, 
+        "raw_oceAN": {"openness": 0.79, "conscientiousness": 0.78,
                        "extraversion": 0.39, "agreeableness": 0.41, "neuroticism": 0.75},
         "bfi_10": {"C": 4.5},
         "inertia": {"by_weight": {"O": 0.05, "C": 0.03, "N": 0.08}},
         "applied": {},
         "corrections": []
     }}
+
+# ═══ Additional stubs for frontend compatibility ═══
+
+@trace_router.get("/rules")
+async def get_rules():
+    return {"rules": [], "count": 0}
+
+@trace_router.get("/behavior/patterns")
+async def get_behavior_patterns():
+    return {"patterns": [], "count": 0}
+
+@trace_router.get("/inertia")
+async def get_inertia():
+    return {"by_weight": {}, "total": 0}
+
+@trace_router.get("/degradation")
+async def get_degradation():
+    return {"level": "none", "score": 0}
+
+@trace_router.get("/ttl")
+async def get_ttl():
+    return {"ttl_stats": {"by_state": {}}, "total": 0}
+
+@trace_router.get("/recursive-map")
+async def get_recursive_map():
+    return {"map": {"by_level": {}}, "count": 0}
+
+@trace_router.get("/engineering/modules")
+async def get_engineering_modules():
+    return {"modules": [], "count": 0}
+
+@trace_router.get("/router/modes")
+async def get_router_modes():
+    return {"modes": ["hybrid", "rule", "llm"], "active": "hybrid"}
+
+@trace_router.get("/providers")
+async def get_providers_list():
+    return {"providers": [], "count": 0}
+
+@trace_router.get("/providers/tokens")
+async def get_providers_tokens():
+    return {"tokens": {}, "count": 0}
+
+@trace_router.get("/versions/profile")
+async def get_versions_profile():
+    return {"versions": [], "current": "6.0.0"}
 
 
 # ═══ MetaCenter ═══

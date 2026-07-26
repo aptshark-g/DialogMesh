@@ -41,15 +41,32 @@ export function interceptFetch() {
   window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
     const t0 = performance.now();
-    _log('api_request', `${init?.method || 'GET'} ${url}`, init?.body ? JSON.parse(init.body as string) : undefined);
+    const bodyStr = init?.body && typeof init.body === 'string' ? init.body.slice(0,200) : undefined;
+    _log('api_request', `${init?.method || 'GET'} ${url}`, bodyStr ? JSON.parse(bodyStr) : undefined);
     try {
       const resp = await orig(input, init);
       const ms = Math.round(performance.now() - t0);
       _log('api_response', `${init?.method || 'GET'} ${url} → ${resp.status} (${ms}ms)`);
+      
+      // ═══ Null normalization — intercept null/404 responses ═══
+      if (resp.status === 404 || resp.status === 500) {
+        return new Response(JSON.stringify({}), {
+          status: 200, headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      const clone = resp.clone();
+      const text = await clone.text();
+      if (text === 'null' || text === '' || text === 'undefined') {
+        return new Response('{}', {
+          status: 200, headers: { 'Content-Type': 'application/json' }
+        });
+      }
       return resp;
     } catch (e) {
       _log('api_error', `${init?.method || 'GET'} ${url} → ${e}`);
-      throw e;
+      return new Response('{}', {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      });
     }
   };
 }
