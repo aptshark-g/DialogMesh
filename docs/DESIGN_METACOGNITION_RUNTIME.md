@@ -446,7 +446,107 @@ LLM自触发暂停            ❌      ❌      ❌     ❌     ❌     ✅
 思考树搜索 (BFS/DFS)     ❌      ❌      ✅     ✅     ❌     ❌
 MCTS 模拟回传            ❌      ❌      ❌     ✅     ❌     ❌
 
-独有优势: 小环修正 + 大环审计 + 死循环剥离 + 多树因果 + LLM自触发暂停
+独有优势: 小环修正 + 大环审计 + 死循环剥离 + 多树因果 + LLM自触发暂停 + 异步搜索
+```
+
+---
+
+## 十一、异步思考搜索 (MetaTree + AssociationTree)
+
+### 11.1 核心理念
+
+```
+ToT/LATS 的问题: 同步搜索 → 阻塞执行 → 用户感知延迟
+
+我们的优势: 冷热分离
+  → 执行树 (热) 不等待 → 先验切分即可运行
+  → MetaTree + AssociationTree (冷) → 异步探索 → 结果注入
+```
+
+### 11.2 流程
+
+```
+执行树: Agent N 正在执行 Step 3
+  │ 提取元信息:
+  │   { task:"修复SQL注入", approach:"参数化查询", confidence:0.65,
+  │     alternatives:[], behavior_hints:["user_likes_ORM"] }
+  │
+  ├─→ 发布事件: NODE_ACTIVE ⊥ EventBus
+  │
+  ▼
+MetaTree (异步订阅):
+  接收元信息 → 异步启动思考搜索:
+  
+  1. BFS 扩展:
+     approach "参数化查询" → 扩展相关方案
+     → LLM: "还有什么方式修复SQL注入？"
+     → 产出: [参数化查询, 输入转义, ORM, 存储过程, WAF规则]
+  
+  2. DFS 深挖:
+     每个方案 → 评估优缺点
+     → AssociationTree: 查历史 → "用户上次选ORM成功"
+     → ConstraintTree: 查约束 → "存储过程违反架构规范"
+  
+  3. MCTS 模拟:
+     高价值方案 (ORM, 参数化查询) → 模拟执行
+     → 元认知评估: 成功率/影响范围/用户偏好/约束冲突
+     → 回传 置信度 + 风险 + 建议
+
+AssociationTree:
+  查跨树映射 → 用户历史上 N 次 SQL 相关修改的方式
+  查 RelationSubstrate → 同类型任务的已知最优解
+
+产出 (5 tick 内完成, 异步):
+  {
+    node_id: "Agent_N_step3",
+    alternatives: [
+      { approach:"ORM", confidence:0.92, risk:"medium", effort:"重构1文件" },
+      { approach:"参数化查询", confidence:0.65, risk:"low", effort:"修改2行" },
+      { approach:"输入转义", confidence:0.75, risk:"high", effort:"修改5行" },
+    ],
+    recommendation: "ORM",
+    reasoning: "历史偏好, 高置信度, 但需用户确认重构范围",
+  }
+
+→ FeedbackBridge Layer 2: belief_update
+→ 执行树下次 Tick: 读取 alternatives → User-In-Loop 展示备选方案
+```
+
+### 11.3 消费时机
+
+```
+异步搜索完成后 → 执行树如何消费？
+
+时机 1: 当前节点仍在执行中 (用户审批/自触发暂停)
+  → alternatives 注入当前节点元信息
+  → 前端展示备选方案: "LLM推荐 ORM (92%), 你选的参数化查询 (65%)"
+  → 用户可实时切换
+
+时机 2: 当前节点已完成
+  → alternatives 归档到 MemoryNode
+  → 下次相似任务: Fine FederationIndex → 直接命中历史最优解
+
+时机 3: 跨任务复用
+  → FederationIndex + L5 Memory → 广泛存储
+  → BlueprintEngine: 匹配技能时参考历史最优方案
+```
+
+### 11.4 与现有架构关系
+
+```
+MetaTree           — 异步订阅 + 搜索执行 + 产出推荐
+AssociationTree    — 跨树查询 (历史, 偏好, 约束)
+FeedbackBridge     — 推荐 → 执行树 (Layer 2 belief_update)
+EventBus           — 事件发布 (NODE_ACTIVE / SEARCH_COMPLETE)
+ParameterRegistry  — 异步搜索开关: meta.async_search_enabled
+```
+
+### 11.5 更新对标表
+
+```
+异步思考搜索 (Async ToT):     MetaTree+AssociationTree 异步
+  → 对标 ToT/LATS 的同步搜索
+  → 优势: 不阻塞, 结果随时注入, 跨任务复用
 ```
 
 ---
