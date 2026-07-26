@@ -3,9 +3,10 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { ChatPage } from './pages/ChatPage.tsx';
 import { NotFoundPage } from './pages/NotFoundPage.tsx';
-import { initDebug } from './lib/debug';
+import { initDebug, enableBackendSync } from './lib/debug';
 
 initDebug();
+enableBackendSync();
 import { FloatingActionButton } from './components/FloatingActionButton.tsx';
 import { ContentScriptBridge } from './components/ContentScriptBridge.tsx';
 

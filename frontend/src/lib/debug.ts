@@ -84,6 +84,27 @@ export function exportLogs(): string {
   return JSON.stringify(logs, null, 2);
 }
 
+
+// ═══ Auto-sync to backend ═══
+let _syncTimer: ReturnType<typeof setInterval> | null = null;
+export function enableBackendSync(intervalMs: number = 5000) {
+  if (_syncTimer) return;
+  _syncTimer = setInterval(async () => {
+    if (logs.length === 0) return;
+    const toSend = logs.splice(0, 50);  // Take and clear
+    try {
+      await fetch('/v6/debug/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: toSend, url: window.location.href }),
+      });
+    } catch {}
+  }, intervalMs);
+}
+
+export function disableBackendSync() {
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+}
 // Attach to window for console access
 if (typeof window !== 'undefined') {
   (window as Record<string, unknown>).__dm_debug = { getLogs, exportLogs };
