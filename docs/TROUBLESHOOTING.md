@@ -256,3 +256,115 @@ grep "export function getGateway" src/api/v6.ts
 4. 读 TS 源码 > 猜 — grep src/types/api.ts 永远比凭直觉快
 5. 改 stub 后必须重启后端 — curl 验证 > 凭 git commit 假设生效
 ```
+
+---
+
+## 8. 网关 Provider 管理 (2026-07-26)
+
+### 8a. 注册 Provider 无效 — stub shaow 真实路由器
+
+#### 现象
+添加 provider 后列表中永远是空的。
+
+#### 根因
+`stubs_api.py` 定义了 `GET /gateway/providers` 返回 `{"providers": []}`——硬编码空数组。
+`api_gateway.py` 的 `GET /providers`（prefix=/v6/gateway）也映射到同路径，但反向代理 switch 读真实 provider.yaml。
+FastAPI 两个路由冲突 → stub 优先 → 永远空。
+
+#### 解决
+**删除 stubs_api.py 中全部 5 个 /gateway/* 路由**。网关端点由 api_gateway.py 统一代理 switch。
+同时把 `_try_include` 日志从 `logger.debug` 改为 `print`，启动时可见哪些模块加载成功/失败。
+
+```python
+# 之前（在 stubs_api.py）—— 删掉
+@router.get("/gateway/providers")
+async def get_gateway_providers():
+    return {"providers": [], "active_provider": "", "active_model": ""}
+
+# 之后（在 api_gateway.py）—— 真实代理 switch
+@router.get("/providers")  # prefix /v6/gateway → /v6/gateway/providers
+async def list_providers():
+    # 从 switch 网关读 provider.yaml
+```
+
+---
+
+### 8b. 测试连接永远 0ms
+
+#### 现象
+点击任何 provider 的"测试连接"，延迟永远 `0ms`。
+
+#### 根因
+`api_gateway.py` 的 `test_provider()` 在 switch 在线时只读缓存健康状态（`sw.get("healthy")`），不做真实 HTTP 请求。
+switch 下线时才走 `OpenAIProvider.health_check()` 真测试。
+
+#### 解决
+无论 switch 在线与否，都向 provider 的 `base_url` 发 HTTP GET 测量真实延迟。
+switch 不暴露 api_key（`/v1/providers` 列表不含 key）→ 改为无认证 ping base_url 根路径，测可达性+延迟。
+
+```python
+# 之前
+healthy = sw.get("healthy")
+return {"healthy": healthy, "latency_ms": 0}
+
+# 之后
+t0 = time.time()
+with urllib.request.urlopen(f"{base_url}", timeout=5) as resp:
+    resp.read()
+latency = int((time.time() - t0) * 1000)
+```
+
+即使返回 401 也算"服务器可达"（`HTTPError` 被单独捕获 → healthy=True）。
+
+---
+
+### 8c. ProviderCard 全量抖动
+
+#### 现象
+测试连接、自动刷新 15s 轮询时，整个 provider 列表 DOM 全部重渲染，页面晃动。
+
+#### 根因（三层递进）
+
+1. **第一层** — `useV6Gateway` hook 的 `testProvider()` 改了全局 `data` state → 所有消费者重渲染。
+   → 修复: `testingProvider` 改用本地 `useState`，不通过 hook 全局 state。
+
+2. **第二层** — `fetchGatewayProviders` 每次轮询都 `setData(prev => ({...prev, gatewayProviders}))`，
+   即使数据完全一样也触发重渲染。
+   → 修复: `JSON.stringify` 比较后跳过无变化的 `setData`。
+
+3. **第三层（根因）** — `const ProviderCard = memo(...)` 定义在 `GatewayPage` 函数体内。
+   每次父组件渲染，`memo()` 被重新调用，创建**全新的** memo 组件实例 → `React.memo` 完全无效。
+   → 修复: **ProviderCard 移到文件顶层**（`export function GatewayPage()` 之外）。
+   `React.memo` 只创建一次，后续渲染真正进行 props 浅比较。
+
+```tsx
+// ❌ 之前 — memo 在组件体内，每次渲染重新创建
+export function GatewayPage() {
+  const ProviderCard = memo(({ provider }) => ( ... ));  // 每帧新建
+}
+
+// ✅ 之后 — memo 在文件顶层，只创建一次
+const ProviderCard = memo(({ provider, isActive, ... }) => ( ... ));
+
+export function GatewayPage() {
+  // 使用 ProviderCard，memo 真正生效
+}
+```
+
+#### 闭包陷阱
+移动 ProviderCard 到顶层后，组件体内所有闭包变量（`gatewayProviders.active_model`、
+`toggleExpand`、`handleTest` 等）需要改为 props 传入。遗漏任何一个 → 运行时
+`xxx is not defined`。
+
+**检查清单**: grep 终端未定义的变量 → 逐项加入 props 声明。
+
+---
+
+### 8d. 小记
+
+| 错误 | 原因 | 修法 |
+|------|------|------|
+| 注册后列表空 | stubs shaow 了真实路由 | 删 stub，用 api_gateway.py |
+| 测试 0ms | 只读缓存不实测 | HTTP GET base_url 计时 |
+| 列表抖动（整体） | 全局 state 变化触发整页渲染 | memo 提到顶层 + JSON 比较跳过 |
+| `gatewayProviders is not defined` | 移到顶层后闭包引用断裂 | 逐项补齐 props |
