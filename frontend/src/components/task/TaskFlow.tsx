@@ -306,21 +306,16 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
     }
   }, []);
 
-  const highlightedNodes = useMemo(() => {
+  // Don't recreate nodes on selection — use ReactFlow's built-in `selected` flag
+  const rfNodes = useMemo(() => {
     if (!selectedNodeId) return nodes;
-    return nodes.map((node) => ({
-      ...node,
-      style: {
-        ...node.style,
-        opacity: selectedNodeId === node.id ? 1 : 0.5,
-      },
-    }));
+    return nodes.map(n => ({ ...n, selected: n.id === selectedNodeId }));
   }, [nodes, selectedNodeId]);
 
   return (
     <div className="flex-1 w-full h-full relative">
       <ReactFlow
-        nodes={highlightedNodes}
+        nodes={rfNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
