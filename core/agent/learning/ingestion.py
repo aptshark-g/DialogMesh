@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 class IngestionPipeline:
     """Full learning ingestion pipeline.
 
-    search → dedup → fetch top-N → embed → store in HybridIndex.
+    search → dedup → fetch top-N → embed → store in ChromaDB.
+    Every 10th ingestion: auto-trigger cluster → compress → EventLog.
     """
+
+    COMPRESS_INTERVAL = 10  # compress every N ingested items
 
     def __init__(self):
         self.registry = SourceRegistry.get()
@@ -99,6 +102,18 @@ class IngestionPipeline:
         elapsed = (time.time() - t0) * 1000
         logger.info("Ingestion: %d/%d results, %d stored (%.0fms)",
                      len(ingested), len(hits), self._ingested_count, elapsed)
+
+        # Auto-trigger compression every N ingestions
+        if self._ingested_count > 0 and self._ingested_count % self.COMPRESS_INTERVAL == 0:
+            try:
+                from core.agent.learning.chroma_store import ChromaStore
+                store = ChromaStore()
+                if store.available and store.count() >= 5:
+                    rules = store.compress_into_rules(n_clusters=3, max_rules=2)
+                    logger.info("Auto-compressed: %d rules from %d docs", len(rules), store.count())
+            except Exception as e:
+                logger.warning("Auto-compress failed: %s", e)
+
         return ingested
 
     def _store_in_index(self, hit: dict, embedding: Optional[List[float]]) -> Optional[str]:
