@@ -43,6 +43,7 @@ export interface TaskNode {
   error?: string;
   latencyMs?: number;
   startedAt?: string;
+  meta?: Record<string, unknown>;  // v6 WS live data
   completedAt?: string;
   metadata?: Record<string, unknown>;
 }

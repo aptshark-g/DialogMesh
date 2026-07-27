@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import ChatPanel from '../components/ChatPanel';
-import type { ConnectionState } from '../types/ui';
+import type { _ConnectionState } from '../types/ui';
 import { createSession, sendMessage } from '../api/session';
 import { useChatStore } from '../stores/chatStore';
 

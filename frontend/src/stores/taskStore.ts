@@ -74,7 +74,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const { taskGraph } = get();
     if (!taskGraph) return;
     const updated = taskGraph.nodes.map((n, i) =>
-      i === index ? { ...n, status: 'running' as TaskNodeStatus, data: { ...n.data, tool, action } } : n);
+      i === index ? { ...n, status: 'running' as TaskNodeStatus, meta: { ...n.meta, tool, action } } : n);
     set({ taskGraph: { ...taskGraph, nodes: updated }, executionStatus: 'running' });
   },
 
@@ -83,11 +83,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (!taskGraph) return;
     const nodeStatus: TaskNodeStatus = status === 'success' ? 'completed' : 'failed';
     const updated = taskGraph.nodes.map((n, i) =>
-      i === index ? { ...n, status: nodeStatus, data: { ...n.data, duration_ms } } : n);
+      i === index ? { ...n, status: nodeStatus, meta: { ...n.meta, duration_ms } } : n);
     set({ taskGraph: { ...taskGraph, nodes: updated } });
   },
 
-  onExecutionDone: (summary) => {
+  onExecutionDone: (_summary) => {
     set({ executionStatus: 'completed' });
   },
 }));
@@ -104,4 +104,60 @@ export function useTaskExecutionStatus(): TaskExecutionStatus {
 
 export function useTaskSelectedNodeId(): string | null {
   return useTaskStore((s) => s.selectedNodeId);
+}
+
+// ═══ Conversion: TaskGraphNode[] (API) → TaskGraph (store) ═══
+
+import type { TaskGraphNode as ApiTaskNode } from '../types/api';
+
+export function convertToTaskGraph(apiNodes: ApiTaskNode[] | null | undefined): TaskGraph | null {
+  if (!apiNodes || apiNodes.length === 0) return null;
+  const now = new Date().toISOString();
+  const nodes: TaskNode[] = apiNodes.map((n, i) => ({
+    id: n.id,
+    name: n.name || n.type || `node_${i}`,
+    description: n.params?.description as string || '',
+    type: (mapNodeType(n.type) as TaskNodeType),
+    status: mapStatus(n.status),
+    parentId: null,
+    dependencies: n.dependencies || [],
+    children: [],
+    progress: n.progress,
+    result: n.result,
+    checkpoint: n.checkpoint || false,
+  }));
+  // Build edges from dependencies
+  const edges: TaskEdge[] = [];
+  nodes.forEach(node => {
+    node.dependencies.forEach(depId => {
+      edges.push({ id: `e_${depId}_${node.id}`, source: depId, target: node.id, type: 'dependency' });
+    });
+  });
+  // Set children
+  edges.forEach(e => {
+    const parent = nodes.find(n => n.id === e.source);
+    if (parent) parent.children.push(e.target);
+  });
+  const roots = nodes.filter(n => n.dependencies.length === 0);
+  return {
+    id: `dag_${Date.now()}`,
+    version: '1.0',
+    nodes,
+    edges,
+    rootNodeId: roots[0]?.id || '',
+    createdAt: now,
+    updatedAt: now,
+    executionStatus: 'idle',
+    overallProgress: 0,
+  };
+}
+
+function mapNodeType(t: string): string {
+  const m: Record<string, string> = { pcr:'intent', intent:'intent', context:'execution', subgraph:'execution', profile:'intent', llm_reply:'execution', scan:'execution', read:'execution', write:'execution', analyze:'validation', ask_user:'clarification', explain:'execution', fallback:'execution', behavior:'decision', meta:'intent', discourse:'intent', association:'execution', engineering:'validation', metap:'execution' };
+  return m[t] || 'execution';
+}
+
+function mapStatus(s: string): TaskNodeStatus {
+  const m: Record<string, TaskNodeStatus> = { pending:'pending', running:'running', completed:'completed', failed:'failed' };
+  return m[s] || 'pending';
 }

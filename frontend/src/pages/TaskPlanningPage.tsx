@@ -1,47 +1,56 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Node, Edge } from '@reactflow/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TaskFlow } from '@/components/task/TaskFlow';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useTaskStore } from '@/stores/taskStore';
+import type { TaskNode } from '@/types/task';
 import {
   Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon,
 } from 'lucide-react';
 import type { TaskExecutionStatus } from '@/types/task';
 
-/* ==================== Mock Data ==================== */
+/* ==================== Convert store TaskGraph → ReactFlow Nodes/Edges ==================== */
 
-const reactFlowNodes: Node[] = [
-  { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { name: '开始', description: '启动任务规划流程', status: 'completed', type: 'intent' } },
-  { id: 'intent-understand', type: 'process', position: { x: 0, y: 80 }, data: { name: '理解查询意图', description: '解析用户查询的语义意图', status: 'completed', type: 'intent' } },
-  { id: 'plan-retrieval', type: 'process', position: { x: 0, y: 160 }, data: { name: '生成检索计划', description: '根据意图生成检索策略', status: 'completed', type: 'execution' } },
-  { id: 'exec-vector', type: 'process', position: { x: 0, y: 240 }, data: { name: '执行向量检索', description: '在向量数据库中执行相似性搜索', status: 'running', type: 'execution', progress: 65 } },
-  { id: 'check-results', type: 'decision', position: { x: 0, y: 340 }, data: { name: '检查结果', description: '评估检索结果质量', status: 'running', type: 'decision' } },
-  { id: 'dedup', type: 'process', position: { x: -200, y: 460 }, data: { name: '结果去重', description: '对检索结果进行去重处理', status: 'pending', type: 'validation' } },
-  { id: 'extend', type: 'process', position: { x: 200, y: 460 }, data: { name: '扩展检索', description: '扩大检索范围重新搜索', status: 'pending', type: 'execution', isDangerous: true } },
-  { id: 'verify', type: 'process', position: { x: 0, y: 580 }, data: { name: '验证', description: '验证结果的正确性和完整性', status: 'pending', type: 'validation' } },
-  { id: 'integrate', type: 'process', position: { x: 0, y: 660 }, data: { name: '整合', description: '整合所有子任务结果', status: 'pending', type: 'execution' } },
-  { id: 'update-memory', type: 'process', position: { x: 0, y: 740 }, data: { name: '更新记忆库', description: '将结果更新到长期记忆库', status: 'pending', type: 'execution' } },
-  { id: 'generate-reply', type: 'process', position: { x: 0, y: 820 }, data: { name: '生成回复', description: '基于整合结果生成最终回复', status: 'pending', type: 'execution' } },
-  { id: 'end', type: 'end', position: { x: 0, y: 900 }, data: { name: '结束', description: '任务规划流程结束', status: 'pending', type: 'intent' } },
-];
+function toReactFlowNodes(taskNodes: TaskNode[]): Node[] {
+  return taskNodes.map((n, i) => ({
+    id: n.id,
+    type: mapFlowType(n.type),
+    position: { x: (i % 3) * 260, y: Math.floor(i / 3) * 140 },
+    data: {
+      name: n.name,
+      description: n.description || n.type,
+      status: n.status,
+      type: n.type,
+      isDangerous: n.checkpoint || false,
+      progress: n.progress,
+    },
+  }));
+}
 
-const reactFlowEdges: Edge[] = [
-  { id: 'e1', source: 'start', target: 'intent-understand', type: 'animated', data: { status: 'completed' } },
-  { id: 'e2', source: 'intent-understand', target: 'plan-retrieval', type: 'animated', data: { status: 'completed' } },
-  { id: 'e3', source: 'plan-retrieval', target: 'exec-vector', type: 'animated', data: { status: 'completed' } },
-  { id: 'e4', source: 'exec-vector', target: 'check-results', type: 'animated', data: { status: 'running' } },
-  { id: 'e5', source: 'check-results', target: 'dedup', sourceHandle: 'left', type: 'condition', label: 'if found > 0', data: { condition: 'if found > 0', status: 'pending' } },
-  { id: 'e6', source: 'check-results', target: 'extend', sourceHandle: 'right', type: 'condition', label: 'if found = 0', data: { condition: 'if found = 0', status: 'pending' } },
-  { id: 'e7', source: 'dedup', target: 'verify', type: 'animated', data: { status: 'pending' } },
-  { id: 'e8', source: 'extend', target: 'verify', type: 'animated', data: { status: 'pending' } },
-  { id: 'e9', source: 'verify', target: 'integrate', type: 'animated', data: { status: 'pending' } },
-  { id: 'e10', source: 'integrate', target: 'update-memory', type: 'animated', data: { status: 'pending' } },
-  { id: 'e11', source: 'update-memory', target: 'generate-reply', type: 'animated', data: { status: 'pending' } },
-  { id: 'e12', source: 'generate-reply', target: 'end', type: 'animated', data: { status: 'pending' } },
-];
+function toReactFlowEdges(taskNodes: TaskNode[]): Edge[] {
+  const edges: Edge[] = [];
+  taskNodes.forEach(n => {
+    (n.dependencies || []).forEach(depId => {
+      edges.push({
+        id: `e_${depId}_${n.id}`,
+        source: depId,
+        target: n.id,
+        type: 'animated',
+        data: { status: 'pending' },
+      });
+    });
+  });
+  return edges;
+}
 
-/* ==================== Placeholder: TaskExecutionControls ==================== */
+function mapFlowType(t: string): string {
+  const m: Record<string, string> = { intent: 'start', clarification: 'start', execution: 'process', validation: 'process', decision: 'decision', parallel: 'process', merge: 'process' };
+  return m[t] || 'process';
+}
+
+/* ==================== TaskExecutionControls ==================== */
 
 interface TaskExecutionControlsProps {
   status: TaskExecutionStatus;
@@ -308,10 +317,19 @@ function TaskDetailPanel({ node, onClose }: TaskDetailPanelProps) {
 /* ==================== Main Page ==================== */
 
 export function TaskPlanningPage() {
+  const storeGraph = useTaskStore(s => s.taskGraph);
+  const storeStatus = useTaskStore(s => s.executionStatus);
+  const setSelectedNode = useTaskStore(s => s.setSelectedNode);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [executionStatus, setExecutionStatus] = useState<TaskExecutionStatus>('running');
-  const [nodes, setNodes] = useState<Node[]>(reactFlowNodes);
-  const [edges] = useState<Edge[]>(reactFlowEdges);
+
+  // Convert store TaskGraph → ReactFlow Nodes/Edges
+  const rfNodes = useMemo(() => storeGraph ? toReactFlowNodes(storeGraph.nodes) : [], [storeGraph]);
+  const rfEdges = useMemo(() => storeGraph ? toReactFlowEdges(storeGraph.nodes) : [], [storeGraph]);
+
+  const [nodes, setNodes] = useState<Node[]>(rfNodes);
+  const [edges] = useState<Edge[]>(rfEdges);
+
+  const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
 
   const selectedNode = useMemo(() => {
     return nodes.find((n) => n.id === selectedNodeId) || null;

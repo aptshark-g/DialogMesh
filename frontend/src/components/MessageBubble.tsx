@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 import { submitFeedback } from '../api/v6';
 import { TaskGraphView } from './TaskGraphView';
 import { Toast } from './ui/Toast';
+import { convertToTaskGraph, useTaskStore } from '../stores/taskStore';
 
 function renderMarkdown(text: string): string {
   // Simple inline markdown → HTML (bold, italic, code, tables, headers, lists, links)
@@ -64,6 +65,15 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
     'thinkingSteps'
   );
   const clarificationId = message.clarificationId;
+
+  // Push task_graph to TaskPlanningPage store
+  const setTaskGraph = useTaskStore(s => s.setTaskGraph);
+  useEffect(() => {
+    if (taskGraph && taskGraph.length > 0) {
+      const tg = convertToTaskGraph(taskGraph);
+      if (tg) setTaskGraph(tg);
+    }
+  }, [taskGraph, setTaskGraph]);
 
   const formatTime = useCallback((ts: number): string => {
     const d = new Date(ts);

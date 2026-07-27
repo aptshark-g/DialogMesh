@@ -22,7 +22,7 @@ function load(): Partial<ChatStore> {
   try { return JSON.parse(sessionStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 
-export const useChatStore = create<ChatStore>((set, get) => {
+export const useChatStore = create<ChatStore>((set, _get) => {
   const saved = load();
   return {
     messages: saved.messages || [],
