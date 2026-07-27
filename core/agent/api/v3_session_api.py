@@ -150,30 +150,57 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
         # Phase 3.5: Execute BlueprintDAG via Decider (EventBus) — enrich context
         decider_context = ""
+        chain_summary = {}
+        ticks_count = 0
+        dag_nodes = 0
+        trace_errors = []
         try:
             from core.agent.blueprint.engine import BlueprintEngine
             from core.agent.orchestrator.agent_native import AgentOrchestrator
+            from core.agent.blueprint.tracer import PipelineTracer
             engine = BlueprintEngine()
             intent = cognitive_ctx.get("intents", {}).get("primary", "")
             if not intent:
                 segments = cognitive_ctx.get("intents", {}).get("segments", [])
                 intent = segments[0] if segments else "通用对话"
             dag = engine.build(req.content, intent=intent)
+            dag_nodes = dag.node_count
             orch = AgentOrchestrator()
             chain_result = orch.process_dag(dag, user_text=req.content)
-            # Build context enrichment from chain outputs
+            ticks_count = len(chain_result.get("ticks", []))
+            # Build context enrichment
             chain_parts = []
             for node_id, output in chain_result.get("chain_outputs", {}).items():
+                status = "ok" if output and not output.get("error") else "empty"
+                chain = node_id.split("_")[0] if "_" in node_id else node_id
+                chain_summary[chain] = status
                 if node_id.startswith("intent"):
-                    chain_parts.append(f"意图: {str(output.get('intents', output))[:200]}")
+                    intents = output.get("intents", output)
+                    chain_parts.append(f"意图: {str(intents)[:200]}")
                 elif node_id.startswith("pcr"):
-                    chain_parts.append(f"路由: {str(output.get('route', output))[:200]}")
+                    route = output.get("route", output)
+                    chain_parts.append(f"路由: {str(route)[:200]}")
                 elif node_id.startswith("context"):
                     chain_parts.append(f"上下文: {str(output.get('assembled_context', output))[:200]}")
             if chain_parts:
                 decider_context = "## 管线分析\n" + "\n".join(chain_parts)
+            # Record trace
+            PipelineTracer.record(
+                request_id=msg_id or str(uuid.uuid4())[:8],
+                session_id=session_id,
+                data={
+                    "intent": intent,
+                    "strategy": dag.strategy,
+                    "blueprint_nodes": dag_nodes,
+                    "chain_summary": chain_summary,
+                    "ticks": ticks_count,
+                    "errors": trace_errors,
+                    "latency_ms": int((time.time() - t0) * 1000),
+                },
+            )
         except Exception as e:
             logger.warning("Decider pipeline skipped: %s", e)
+            trace_errors.append(str(e)[:200])
 
         # Enrich messages if decider provided context
         history = session["messages"][-20:]
