@@ -332,7 +332,9 @@ export function TaskPlanningPage() {
   const rfEdges = useMemo(() => storeGraph ? toReactFlowEdges(storeGraph.nodes) : [], [storeGraph]);
 
   const [nodes, setNodes] = useState<Node[]>(rfNodes);
-  const [edges] = useState<Edge[]>(rfEdges);
+  const [edges, setEdges] = useState<Edge[]>(rfEdges);
+  // Sync from store when taskGraph changes
+  useEffect(() => { setNodes(rfNodes); setEdges(rfEdges); }, [rfNodes, rfEdges]);
 
   const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
 

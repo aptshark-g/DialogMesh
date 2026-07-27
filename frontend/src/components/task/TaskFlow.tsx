@@ -10,6 +10,8 @@ import {
   getBezierPath,
   BaseEdge,
   EdgeLabelRenderer,
+  addEdge,
+  type Connection,
 } from '@reactflow/core';
 import type { Node, Edge } from '@reactflow/core';
 import { Background } from '@reactflow/background';
@@ -276,9 +278,11 @@ export const TaskFlow: FC<TaskFlowProps> = ({
     onPaneClick?.();
   }, [onPaneClick]);
 
-  const handleConnect = useCallback((params: { source: string; target: string }) => {
-    externalConnect?.(params);
-  }, [externalConnect]);
+  const handleConnect = useCallback((params: Connection) => {
+    setEdges((eds) => addEdge(params, eds));
+    if (params.source && params.target)
+      externalConnect?.({ source: params.source, target: params.target });
+  }, [setEdges, externalConnect]);
 
   const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
     externalNodesDelete?.(deleted.map(d => d.id));
