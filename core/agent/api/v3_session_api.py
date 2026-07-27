@@ -251,11 +251,21 @@ async def send_message(session_id: str, req: SendMessageRequest):
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         content = _fallback_reply(req.content)
-
+    content = reply_parts[0] if reply_parts else "(empty)"
     latency = int((time.time() - t0) * 1000)
     msg_id = str(uuid.uuid4())[:8]
     session["messages"].append({"role": "assistant", "content": content})
     _save_sessions()
+
+    # Also save task_graph as standalone resource
+    if task_graph:
+        try:
+            import os as _os
+            _os.makedirs("data/task_graphs", exist_ok=True)
+            with open(f"data/task_graphs/{session_id}.json", "w") as f:
+                json.dump({"nodes": task_graph, "edges": []}, f, ensure_ascii=False)
+        except Exception:
+            pass
 
     return SendMessageResponse(
         message_id=msg_id,
@@ -315,37 +325,39 @@ class TaskGraphUpdateRequest(BaseModel):
     edges: list = []
 
 
+@router.get("/{session_id}/task-graph")
+async def get_task_graph(session_id: str):
+    """Return the standalone task graph for a session."""
+    import json, os
+    path = f"data/task_graphs/{session_id}.json"
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    # Fallback: extract from session messages
+    session_path = "data/v3_sessions.json"
+    if os.path.exists(session_path):
+        with open(session_path, "r") as f:
+            sessions = json.load(f)
+        s = sessions.get(session_id, {})
+        for msg in reversed(s.get("messages", [])):
+            if msg.get("metadata", {}).get("taskGraph"):
+                return {"nodes": msg["metadata"]["taskGraph"], "edges": []}
+    return {"nodes": [], "edges": []}
+
+
 @router.put("/{session_id}/task-graph")
 async def update_task_graph(session_id: str, req: TaskGraphUpdateRequest):
-    """Persist user-modified task graph back to the session."""
+    """Persist user-modified task graph as a standalone resource."""
     try:
         import json, os
-        path = "data/v3_sessions.json"
-        if not os.path.exists(path):
-            return {"status": "error", "error": "no sessions file"}
-        with open(path, "r") as f:
-            sessions = json.load(f)
-        if session_id not in sessions:
-            return {"status": "error", "error": f"session {session_id} not found"}
-
-        # Merge updated nodes/edges into the latest assistant message's task_graph
-        for msg in reversed(sessions[session_id].get("messages", [])):
-            if msg.get("role") == "assistant" and msg.get("metadata", {}).get("taskGraph"):
-                msg["metadata"]["taskGraph"] = req.nodes
-                break
-        else:
-            # No existing task_graph — create one on the latest assistant message
-            for msg in reversed(sessions[session_id].get("messages", [])):
-                if msg.get("role") == "assistant":
-                    msg.setdefault("metadata", {})["taskGraph"] = req.nodes
-                    break
-
+        os.makedirs("data/task_graphs", exist_ok=True)
+        path = f"data/task_graphs/{session_id}.json"
         with open(path, "w") as f:
-            json.dump(sessions, f, ensure_ascii=False, indent=2)
-        logger.info("Updated task_graph for session %s: %d nodes", session_id[:8], len(req.nodes))
+            json.dump({"nodes": req.nodes, "edges": req.edges}, f, ensure_ascii=False, indent=2)
+        logger.info("Saved task_graph for session %s: %d nodes", session_id[:8], len(req.nodes))
         return {"status": "ok", "nodes": req.nodes, "edges": req.edges}
     except Exception as e:
-        logger.warning("Task graph update failed: %s", e)
+        logger.warning("Task graph save failed: %s", e)
         return {"status": "error", "error": str(e)[:200]}
 
 

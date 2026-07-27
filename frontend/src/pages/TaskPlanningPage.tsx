@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTaskStore } from '@/stores/taskStore';
 import { useChatStore } from '@/stores/chatStore';
-import { saveTaskGraph } from '@/api/session';
+import { saveTaskGraph, getTaskGraph } from '@/api/session';
 import type { TaskNode } from '@/types/task';
 import {
   Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon, Plus,
@@ -331,6 +331,21 @@ export function TaskPlanningPage() {
   const sessionId = useChatStore(s => s.sessionId);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const tfRef = useRef<TaskFlowHandle>(null);
+
+  // ═══ Load task_graph from backend on mount (standalone resource, not from message) ═══
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (sessionId && !loaded) {
+      getTaskGraph(sessionId).then(data => {
+        const apiNodes = data.nodes || [];
+        if (apiNodes.length > 0) {
+          const tg = convertToTaskGraph(apiNodes);
+          if (tg) useTaskStore.getState().setTaskGraph(tg);
+        }
+        setLoaded(true);
+      }).catch(() => setLoaded(true));
+    }
+  }, [sessionId, loaded]);
 
   // Convert store TaskGraph → ReactFlow Nodes/Edges
   const rfNodes = useMemo(() => storeGraph ? toReactFlowNodes(storeGraph.nodes) : [], [storeGraph]);

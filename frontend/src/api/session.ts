@@ -80,6 +80,10 @@ export function saveTaskGraph(sessionId: string, nodes: any[], edges: any[]): Pr
   }).then(res => res.json());
 }
 
+export function getTaskGraph(sessionId: string): Promise<{nodes: any[]; edges: any[]}> {
+  return fetch(`${BASE_URL}/v3/session/${sessionId}/task-graph`).then(res => res.json());
+}
+
 export function getHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>('/v3/health');
 }
