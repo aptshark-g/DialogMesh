@@ -255,6 +255,9 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
     onNodeClick,
     onNodesChange: externalNodesChange,
     onEdgesChange: externalEdgesChange,
+    onConnect: externalConnect,
+    onNodesDelete: externalNodesDelete,
+    onEdgesDelete: externalEdgesDelete,
     onPaneClick,
   }, ref) => {
     const theme = useTheme();
@@ -328,7 +331,7 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}
         onPaneClick={handlePaneClick}
-        nodesDraggable={false}
+        nodesDraggable={true}
         nodesConnectable={true}
         deleteKeyCode="Backspace"
         elementsSelectable={true}
