@@ -520,9 +520,6 @@ export function TaskPlanningPage() {
           edges={edges}
           selectedNodeId={selectedNodeId}
           onNodeClick={handleNodeClick}
-          onConnect={handleConnect}
-          onNodesDelete={handleNodesDelete}
-          onEdgesDelete={handleEdgesDelete}
           onPaneClick={handleClosePanel}
         />
         <TaskDetailPanel node={selectedNode} onClose={handleClosePanel} />

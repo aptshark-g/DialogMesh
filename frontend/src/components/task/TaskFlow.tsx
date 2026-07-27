@@ -240,9 +240,6 @@ export interface TaskFlowProps {
   onNodeClick: (nodeId: string) => void;
   onNodesChange?: (changes: unknown[]) => void;
   onEdgesChange?: (changes: unknown[]) => void;
-  onConnect?: (connection: { source: string; target: string }) => void;
-  onNodesDelete?: (nodeIds: string[]) => void;
-  onEdgesDelete?: (edgeIds: string[]) => void;
   onPaneClick?: () => void;
 }
 
@@ -293,17 +290,16 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
 
   const handleConnect = useCallback((params: Connection) => {
     setEdges((eds) => addEdge(params, eds));
-    if (params.source && params.target)
-      externalConnect?.({ source: params.source, target: params.target });
-  }, [setEdges, externalConnect]);
+  }, [setEdges]);
 
   const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
-    externalNodesDelete?.(deleted.map(d => d.id));
-  }, [externalNodesDelete]);
+    setNodes(nds => nds.filter(n => !deleted.some(d => d.id === n.id)));
+    setEdges(eds => eds.filter(e => !deleted.some(d => d.id === e.source || d.id === e.target)));
+  }, [setNodes, setEdges]);
 
   const handleEdgesDelete = useCallback((deleted: { id: string }[]) => {
-    externalEdgesDelete?.(deleted.map(d => d.id));
-  }, [externalEdgesDelete]);
+    setEdges(eds => eds.filter(e => !deleted.some(d => d.id === e.id)));
+  }, [setEdges]);
 
   const handleNodesChange = useCallback((changes: unknown[]) => {
     // Apply ReactFlow internal changes first (drag, position updates)
