@@ -7,7 +7,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTaskStore } from '@/stores/taskStore';
 import type { TaskNode } from '@/types/task';
 import {
-  Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon,
+  Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon, Plus,
 } from 'lucide-react';
 import type { TaskExecutionStatus } from '@/types/task';
 
@@ -60,9 +60,10 @@ interface TaskExecutionControlsProps {
   onAutoLayout: () => void;
   onExport: () => void;
   onSettings: () => void;
+  onAddNode: () => void;
 }
 
-function TaskExecutionControls({ status, onPlay, onPause, onReset, onAutoLayout, onExport, onSettings }: TaskExecutionControlsProps) {
+function TaskExecutionControls({ status, onPlay, onPause, onReset, onAutoLayout, onExport, onSettings, onAddNode }: TaskExecutionControlsProps) {
   const statusDot: Record<TaskExecutionStatus, string> = {
     idle: 'bg-status-pending',
     running: 'bg-status-success',
@@ -118,6 +119,10 @@ function TaskExecutionControls({ status, onPlay, onPause, onReset, onAutoLayout,
       <button type="button" onClick={onAutoLayout} className="hidden lg:inline-flex items-center justify-center rounded-md h-8 px-3 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors text-xs" title="Auto Layout">
         <LayoutGrid className="w-4 h-4 mr-1" />
         <span>自动布局</span>
+      </button>
+      <button type="button" onClick={onAddNode} className="inline-flex items-center justify-center rounded-md h-8 px-3 border bg-primary/20 border-primary/30 text-primary hover:bg-primary/30 transition-colors text-xs" title="Add node">
+        <Plus className="w-4 h-4 mr-1" />
+        <span>添加节点</span>
       </button>
       <button type="button" onClick={onExport} className="hidden lg:inline-flex items-center justify-center rounded-md h-8 px-3 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors text-xs" title="Export">
         <Download className="w-4 h-4 mr-1" />
@@ -356,6 +361,41 @@ export function TaskPlanningPage() {
   const handlePause = useCallback(() => setExecutionStatus('paused'), []);
   const handleReset = useCallback(() => setExecutionStatus('idle'), []);
 
+  // ═══ Canvas interactions — sync to store ═══
+  const handleConnect = useCallback((conn: { source: string; target: string }) => {
+    const g = useTaskStore.getState().taskGraph;
+    if (!g) return;
+    const newEdge = { id: `e_${conn.source}_${conn.target}`, source: conn.source, target: conn.target, type: 'dependency' as const };
+    const parentNode = g.nodes.find(n => n.id === conn.source);
+    if (parentNode && !parentNode.children.includes(conn.target)) parentNode.children.push(conn.target);
+    const targetNode = g.nodes.find(n => n.id === conn.target);
+    if (targetNode && !targetNode.dependencies.includes(conn.source)) targetNode.dependencies.push(conn.source);
+    useTaskStore.setState({ taskGraph: { ...g, edges: [...g.edges, newEdge] } });
+  }, []);
+
+  const handleNodesDelete = useCallback((ids: string[]) => {
+    const g = useTaskStore.getState().taskGraph;
+    if (!g) return;
+    useTaskStore.setState({ taskGraph: { ...g, nodes: g.nodes.filter(n => !ids.includes(n.id)), edges: g.edges.filter(e => !ids.includes(e.source) && !ids.includes(e.target)) } });
+  }, []);
+
+  const handleEdgesDelete = useCallback((ids: string[]) => {
+    const g = useTaskStore.getState().taskGraph;
+    if (!g) return;
+    const deletedIds = new Set(ids);
+    // Remove dependency links
+    const updatedNodes = g.nodes.map(n => ({ ...n, dependencies: n.dependencies.filter(d => !g.edges.some(e => e.source === d && e.target === n.id && deletedIds.has(e.id))) }));
+    useTaskStore.setState({ taskGraph: { ...g, nodes: updatedNodes, edges: g.edges.filter(e => !deletedIds.has(e.id)) } });
+  }, []);
+
+  const handleAddNode = useCallback(() => {
+    const g = useTaskStore.getState().taskGraph;
+    if (!g) return;
+    const newId = `node_${Date.now()}`;
+    const newNode: import('../types/task').TaskNode = { id: newId, name: '新节点', description: '双击编辑', type: 'execution', status: 'pending', parentId: null, dependencies: [], children: [], progress: 0 };
+    useTaskStore.setState({ taskGraph: { ...g, nodes: [...g.nodes, newNode], updatedAt: new Date().toISOString() } });
+  }, []);
+
   const handleAutoLayout = useCallback(() => {
     const adj = new Map<string, string[]>();
     const inDegree = new Map<string, number>();
@@ -448,6 +488,7 @@ export function TaskPlanningPage() {
         onAutoLayout={handleAutoLayout}
         onExport={handleExport}
         onSettings={handleSettings}
+        onAddNode={handleAddNode}
       />
       <TaskStatsBar {...stats} />
       <div className="flex-1 flex overflow-hidden relative">
@@ -456,6 +497,9 @@ export function TaskPlanningPage() {
           edges={edges}
           selectedNodeId={selectedNodeId}
           onNodeClick={handleNodeClick}
+          onConnect={handleConnect}
+          onNodesDelete={handleNodesDelete}
+          onEdgesDelete={handleEdgesDelete}
           onPaneClick={handleClosePanel}
         />
         <TaskDetailPanel node={selectedNode} onClose={handleClosePanel} />

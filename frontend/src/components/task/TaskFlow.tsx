@@ -231,6 +231,9 @@ export interface TaskFlowProps {
   onNodeClick: (nodeId: string) => void;
   onNodesChange?: (changes: unknown[]) => void;
   onEdgesChange?: (changes: unknown[]) => void;
+  onConnect?: (connection: { source: string; target: string }) => void;
+  onNodesDelete?: (nodeIds: string[]) => void;
+  onEdgesDelete?: (edgeIds: string[]) => void;
   onPaneClick?: () => void;
 }
 
@@ -243,6 +246,9 @@ export const TaskFlow: FC<TaskFlowProps> = ({
   onNodeClick,
   onNodesChange: externalNodesChange,
   onEdgesChange: externalEdgesChange,
+  onConnect: externalConnect,
+  onNodesDelete: externalNodesDelete,
+  onEdgesDelete: externalEdgesDelete,
   onPaneClick,
 }) => {
   const theme = useTheme();
@@ -269,6 +275,18 @@ export const TaskFlow: FC<TaskFlowProps> = ({
   const handlePaneClick = useCallback(() => {
     onPaneClick?.();
   }, [onPaneClick]);
+
+  const handleConnect = useCallback((params: { source: string; target: string }) => {
+    externalConnect?.(params);
+  }, [externalConnect]);
+
+  const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
+    externalNodesDelete?.(deleted.map(d => d.id));
+  }, [externalNodesDelete]);
+
+  const handleEdgesDelete = useCallback((deleted: { id: string }[]) => {
+    externalEdgesDelete?.(deleted.map(d => d.id));
+  }, [externalEdgesDelete]);
 
   const handleNodesChange = useCallback((changes: unknown[]) => {
     onNodesChange(changes);
@@ -312,13 +330,18 @@ export const TaskFlow: FC<TaskFlowProps> = ({
         onNodeClick={handleNodeClick}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
+        onConnect={handleConnect}
+        onNodesDelete={handleNodesDelete}
+        onEdgesDelete={handleEdgesDelete}
         onPaneClick={handlePaneClick}
-        nodesDraggable={false}
-        nodesConnectable={false}
+        nodesDraggable={true}
+        nodesConnectable={true}
+        deleteKeyCode={['Backspace', 'Delete']}
         elementsSelectable={true}
         panOnDrag={true}
         selectNodesOnDrag={false}
         fitView
+        onNodeDoubleClick={(_, node) => { onNodeClick?.(node.id); }}
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
