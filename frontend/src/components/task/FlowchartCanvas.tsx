@@ -30,6 +30,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const [connLine, setConnLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const dragNode = useRef<{ id: string; mx: number; my: number; nx: number; ny: number } | null>(null);
@@ -49,6 +50,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     const n = nodes.find(x => x.id === id); if (!n) return;
     dragNode.current = { id, mx: e.clientX, my: e.clientY, nx: n.x, ny: n.y };
     setSel(id); setSelEdge(null);
+    selRef.current = id;  // <-- sync ref immediately, before next render
   }, [nodes, edges, clickMode, onNodesChange, onEdgesChange]);
 
   useEffect(() => {
@@ -83,16 +85,18 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const onCanvasDown = useCallback((e: React.MouseEvent) => {
     const t = e.target as Element;
     if (t.closest('[data-node]') || t.closest('[data-handle]') || t.closest('button')) return;
-    panning.current = true; setSel(null); setSelEdge(null);
+    panning.current = true; setSel(null); setSelEdge(null); selRef.current = null;
   }, []);
   useEffect(() => {
-    if (!panning.current) return;
-    const mm = (e: MouseEvent) => { setVx(v => v + e.movementX); setVy(v => v + e.movementY); };
+    const mm = (e: MouseEvent) => {
+      if (!panning.current) return;
+      setVx(v => v + e.movementX); setVy(v => v + e.movementY);
+    };
     const mu = () => { panning.current = false; };
-    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+    window.addEventListener('mousemove', mm);
+    window.addEventListener('mouseup', mu);
     return () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
   }, []);
-
   /* ── Zoom ── */
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -102,13 +106,21 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     setZoom(z => { const nz = Math.max(0.1, Math.min(5, z * f)); setVx(v => mx - (mx - v) * (nz / z)); setVy(v => my - (my - v) * (nz / z)); return nz; });
   }, []);
 
+  /* ── Edge click ── */
+  const onEdgeClick = useCallback((e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); setSelEdge(id === selEdge ? null : id); setSel(null);
+    selEdgeRef.current = id === selEdge ? null : id;
+  }, [selEdge]);
+
   /* ── Handle connection ── */
   const onHandleDown = useCallback((e: React.MouseEvent, nid: string, handle: string) => {
     e.stopPropagation();
+    panning.current = false; // disable panning while connecting
     const n = nodes.find(x => x.id === nid); if (!n) return;
     const hp = HANDLES[handle as keyof typeof HANDLES](n.w, n.h);
     connRef.current = { source: nid, handle, sx: n.x + hp.x, sy: n.y + hp.y };
     setConnLine({ x1: n.x + hp.x, y1: n.y + hp.y, x2: n.x + hp.x, y2: n.y + hp.y });
+    setConnecting(true);
   }, [nodes]);
 
   useEffect(() => {
@@ -124,7 +136,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
         const my = (e.clientY - svgRect.top + vy) / zoom;
         const c = connRef.current;
         if (c) {
-          const target = nodes.find(n => n.id !== c.source && mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h);
+          // Expanded hit detection: 20px padding around node bounds
+          const pad = 20 / zoom;
+          const target = nodes.find(n => n.id !== c.source &&
+            mx >= n.x - pad && mx <= n.x + n.w + pad &&
+            my >= n.y - pad && my <= n.y + n.h + pad);
           if (target) {
             const cx = target.x + target.w / 2, cy = target.y + target.h / 2;
             const dx = mx - cx, dy = my - cy;
@@ -133,7 +149,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
           }
         }
       }
-      connRef.current = null; setConnLine(null);
+      connRef.current = null; setConnLine(null); setConnecting(false);
     };
     window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
     return () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
@@ -141,8 +157,6 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
 
   const selRef = useRef(sel);
   const selEdgeRef = useRef(selEdge);
-  selRef.current = sel;
-  selEdgeRef.current = selEdge;
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const edgesRef = useRef(edges);
@@ -162,10 +176,6 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     window.addEventListener('keydown', kd);
     return () => window.removeEventListener('keydown', kd);
   }, [onNodesChange, onEdgesChange]);
-
-  const onEdgeClick = useCallback((e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); setSelEdge(id === selEdge ? null : id); setSel(null);
-  }, [selEdge]);
 
   /* ── Edge path ── */
   const edgePath = (e: FEdge) => {
@@ -188,14 +198,23 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const showHandles = (id: string) => sel === id || hoverNode === id;
 
   return (
-    <div className="flex-1 overflow-hidden relative bg-[#f8f8f8] dark:bg-[#0a0a0a]">
+    <div className="flex-1 overflow-hidden relative bg-[#f8f8f8] dark:bg-[#0a0a0a]"
+      onMouseDown={onCanvasDown}>
       <div className="absolute inset-0 pointer-events-none opacity-15" style={{
         backgroundImage: 'radial-gradient(circle, #999 1px, transparent 1px)',
         backgroundSize: `${40 * zoom}px ${40 * zoom}px`, backgroundPosition: `${vx}px ${vy}px`,
       }} />
-      <svg ref={svgRef} width="100%" height="100%"
-        style={{ cursor: clickMode === 'delete' ? 'crosshair' : 'grab' }}
-        onMouseDown={onCanvasDown} onWheel={onWheel} onClick={() => { setSel(null); setSelEdge(null); }}>
+      <svg ref={svgRef} width="100%" height="100%" tabIndex={0}
+        style={{ cursor: connecting ? 'crosshair' : clickMode === 'delete' ? 'crosshair' : 'grab', outline: 'none' }}
+        onWheel={onWheel} onClick={() => { setSel(null); setSelEdge(null); }}
+        onKeyDown={e => {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            const s = selRef.current, se = selEdgeRef.current;
+            if (s) { onNodesChange(nodesRef.current.filter(n => n.id !== s)); onEdgesChange(edgesRef.current.filter(e => e.source !== s && e.target !== s)); setSel(null); }
+            else if (se) { onEdgesChange(edgesRef.current.filter(e => e.id !== se)); setSelEdge(null); }
+          }
+        }}>
         <g transform={`translate(${vx},${vy}) scale(${zoom})`}>
           {visibleEdges.map(e => (
             <g key={e.id}>
