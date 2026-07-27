@@ -1,19 +1,21 @@
-import { useEffect, useCallback, useMemo, useRef, type FC, type CSSProperties, type ComponentType } from 'react';
+import { useCallback, useMemo, useRef, type FC, type CSSProperties } from 'react';
 import type { MouseEvent } from 'react';
 import {
   ReactFlow,
-  useNodesState,
-  useEdgesState,
-  useReactFlow,
   Handle,
   Position,
   getBezierPath,
   BaseEdge,
   EdgeLabelRenderer,
   addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  type Node,
+  type Edge,
   type Connection,
+  type NodeChange,
+  type EdgeChange,
 } from '@reactflow/core';
-import type { Node, Edge } from '@reactflow/core';
 import { Background } from '@reactflow/background';
 import { MiniMap } from '@reactflow/minimap';
 import { cn } from '@/lib/utils';
@@ -22,17 +24,13 @@ import { useTheme } from '@/stores/themeStore';
 
 /* ==================== CSS Animation ==================== */
 
+let dashInjected = false;
 function injectDashAnimation(): void {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById('rf-dashdraw')) return;
+  if (typeof document === 'undefined' || dashInjected) return;
+  dashInjected = true;
   const style = document.createElement('style');
   style.id = 'rf-dashdraw';
-  style.textContent = `
-    @keyframes dashdraw {
-      from { stroke-dashoffset: 20; }
-      to { stroke-dashoffset: 0; }
-    }
-  `;
+  style.textContent = `@keyframes dashdraw { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }`;
   document.head.appendChild(style);
 }
 
@@ -40,7 +38,7 @@ function injectDashAnimation(): void {
 
 const handleStyle: CSSProperties = { width: 8, height: 8, background: '#4A4560', border: 'none' };
 
-/* ==================== Placeholder Nodes ==================== */
+/* ==================== Node Types ==================== */
 
 function StartNode({ data }: { data?: Record<string, unknown> }) {
   return (
@@ -59,11 +57,8 @@ function ProcessNode({ data }: { data?: Record<string, unknown> }) {
     running: 'border-primary',
     completed: 'border-status-success',
     failed: 'border-status-error',
-    skipped: 'border-status-pending',
-    blocked: 'border-status-pending',
   };
   const isDangerous = (data?.isDangerous as boolean) ?? false;
-
   return (
     <div className={cn(
       'relative rounded-lg border-2 bg-transparent px-4 py-3 min-w-[180px]',
@@ -80,149 +75,122 @@ function ProcessNode({ data }: { data?: Record<string, unknown> }) {
       {!!data?.description && (
         <div className="text-xs text-secondary mt-1 line-clamp-2">{(data?.description as string)}</div>
       )}
-      <div className="mt-2 flex items-center justify-end">
-        <span className={cn(
-          'text-[10px] px-1.5 py-0.5 rounded-sm font-medium',
-          status === 'completed' && 'bg-status-success/10 text-status-success',
-          status === 'running' && 'bg-primary/10 text-primary',
-          status === 'failed' && 'bg-status-error/10 text-status-error',
-          status === 'pending' && 'bg-status-pending/10 text-status-pending',
-        )}>
-          {status === 'completed' ? '已完成' : status === 'running' ? '执行中' : status === 'failed' ? '失败' : '待执行'}
-        </span>
-      </div>
+      {status === 'running' && (
+        <div className="mt-2 text-xs">{(data?.progress as number ?? 0)}%</div>
+      )}
       <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={true} />
     </div>
   );
 }
 
 function DecisionNode({ data }: { data?: Record<string, unknown> }) {
+  const status = (data?.status as string) || 'pending';
   return (
-    <div className="relative">
+    <div className="relative bg-transparent">
       <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
-      <div className="w-20 h-20 border-2 border-border-medium bg-transparent rotate-45 flex items-center justify-center">
-        <span className="text-xs text-primary -rotate-45 text-center leading-tight">{(data?.name as string) || '决策'}</span>
+      <div
+        className={cn(
+          'relative px-4 py-6 min-w-[180px] text-center rounded-full border-2',
+          status === 'completed' ? 'border-status-success' : 'border-primary'
+        )}
+        style={{ transform: 'rotate(-2deg)' }}
+      >
+        <span className="text-sm font-medium text-primary">{(data?.name as string) || ''}</span>
       </div>
       <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={true} id="bottom" />
       <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={true} id="right" />
       <Handle type="source" position={Position.Left} style={handleStyle} isConnectable={true} id="left" />
-      <div className="absolute top-24 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">
-        {(data?.description as string) || ''}
-      </div>
     </div>
   );
 }
 
 function EndNode({ data }: { data?: Record<string, unknown> }) {
   return (
-    <div className="rounded-lg border-2 border-muted bg-transparent px-4 py-2 min-w-[100px] text-center">
+    <div className="rounded-full border-2 border-emerald bg-transparent px-6 py-3 min-w-[80px] text-center">
       <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
       <span className="text-sm font-medium text-primary">{(data?.name as string) || '结束'}</span>
     </div>
   );
 }
 
-const nodeTypes: Record<string, ComponentType> = {
+const nodeTypes = {
   start: StartNode,
   process: ProcessNode,
   decision: DecisionNode,
   end: EndNode,
-};
+} as Record<string, ComponentType<{ data?: Record<string, unknown> }>>;
 
-/* ==================== Placeholder Edges ==================== */
+/* ==================== Custom Edge ==================== */
 
-function AnimatedEdge(props: Record<string, unknown>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data } = props;
-  const [edgePath] = getBezierPath({
-    sourceX: sourceX as number,
-    sourceY: sourceY as number,
-    targetX: targetX as number,
-    targetY: targetY as number,
-    sourcePosition: sourcePosition as string,
-    targetPosition: targetPosition as string,
-  });
-  const status = (data as Record<string, unknown> | undefined)?.status as string || 'pending';
-  const color = status === 'running' ? '#D97706' : status === 'completed' ? '#10B981' : status === 'failed' ? '#EF4444' : '#3A3548';
-
-  return (
-    <BaseEdge
-      id={id as string}
-      path={edgePath}
-      style={{
-        stroke: color,
-        strokeWidth: 2,
-        strokeDasharray: '5 5',
-        animation: 'dashdraw 0.5s linear infinite',
-      }}
-    />
-  );
-}
-
-function ConditionEdge(props: Record<string, unknown>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data } = props;
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX: sourceX as number,
-    sourceY: sourceY as number,
-    targetX: targetX as number,
-    targetY: targetY as number,
-    sourcePosition: sourcePosition as string,
-    targetPosition: targetPosition as string,
-  });
-  const status = (data as Record<string, unknown> | undefined)?.status as string || 'pending';
-  const color = status === 'running' ? '#D97706' : status === 'completed' ? '#10B981' : status === 'failed' ? '#EF4444' : '#3A3548';
-  const conditionLabel = (label as string) || (data as Record<string, unknown> | undefined)?.condition as string || '';
-
+function AnimatedEdge({
+  id, sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition, data,
+}: {
+  id: string | undefined;
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+  sourcePosition: Position;
+  targetPosition: Position;
+  data?: { status?: string };
+}) {
+  const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const color = data?.status === 'completed' ? '#10B981' : data?.status === 'running' ? '#D97706' : '#6B6680';
   return (
     <>
       <BaseEdge id={id as string} path={edgePath} style={{ stroke: color, strokeWidth: 2 }} />
-      {conditionLabel && (
-        <EdgeLabelRenderer>
+      <EdgeLabelRenderer>
+        {data?.status === 'running' && (
           <div
-            className="absolute text-xs text-muted bg-surface-card px-2 py-0.5 rounded-sm border border-subtle pointer-events-none"
             style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              position: 'absolute', transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
+              fontSize: 10, color: '#D97706', pointerEvents: 'all',
             }}
+            className="absolute text-xs text-muted bg-surface-card px-2 py-0.5 rounded-sm border border-subtle pointer-events-none"
           >
-            {conditionLabel}
+            执行中
           </div>
-        </EdgeLabelRenderer>
-      )}
+        )}
+      </EdgeLabelRenderer>
     </>
   );
 }
 
-const edgeTypes: Record<string, ComponentType> = {
-  animated: AnimatedEdge,
-  condition: ConditionEdge,
-};
+const edgeTypes = { animated: AnimatedEdge };
 
-/* ==================== Internal Helpers ==================== */
+/* ==================== Controls ==================== */
 
-const FitViewHandler: FC = () => {
-  const { fitView } = useReactFlow();
-  useEffect(() => {
-    const timer = setTimeout(() => fitView({ padding: 0.2 }), 50);
-    return () => clearTimeout(timer);
-  }, [fitView]);
+function FitViewHandler() {
+  const rf = (ReactFlow as any).useReactFlow?.();
+  const done = useRef(false);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useCallback(() => {
+    if (!done.current) {
+      setTimeout(() => { rf?.fitView?.({ padding: 0.2 }); done.current = true; }, 100);
+    }
+  }, [])();
   return null;
-};
+}
 
-const FlowControls: FC = () => {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+function FlowControls() {
+  const { zoomIn, zoomOut, fitView } = (ReactFlow as any).useReactFlow?.() || {};
   return (
-    <div className="absolute bottom-4 left-4 z-10 flex flex-col gap-1 bg-surface-card border border-subtle rounded-md p-1 shadow-card">
-      <button type="button" onClick={() => zoomIn()} className="p-1.5 rounded hover:bg-surface-card-hover text-secondary hover:text-primary transition-colors" title="Zoom In">
-        <Plus className="w-4 h-4" />
-      </button>
-      <button type="button" onClick={() => zoomOut()} className="p-1.5 rounded hover:bg-surface-card-hover text-secondary hover:text-primary transition-colors" title="Zoom Out">
-        <Minus className="w-4 h-4" />
-      </button>
-      <button type="button" onClick={() => fitView({ padding: 0.2 })} className="p-1.5 rounded hover:bg-surface-card-hover text-secondary hover:text-primary transition-colors" title="Fit View">
-        <Maximize2 className="w-4 h-4" />
-      </button>
+    <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+      <button onClick={() => zoomIn?.()} className="w-8 h-8 rounded-md bg-surface-card border border-subtle flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors"><Plus size={16} /></button>
+      <button onClick={() => zoomOut?.()} className="w-8 h-8 rounded-md bg-surface-card border border-subtle flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors"><Minus size={16} /></button>
+      <button onClick={() => fitView?.()} className="w-8 h-8 rounded-md bg-surface-card border border-subtle flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors"><Maximize2 size={14} /></button>
     </div>
   );
-};
+}
+
+function getMiniMapNodeColor(node: Node): string {
+  const s = (node.data?.status as string) || 'pending';
+  const m: Record<string, string> = { pending: '#6B6680', running: '#D97706', completed: '#10B981', failed: '#EF4444' };
+  return m[s] || '#6B6680';
+}
+
+injectDashAnimation();
 
 /* ==================== Props ==================== */
 
@@ -231,102 +199,50 @@ export interface TaskFlowProps {
   edges: Edge[];
   selectedNodeId: string | null;
   onNodeClick: (nodeId: string) => void;
-  onNodesChange?: (changes: unknown[]) => void;
-  onEdgesChange?: (changes: unknown[]) => void;
-  onConnect?: (connection: { source: string; target: string }) => void;
-  onNodesDelete?: (nodeIds: string[]) => void;
-  onEdgesDelete?: (edgeIds: string[]) => void;
-  onPaneClick?: () => void;
+  onNodesChange: (changes: NodeChange[]) => void;
+  onEdgesChange: (changes: EdgeChange[]) => void;
+  onConnect: (connection: Connection) => void;
+  onNodesDelete: (nodeIds: string[]) => void;
+  onEdgesDelete: (edgeIds: string[]) => void;
+  onPaneClick: () => void;
 }
 
-/* ==================== TaskFlow Component ==================== */
+/* ==================== TaskFlow — Controlled Component ==================== */
 
 export const TaskFlow: FC<TaskFlowProps> = ({
-  nodes: initialNodes,
-  edges: initialEdges,
+  nodes,
+  edges,
   selectedNodeId,
   onNodeClick,
-  onNodesChange: externalNodesChange,
-  onEdgesChange: externalEdgesChange,
-  onConnect: externalConnect,
-  onNodesDelete: externalNodesDelete,
-  onEdgesDelete: externalEdgesDelete,
+  onNodesChange,
+  onEdgesChange,
+  onConnect,
+  onNodesDelete,
+  onEdgesDelete,
   onPaneClick,
 }) => {
   const theme = useTheme();
   const isLight = theme === 'light';
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  useEffect(() => {
-    injectDashAnimation();
-  }, []);
-
-  const initialSyncDone = useRef(false);
-  useEffect(() => {
-    if (!initialSyncDone.current && initialNodes.length > 0) {
-      setNodes(initialNodes);
-      initialSyncDone.current = true;
-    }
-  }, [initialNodes, setNodes]);
-
-  useEffect(() => {
-    if (!initialSyncDone.current && initialEdges.length > 0) {
-      setEdges(initialEdges);
-    }
-  }, [initialEdges, setEdges]);
-
-  const handleNodeClick = useCallback((_event: MouseEvent, node: Node) => {
-    onNodeClick(node.id);
-  }, [onNodeClick]);
-
-  const handlePaneClick = useCallback(() => {
-    onPaneClick?.();
-  }, [onPaneClick]);
-
-  const handleConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge(params, eds));
-    if (params.source && params.target)
-      externalConnect?.({ source: params.source, target: params.target });
-  }, [setEdges, externalConnect]);
-
-  const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
-    externalNodesDelete?.(deleted.map(d => d.id));
-  }, [externalNodesDelete]);
-
-  const handleEdgesDelete = useCallback((deleted: { id: string }[]) => {
-    externalEdgesDelete?.(deleted.map(d => d.id));
-  }, [externalEdgesDelete]);
-
-  const handleNodesChange = useCallback((changes: unknown[]) => {
-    // Apply ReactFlow internal changes first (drag, position updates)
-    onNodesChange(changes);
-  }, [onNodesChange]);
-
-  const handleEdgesChange = useCallback((changes: unknown[]) => {
-    onEdgesChange(changes);
-    externalEdgesChange?.(changes);
-  }, [onEdgesChange, externalEdgesChange]);
-
-  const getMiniMapNodeColor = useCallback((node: { data?: Record<string, unknown> }) => {
-    const status = node.data?.status as string;
-    switch (status) {
-      case 'completed': return '#10B981';
-      case 'running': return '#D97706';
-      case 'failed': return '#EF4444';
-      case 'pending': return '#6B6680';
-      default: return '#3A3548';
-    }
-  }, []);
 
   const highlightedNodes = useMemo(() => {
     if (!selectedNodeId) return nodes;
-    // Only add className for dimming — don't create new objects
     return nodes.map((node) => ({
       ...node,
       className: selectedNodeId === node.id ? '' : 'opacity-50',
     }));
   }, [nodes, selectedNodeId]);
+
+  const handleConnect = useCallback((params: Connection) => {
+    onConnect(params);
+  }, [onConnect]);
+
+  const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
+    onNodesDelete(deleted.map(d => d.id));
+  }, [onNodesDelete]);
+
+  const handleEdgesDelete = useCallback((deleted: { id: string }[]) => {
+    onEdgesDelete(deleted.map(d => d.id));
+  }, [onEdgesDelete]);
 
   return (
     <div className="flex-1 w-full h-full relative">
@@ -335,13 +251,13 @@ export const TaskFlow: FC<TaskFlowProps> = ({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodeClick={handleNodeClick}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={handleEdgesChange}
+        onNodeClick={(_e, node) => onNodeClick(node.id)}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}
-        onPaneClick={handlePaneClick}
+        onPaneClick={onPaneClick}
         nodesDraggable={true}
         nodesConnectable={true}
         deleteKeyCode="Backspace"
@@ -349,7 +265,6 @@ export const TaskFlow: FC<TaskFlowProps> = ({
         panOnDrag={true}
         selectNodesOnDrag={true}
         fitView
-        onNodeDoubleClick={(_, node) => { onNodeClick?.(node.id); }}
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
