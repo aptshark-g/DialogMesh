@@ -334,7 +334,6 @@ export function TaskPlanningPage() {
 
   // ═══ Load task_graph from backend on mount (standalone resource, not from message) ═══
   const [loaded, setLoaded] = useState(false);
-  const [mountKey, setMountKey] = useState(0);
   useEffect(() => {
     if (sessionId && !loaded) {
       getTaskGraph(sessionId).then(data => {
@@ -342,7 +341,6 @@ export function TaskPlanningPage() {
         if (apiNodes.length > 0) {
           const tg = convertToTaskGraph(apiNodes);
           if (tg) useTaskStore.getState().setTaskGraph(tg);
-          setMountKey(k => k + 1); // force TaskFlow remount with correct data
         }
         setLoaded(true);
       }).catch(() => setLoaded(true));
@@ -531,15 +529,18 @@ export function TaskPlanningPage() {
       />
       <TaskStatsBar {...stats} />
       <div className="flex-1 flex overflow-hidden relative">
-        <TaskFlow
-          ref={tfRef}
-          key={mountKey}
-          nodes={nodes}
-          edges={edges}
-          selectedNodeId={selectedNodeId}
-          onNodeClick={handleNodeClick}
-          onPaneClick={handleClosePanel}
-        />
+        {!loaded ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted text-sm">加载任务图...</div>
+        ) : (
+          <TaskFlow
+            ref={tfRef}
+            nodes={nodes}
+            edges={edges}
+            selectedNodeId={selectedNodeId}
+            onNodeClick={handleNodeClick}
+            onPaneClick={handleClosePanel}
+          />
+        )}
         <TaskDetailPanel node={selectedNode} onClose={handleClosePanel} />
       </div>
       <div className="flex items-center justify-between px-3 lg:px-4 py-2 border-t border-subtle text-[10px] text-muted">
