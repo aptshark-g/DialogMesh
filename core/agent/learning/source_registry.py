@@ -12,7 +12,7 @@ import time
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from core.agent.learning.sources import SearchSource, ArxivSource, DuckDuckGoSource, ScholarSource, GitHubSource
+from core.agent.learning.sources import SearchSource, ArxivSource, DuckDuckGoSource, ScholarSource, GitHubSource, TavilySource
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +38,12 @@ class SourceRegistry:
         return cls._instance
 
     def _register_builtins(self):
-        """Register the 4 built-in sources."""
+        """Register the 5 built-in sources."""
         self.register(ArxivSource())
         self.register(DuckDuckGoSource())
         self.register(ScholarSource())
         self.register(GitHubSource())
+        self.register(TavilySource())
 
     def register(self, source: SearchSource):
         """Register a new search source. Replaces existing with same name."""

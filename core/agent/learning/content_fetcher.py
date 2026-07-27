@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""ContentFetcher — fetch URL → extract text → chunk."""
+"""ContentFetcher — fetch URL → extract clean text → chunk.
+
+Extraction pipeline:
+  1. trafilatura (primary) — purpose-built for web content extraction
+  2. newspaper3k — article metadata + NLP summary
+  3. bs4 regex (fallback) — only when neither is available
+"""
 
 from __future__ import annotations
 
@@ -17,10 +23,11 @@ CHUNK_OVERLAP = 128
 
 
 class ContentFetcher:
-    """Fetch + extract + chunk web content.
+    """Fetch + extract clean text + chunk using trafilatura/newspaper3k.
 
-    Supports: HTML, plain text, JSON, Markdown.
-    PDF support: requires pymupdf (optional, graceful fallback).
+    trafilatura: precision content extraction (removes nav/ads/sidebar)
+    newspaper3k: article metadata + NLP summary
+    bs4: fallback when neither available
     """
 
     def fetch(self, url: str, timeout: float = 8.0) -> Tuple[Optional[str], Optional[bytes]]:
@@ -36,7 +43,10 @@ class ContentFetcher:
             return None, None
 
     def extract_text(self, content_type: str, raw: bytes) -> str:
-        """Extract plain text from raw bytes based on content type."""
+        """Extract clean text from raw bytes.
+
+        Priority: trafilatura > newspaper3k > bs4 fallback.
+        """
         ct_lower = content_type.lower()
 
         if "html" in ct_lower:
@@ -45,35 +55,100 @@ class ContentFetcher:
             return self._extract_pdf(raw)
         elif "json" in ct_lower:
             return self._extract_json(raw)
-        elif "markdown" in ct_lower or "text/md" in ct_lower:
-            return raw.decode(errors="replace")
-        elif "text/" in ct_lower:
-            return raw.decode(errors="replace")
+        elif "text/" in ct_lower or "markdown" in ct_lower:
+            return raw.decode(errors="replace")[:10000]
         else:
-            # Unknown type — try as text, truncate
             text = raw.decode(errors="replace")[:5000]
-            logger.debug("Unknown content type '%s', returning %d chars", ct_lower[:50], len(text))
             return text
 
+    # ─── HTML extraction pipeline ───
+
     def _extract_html(self, raw: bytes) -> str:
-        """Extract main text from HTML — priority: article > main > body."""
+        """Extract main content from HTML.
+
+        Layer 1: trafilatura — precision extraction (preferred)
+        Layer 2: newspaper3k — article pipeline
+        Layer 3: bs4 — basic HTML stripping (fallback)
+        """
         html = raw.decode(errors="replace")
 
-        # Try to find main content area
-        for selector in ("article", "main"):
-            pattern = rf'<{selector}[^>]*>(.*?)</{selector}>'
-            m = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
-            if m:
-                return self._strip_html(m.group(1))[:10000]
+        # L1: trafilatura (best — removes nav, ads, sidebar, boilerplate)
+        text = self._try_trafilatura(html)
+        if text and len(text) > 200:
+            logger.debug("Extracted via trafilatura: %d chars", len(text))
+            return text[:10000]
 
-        # Fallback: strip all tags from body or entire doc
-        body_m = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
-        target = body_m.group(1) if body_m else html
-        return self._strip_html(target)[:10000]
+        # L2: newspaper3k (good — article metadata + NLP summary)
+        text = self._try_newspaper(html)
+        if text and len(text) > 100:
+            logger.debug("Extracted via newspaper3k: %d chars", len(text))
+            return text[:10000]
+
+        # L3: bs4 fallback (basic — strip tags only)
+        text = self._strip_html_basic(html)
+        logger.debug("Extracted via bs4 fallback: %d chars", len(text))
+        return text[:10000]
+
+    def _try_trafilatura(self, html: str) -> Optional[str]:
+        """Extract using trafilatura — the gold standard."""
+        try:
+            import trafilatura
+            text = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_tables=False,
+                include_images=False,
+                include_links=False,
+                output_format="txt",
+            )
+            return text
+        except ImportError:
+            logger.debug("trafilatura not installed — skipping L1 extraction")
+        except Exception as e:
+            logger.debug("trafilatura failed: %s", e)
+        return None
+
+    def _try_newspaper(self, html: str) -> Optional[str]:
+        """Extract using newspaper3k — article NLP pipeline."""
+        try:
+            import newspaper
+            from newspaper import Article
+            import io
+
+            # newspaper3k needs a URL, but we only have HTML
+            # Use Config to parse from raw HTML
+            config = newspaper.Config()
+            config.fetch_images = False
+            config.memoize_articles = False
+
+            article = Article("", config=config)
+            article.download(input_html=html)
+            article.parse()
+
+            # Try NLP summary if available
+            try:
+                article.nlp()
+                if article.summary:
+                    return f"{article.title}\n\n{article.text}\n\n摘要: {article.summary}"
+            except Exception:
+                pass
+
+            text = article.text
+            if article.title:
+                text = f"{article.title}\n\n{text}"
+            return text
+        except ImportError:
+            logger.debug("newspaper3k not installed — skipping L2 extraction")
+        except Exception as e:
+            logger.debug("newspaper3k failed: %s", e)
+        return None
 
     @staticmethod
-    def _strip_html(html: str) -> str:
-        """Remove HTML tags + normalize whitespace."""
+    def _strip_html_basic(html: str) -> str:
+        """Basic HTML stripping — removes tags + scripts + styles.
+
+        Only used as L3 fallback when trafilatura/newspaper3k unavailable.
+        """
         text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<[^>]+>', ' ', text)
@@ -82,15 +157,15 @@ class ContentFetcher:
         text = re.sub(r'\n\s*\n', '\n\n', text)
         return text.strip()
 
+    # ─── PDF / JSON extraction ───
+
     def _extract_pdf(self, raw: bytes) -> str:
-        """Extract text from PDF — requires pymupdf (marker-pdf fallback)."""
+        """Extract text from PDF via pymupdf (optional)."""
         try:
-            import fitz  # pymupdf
+            import fitz
             import io
             doc = fitz.open(stream=raw, filetype="pdf")
-            text = ""
-            for page in doc:
-                text += page.get_text()
+            text = "".join(page.get_text() for page in doc)
             doc.close()
             return text[:10000]
         except ImportError:
@@ -105,7 +180,6 @@ class ContentFetcher:
         try:
             import json
             data = json.loads(raw)
-            # Extract interesting fields
             parts = []
             if isinstance(data, dict):
                 for key in ("description", "summary", "content", "text", "body", "readme"):
@@ -118,6 +192,8 @@ class ContentFetcher:
             return "\n".join(parts)[:10000] if parts else json.dumps(data, indent=2)[:10000]
         except Exception:
             return raw.decode(errors="replace")[:5000]
+
+    # ─── Chunking ───
 
     def chunk(self, text: str, chunk_size: int = CHUNK_SIZE,
               overlap: int = CHUNK_OVERLAP) -> List[str]:
