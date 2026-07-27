@@ -1,16 +1,39 @@
+/* ═══ Light mode — global level (after all @layers) ═══
+   Tailwind generates hardcoded dark hex values in @layer utilities.
+   These rules at global level override them when html.light is active. */
 
-/* ═══ Light mode — global level (outside @layer, maximum specificity) ═══ */
-html.light body { background-color: #FDFCF8 !important; color: #1F2937 !important; }
+/* === Backgrounds === */
+html.light body,
+html.light [class*="bg-surface-card"]:not([class*="bg-surface-card-hover"]),
 html.light .bg-surface-card { background-color: #FFFFFF !important; }
 html.light .bg-surface-sidebar { background-color: #F5F0E8 !important; }
+html.light .bg-surface-main { background-color: #FDFCF8 !important; }
 html.light .bg-surface-input { background-color: #FFFFFF !important; }
-html.light .bg-surface-card-hover,
+html.light [class*="bg-surface-card-hover"]:hover,
 html.light .hover\:bg-surface-card-hover:hover { background-color: #F3F0EB !important; }
+
+/* === Text === */
+html.light body,
+html.light [class*="text-text-primary"],
 html.light .text-text-primary { color: #1F2937 !important; }
+html.light [class*="text-text-secondary"],
 html.light .text-text-secondary { color: #6B7280 !important; }
+html.light [class*="text-text-muted"],
 html.light .text-text-muted { color: #9CA3AF !important; }
+html.light .text-white { color: #1F2937 !important; }
+
+/* === Borders === */
+html.light [class*="border-border-subtle"],
 html.light .border-border-subtle,
 html.light .border-subtle { border-color: #E5E7EB !important; }
 html.light .border-border-medium { border-color: #D1D5DB !important; }
+html.light .border-gray-200,
+html.light .border-gray-700,
+html.light .border-gray-800 { border-color: #E5E7EB !important; }
+
+/* === Shadows === */
 html.light .shadow-card { box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important; }
-html.light .text-white { color: #1F2937 !important; }
+
+/* === Misc dark backgrounds === */
+html.light .bg-black { background-color: #FFFFFF !important; }
+html.light .bg-\[\#0C0A0F\] { background-color: #FDFCF8 !important; }
