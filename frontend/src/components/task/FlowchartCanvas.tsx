@@ -81,7 +81,8 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
 
   /* ── Pan ── */
   const onCanvasDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as Element).closest('[data-node]') || (e.target as Element).closest('[data-handle]')) return;
+    const t = e.target as Element;
+    if (t.closest('[data-node]') || t.closest('[data-handle]') || t.closest('button')) return;
     panning.current = true; setSel(null); setSelEdge(null);
   }, []);
   useEffect(() => {
@@ -138,16 +139,29 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     return () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
   }, [vx, vy, zoom, nodes, edges, onEdgesChange]);
 
-  /* ── Keyboard ── */
+  const selRef = useRef(sel);
+  const selEdgeRef = useRef(selEdge);
+  selRef.current = sel;
+  selEdgeRef.current = selEdge;
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+
+  /* ── Keyboard (uses refs for latest values) ── */
   useEffect(() => {
     const kd = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (sel) { onNodesChange(nodes.filter(n => n.id !== sel)); onEdgesChange(edges.filter(e => e.source !== sel && e.target !== sel)); setSel(null); }
-        if (selEdge) { onEdgesChange(edges.filter(e => e.id !== selEdge)); setSelEdge(null); }
-      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const s = selRef.current;
+      const se = selEdgeRef.current;
+      const nds = nodesRef.current;
+      const eds = edgesRef.current;
+      if (s) { onNodesChange(nds.filter(n => n.id !== s)); onEdgesChange(eds.filter(e => e.source !== s && e.target !== s)); setSel(null); }
+      else if (se) { onEdgesChange(eds.filter(e => e.id !== se)); setSelEdge(null); }
     };
-    window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd);
-  }, [sel, selEdge, nodes, edges, onNodesChange, onEdgesChange]);
+    window.addEventListener('keydown', kd);
+    return () => window.removeEventListener('keydown', kd);
+  }, [onNodesChange, onEdgesChange]);
 
   const onEdgeClick = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation(); setSelEdge(id === selEdge ? null : id); setSel(null);
@@ -214,18 +228,19 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
                   style={{ cursor: 'crosshair' }} onMouseDown={e => onHandleDown(e, n.id, h)} />;
               })}
               <rect width={n.w} height={n.h} rx={6} fill="white"
-                stroke={sel === n.id ? '#6366F1' : n.type === 'start' || n.type === 'end' ? '#10B981' : '#94a3b8'}
+                stroke={sel === n.id ? '#6366F1' : '#94a3b8'}
                 strokeWidth={sel === n.id ? 2.5 : 1.5}
                 filter="drop-shadow(0 1px 3px rgba(0,0,0,0.08))" />
-              <text x={n.w / 2} y={n.h / 2} textAnchor="middle" dominantBaseline="central"
-                fontSize={13} fill="#1e293b" fontFamily="system-ui, sans-serif" fontWeight={500}
-                style={{ pointerEvents: 'none', userSelect: 'none' }}>{n.label || '双击编辑'}</text>
-              {editing === n.id && (
+              {editing === n.id ? (
                 <foreignObject width={n.w} height={n.h}>
-                  <input autoFocus defaultValue={n.label} style={{ width: '100%', height: '100%', border: 'none', background: 'transparent', textAlign: 'center', fontSize: 13, fontFamily: 'system-ui, sans-serif', fontWeight: 500, outline: 'none', padding: 0 }}
-                    onBlur={e => { onNodesChange(nodes.map(x => x.id === n.id ? { ...x, label: e.target.value || ' ' } : x)); setEditing(null); }}
-                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(null); }} />
+                  <input autoFocus defaultValue={n.label} style={{ width: '100%', height: '100%', border: 'none', background: 'white', textAlign: 'center', fontSize: 13, fontFamily: 'system-ui, sans-serif', fontWeight: 500, outline: 'none', padding: 0, borderRadius: 6 }}
+                    onBlur={e => { onNodesChange(nodes.map(x => x.id === n.id ? { ...x, label: e.target.value || '' } : x)); setEditing(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setEditing(null); } }} />
                 </foreignObject>
+              ) : (
+                <text x={n.w / 2} y={n.h / 2} textAnchor="middle" dominantBaseline="central"
+                  fontSize={13} fill="#1e293b" fontFamily="system-ui, sans-serif" fontWeight={500}
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}>{n.label || ''}</text>
               )}
               {hoverNode === n.id && (
                 <circle cx={n.w} cy={n.h} r={5} fill="#6366F1" stroke="white" strokeWidth={1.5}
@@ -249,14 +264,10 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
               <button onClick={() => setWidgetOpen(false)} className="text-text-muted text-xs hover:text-primary">✕</button>
             </div>
             <div className="p-2 flex flex-col gap-1">
-              {(['start', 'process', 'decision', 'end'] as const).map(t => (
-                <button key={t} onClick={() => {
-                  const id = `n_${Date.now()}`;
-                  onNodesChange([...nodes, { id, label: '', x: (400 - vx) / zoom, y: (300 - vy) / zoom, w: 130, h: 40, type: t }]);
-                }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-primary/10 text-text-secondary">
-                  + {({ start: '开始/结束', process: '处理节点', decision: '判断节点', end: '结束节点' } as any)[t]}
-                </button>
-              ))}
+              <button onClick={() => {
+                const id = `n_${Date.now()}`;
+                onNodesChange([...nodes, { id, label: '', x: (400 - vx) / zoom, y: (300 - vy) / zoom, w: 130, h: 40, type: 'process' }]);
+              }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-primary/10 text-text-secondary">+ 添加节点</button>
             </div>
           </div>
         )}
