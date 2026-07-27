@@ -45,9 +45,9 @@ const handleStyle: CSSProperties = { width: 8, height: 8, background: '#4A4560',
 function StartNode({ data }: { data?: Record<string, unknown> }) {
   return (
     <div className="rounded-lg border-2 border-emerald bg-transparent px-4 py-2 min-w-[100px] text-center">
-      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
       <span className="text-sm font-medium text-primary">{(data?.name as string) || '开始'}</span>
-      <Handle type="source" position={Position.Bottom} style={handleStyle} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={true} />
     </div>
   );
 }
@@ -70,7 +70,7 @@ function ProcessNode({ data }: { data?: Record<string, unknown> }) {
       borderMap[status] || 'border-status-pending',
       status === 'running' && 'animate-executing-pulse'
     )}>
-      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
       {isDangerous && (
         <div className="absolute -top-2 -right-2 w-5 h-5 bg-status-error rounded-full flex items-center justify-center text-white text-[10px] font-bold z-10">⚠</div>
       )}
@@ -91,7 +91,7 @@ function ProcessNode({ data }: { data?: Record<string, unknown> }) {
           {status === 'completed' ? '已完成' : status === 'running' ? '执行中' : status === 'failed' ? '失败' : '待执行'}
         </span>
       </div>
-      <Handle type="source" position={Position.Bottom} style={handleStyle} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={true} />
     </div>
   );
 }
@@ -99,13 +99,13 @@ function ProcessNode({ data }: { data?: Record<string, unknown> }) {
 function DecisionNode({ data }: { data?: Record<string, unknown> }) {
   return (
     <div className="relative">
-      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
       <div className="w-20 h-20 border-2 border-border-medium bg-transparent rotate-45 flex items-center justify-center">
         <span className="text-xs text-primary -rotate-45 text-center leading-tight">{(data?.name as string) || '决策'}</span>
       </div>
-      <Handle type="source" position={Position.Bottom} style={handleStyle} id="bottom" />
-      <Handle type="source" position={Position.Right} style={handleStyle} id="right" />
-      <Handle type="source" position={Position.Left} style={handleStyle} id="left" />
+      <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={true} id="bottom" />
+      <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={true} id="right" />
+      <Handle type="source" position={Position.Left} style={handleStyle} isConnectable={true} id="left" />
       <div className="absolute top-24 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">
         {(data?.description as string) || ''}
       </div>
@@ -116,7 +116,7 @@ function DecisionNode({ data }: { data?: Record<string, unknown> }) {
 function EndNode({ data }: { data?: Record<string, unknown> }) {
   return (
     <div className="rounded-lg border-2 border-muted bg-transparent px-4 py-2 min-w-[100px] text-center">
-      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={true} />
       <span className="text-sm font-medium text-primary">{(data?.name as string) || '结束'}</span>
     </div>
   );
@@ -293,9 +293,9 @@ export const TaskFlow: FC<TaskFlowProps> = ({
   }, [externalEdgesDelete]);
 
   const handleNodesChange = useCallback((changes: unknown[]) => {
+    // Apply ReactFlow internal changes first (drag, position updates)
     onNodesChange(changes);
-    externalNodesChange?.(changes);
-  }, [onNodesChange, externalNodesChange]);
+  }, [onNodesChange]);
 
   const handleEdgesChange = useCallback((changes: unknown[]) => {
     onEdgesChange(changes);
@@ -340,10 +340,10 @@ export const TaskFlow: FC<TaskFlowProps> = ({
         onPaneClick={handlePaneClick}
         nodesDraggable={true}
         nodesConnectable={true}
-        deleteKeyCode={['Backspace', 'Delete']}
+        deleteKeyCode="Backspace"
         elementsSelectable={true}
         panOnDrag={true}
-        selectNodesOnDrag={false}
+        selectNodesOnDrag={true}
         fitView
         onNodeDoubleClick={(_, node) => { onNodeClick?.(node.id); }}
         fitViewOptions={{ padding: 0.2 }}
