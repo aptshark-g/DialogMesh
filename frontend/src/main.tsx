@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
+import './light.css';
 import App from './App.tsx';
 
 // 检测是否在浏览器扩展环境中运行
