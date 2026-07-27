@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, type FC, type CSSProperties, type ComponentType } from 'react';
+import { useEffect, useCallback, useMemo, useRef, type FC, type CSSProperties, type ComponentType } from 'react';
 import type { MouseEvent } from 'react';
 import {
   ReactFlow,
@@ -262,12 +262,18 @@ export const TaskFlow: FC<TaskFlowProps> = ({
     injectDashAnimation();
   }, []);
 
+  const initialSyncDone = useRef(false);
   useEffect(() => {
-    setNodes(initialNodes);
+    if (!initialSyncDone.current && initialNodes.length > 0) {
+      setNodes(initialNodes);
+      initialSyncDone.current = true;
+    }
   }, [initialNodes, setNodes]);
 
   useEffect(() => {
-    setEdges(initialEdges);
+    if (!initialSyncDone.current && initialEdges.length > 0) {
+      setEdges(initialEdges);
+    }
   }, [initialEdges, setEdges]);
 
   const handleNodeClick = useCallback((_event: MouseEvent, node: Node) => {
@@ -315,12 +321,10 @@ export const TaskFlow: FC<TaskFlowProps> = ({
 
   const highlightedNodes = useMemo(() => {
     if (!selectedNodeId) return nodes;
+    // Only add className for dimming — don't create new objects
     return nodes.map((node) => ({
       ...node,
-      style: {
-        ...node.style,
-        opacity: selectedNodeId === node.id ? 1 : 0.5,
-      },
+      className: selectedNodeId === node.id ? '' : 'opacity-50',
     }));
   }, [nodes, selectedNodeId]);
 

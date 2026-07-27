@@ -333,8 +333,15 @@ export function TaskPlanningPage() {
 
   const [nodes, setNodes] = useState<Node[]>(rfNodes);
   const [edges, setEdges] = useState<Edge[]>(rfEdges);
-  // Sync from store when taskGraph changes
-  useEffect(() => { setNodes(rfNodes); setEdges(rfEdges); }, [rfNodes, rfEdges]);
+  // Only sync from store on first load (ref nonce), NOT every change
+  const [syncNonce, setSyncNonce] = useState(0);
+  useEffect(() => {
+    // Full reset only when explicit sync is requested (first load or manual refresh)
+    if (syncNonce === 0) {
+      setNodes(rfNodes);
+      setEdges(rfEdges);
+    }
+  }, [syncNonce]); // eslint-disable-line
 
   const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
 
@@ -395,7 +402,11 @@ export function TaskPlanningPage() {
     if (!g) return;
     const newId = `node_${Date.now()}`;
     const newNode: import('../types/task').TaskNode = { id: newId, name: '新节点', description: '双击编辑', type: 'execution', status: 'pending', parentId: null, dependencies: [], children: [], progress: 0 };
+    // Update store
     useTaskStore.setState({ taskGraph: { ...g, nodes: [...g.nodes, newNode], updatedAt: new Date().toISOString() } });
+    // Also add directly to ReactFlow nodes state for immediate rendering
+    const rfNode: Node = { id: newId, type: 'process', position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 }, data: { name: '新节点', description: '双击编辑', status: 'pending', type: 'execution' } };
+    setNodes(nds => [...nds, rfNode]);
   }, []);
 
   const handleAutoLayout = useCallback(() => {
