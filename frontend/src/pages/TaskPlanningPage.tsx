@@ -1,5 +1,5 @@
 /** WPS-style Flowchart DAG Editor — TODO: auto-layout + handle connection */
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 /* ── Types ── */
 interface FNode { id: string; label: string; x: number; y: number; w: number; h: number; type: string; }
@@ -48,7 +48,6 @@ export function TaskPlanningPage() {
   const [cw, setCw] = useState(1200);
   const [ch, setCh] = useState(800);
   const dragRef = useRef<{ id: string; mx: number; my: number; nx: number; ny: number } | null>(null);
-  const panRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
   const connRef = useRef<{ source: string; handle: string; sx: number; sy: number } | null>(null);
   const [connLine, setConnLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
@@ -87,21 +86,21 @@ export function TaskPlanningPage() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [zoom]);
 
-  // ── Canvas pan ──
+  // ── Canvas pan (empty space drag) ──
+  const panRef2 = useRef(false);
   const onCanvasDown = useCallback((e: React.MouseEvent) => {
     const t = e.target as SVGElement;
     if (t.closest('[data-node]') || t.closest('[data-handle]')) return;
-    panRef.current = { mx: e.clientX, my: e.clientY, vx, vy };
-  }, [vx, vy]);
+    panRef2.current = true;
+  }, []);
 
   useEffect(() => {
-    if (!panRef.current) return;
+    if (!panRef2.current) return;
     const onMove = (e: MouseEvent) => {
-      const p = panRef.current!;
-      setVx(p.vx - (e.clientX - p.mx));
-      setVy(p.vy - (e.clientY - p.my));
+      setVx(v => v + e.movementX);
+      setVy(v => v + e.movementY);
     };
-    const onUp = () => { panRef.current = null; };
+    const onUp = () => { panRef2.current = false; };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
@@ -175,6 +174,10 @@ export function TaskPlanningPage() {
   const delEdge = (id: string) => setEdges(prev => prev.filter(e => e.id !== id));
   const onCanvasClick = useCallback(() => setSel(null), []);
 
+  const validEdges = edges.filter(e =>
+    nodes.some(n => n.id === e.source) && nodes.some(n => n.id === e.target)
+  );
+
   /* ── Render helpers ── */
   const handlePoint = (n: FNode, handle: string) => {
     const hp = HANDLE_POSITIONS[handle];
@@ -191,12 +194,16 @@ export function TaskPlanningPage() {
     const dx = Math.abs(tx - sx) * 0.5;
     return `M ${sx} ${sy} C ${sx} ${sy + dx}, ${tx} ${ty - dx}, ${tx} ${ty}`;
   };
+  const isConn = (e: FEdge) => connRef.current?.source === e.source && connRef.current?.handle === e.sourceHandle;
 
-  const isConn = (e: FEdge) => connRef.current?.source === e.source && connRef.current.handle === e.sourceHandle;
+  // ── Only render edges where both endpoints exist ──
+  const visibleEdges = useMemo(() =>
+    edges.filter(e => nodes.some(n => n.id === e.source) && nodes.some(n => n.id === e.target)),
+    [edges, nodes]
+  );
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-subtle bg-surface-card/50">
         <h1 className="text-sm font-semibold text-primary">流程图编辑器</h1>
         <div className="flex-1" />
@@ -219,14 +226,14 @@ export function TaskPlanningPage() {
         <svg
           ref={svgRef}
           width="100%" height="100%"
-          style={{ cursor: panRef.current ? 'grabbing' : 'grab' }}
+          style={{ cursor: 'grab' }}
           onMouseDown={onCanvasDown}
           onWheel={onWheel}
           onClick={onCanvasClick}
         >
           <g transform={`translate(${vx},${vy}) scale(${zoom})`}>
             {/* Edges */}
-            {edges.map(e => (
+            {visibleEdges.map(e => (
               <g key={e.id}>
                 {/* Invisible wider hit area */}
                 <path d={edgePath(e)} fill="none" stroke="transparent" strokeWidth={14}
