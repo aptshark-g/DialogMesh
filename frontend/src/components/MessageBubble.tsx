@@ -5,6 +5,7 @@ import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/a
 import { cn } from '../lib/utils';
 import { submitFeedback } from '../api/v6';
 import { Toast } from './ui/Toast';
+import { MermaidBlock } from './MermaidBlock';
 import { convertToTaskGraph, useTaskStore } from '../stores/taskStore';
 
 function renderMarkdown(text: string): string {
@@ -27,6 +28,48 @@ function renderMarkdown(text: string): string {
     .replace(/(<tr>.*<\/tr>\n?)+/g, (m) => `<table class="border-collapse my-2">${m}</table>`)
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary underline">$1</a>');
+}
+
+/* ==================== Mermaid from code blocks ==================== */
+
+function MermaidFromContent({ content }: { content: string }) {
+  const match = content.match(/```mermaid\n([\s\S]*?)```/);
+  if (!match) return null;
+  return (
+    <div className="mt-2 w-full rounded-lg border border-border-subtle overflow-hidden bg-surface-card">
+      <div className="px-3 py-1.5 bg-surface-sidebar border-b border-border-subtle text-xs text-text-muted">流程图</div>
+      <div className="p-3 bg-white">
+        <MermaidBlock chart={match[1].trim()} />
+      </div>
+    </div>
+  );
+}
+
+/* ==================== Thinking Steps Panel ==================== */
+
+function ThinkingStepsPanel({ steps }: { steps: ThinkingStepPayload[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2 w-full">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        思考过程 ({steps.length} 步)
+      </button>
+      {open && (
+        <div className="mt-1.5 p-3 rounded-lg bg-surface-sidebar border border-border-subtle space-y-1.5 max-h-60 overflow-y-auto">
+          {steps.map((s, i) => (
+            <div key={i} className="text-xs text-text-secondary flex gap-2">
+              <span className="text-text-muted shrink-0">{s.step || i + 1}.</span>
+              <span>{s.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export interface MessageBubbleProps {
@@ -342,6 +385,14 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
               </div>
             </motion.div>
           )}
+
+          {/* Thinking Steps — collapsible */}
+          {thinkingSteps && thinkingSteps.length > 0 && (
+            <ThinkingStepsPanel steps={thinkingSteps} />
+          )}
+
+          {/* Mermaid diagrams from code blocks */}
+          <MermaidFromContent content={message.content} />
 
           {/* Timestamp & Status */}
           <span className="mt-1 text-xs text-text-muted flex items-center gap-1">
