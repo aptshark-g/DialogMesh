@@ -188,3 +188,25 @@ class MetaFeedback:
             },
             "intent_sightings": dict(self._intent_sightings),
         }
+
+    # ─── Credibility learning loop (§五, DESIGN_LEARNING_INGESTION) ───
+
+    def update_source_credibility(self, source_url: str, was_correct: bool):
+        """Update CredibilityEvaluator domain authority based on execution outcome.
+
+        Called after using a source in execution:
+          - was_correct=True → authority += 0.02 (trust increased)
+          - was_correct=False → authority -= 0.05 (distrust faster than trust)
+
+        This closes the loop: search → fetch → use → verify → update.
+        """
+        try:
+            from core.agent.learning.credibility import CredibilityEvaluator, DOMAIN_AUTHORITY
+            evaluator = CredibilityEvaluator()
+            domain = evaluator._extract_domain(source_url)
+            old = DOMAIN_AUTHORITY.get(domain, 0.5)
+            evaluator.update_consistency(source_url, was_correct)
+            new = DOMAIN_AUTHORITY.get(domain, 0.5)
+            logger.info("Credibility: %s %.2f→%.2f (correct=%s)", domain, old, new, was_correct)
+        except Exception as e:
+            logger.debug("Credibility update failed: %s", e)

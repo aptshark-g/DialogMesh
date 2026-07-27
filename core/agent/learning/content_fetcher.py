@@ -160,20 +160,57 @@ class ContentFetcher:
     # ─── PDF / JSON extraction ───
 
     def _extract_pdf(self, raw: bytes) -> str:
-        """Extract text from PDF via pymupdf (optional)."""
+        """Extract text from PDF — pymupdf → OCR fallback.
+
+        L1: pymupdf text extraction (works for native PDFs)
+        L2: PaddleOCR (scan detection: if text < 50 chars → OCR)
+        """
+        text = ""
+        is_scan = False
+
+        # L1: pymupdf native extraction
         try:
             import fitz
-            import io
             doc = fitz.open(stream=raw, filetype="pdf")
             text = "".join(page.get_text() for page in doc)
             doc.close()
-            return text[:10000]
         except ImportError:
-            logger.debug("pymupdf not installed — PDF extraction unavailable")
-            return ""
+            logger.debug("pymupdf not installed")
         except Exception as e:
-            logger.warning("PDF extraction failed: %s", e)
-            return ""
+            logger.warning("PDF text extraction failed: %s", e)
+
+        is_scan = len(text.strip()) < 50  # scan detection
+
+        # L2: PaddleOCR for scanned PDFs
+        if is_scan:
+            ocr_text = self._try_paddleocr(raw)
+            if ocr_text:
+                text = ocr_text
+                logger.info("OCR extracted %d chars from scanned PDF", len(ocr_text))
+
+        return text[:10000] if text else ""
+
+    def _try_paddleocr(self, raw: bytes) -> Optional[str]:
+        """OCR via PaddleOCR — best for Chinese + multilingual."""
+        try:
+            from paddleocr import PaddleOCR
+            import tempfile, os
+            ocr = PaddleOCR(use_angle_cls=True, lang='ch', show_log=False)
+            # Write to temp file (PaddleOCR needs file path)
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+                f.write(raw)
+                tmp_path = f.name
+            result = ocr.ocr(tmp_path, cls=True)
+            os.unlink(tmp_path)
+            if result and result[0]:
+                return " ".join(line[1][0] for line in result[0])
+        except ImportError:
+            logger.debug("PaddleOCR not installed — skipping OCR")
+        except FileNotFoundError:
+            logger.debug("PaddleOCR model not downloaded — run: paddleocr --download")
+        except Exception as e:
+            logger.warning("PaddleOCR failed: %s", e)
+        return None
 
     def _extract_json(self, raw: bytes) -> str:
         """Extract readable fields from JSON."""
