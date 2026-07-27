@@ -16,6 +16,7 @@ import { Background } from '@reactflow/background';
 import { MiniMap } from '@reactflow/minimap';
 import { cn } from '@/lib/utils';
 import { Plus, Minus, Maximize2 } from 'lucide-react';
+import { useTheme } from '@/stores/themeStore';
 
 /* ==================== CSS Animation ==================== */
 
@@ -244,6 +245,8 @@ export const TaskFlow: FC<TaskFlowProps> = ({
   onEdgesChange: externalEdgesChange,
   onPaneClick,
 }) => {
+  const theme = useTheme();
+  const isLight = theme === 'light';
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
@@ -319,17 +322,20 @@ export const TaskFlow: FC<TaskFlowProps> = ({
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
-        style={{ background: '#0C0A0F' }}
+        style={{ background: isLight ? '#FDFCF8' : '#0C0A0F' }}
         proOptions={{ hideAttribution: true }}
       >
         <FitViewHandler />
         <FlowControls />
-        <Background color="#3A3548" gap={20} size={1} variant="dots" />
+        <Background color={isLight ? '#D1D5DB' : '#3A3548'} gap={20} size={1} variant="dots" />
         <MiniMap
           nodeColor={getMiniMapNodeColor}
-          nodeStrokeColor="#2A2635"
-          maskColor="rgba(0, 0, 0, 0.6)"
-          style={{ background: '#1A1724', border: '1px solid #2A2635' }}
+          nodeStrokeColor={isLight ? '#D1D5DB' : '#2A2635'}
+          maskColor={isLight ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.6)'}
+          nodeStrokeWidth={3}
+          pannable
+          zoomable
+          style={{ background: isLight ? '#F5F0E8' : '#1A1724', border: isLight ? '1px solid #E5E7EB' : '1px solid #2A2635' }}
           position="bottom-right"
         />
       </ReactFlow>
