@@ -46,35 +46,89 @@ class CredibilityEvaluator:
       score = eval.evaluate({"url": "https://arxiv.org/abs/...", "timestamp": ..., "citations": 42})
     """
 
-    # Weights for each dimension
-    W_AUTHORITY = 0.30
-    W_FRESHNESS = 0.25
-    W_CITATIONS = 0.20
-    W_CONSISTENCY = 0.25
+    # Weights for each dimension (4 → now 3; consistency is SelfCheck)
+    W_AUTHORITY = 0.25
+    W_FRESHNESS = 0.20
+    W_CITATIONS = 0.15
+    W_SELFCHECK = 0.40  # SelfCheckGPT-style — LLM validates its own source
 
     def evaluate(self, source: dict) -> float:
-        """Score a source 0.0-1.0.
+        """Score a source 0.0-1.0 using 4-dimension credibility.
 
-        Args:
-            source: dict with keys: url, timestamp, citations, consistency(optional)
-        Returns:
-            credibility score 0.0-1.0
+        L1: domain_authority (fast, cached)
+        L2: freshness + citations (computed)
+        L3: SelfCheck (LLM — checks internal consistency of the source content)
         """
         domain = self._extract_domain(source.get("url", ""))
         authority = self._get_authority(domain)
         freshness = self._calc_freshness(source.get("timestamp", time.time()))
         citations = self._calc_citation_score(source.get("citations", source.get("stars", 0)))
-        consistency = source.get("consistency", 0.5)  # default neutral
+        selfcheck = self._selfcheck(source)
 
         score = (
             self.W_AUTHORITY * authority
             + self.W_FRESHNESS * freshness
             + self.W_CITATIONS * citations
-            + self.W_CONSISTENCY * consistency
+            + self.W_SELFCHECK * selfcheck
         )
-        logger.debug("Credibility: %s → %.2f (auth=%.2f fresh=%.2f cite=%.2f cons=%.2f)",
-                      domain, score, authority, freshness, citations, consistency)
+        logger.debug("Credibility: %s → %.2f (auth=%.2f fresh=%.2f cite=%.2f sc=%.2f)",
+                      domain, score, authority, freshness, citations, selfcheck)
         return min(1.0, max(0.0, score))
+
+    def _selfcheck(self, source: dict) -> float:
+        """SelfCheckGPT-style: LLM checks if the content is internally consistent.
+
+        Generates 3 facts from the content, then asks LLM if they're consistent.
+        Returns 0.0-1.0 (1.0 = fully self-consistent).
+        """
+        content = source.get("content", source.get("snippet", ""))
+        if not content or len(content) < 100:
+            return 0.5  # neutral for short content
+
+        try:
+            prompt = (
+                f"阅读以下内容，判断其内部是否一致、可靠。\n\n"
+                f"内容: {content[:1500]}\n\n"
+                f"请回答:\n"
+                f"1. 该内容是否有明显矛盾? (是/否)\n"
+                f"2. 其数据或引用是否可信? (是/否/不确定)\n"
+                f"3. 整体可靠性 0-10 分\n\n"
+                f"只输出: 一致性=是/否; 引用可信=是/否/不确定; 评分=0-10"
+            )
+
+            import urllib.request, json
+            body = json.dumps({
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+                "messages": [
+                    {"role": "system", "content": "你是可靠性评估器。严格但公正地评估内容。"},
+                    {"role": "user", "content": prompt},
+                ],
+            }).encode()
+            req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data=body,
+                headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            # Parse: 一致性=是; 引用可信=是; 评分=8
+            import re
+            score_match = re.search(r'评分\s*[:=]\s*(\d+)', reply)
+            score = int(score_match.group(1)) / 10.0 if score_match else 0.5
+
+            # Boost if consistent + credible
+            if "一致性=是" in reply or "一致性：是" in reply:
+                score = max(0.5, score)
+            if "否" in reply.split("一致性")[1].split(";")[0] if "一致性" in reply else False:
+                score = min(0.4, score)
+
+            return min(1.0, score)
+        except Exception as e:
+            logger.debug("SelfCheck failed: %s — using 0.5 default", e)
+            return 0.5  # Default neutral when LLM unavailable
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""

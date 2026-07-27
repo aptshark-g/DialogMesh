@@ -9,3 +9,4 @@ from core.agent.learning.content_fetcher import ContentFetcher
 from core.agent.learning.embedder import Embedder
 from core.agent.learning.credibility import CredibilityEvaluator
 from core.agent.learning.ingestion import IngestionPipeline
+from core.agent.learning.chroma_store import ChromaStore

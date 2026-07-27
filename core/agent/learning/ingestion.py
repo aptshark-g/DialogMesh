@@ -102,9 +102,40 @@ class IngestionPipeline:
         return ingested
 
     def _store_in_index(self, hit: dict, embedding: Optional[List[float]]) -> Optional[str]:
-        """Store hit in persistence (HybridIndex or FTS5 fallback)."""
+        """Store hit in ChromaDB for external content.
+
+        ChromaDB = external learning content (queryable, clusterable).
+        HybridIndex = internal data (sessions, events, relations).
+        """
         doc_id = str(abs(hash(hit.get("url", ""))) % (10 ** 9))
 
+        # External content → ChromaDB
+        try:
+            from core.agent.learning.chroma_store import ChromaStore
+            store = ChromaStore()
+            if store.available:
+                meta = {
+                    "source_url": hit.get("url", ""),
+                    "domain": self.evaluator._extract_domain(hit.get("url", "")),
+                    "timestamp": hit.get("timestamp", time.time()),
+                    "content_type": hit.get("source", "webpage"),
+                    "title": hit.get("title", ""),
+                    "credibility": hit.get("credibility", 0.5),
+                }
+                store.add(
+                    doc_id=doc_id,
+                    text=hit.get("content", hit.get("snippet", "")),
+                    embedding=embedding or [0.0] * 768,
+                    metadata=meta,
+                )
+                logger.debug("Stored in ChromaDB: %s", doc_id)
+                return doc_id
+        except ImportError:
+            logger.debug("chromadb not installed")
+        except Exception as e:
+            logger.warning("ChromaDB store failed: %s", e)
+
+        # Fallback: HybridIndex
         try:
             from core.agent.persistence.hybrid_index import HybridIndex
             idx = HybridIndex(db_path="data/learning_index.db")
@@ -123,24 +154,8 @@ class IngestionPipeline:
             )
             return doc_id
         except ImportError:
-            logger.debug("HybridIndex not available — storing in FTS5 only")
-            try:
-                from core.agent.persistence.fts5_index import FTS5Index
-                idx = FTS5Index(db_path="data/learning_index.db")
-                idx.index_document(
-                    doc_id=doc_id,
-                    content=hit.get("content", hit.get("snippet", "")),
-                    metadata={
-                        "source_url": hit.get("url", ""),
-                        "domain": self.evaluator._extract_domain(hit.get("url", "")),
-                        "timestamp": hit.get("timestamp", time.time()),
-                        "credibility": hit.get("credibility", 0.5),
-                    },
-                )
-                return doc_id
-            except ImportError:
-                logger.warning("No persistence backend available — skipping storage")
-                return None
+            logger.debug("No persistence backend — skipping storage")
+            return None
 
     @property
     def stats(self) -> dict:
