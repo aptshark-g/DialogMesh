@@ -147,8 +147,39 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
         # Phase 3: Build messages with full context
         system_prompt = _build_system_prompt(profile_text, cognitive_ctx)
+
+        # Phase 3.5: Execute BlueprintDAG via Decider (EventBus) — enrich context
+        decider_context = ""
+        try:
+            from core.agent.blueprint.engine import BlueprintEngine
+            from core.agent.orchestrator.agent_native import AgentOrchestrator
+            engine = BlueprintEngine()
+            intent = cognitive_ctx.get("intents", {}).get("primary", "")
+            if not intent:
+                segments = cognitive_ctx.get("intents", {}).get("segments", [])
+                intent = segments[0] if segments else "通用对话"
+            dag = engine.build(req.content, intent=intent)
+            orch = AgentOrchestrator()
+            chain_result = orch.process_dag(dag, user_text=req.content)
+            # Build context enrichment from chain outputs
+            chain_parts = []
+            for node_id, output in chain_result.get("chain_outputs", {}).items():
+                if node_id.startswith("intent"):
+                    chain_parts.append(f"意图: {str(output.get('intents', output))[:200]}")
+                elif node_id.startswith("pcr"):
+                    chain_parts.append(f"路由: {str(output.get('route', output))[:200]}")
+                elif node_id.startswith("context"):
+                    chain_parts.append(f"上下文: {str(output.get('assembled_context', output))[:200]}")
+            if chain_parts:
+                decider_context = "## 管线分析\n" + "\n".join(chain_parts)
+        except Exception as e:
+            logger.warning("Decider pipeline skipped: %s", e)
+
+        # Enrich messages if decider provided context
         history = session["messages"][-20:]
         all_messages = [{"role": "system", "content": system_prompt}] + history
+        if decider_context:
+            all_messages[-1]["content"] = f"{req.content}\n\n{decider_context}"
 
         # Phase 4: Call LLM via switch gateway
         import urllib.request
