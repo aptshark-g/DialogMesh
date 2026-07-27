@@ -332,7 +332,7 @@ export function TaskPlanningPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const tfRef = useRef<TaskFlowHandle>(null);
 
-  // ═══ Load task_graph from backend on mount (standalone resource, not from message) ═══
+  // ═══ Load task_graph from backend on mount ═══
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (sessionId && !loaded) {
@@ -340,23 +340,23 @@ export function TaskPlanningPage() {
         const apiNodes = data.nodes || [];
         if (apiNodes.length > 0) {
           const tg = convertToTaskGraph(apiNodes);
-          if (tg) useTaskStore.getState().setTaskGraph(tg);
+          if (tg) {
+            useTaskStore.getState().setTaskGraph(tg);
+            // Set local nodes/edges ONCE — never reset again
+            setNodes(toReactFlowNodes(tg.nodes));
+            setEdges(toReactFlowEdges(tg.nodes));
+          }
         }
         setLoaded(true);
       }).catch(() => setLoaded(true));
     }
   }, [sessionId, loaded]);
 
-  // Convert store TaskGraph → ReactFlow Nodes/Edges
-  const rfNodes = useMemo(() => storeGraph ? toReactFlowNodes(storeGraph.nodes) : [], [storeGraph]);
-  const rfEdges = useMemo(() => storeGraph ? toReactFlowEdges(storeGraph.nodes) : [], [storeGraph]);
-
-  const [nodes, setNodes] = useState<Node[]>(rfNodes);
-  const [edges, setEdges] = useState<Edge[]>(rfEdges);
-  // Sync from store when taskGraph changes
-  useEffect(() => { setNodes(rfNodes); setEdges(rfEdges); }, [rfNodes, rfEdges]);
-
   const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
+
+  // Local ReactFlow state — set ONCE during fetch, never overwritten
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
 
   // ═══ Auto-save to backend when storeGraph changes ═══
   const lastSaveRef = useRef(0);
