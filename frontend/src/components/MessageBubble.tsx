@@ -1,4 +1,5 @@
 import { memo, useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
@@ -92,6 +93,7 @@ function getMessageField<T>(
 }
 
 const MessageBubble = memo(function MessageBubble({ message, className }: MessageBubbleProps) {
+  const navigate = useNavigate();
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isError = message.status === 'error';
@@ -375,12 +377,12 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
                       已规划 {taskGraph.length} 个任务步骤
                     </span>
                   </div>
-                  <a
-                    href="/tasks"
+                  <button
+                    onClick={() => navigate('/tasks')}
                     className="text-xs px-3 py-1.5 rounded-md bg-primary/20 text-primary font-medium hover:bg-primary/30 transition-colors"
                   >
                     查看任务图 →
-                  </a>
+                  </button>
                 </div>
               </div>
             </motion.div>

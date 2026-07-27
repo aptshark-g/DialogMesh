@@ -30,7 +30,8 @@ export function ChatPage() {
     try {
       const resp = await sendMessage(sid, content);
       const reply = resp.content || '';
-      if (reply && reply !== '(no reply)' && reply !== '(empty)') addAI(reply);
+      if (reply && reply !== '(no reply)' && reply !== '(empty)')
+        addAI(reply, { taskGraph: resp.task_graph, metadata: { taskGraph: resp.task_graph, latencyMs: resp.latency_ms } });
     } catch (e: any) {} finally { setThinking(false); }
   };
 

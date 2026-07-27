@@ -33,8 +33,11 @@ export const useChatStore = create<ChatStore>((set, _get) => {
       const msg: ChatMessage = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
       return { messages: [...s.messages, msg] };
     }),
-    addAIMessage: (content) => set(s => {
-      const msg: ChatMessage = { id: (Date.now()+1).toString(), role: 'assistant', content, timestamp: Date.now() };
+    addAIMessage: (content, extra) => set(s => {
+      const msg: ChatMessage = {
+        id: (Date.now()+1).toString(), role: 'assistant', content, timestamp: Date.now(),
+        ...(extra || {}),
+      };
       return { messages: [...s.messages, msg] };
     }),
     setThinking: (v) => set({ isThinking: v }),
