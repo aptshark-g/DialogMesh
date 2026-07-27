@@ -198,54 +198,46 @@ class LLMDAGBuilder:
 
     def learn(self, hypotheses: List[Hypothesis], intent: str,
               eventlog_query: Optional[str] = None) -> LearningResult:
-        """Gather external information — arXiv API + local refs.
+        """Gather external information — multi-source search + fetch + embed + store.
 
-        Queries arXiv for papers matching the intent + chain keywords.
-        Falls back to local reference map if arxiv is unreachable.
+        Uses SourceRegistry (4 built-in sources, extensible) + IngestionPipeline.
         """
         result = LearningResult()
         if not hypotheses:
             return result
 
-        # Collect chain names mentioned in hypotheses
-        chains_mentioned = set()
-        for h in hypotheses:
-            for n in h.nodes:
-                chains_mentioned.add(n.get("chain", ""))
-
-        # 1. arXiv search (non-blocking, quick timeout)
+        # Use the full ingestion pipeline
         try:
-            import urllib.request, urllib.parse
-            query = urllib.parse.quote(f"{intent} agent orchestration")
-            url = f"http://export.arxiv.org/api/query?search_query=all:{query}&max_results=3&sortBy=relevance"
-            req = urllib.request.Request(url, headers={"User-Agent": "DialogMesh/6.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                body = resp.read().decode()
-            # Parse arxiv XML for titles
-            import re as _re
-            for m in _re.finditer(r'<title>(.*?)</title>', body):
-                title = m.group(1).strip()
-                if title and "Query" not in title:
-                    result.arxiv_matches.append({"title": title, "source": "arxiv"})
-        except Exception:
-            pass  # arxiv unreachable — continue with local refs
+            from core.agent.learning.ingestion import IngestionPipeline
+            pipeline = IngestionPipeline()
+            ingested = pipeline.run(intent, max_results=3, fetch_full=True)
 
-        # 2. Local reference map (always available)
-        reference_map = {
-            "代码分析": ["TEMPLATE: code_analysis (5节点: pcr→intent→context→subgraph→llm_reply)"],
-            "通用对话": ["TEMPLATE: general_chat (4节点: pcr→intent→profile→llm_reply)"],
-            "任务规划": ["TEMPLATE: task_planning (6节点: pcr→intent→context→subgraph→profile→llm_reply)"],
-            "数据搜索": ["TEMPLATE: data_search (3节点: pcr→intent→llm_reply)"],
-            "因果推理": ["STRATEGY: LLM_DRIVEN — LLM 全权构建完整DAG, PlanGate checkpoint 必须审核"],
-        }
-        for known, lines in reference_map.items():
-            if known in intent or intent in known:
-                result.reference_matches = lines
-                break
+            for hit in ingested:
+                if hit.get("source") == "arxiv":
+                    result.arxiv_matches.append({"title": hit.get("title", ""), "source": "arxiv"})
+                elif hit.get("source") == "scholar":
+                    result.arxiv_matches.append({"title": hit.get("title", ""), "source": "scholar"})
+                elif hit.get("source") == "github":
+                    result.reference_matches.append(f"github: {hit.get('title', '')}")
 
-        logger.info("Learn: %d arxiv hits, %d ref matches, %d chains (intent=%s)",
-                     len(result.arxiv_matches), len(result.reference_matches),
-                     len(chains_mentioned), intent)
+            # Also add local reference matches
+            reference_map = {
+                "代码分析": ["TEMPLATE: code_analysis (5节点)"],
+                "通用对话": ["TEMPLATE: general_chat (4节点)"],
+                "任务规划": ["TEMPLATE: task_planning (6节点)"],
+                "数据搜索": ["TEMPLATE: data_search (3节点)"],
+                "因果推理": ["STRATEGY: LLM_DRIVEN"],
+            }
+            for known, lines in reference_map.items():
+                if known in intent or intent in known:
+                    result.reference_matches = lines
+                    break
+
+        except Exception as e:
+            logger.warning("Ingestion pipeline failed: %s — using local refs only", e)
+
+        logger.info("Learn: %d arxiv, %d refs (intent=%s)",
+                     len(result.arxiv_matches), len(result.reference_matches), intent)
         return result
 
     # ─── Phase 3: Converge (收束) ───
