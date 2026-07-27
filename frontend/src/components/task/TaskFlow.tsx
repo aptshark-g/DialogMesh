@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, type FC, type CSSProperties } from 'react';
+import { useCallback, useMemo, useRef, useEffect, type FC, type CSSProperties } from 'react';
 import type { MouseEvent } from 'react';
 import {
   ReactFlow,
+  useReactFlow,
   Handle,
   Position,
   getBezierPath,
@@ -162,19 +163,18 @@ const edgeTypes = { animated: AnimatedEdge };
 /* ==================== Controls ==================== */
 
 function FitViewHandler() {
-  const rf = (ReactFlow as any).useReactFlow?.();
+  const { fitView } = useReactFlow();
   const done = useRef(false);
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useCallback(() => {
+  useEffect(() => {
     if (!done.current) {
-      setTimeout(() => { rf?.fitView?.({ padding: 0.2 }); done.current = true; }, 100);
+      setTimeout(() => { fitView({ padding: 0.2 }); done.current = true; }, 100);
     }
-  }, [])();
+  }, [fitView]);
   return null;
 }
 
 function FlowControls() {
-  const { zoomIn, zoomOut, fitView } = (ReactFlow as any).useReactFlow?.() || {};
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
   return (
     <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
       <button onClick={() => zoomIn?.()} className="w-8 h-8 rounded-md bg-surface-card border border-subtle flex items-center justify-center text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors"><Plus size={16} /></button>
