@@ -80,7 +80,26 @@ async def get_graph():
 # ═══════════════════════════════════════════════════════
 @router.get("/discourse-tree")
 async def get_discourse_tree():
-    return {"blocks": [], "total": 0}
+    import json, os
+    blocks = []
+    try:
+        if os.path.exists("data/v3_sessions.json"):
+            with open("data/v3_sessions.json") as f:
+                sessions = json.load(f)
+            for sid, s in sessions.items():
+                msgs = s.get("messages", [])
+                for i, m in enumerate(msgs):
+                    blocks.append({
+                        "id": f"block_{sid[:6]}_{i}",
+                        "session_id": sid[:8],
+                        "role": m.get("role", "user"),
+                        "content": m.get("content", "")[:100],
+                        "turn_index": i,
+                        "timestamp": s.get("created_at", 0) + i * 10,
+                    })
+    except Exception:
+        pass
+    return {"blocks": blocks, "total": len(blocks)}
 
 
 # ═══════════════════════════════════════════════════════
@@ -251,7 +270,24 @@ async def get_profile_corrections():
 # ═══════════════════════════════════════════════════════
 @router.get("/sessions")
 async def get_sessions():
-    return []
+    import json, os
+    items = []
+    try:
+        if os.path.exists("data/v3_sessions.json"):
+            with open("data/v3_sessions.json") as f:
+                sessions = json.load(f)
+            for sid, s in sessions.items():
+                msgs = s.get("messages", [])
+                items.append({
+                    "id": sid,
+                    "title": msgs[0].get("content","")[:50] if msgs else "新会话",
+                    "turn_count": len(msgs),
+                    "created_at": s.get("created_at", 0),
+                    "last_message": msgs[-1].get("content","")[:80] if msgs else "",
+                })
+    except Exception:
+        pass
+    return items
 
 
 # ═══════════════════════════════════════════════════════

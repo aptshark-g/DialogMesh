@@ -372,7 +372,8 @@ def _build_system_prompt(profile_text: str = "", cognitive_ctx: dict = {}) -> st
         if zone:
             parts.append(f"路由区域: {zone}")
 
-    parts.append("用中文回复。支持 Markdown 格式。")
+    parts.append("当用户要求规划任务或编排流程时，你只需生成任务方案的文字描述即可。系统会自动将其转化为任务图并在任务页面展示。不要让用户复制JSON，而是告诉用户\"任务已规划，请在任务页面查看\"。")
+    parts.append("用中文回复。支持 Markdown 格式（含 mermaid 流程图）。")
     return "\n".join(parts)
 
 
