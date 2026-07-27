@@ -267,6 +267,49 @@ async def send_message(session_id: str, req: SendMessageRequest):
     )
 
 
+class DAGEditRequest(BaseModel):
+    """LLM-driven DAG editing via natural language."""
+    instruction: str          # "把上下文那步移到子图之后"
+    current_nodes: list = []  # Current DAG nodes
+
+
+@router.post("/{session_id}/dag-edit")
+async def edit_dag(session_id: str, req: DAGEditRequest):
+    """LLM modifies the DAG based on natural language instruction."""
+    try:
+        import json as _json, urllib.request
+        nodes_text = _json.dumps(req.current_nodes, ensure_ascii=False)
+        prompt = (
+            f"当前任务图节点:\n{nodes_text}\n\n"
+            f"用户指令: {req.instruction}\n\n"
+            f"请输出修改后的节点列表(JSON数组), 保持相同格式。"
+            f"只输出 JSON, 不要其他文字。"
+        )
+        body = _json.dumps({
+            "provider": "deepseek", "model": "deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "你是 DAG 编辑器。根据用户指令修改任务图节点列表。"},
+                {"role": "user", "content": prompt},
+            ],
+        }).encode()
+        http_req = urllib.request.Request(
+            "http://127.0.0.1:8080/v1/chat/completions",
+            data=body,
+            headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(http_req, timeout=30) as resp:
+            data = _json.loads(resp.read())
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        # Extract JSON
+        import re
+        match = re.search(r'\[[\s\S]*\]', content)
+        updated_nodes = _json.loads(match.group()) if match else req.current_nodes
+        return {"status": "ok", "nodes": updated_nodes}
+    except Exception as e:
+        logger.warning("DAG edit failed: %s", e)
+        return {"status": "error", "error": str(e)[:200], "nodes": req.current_nodes}
+
+
 @router.post("/{session_id}/clarify", response_model=ClarifyResponse)
 async def submit_clarification(session_id: str, req: ClarifyRequest):
     return ClarifyResponse(

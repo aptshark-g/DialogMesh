@@ -61,7 +61,15 @@ export function getHistory(sessionId: string, limit?: number, offset?: number): 
 }
 
 export function getSessionStatus(sessionId: string): Promise<SessionStatusResponse> {
-  return apiFetch<SessionStatusResponse>(`/v3/session/${sessionId}/status`);
+  return fetch(`${API_BASE}/v3/session/${sessionId}/status`).then(res => res.json());
+}
+
+export function editDAG(sessionId: string, instruction: string, currentNodes: any[]): Promise<{status: string; nodes: any[]; error?: string}> {
+  return fetch(`${API_BASE}/v3/session/${sessionId}/dag-edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction, current_nodes: currentNodes }),
+  }).then(res => res.json());
 }
 
 export function getHealth(): Promise<HealthResponse> {
