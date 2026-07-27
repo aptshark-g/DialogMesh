@@ -340,7 +340,7 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
-        style={{ background: isLight ? '#FDFCF8' : '#0C0A0F' }}
+        style={{ width: '100%', height: '100%', background: isLight ? '#FDFCF8' : '#0C0A0F' }}
         proOptions={{ hideAttribution: true }}
       >
         <FitViewHandler />
