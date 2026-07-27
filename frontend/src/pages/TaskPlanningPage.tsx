@@ -1,584 +1,289 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { Node, Edge, NodeChange, EdgeChange, Connection } from '@reactflow/core';
-import { applyNodeChanges, applyEdgeChanges, addEdge } from '@reactflow/core';
-import { motion, AnimatePresence } from 'framer-motion';
-import { TaskFlow } from '@/components/task/TaskFlow';
-import type { TaskFlowHandle } from '@/components/task/TaskFlow';
-import { cn } from '@/lib/utils';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useTaskStore } from '@/stores/taskStore';
-import { useChatStore } from '@/stores/chatStore';
-import { saveTaskGraph, getTaskGraph } from '@/api/session';
-import type { TaskNode, TaskEdge } from '@/types/task';
-import {
-  Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon, Plus,
-} from 'lucide-react';
-import type { TaskExecutionStatus } from '@/types/task';
+/** WPS-style Flowchart DAG Editor — TODO: auto-layout + handle connection */
+import { useState, useCallback, useRef, useEffect } from 'react';
 
-/* ==================== Convert store TaskGraph → ReactFlow Nodes/Edges ==================== */
+/* ── Types ── */
+interface FNode { id: string; label: string; x: number; y: number; w: number; h: number; type: string; }
+interface FEdge { id: string; source: string; target: string; sourceHandle: string; targetHandle: string; }
 
-function toReactFlowNodes(taskNodes: TaskNode[]): Node[] {
-  return taskNodes.map((n, i) => ({
-    id: n.id,
-    type: mapFlowType(n.type),
-    position: { x: (i % 3) * 260, y: Math.floor(i / 3) * 140 },
-    data: {
-      name: n.name,
-      description: n.description || n.type,
-      status: n.status,
-      type: n.type,
-      isDangerous: n.checkpoint || false,
-      progress: n.progress,
-    },
-  }));
-}
+const MOCK: FNode[] = [
+  { id: 'start', label: '开始', x: 300, y: 30, w: 140, h: 44, type: 'start' },
+  { id: 'analyze', label: '分析需求', x: 300, y: 130, w: 140, h: 44, type: 'process' },
+  { id: 'design', label: '设计方案', x: 300, y: 240, w: 140, h: 44, type: 'process' },
+  { id: 'implement', label: '实现功能', x: 300, y: 350, w: 140, h: 44, type: 'process' },
+  { id: 'test', label: '测试验证', x: 300, y: 460, w: 140, h: 44, type: 'process' },
+  { id: 'end', label: '完成', x: 300, y: 570, w: 140, h: 44, type: 'end' },
+];
+const MOCK_EDGES: FEdge[] = [
+  { id: 'e1', source: 'start', target: 'analyze', sourceHandle: 'bottom', targetHandle: 'top' },
+  { id: 'e2', source: 'analyze', target: 'design', sourceHandle: 'bottom', targetHandle: 'top' },
+  { id: 'e3', source: 'design', target: 'implement', sourceHandle: 'bottom', targetHandle: 'top' },
+  { id: 'e4', source: 'implement', target: 'test', sourceHandle: 'bottom', targetHandle: 'top' },
+  { id: 'e5', source: 'test', target: 'end', sourceHandle: 'bottom', targetHandle: 'top' },
+];
 
-function toReactFlowEdges(taskNodes: TaskNode[]): Edge[] {
-  const edges: Edge[] = [];
-  taskNodes.forEach(n => {
-    (n.dependencies || []).forEach(depId => {
-      edges.push({
-        id: `e_${depId}_${n.id}`,
-        source: depId,
-        target: n.id,
-        type: 'animated',
-        data: { status: 'pending' },
-      });
-    });
-  });
-  return edges;
-}
+const HANDLE_POSITIONS: Record<string, { x: (w: number) => number; y: (h: number) => number }> = {
+  top:    { x: w => w / 2, y: () => 0 },
+  bottom: { x: w => w / 2, y: h => h },
+  left:   { x: () => 0, y: h => h / 2 },
+  right:  { x: w => w, y: h => h / 2 },
+};
 
-function mapFlowType(t: string): string {
-  const m: Record<string, string> = { intent: 'start', clarification: 'start', execution: 'process', validation: 'process', decision: 'decision', parallel: 'process', merge: 'process' };
-  return m[t] || 'process';
-}
+/* ── ID helpers ── */
+let idC = 0;
+const nid = () => `n_${++idC}_${Date.now()}`;
+const eid = (s: string, t: string) => `e_${s}_${t}`;
 
-/* ==================== TaskExecutionControls ==================== */
-
-interface TaskExecutionControlsProps {
-  status: TaskExecutionStatus;
-  onPlay: () => void;
-  onPause: () => void;
-  onReset: () => void;
-  onAutoLayout: () => void;
-  onExport: () => void;
-  onSettings: () => void;
-  onAddNode: () => void;
-}
-
-function TaskExecutionControls({ status, onPlay, onPause, onReset, onAutoLayout, onExport, onSettings, onAddNode }: TaskExecutionControlsProps) {
-  const statusDot: Record<TaskExecutionStatus, string> = {
-    idle: 'bg-status-pending',
-    running: 'bg-status-success',
-    paused: 'bg-status-warning',
-    completed: 'bg-status-success',
-    failed: 'bg-status-error',
-    cancelled: 'bg-status-error',
-  };
-
-  const statusLabel: Record<TaskExecutionStatus, string> = {
-    idle: '空闲',
-    running: '运行中',
-    paused: '已暂停',
-    completed: '已完成',
-    failed: '失败',
-    cancelled: '已取消',
-  };
-
-  return (
-    <div className="flex items-center gap-2 lg:gap-3 px-3 lg:px-6 py-2 lg:py-3 border-b border-subtle">
-      <div className="flex items-center gap-2 min-w-0">
-        <h1 className="text-lg font-semibold text-primary">任务规划</h1>
-        <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted">
-          <span className="truncate">查询意图理解与检索</span>
-          <span className="text-border-medium">|</span>
-          <span className="font-mono text-[10px]">task-plan-001</span>
-        </div>
-      </div>
-      <div className="flex-1" />
-      <div className="flex items-center gap-2">
-        <motion.span
-          className={cn('w-2 h-2 rounded-full', statusDot[status])}
-          animate={status === 'running' ? { scale: [1, 1.3, 1] } : {}}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        />
-        <span className="text-xs text-secondary">{statusLabel[status]}</span>
-      </div>
-      <button
-        type="button"
-        onClick={status === 'running' ? onPause : onPlay}
-        className={cn(
-          'inline-flex items-center justify-center rounded-md h-8 w-8 border text-sm transition-colors',
-          status === 'running'
-            ? 'bg-primary text-white border-primary animate-executing-pulse'
-            : 'bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover'
-        )}
-      >
-        {status === 'running' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-      </button>
-      <button type="button" onClick={onReset} className="inline-flex items-center justify-center rounded-md h-8 w-8 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors" title="Reset">
-        <RotateCcw className="w-4 h-4" />
-      </button>
-      <button type="button" onClick={onAutoLayout} className="hidden lg:inline-flex items-center justify-center rounded-md h-8 px-3 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors text-xs" title="Auto Layout">
-        <LayoutGrid className="w-4 h-4 mr-1" />
-        <span>自动布局</span>
-      </button>
-      <button type="button" onClick={onAddNode} className="inline-flex items-center justify-center rounded-md h-8 px-3 border bg-primary/20 border-primary/30 text-primary hover:bg-primary/30 transition-colors text-xs" title="Add node">
-        <Plus className="w-4 h-4 mr-1" />
-        <span>添加节点</span>
-      </button>
-      <button type="button" onClick={onExport} className="hidden lg:inline-flex items-center justify-center rounded-md h-8 px-3 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors text-xs" title="Export">
-        <Download className="w-4 h-4 mr-1" />
-        <span>导出</span>
-      </button>
-      <button type="button" onClick={onSettings} className="inline-flex items-center justify-center rounded-md h-8 w-8 border bg-surface-card border-subtle text-secondary hover:text-primary hover:bg-surface-card-hover transition-colors" title="Settings">
-        <Settings className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
-/* ==================== Placeholder: TaskStatsBar ==================== */
-
-interface TaskStatsBarProps {
-  total: number;
-  completed: number;
-  running: number;
-  pending: number;
-  failed: number;
-}
-
-function TaskStatsBar({ total, completed, running, pending, failed }: TaskStatsBarProps) {
-  const items = [
-    { label: '总任务', value: total, color: 'text-primary' },
-    { label: '已完成', value: completed, color: 'text-status-success' },
-    { label: '执行中', value: running, color: 'text-status-warning' },
-    { label: '待执行', value: pending, color: 'text-status-pending' },
-    { label: '失败', value: failed, color: 'text-status-error' },
-  ];
-  return (
-    <div className="flex items-center gap-4 lg:gap-8 px-3 lg:px-6 py-2 lg:py-3 border-b border-subtle bg-surface-card/50 overflow-x-auto scrollbar-hide">
-      {items.map((item, idx) => (
-        <div key={item.label} className="flex flex-col shrink-0">
-          <motion.span
-            className={cn('text-xl font-bold leading-tight', item.color)}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
-          >
-            {item.value}
-          </motion.span>
-          <span className="text-xs text-muted mt-0.5">{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ==================== Placeholder: TaskDetailPanel ==================== */
-
-interface TaskDetailPanelProps {
-  node: Node | null;
-  onClose: () => void;
-}
-
-function TaskDetailPanel({ node, onClose }: TaskDetailPanelProps) {
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
-
-  const statusMap: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-    completed: { label: '已完成', color: 'bg-status-success/10 text-status-success', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
-    running: { label: '执行中', color: 'bg-primary/10 text-primary', icon: <Loader2 className="w-3.5 h-3.5 animate-spin" /> },
-    failed: { label: '失败', color: 'bg-status-error/10 text-status-error', icon: <XIcon className="w-3.5 h-3.5" /> },
-    pending: { label: '待执行', color: 'bg-status-pending/10 text-status-pending', icon: <Clock className="w-3.5 h-3.5" /> },
-  };
-
-  const data = node?.data as Record<string, unknown> | undefined;
-  const status = (data?.status as string) || 'pending';
-  const statusInfo = statusMap[status] || statusMap.pending;
-
-  return (
-    <AnimatePresence>
-      {node && (
-        <>
-          {!isDesktop && (
-            <motion.div
-              key="overlay"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0 bg-black/30 z-20"
-              onClick={onClose}
-            />
-          )}
-          <motion.div
-            key="panel"
-            initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%', opacity: 0 }}
-            animate={isDesktop ? { width: 320, opacity: 1 } : { x: 0, opacity: 1 }}
-            exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%', opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className={cn(
-              'border-l border-subtle bg-surface-card overflow-hidden flex flex-col shrink-0 h-full',
-              isDesktop ? 'relative' : 'absolute inset-y-0 right-0 w-full z-30'
-            )}
-          >
-            <div className={cn('flex flex-col h-full', isDesktop ? 'w-[320px]' : 'w-full')}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-subtle">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm font-medium text-primary truncate">{data?.name as string || '未选择'}</span>
-                  {node && (
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded-sm font-medium inline-flex items-center gap-1', statusInfo.color)}>
-                      {statusInfo.icon}
-                      {statusInfo.label}
-                    </span>
-                  )}
-                </div>
-                <button type="button" onClick={onClose} className="p-1 rounded hover:bg-surface-card-hover text-secondary hover:text-primary transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {!node ? (
-                  <div className="flex flex-col items-center justify-center h-full text-muted">
-                    <FileText className="w-8 h-8 mb-2 opacity-50" />
-                    <p className="text-sm">选择一个节点查看详情</p>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <div className="text-xs text-muted mb-1">任务 ID</div>
-                      <div className="text-xs font-mono text-secondary bg-surface p-2 rounded border border-subtle">{node.id}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted mb-1">描述</div>
-                      <div className="text-sm text-secondary">{(data?.description as string) || '暂无描述'}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted mb-1">状态</div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(data?.progress as number) || 0}%` }} />
-                        </div>
-                        <span className="text-xs text-secondary">{(data?.progress as number) || 0}%</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted mb-1">类型</div>
-                      <div className="text-xs text-secondary font-mono">{(data?.type as string) || 'unknown'}</div>
-                    </div>
-                    {data?.isDangerous && (
-                      <div className="flex items-center gap-2 text-xs text-status-error bg-status-error/5 rounded-md px-3 py-2">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span>该节点包含危险操作</span>
-                      </div>
-                    )}
-                    <div>
-                      <div className="text-xs text-muted mb-1">输入参数</div>
-                      <div className="bg-surface p-2 rounded border border-subtle font-mono text-[10px] text-secondary overflow-x-auto">
-                        <pre>{JSON.stringify({ query: '如何优化精密机床振动控制？', context: '制造业/振动控制' }, null, 2)}</pre>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted mb-1">输出结果</div>
-                      <div className="bg-surface p-2 rounded border border-subtle font-mono text-[10px] text-secondary overflow-x-auto">
-                        <pre>{JSON.stringify({ result: status === 'completed' ? '检索成功' : status === 'running' ? '处理中...' : '等待执行' }, null, 2)}</pre>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-surface p-2 rounded border border-subtle">
-                        <div className="text-[10px] text-muted">开始时间</div>
-                        <div className="text-xs text-secondary">2024-01-15 14:32:00</div>
-                      </div>
-                      <div className="bg-surface p-2 rounded border border-subtle">
-                        <div className="text-[10px] text-muted">预计耗时</div>
-                        <div className="text-xs text-secondary">~ 2.5s</div>
-                      </div>
-                      <div className="bg-surface p-2 rounded border border-subtle">
-                        <div className="text-[10px] text-muted">执行时长</div>
-                        <div className="text-xs text-secondary">1.2s</div>
-                      </div>
-                      <div className="bg-surface p-2 rounded border border-subtle">
-                        <div className="text-[10px] text-muted">重试次数</div>
-                        <div className="text-xs text-secondary">0</div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {node && (
-                <div className="p-4 border-t border-subtle">
-                  <button type="button" onClick={() => alert(`节点 ${node.id} 日志功能开发中`)} className="w-full py-2 px-3 rounded-md border border-primary text-primary text-sm hover:bg-primary/10 transition-colors">
-                    查看日志
-                  </button>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/* ==================== Main Page ==================== */
+/* ══════════════════════════════════════════════════════════════ */
 
 export function TaskPlanningPage() {
-  const storeGraph = useTaskStore(s => s.taskGraph);
-  const storeStatus = useTaskStore(s => s.executionStatus);
-  const setSelectedNode = useTaskStore(s => s.setSelectedNode);
-  const sessionId = useChatStore(s => s.sessionId);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const tfRef = useRef<TaskFlowHandle>(null);
+  const [nodes, setNodes] = useState<FNode[]>(MOCK);
+  const [edges, setEdges] = useState<FEdge[]>(MOCK_EDGES);
+  const [sel, setSel] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [vx, setVx] = useState(0);
+  const [vy, setVy] = useState(0);
 
-  // ═══ Load task_graph from backend on mount ═══
-  const [loaded, setLoaded] = useState(false);
-  /* ⬇ BACKEND OFF ⬇
+  const svgRef = useRef<SVGSVGElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [cw, setCw] = useState(1200);
+  const [ch, setCh] = useState(800);
+  const dragRef = useRef<{ id: string; mx: number; my: number; nx: number; ny: number } | null>(null);
+  const panRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
+  const connRef = useRef<{ source: string; handle: string; sx: number; sy: number } | null>(null);
+  const [connLine, setConnLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+
+  // ── Resize observer ──
   useEffect(() => {
-    if (sessionId && !loaded) {
-      getTaskGraph(sessionId).then(data => {
-        const apiNodes = data.nodes || [];
-        if (apiNodes.length > 0) {
-          const tg = convertToTaskGraph(apiNodes);
-          if (tg) {
-            useTaskStore.getState().setTaskGraph(tg);
-            setNodes(toReactFlowNodes(tg.nodes));
-            setEdges(toReactFlowEdges(tg.nodes));
-          }
-        }
-        setLoaded(true);
-      }).catch(() => setLoaded(true));
-    }
-  }, [sessionId, loaded]);
-  ⬆ BACKEND OFF ⬆ */
-
-  // ── MOCK data (backend off) ──
-  useEffect(() => {
-    if (!loaded) {
-      const MOCK_NODES: Node[] = [
-        { id: 'start', type: 'start', position: { x: 250, y: 0 }, data: { name: '开始', status: 'completed' } },
-        { id: 'analyze', type: 'process', position: { x: 250, y: 100 }, data: { name: '分析需求', status: 'completed' } },
-        { id: 'design', type: 'process', position: { x: 250, y: 220 }, data: { name: '设计方案', status: 'running' } },
-        { id: 'implement', type: 'process', position: { x: 250, y: 340 }, data: { name: '实现功能', status: 'pending' } },
-        { id: 'test', type: 'process', position: { x: 250, y: 460 }, data: { name: '测试验证', status: 'pending' } },
-        { id: 'end', type: 'end', position: { x: 250, y: 580 }, data: { name: '完成', status: 'pending' } },
-      ];
-      const MOCK_EDGES: Edge[] = [
-        { id: 'e1', source: 'start', target: 'analyze', type: 'animated' },
-        { id: 'e2', source: 'analyze', target: 'design', type: 'animated' },
-        { id: 'e3', source: 'design', target: 'implement', type: 'animated' },
-        { id: 'e4', source: 'implement', target: 'test', type: 'animated' },
-        { id: 'e5', source: 'test', target: 'end', type: 'animated' },
-      ];
-      setNodes(MOCK_NODES);
-      setEdges(MOCK_EDGES);
-      setLoaded(true);
-    }
-  }, [loaded]);
-
-  const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
-
-  // Local ReactFlow state — set ONCE during fetch, never overwritten
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-
-  // ═══ Auto-save — convert local RF state to store each time ═══
-  /* ⬇ BACKEND OFF ⬇
-  const lastSaveRef = useRef(0);
-  useEffect(() => {
-    if (!sessionId || !loaded || nodes.length === 0) return;
-    const now = Date.now();
-    if (now - lastSaveRef.current < 2000) return;
-    lastSaveRef.current = now;
-    const storeNodes: TaskNode[] = nodes.map(n => ({
-      id: n.id, name: (n.data as any).name || '', description: (n.data as any).description || '',
-      type: (n.data as any).type || 'execution', status: (n.data as any).status || 'pending',
-      parentId: null, dependencies: edges.filter(e => e.target === n.id).map(e => e.source),
-      children: edges.filter(e => e.source === n.id).map(e => e.target), progress: (n.data as any).progress ?? 0,
-    }));
-    const storeEdges: TaskEdge[] = edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: 'dependency' as const }));
-    useTaskStore.getState().setTaskGraph({
-      id: `tg_${sessionId}`, version: '1.0', nodes: storeNodes, edges: storeEdges,
-      rootNodeId: storeNodes[0]?.id || '', createdAt: '', updatedAt: new Date().toISOString(),
-      executionStatus: 'idle', overallProgress: 0,
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      setCw(e.contentRect.width);
+      setCh(e.contentRect.height);
     });
-    saveTaskGraph(sessionId, storeNodes, storeEdges).catch(() => {});
-  }, [nodes, edges, sessionId, loaded]);
-  ⬆ BACKEND OFF ⬆ */
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const selectedNode = useMemo(() => {
-    return nodes.find((n) => n.id === selectedNodeId) || null;
-  }, [nodes, selectedNodeId]);
-
-  const stats = useMemo(() => {
-    const total = nodes.length;
-    const completed = nodes.filter((n) => n.data.status === 'completed').length;
-    const running = nodes.filter((n) => n.data.status === 'running').length;
-    const pending = nodes.filter((n) => n.data.status === 'pending').length;
-    const failed = nodes.filter((n) => n.data.status === 'failed').length;
-    return { total, completed, running, pending, failed };
+  // ── Node drag ──
+  const onNodeDown = useCallback((e: React.MouseEvent, nid: string) => {
+    e.stopPropagation();
+    const n = nodes.find(x => x.id === nid);
+    if (!n) return;
+    dragRef.current = { id: nid, mx: e.clientX, my: e.clientY, nx: n.x, ny: n.y };
+    setSel(nid);
   }, [nodes]);
 
-  const handleNodeClick = useCallback((nodeId: string) => {
-    setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
+  useEffect(() => {
+    if (!dragRef.current) return;
+    const onMove = (e: MouseEvent) => {
+      const d = dragRef.current!;
+      setNodes(prev => prev.map(n => n.id === d.id
+        ? { ...n, x: d.nx + (e.clientX - d.mx) / zoom, y: d.ny + (e.clientY - d.my) / zoom }
+        : n));
+    };
+    const onUp = () => { dragRef.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [zoom]);
+
+  // ── Canvas pan ──
+  const onCanvasDown = useCallback((e: React.MouseEvent) => {
+    const t = e.target as SVGElement;
+    if (t.closest('[data-node]') || t.closest('[data-handle]')) return;
+    panRef.current = { mx: e.clientX, my: e.clientY, vx, vy };
+  }, [vx, vy]);
+
+  useEffect(() => {
+    if (!panRef.current) return;
+    const onMove = (e: MouseEvent) => {
+      const p = panRef.current!;
+      setVx(p.vx - (e.clientX - p.mx));
+      setVy(p.vy - (e.clientY - p.my));
+    };
+    const onUp = () => { panRef.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const handleClosePanel = useCallback(() => {
-    setSelectedNodeId(null);
-  }, []);
-
-  const handlePlay = useCallback(() => setExecutionStatus('running'), []);
-  const handlePause = useCallback(() => setExecutionStatus('paused'), []);
-  const handleReset = useCallback(() => setExecutionStatus('idle'), []);
-
-  // ═══ ReactFlow change handlers (controlled mode — parent owns all state) ═══
-  const handleNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes(nds => applyNodeChanges(changes, nds));
-  }, []);
-
-  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges(eds => applyEdgeChanges(changes, eds));
-  }, []);
-
-  const handleConnect = useCallback((conn: Connection) => {
-    if (conn.source && conn.target) setEdges(eds => addEdge(conn, eds));
-  }, []);
-
-  const handleNodesDelete = useCallback((ids: string[]) => {
-    setNodes(nds => nds.filter(n => !ids.includes(n.id)));
-    setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target)));
-  }, []);
-
-  const handleEdgesDelete = useCallback((ids: string[]) => {
-    setEdges(eds => eds.filter(e => !ids.includes(e.id)));
-  }, []);
-
-  const handleAddNode = useCallback(() => {
-    const newId = `node_${Date.now()}`;
-    const rfNode: Node = { id: newId, type: 'process', position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 }, data: { name: '新节点', description: '双击编辑', status: 'pending', type: 'execution' } };
-    setNodes(nds => [...nds, rfNode]);
-  }, []);
-
-  const handleAutoLayout = useCallback(() => {
-    const adj = new Map<string, string[]>();
-    const inDegree = new Map<string, number>();
-
-    nodes.forEach((n) => {
-      adj.set(n.id, []);
-      inDegree.set(n.id, 0);
+  // ── Zoom ──
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY > 0 ? 0.85 : 1.18;
+    setZoom(z => {
+      const nz = Math.max(0.15, Math.min(4, z * factor));
+      setVx(v => mx - (mx - v) * (nz / z));
+      setVy(v => my - (my - v) * (nz / z));
+      return nz;
     });
+  }, []);
 
-    edges.forEach((e) => {
-      adj.get(e.source)?.push(e.target);
-      inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
-    });
+  // ── Edge creation from handle ──
+  const onHandleDown = useCallback((e: React.MouseEvent, nodeId: string, handle: string) => {
+    e.stopPropagation();
+    const n = nodes.find(x => x.id === nodeId);
+    if (!n) return;
+    const hp = HANDLE_POSITIONS[handle];
+    const sx = n.x + hp.x(n.w);
+    const sy = n.y + hp.y(n.h);
+    connRef.current = { source: nodeId, handle, sx, sy };
+    setConnLine({ x1: sx, y1: sy, x2: sx, y2: sy });
+  }, [nodes]);
 
-    const layer = new Map<string, number>();
-    const queue: string[] = [];
-
-    nodes.forEach((n) => {
-      if ((inDegree.get(n.id) || 0) === 0) {
-        queue.push(n.id);
-        layer.set(n.id, 0);
-      }
-    });
-
-    while (queue.length > 0) {
-      const curr = queue.shift()!;
-      const currLayer = layer.get(curr)!;
-      for (const neighbor of adj.get(curr) || []) {
-        const newLayer = Math.max(layer.get(neighbor) || 0, currLayer + 1);
-        layer.set(neighbor, newLayer);
-        const newInDegree = (inDegree.get(neighbor) || 0) - 1;
-        inDegree.set(neighbor, newInDegree);
-        if (newInDegree === 0) {
-          queue.push(neighbor);
+  useEffect(() => {
+    if (!connRef.current) return;
+    const onMove = (e: MouseEvent) => {
+      const c = connRef.current!;
+      const svgRect = svgRef.current?.getBoundingClientRect();
+      if (!svgRect) return;
+      setConnLine({ x1: c.sx, y1: c.sy, x2: (e.clientX - svgRect.left + vx) / zoom, y2: (e.clientY - svgRect.top + vy) / zoom });
+    };
+    const onUp = (e: MouseEvent) => {
+      const t = document.elementFromPoint(e.clientX, e.clientY);
+      const handleEl = t?.closest('[data-handle]');
+      if (handleEl) {
+        const targetNode = handleEl.getAttribute('data-node');
+        const targetHandle = handleEl.getAttribute('data-handle');
+        const c = connRef.current!;
+        if (targetNode && targetHandle && targetNode !== c.source) {
+          setEdges(prev => [...prev, { id: eid(c.source, targetNode), source: c.source, target: targetNode, sourceHandle: c.handle, targetHandle }]);
         }
       }
-    }
-
-    const layerGroups = new Map<number, string[]>();
-    layer.forEach((l, nodeId) => {
-      if (!layerGroups.has(l)) layerGroups.set(l, []);
-      layerGroups.get(l)!.push(nodeId);
-    });
-
-    const layerSpacing = 220;
-    const nodeSpacing = 110;
-
-    const newNodes = nodes.map((n) => {
-      const l = layer.get(n.id) || 0;
-      const layerNodeIds = layerGroups.get(l) || [];
-      const indexInLayer = layerNodeIds.indexOf(n.id);
-      const nodesInLayer = layerNodeIds.length;
-      const x = l * layerSpacing;
-      const totalHeight = (nodesInLayer - 1) * nodeSpacing;
-      const y = indexInLayer * nodeSpacing - totalHeight / 2;
-      return { ...n, position: { x, y } };
-    });
-
-    setNodes(newNodes);
-  }, [nodes, edges]);
-
-  const handleExport = useCallback(() => {
-    const data = {
-      nodes,
-      edges,
-      exportedAt: new Date().toISOString(),
+      connRef.current = null;
+      setConnLine(null);
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `task-plan-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [nodes, edges]);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [vx, vy, zoom]);
 
-  const handleSettings = useCallback(() => {
-    alert('设置面板（功能开发中）');
-  }, []);
+  // ── Actions ──
+  const addNode = () => {
+    const id = nid();
+    setNodes(prev => [...prev, { id, label: '新节点', x: (500 - vx) / zoom, y: (300 - vy) / zoom, w: 140, h: 44, type: 'process' }]);
+  };
+  const delNode = (id: string) => {
+    setNodes(prev => prev.filter(n => n.id !== id));
+    setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
+    if (sel === id) setSel(null);
+  };
+  const delEdge = (id: string) => setEdges(prev => prev.filter(e => e.id !== id));
+  const onCanvasClick = useCallback(() => setSel(null), []);
+
+  /* ── Render helpers ── */
+  const handlePoint = (n: FNode, handle: string) => {
+    const hp = HANDLE_POSITIONS[handle];
+    return { x: hp.x(n.w), y: hp.y(n.h) };
+  };
+  const edgePath = (e: FEdge) => {
+    const s = nodes.find(n => n.id === e.source);
+    const t = nodes.find(n => n.id === e.target);
+    if (!s || !t) return '';
+    const sp = handlePoint(s, e.sourceHandle);
+    const tp = handlePoint(t, e.targetHandle);
+    const sx = s.x + sp.x, sy = s.y + sp.y;
+    const tx = t.x + tp.x, ty = t.y + tp.y;
+    const dx = Math.abs(tx - sx) * 0.5;
+    return `M ${sx} ${sy} C ${sx} ${sy + dx}, ${tx} ${ty - dx}, ${tx} ${ty}`;
+  };
+
+  const isConn = (e: FEdge) => connRef.current?.source === e.source && connRef.current.handle === e.sourceHandle;
 
   return (
     <div className="flex flex-col h-full bg-surface">
-      <TaskExecutionControls
-        status={executionStatus}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onReset={handleReset}
-        onAutoLayout={handleAutoLayout}
-        onExport={handleExport}
-        onSettings={handleSettings}
-        onAddNode={handleAddNode}
-      />
-      <TaskStatsBar {...stats} />
-      <div className="flex-1 flex overflow-hidden relative">
-        {!loaded ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted text-sm">加载任务图...</div>
-        ) : (
-          <TaskFlow
-            ref={tfRef}
-            nodes={nodes}
-            edges={edges}
-            selectedNodeId={selectedNodeId}
-            onNodeClick={handleNodeClick}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
-            onConnect={handleConnect}
-            onNodesDelete={handleNodesDelete}
-            onEdgesDelete={handleEdgesDelete}
-            onPaneClick={handleClosePanel}
-          />
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-subtle bg-surface-card/50">
+        <h1 className="text-sm font-semibold text-primary">流程图编辑器</h1>
+        <div className="flex-1" />
+        <span className="text-[11px] text-text-muted">{nodes.length} 节点 | {edges.length} 连线 | {Math.round(zoom * 100)}%</span>
+        <button onClick={addNode} className="px-3 py-1 rounded bg-primary/15 text-primary text-xs font-medium hover:bg-primary/25">+ 节点</button>
+        <button onClick={() => { setZoom(1); setVx(0); setVy(0); }} className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs hover:text-text-primary">重置视图</button>
+        {sel && (
+          <button onClick={() => delNode(sel)} className="px-3 py-1 rounded bg-red-500/10 text-red-500 text-xs">删除选中</button>
         )}
-        <TaskDetailPanel node={selectedNode} onClose={handleClosePanel} />
       </div>
-      <div className="flex items-center justify-between px-3 lg:px-4 py-2 border-t border-subtle text-[10px] text-muted">
-        <span>React Flow DAG · {stats.total} nodes · {edges.length} edges</span>
-        <span>DialogMesh v6.0</span>
+
+      {/* Canvas */}
+      <div ref={boxRef} className="flex-1 overflow-hidden bg-[#f5f5f5] dark:bg-[#0a0a0a]">
+        {/* Background grid as CSS */}
+        <div className="absolute inset-0 pointer-events-none opacity-15" style={{
+          backgroundImage: 'radial-gradient(circle, #999 1px, transparent 1px)',
+          backgroundSize: `${40 * zoom}px ${40 * zoom}px`,
+          backgroundPosition: `${vx}px ${vy}px`,
+        }} />
+        <svg
+          ref={svgRef}
+          width="100%" height="100%"
+          style={{ cursor: panRef.current ? 'grabbing' : 'grab' }}
+          onMouseDown={onCanvasDown}
+          onWheel={onWheel}
+          onClick={onCanvasClick}
+        >
+          <g transform={`translate(${vx},${vy}) scale(${zoom})`}>
+            {/* Edges */}
+            {edges.map(e => (
+              <g key={e.id}>
+                {/* Invisible wider hit area */}
+                <path d={edgePath(e)} fill="none" stroke="transparent" strokeWidth={14}
+                  style={{ cursor: 'pointer' }}
+                  onClick={ev => { ev.stopPropagation(); delEdge(e.id); }} />
+                <path d={edgePath(e)} fill="none"
+                  stroke={isConn(e) ? '#6366F1' : '#94a3b8'}
+                  strokeWidth={isConn(e) ? 2.5 : 1.8}
+                  markerEnd="url(#arrow)" />
+              </g>
+            ))}
+            {/* Temp connection line */}
+            {connLine && (
+              <path d={`M ${connLine.x1} ${connLine.y1} C ${connLine.x1} ${connLine.y1 + 40}, ${connLine.x2} ${connLine.y2 - 40}, ${connLine.x2} ${connLine.y2}`}
+                fill="none" stroke="#6366F1" strokeWidth={2} strokeDasharray="6 3" />
+            )}
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX={8} refY={5} markerWidth={6} markerHeight={6} orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+              </marker>
+            </defs>
+
+            {/* Nodes */}
+            {nodes.map(n => (
+              <g key={n.id} data-node={n.id}
+                transform={`translate(${n.x},${n.y})`}
+                onMouseDown={e => onNodeDown(e, n.id)}
+                style={{ cursor: 'move' }}
+              >
+                {/* Handles (connection points) */}
+                {['top', 'bottom', 'left', 'right'].map(h => {
+                  const hp = HANDLE_POSITIONS[h];
+                  return (
+                    <circle key={h} data-handle={h} data-node={n.id}
+                      cx={hp.x(n.w)} cy={hp.y(n.h)} r={5}
+                      fill="white" stroke={sel === n.id ? '#6366F1' : '#94a3b8'} strokeWidth={1.5}
+                      style={{ cursor: 'crosshair', opacity: sel === n.id ? 1 : 0 }}
+                      className="transition-opacity hover:!opacity-100"
+                      onMouseDown={e => onHandleDown(e, n.id, h)}
+                    />
+                  );
+                })}
+
+                {/* Node body */}
+                <rect width={n.w} height={n.h} rx={6}
+                  fill="white" stroke={sel === n.id ? '#6366F1' : n.type === 'start' || n.type === 'end' ? '#10B981' : '#94a3b8'}
+                  strokeWidth={sel === n.id ? 2.5 : 1.5}
+                  filter="drop-shadow(0 1px 3px rgba(0,0,0,0.08))"
+                />
+                <text x={n.w / 2} y={n.h / 2} textAnchor="middle" dominantBaseline="central"
+                  fontSize={13} fill="#1e293b" fontFamily="system-ui, sans-serif" fontWeight={500}
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >{n.label}</text>
+              </g>
+            ))}
+          </g>
+        </svg>
       </div>
     </div>
   );
