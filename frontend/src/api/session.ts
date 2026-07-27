@@ -65,7 +65,7 @@ export function getSessionStatus(sessionId: string): Promise<SessionStatusRespon
 }
 
 export function editDAG(sessionId: string, instruction: string, currentNodes: any[]): Promise<{status: string; nodes: any[]; error?: string}> {
-  return fetch(`${API_BASE}/v3/session/${sessionId}/dag-edit`, {
+  return fetch(`${BASE_URL}/v3/session/${sessionId}/dag-edit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction, current_nodes: currentNodes }),
@@ -73,7 +73,7 @@ export function editDAG(sessionId: string, instruction: string, currentNodes: an
 }
 
 export function saveTaskGraph(sessionId: string, nodes: any[], edges: any[]): Promise<{status: string}> {
-  return fetch(`${API_BASE}/v3/session/${sessionId}/task-graph`, {
+  return fetch(`${BASE_URL}/v3/session/${sessionId}/task-graph`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nodes, edges }),
