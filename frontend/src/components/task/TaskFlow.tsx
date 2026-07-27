@@ -240,6 +240,9 @@ export interface TaskFlowProps {
   onNodeClick: (nodeId: string) => void;
   onNodesChange?: (changes: unknown[]) => void;
   onEdgesChange?: (changes: unknown[]) => void;
+  onConnect?: (connection: { source: string; target: string }) => void;
+  onNodesDelete?: (nodeIds: string[]) => void;
+  onEdgesDelete?: (edgeIds: string[]) => void;
   onPaneClick?: () => void;
 }
 
@@ -256,20 +259,10 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
   }, ref) => {
     const theme = useTheme();
     const isLight = theme === 'light';
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-    // Imperative API for parent
-    useImperativeHandle(ref, () => ({
-      addNode: (node: Node) => { setNodes(nds => [...nds, node]); },
-      removeNodes: (ids: string[]) => { setNodes(nds => nds.filter(n => !ids.includes(n.id))); setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target))); },
-      addEdge: (edge: Edge) => { setEdges(eds => [...eds, edge]); },
-      removeEdges: (ids: string[]) => { setEdges(eds => eds.filter(e => !ids.includes(e.id))); },
-    }), [setNodes, setEdges]);
-
-    useEffect(() => {
-      injectDashAnimation();
-    }, []);
+    // ═══ Fully controlled — no internal state, all from parent ═══
+    const nodes = initialNodes;
+    const edges = initialEdges;
 
   const handleNodeClick = useCallback((_event: MouseEvent, node: Node) => {
     onNodeClick(node.id);
@@ -280,27 +273,24 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
   }, [onPaneClick]);
 
   const handleConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge(params, eds));
-  }, [setEdges]);
+    externalConnect?.({ source: params.source || '', target: params.target || '' });
+  }, [externalConnect]);
 
   const handleNodesDelete = useCallback((deleted: { id: string }[]) => {
-    setNodes(nds => nds.filter(n => !deleted.some(d => d.id === n.id)));
-    setEdges(eds => eds.filter(e => !deleted.some(d => d.id === e.source || d.id === e.target)));
-  }, [setNodes, setEdges]);
+    externalNodesDelete?.(deleted.map(d => d.id));
+  }, [externalNodesDelete]);
 
   const handleEdgesDelete = useCallback((deleted: { id: string }[]) => {
-    setEdges(eds => eds.filter(e => !deleted.some(d => d.id === e.id)));
-  }, [setEdges]);
+    externalEdgesDelete?.(deleted.map(d => d.id));
+  }, [externalEdgesDelete]);
 
   const handleNodesChange = useCallback((changes: unknown[]) => {
-    // Apply ReactFlow internal changes first (drag, position updates)
-    onNodesChange(changes);
-  }, [onNodesChange]);
+    externalNodesChange?.(changes);
+  }, [externalNodesChange]);
 
   const handleEdgesChange = useCallback((changes: unknown[]) => {
-    onEdgesChange(changes);
     externalEdgesChange?.(changes);
-  }, [onEdgesChange, externalEdgesChange]);
+  }, [externalEdgesChange]);
 
   const getMiniMapNodeColor = useCallback((node: { data?: Record<string, unknown> }) => {
     const status = node.data?.status as string;

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { Node, Edge } from '@reactflow/core';
+import type { Node, Edge, NodeChange, EdgeChange, Connection } from '@reactflow/core';
+import { applyNodeChanges, applyEdgeChanges, addEdge } from '@reactflow/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TaskFlow } from '@/components/task/TaskFlow';
 import type { TaskFlowHandle } from '@/components/task/TaskFlow';
@@ -8,7 +9,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTaskStore } from '@/stores/taskStore';
 import { useChatStore } from '@/stores/chatStore';
 import { saveTaskGraph, getTaskGraph } from '@/api/session';
-import type { TaskNode } from '@/types/task';
+import type { TaskNode, TaskEdge } from '@/types/task';
 import {
   Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon, Plus,
 } from 'lucide-react';
@@ -358,15 +359,27 @@ export function TaskPlanningPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  // ═══ Auto-save to backend when storeGraph changes ═══
+  // ═══ Auto-save — convert local RF state to store each time ═══
   const lastSaveRef = useRef(0);
   useEffect(() => {
-    if (!sessionId || !storeGraph || !storeGraph.nodes.length) return;
+    if (!sessionId || !loaded || nodes.length === 0) return;
     const now = Date.now();
-    if (now - lastSaveRef.current < 2000) return; // debounce 2s
+    if (now - lastSaveRef.current < 2000) return;
     lastSaveRef.current = now;
-    saveTaskGraph(sessionId, storeGraph.nodes, storeGraph.edges).catch(() => {});
-  }, [storeGraph, sessionId]);
+    const storeNodes: TaskNode[] = nodes.map(n => ({
+      id: n.id, name: (n.data as any).name || '', description: (n.data as any).description || '',
+      type: (n.data as any).type || 'execution', status: (n.data as any).status || 'pending',
+      parentId: null, dependencies: edges.filter(e => e.target === n.id).map(e => e.source),
+      children: edges.filter(e => e.source === n.id).map(e => e.target), progress: (n.data as any).progress ?? 0,
+    }));
+    const storeEdges: TaskEdge[] = edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: 'dependency' as const }));
+    useTaskStore.getState().setTaskGraph({
+      id: `tg_${sessionId}`, version: '1.0', nodes: storeNodes, edges: storeEdges,
+      rootNodeId: storeNodes[0]?.id || '', createdAt: '', updatedAt: new Date().toISOString(),
+      executionStatus: 'idle', overallProgress: 0,
+    });
+    saveTaskGraph(sessionId, storeNodes, storeEdges).catch(() => {});
+  }, [nodes, edges, sessionId, loaded]);
 
   const selectedNode = useMemo(() => {
     return nodes.find((n) => n.id === selectedNodeId) || null;
@@ -393,44 +406,32 @@ export function TaskPlanningPage() {
   const handlePause = useCallback(() => setExecutionStatus('paused'), []);
   const handleReset = useCallback(() => setExecutionStatus('idle'), []);
 
-  // ═══ Canvas interactions — sync to store ═══
-  const handleConnect = useCallback((conn: { source: string; target: string }) => {
-    const g = useTaskStore.getState().taskGraph;
-    if (!g) return;
-    const newEdge = { id: `e_${conn.source}_${conn.target}`, source: conn.source, target: conn.target, type: 'dependency' as const };
-    const parentNode = g.nodes.find(n => n.id === conn.source);
-    if (parentNode && !parentNode.children.includes(conn.target)) parentNode.children.push(conn.target);
-    const targetNode = g.nodes.find(n => n.id === conn.target);
-    if (targetNode && !targetNode.dependencies.includes(conn.source)) targetNode.dependencies.push(conn.source);
-    useTaskStore.setState({ taskGraph: { ...g, edges: [...g.edges, newEdge] } });
+  // ═══ ReactFlow change handlers (controlled mode — parent owns all state) ═══
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes(nds => applyNodeChanges(changes, nds));
+  }, []);
+
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges(eds => applyEdgeChanges(changes, eds));
+  }, []);
+
+  const handleConnect = useCallback((conn: Connection) => {
+    if (conn.source && conn.target) setEdges(eds => addEdge(conn, eds));
   }, []);
 
   const handleNodesDelete = useCallback((ids: string[]) => {
-    const g = useTaskStore.getState().taskGraph;
-    if (!g) return;
-    useTaskStore.setState({ taskGraph: { ...g, nodes: g.nodes.filter(n => !ids.includes(n.id)), edges: g.edges.filter(e => !ids.includes(e.source) && !ids.includes(e.target)) } });
+    setNodes(nds => nds.filter(n => !ids.includes(n.id)));
+    setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target)));
   }, []);
 
   const handleEdgesDelete = useCallback((ids: string[]) => {
-    const g = useTaskStore.getState().taskGraph;
-    if (!g) return;
-    const deletedIds = new Set(ids);
-    // Remove dependency links
-    const updatedNodes = g.nodes.map(n => ({ ...n, dependencies: n.dependencies.filter(d => !g.edges.some(e => e.source === d && e.target === n.id && deletedIds.has(e.id))) }));
-    useTaskStore.setState({ taskGraph: { ...g, nodes: updatedNodes, edges: g.edges.filter(e => !deletedIds.has(e.id)) } });
+    setEdges(eds => eds.filter(e => !ids.includes(e.id)));
   }, []);
 
   const handleAddNode = useCallback(() => {
     const newId = `node_${Date.now()}`;
     const rfNode: Node = { id: newId, type: 'process', position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 }, data: { name: '新节点', description: '双击编辑', status: 'pending', type: 'execution' } };
-    // Update ReactFlow canvas directly
-    tfRef.current?.addNode(rfNode);
-    // Also update store
-    const g = useTaskStore.getState().taskGraph;
-    if (g) {
-      const tn: import('../types/task').TaskNode = { id: newId, name: '新节点', description: '双击编辑', type: 'execution', status: 'pending', parentId: null, dependencies: [], children: [], progress: 0 };
-      useTaskStore.setState({ taskGraph: { ...g, nodes: [...g.nodes, tn], updatedAt: new Date().toISOString() } });
-    }
+    setNodes(nds => [...nds, rfNode]);
   }, []);
 
   const handleAutoLayout = useCallback(() => {
@@ -538,6 +539,11 @@ export function TaskPlanningPage() {
             edges={edges}
             selectedNodeId={selectedNodeId}
             onNodeClick={handleNodeClick}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onConnect={handleConnect}
+            onNodesDelete={handleNodesDelete}
+            onEdgesDelete={handleEdgesDelete}
             onPaneClick={handleClosePanel}
           />
         )}
