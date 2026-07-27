@@ -442,4 +442,51 @@ html.light .bg-black\/60 { background-color: transparent !important; }
 | 切换完全无效 | light.css 没打包进 dist | JS import 代替 CSS @import |
 | 左右侧边栏切换了, 主内容区不变 | 只覆盖了 bg-surface-card 等类, 漏了 bg-surface(41处使用) | 属性通配选择器 `[class*="bg-surface"]` |
 | hover 不变 | Tailwind 生成 `.hover\:xxx:hover`, 精确类名不匹配 | 属性通配选择器 `[class*="hover:bg-surface-card-hover"]:hover` |
-| 反复"又回到之前状态" | CSS 在 @layer base 内, !important 不生效 | 全局级(无 @layer) + JS import |
+|| 反复"又回到之前状态" | CSS 在 @layer base 内, !important 不生效 | 全局级(无 @layer) + JS import |
+
+---
+
+## §10. ReactFlow 鼠标交互完全失效 — 环境阻断 (2026-07-28)
+
+### 10a. 现象
+
+ReactFlow v11 画布: 键盘操作正常(方向键选择/Enter/删除偶尔生效), 所有鼠标操作(拖拽节点、平移画布、滚轮缩放、连线)完全不响应。控制台无报错。反复修改 `panOnDrag`/`nodesDraggable`/`selectionOnDrag`/`fitView`/prop 传参均无效。
+
+### 10b. 完整调试过程(回顾性诊断)
+
+| 迭代 | 操作 | 结果 | 问题 |
+|------|------|------|------|
+| 1-5 轮 | 改 panOnDrag/selectionOnDrag/nodesDraggable 开关 | 无效 | 猜测式修补 |
+| 6-10 轮 | 从 useNodesState 改为受控组件 + applyNodeChanges | 无效 | 架构改变不是根因 |
+| 11-15 轮 | 加 ref API/key 重挂载/条件渲染/删 useEffect #2 | 无效 | 状态同步不是根因 |
+| 16-18 轮 | 注释后端调用, 纯 mock 数据测试 | 无效 | 排除数据流问题 |
+| 19 轮 | 写业务流文档, 逐行追踪 500 行源码 | 无效 | 逻辑无 bug |
+| **20 轮** | 最简 ReactFlow 测试页: 3 个标准节点 + fitView + Background + MiniMap, 无 TaskFlow 包装, 无自定义节点 | **无效** | ← 决定性证据 |
+| 21 轮 | 切换到纯 SVG 画布(React 原生事件 + svg viewBox) | **有效** | |
+
+### 10c. 根因推断
+
+ReactFlow 最简版也无法响应鼠标事件, 说明问题不在我们的代码层面, 而是**环境层**:
+
+1. **CSS 碰撞**: Tailwind preflight 或全局 CSS reset 可能覆盖了 ReactFlow 内部样式(`pointer-events`, `touch-action`, `user-select` 等)
+2. **DOM 层级遮盖**: 应用壳(App shell)的某个全屏 overlay/backdrop 元素捕获了所有鼠标事件
+3. **React 版本冲突**: React 19 + ReactFlow 11 可能存在事件委托不兼容
+4. **Vite/Rolldown tree-shaking**: 生产构建可能丢弃了 ReactFlow 的事件处理代码
+
+### 10d. 教训
+
+1. **隔离测试是金律**: 问题迭代 >5 轮仍无效时, 不应继续在原代码上修补, 应立刻切到最简环境(`<ReactFlow nodes={...} />` 裸组件)隔离验证
+2. **框架适配不可迷信**: ReactFlow 是成熟库, 但在特定环境下(macOS Electron + React 19 + Vite + Tailwind)可能不兼容；不兼容≠代码有 bug
+3. **SVG 作为逃生舱**: 纯 SVG + React 事件 200 行代码即可实现拖拽/平移/缩放/节点编辑, 可控性远高于框架
+
+### 10e. 替代方案对比
+
+| 维度 | ReactFlow | 纯 SVG |
+|------|-----------|--------|
+| 节点拖拽 | 内置(但不响应) | `onMouseDown` + `mousemove` |
+| 画布平移 | 内置(但不响应) | `viewBox` 运算 |
+| 贝塞尔连线 | 内置(但不响应) | `<path>` 手动计算 |
+| 缩放 | 内置(但不响应) | `viewBox` + wheel |
+| 代码量 | 少 | ~200 行 |
+| 调试成本 | 高(闭源内部 Store) | 低(全部可控) |
+| 适配风险 | 高(框架版本/环境) | 低(标准 DOM API) |
