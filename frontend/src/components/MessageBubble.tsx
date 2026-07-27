@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
