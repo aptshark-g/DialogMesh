@@ -369,3 +369,19 @@ Output a JSON execution plan:
             engine = ExecutionEngine()
             return ExecutionPipeline(tree_manager=atm, engine=engine)
         except: return None
+
+    # ─── Blueprint DAG execution (Phase 2: EventBus bridge) ───
+
+    def process_dag(self, dag, user_text: str = "") -> dict:
+        """Execute a BlueprintDAG through the Decider (EventBus).
+
+        Args:
+            dag: BlueprintDAG from BlueprintEngine.build()
+            user_text: original user input
+
+        Returns:
+            {chain_outputs, llm_reply, latency_ms, ticks}
+        """
+        from core.agent.blueprint.decider import Decider
+        decider = Decider()
+        return decider.execute(dag, user_text=user_text)
