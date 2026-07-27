@@ -1,10 +1,9 @@
 import { memo, useState, useCallback, useEffect } from 'react';
-import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare } from 'lucide-react';
+import { User, Bot, AlertCircle, Clock, ChevronDown, ChevronRight, Loader2, Check, X, MessageSquare, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ChatMessage, TaskGraphNode, ThinkingStepPayload } from '../types/api';
 import { cn } from '../lib/utils';
 import { submitFeedback } from '../api/v6';
-import { TaskGraphView } from './TaskGraphView';
 import { Toast } from './ui/Toast';
 import { convertToTaskGraph, useTaskStore } from '../stores/taskStore';
 
@@ -317,15 +316,30 @@ const MessageBubble = memo(function MessageBubble({ message, className }: Messag
             </div>
           )}
 
-          {/* Task Graph */}
+          {/* Task Graph — summary + link to TaskPlanningPage */}
           {taskGraph && taskGraph.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="mt-2 w-full"
+              className="mt-3 w-full"
             >
-              <TaskGraphView nodes={taskGraph} />
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText size={16} className="text-primary" />
+                    <span className="text-sm font-medium text-text-primary">
+                      已规划 {taskGraph.length} 个任务步骤
+                    </span>
+                  </div>
+                  <a
+                    href="/tasks"
+                    className="text-xs px-3 py-1.5 rounded-md bg-primary/20 text-primary font-medium hover:bg-primary/30 transition-colors"
+                  >
+                    查看任务图 →
+                  </a>
+                </div>
+              </div>
             </motion.div>
           )}
 
