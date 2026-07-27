@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import type { Node, Edge } from '@reactflow/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TaskFlow } from '@/components/task/TaskFlow';
+import type { TaskFlowHandle } from '@/components/task/TaskFlow';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTaskStore } from '@/stores/taskStore';
@@ -329,6 +330,7 @@ export function TaskPlanningPage() {
   const setSelectedNode = useTaskStore(s => s.setSelectedNode);
   const sessionId = useChatStore(s => s.sessionId);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const tfRef = useRef<TaskFlowHandle>(null);
 
   // Convert store TaskGraph → ReactFlow Nodes/Edges
   const rfNodes = useMemo(() => storeGraph ? toReactFlowNodes(storeGraph.nodes) : [], [storeGraph]);
@@ -404,11 +406,16 @@ export function TaskPlanningPage() {
   }, []);
 
   const handleAddNode = useCallback(() => {
-    const g = useTaskStore.getState().taskGraph;
-    if (!g) return;
     const newId = `node_${Date.now()}`;
-    const newNode: import('../types/task').TaskNode = { id: newId, name: '新节点', description: '双击编辑', type: 'execution', status: 'pending', parentId: null, dependencies: [], children: [], progress: 0 };
-    useTaskStore.setState({ taskGraph: { ...g, nodes: [...g.nodes, newNode], updatedAt: new Date().toISOString() } });
+    const rfNode: Node = { id: newId, type: 'process', position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 }, data: { name: '新节点', description: '双击编辑', status: 'pending', type: 'execution' } };
+    // Update ReactFlow canvas directly
+    tfRef.current?.addNode(rfNode);
+    // Also update store
+    const g = useTaskStore.getState().taskGraph;
+    if (g) {
+      const tn: import('../types/task').TaskNode = { id: newId, name: '新节点', description: '双击编辑', type: 'execution', status: 'pending', parentId: null, dependencies: [], children: [], progress: 0 };
+      useTaskStore.setState({ taskGraph: { ...g, nodes: [...g.nodes, tn], updatedAt: new Date().toISOString() } });
+    }
   }, []);
 
   const handleAutoLayout = useCallback(() => {
@@ -508,6 +515,7 @@ export function TaskPlanningPage() {
       <TaskStatsBar {...stats} />
       <div className="flex-1 flex overflow-hidden relative">
         <TaskFlow
+          ref={tfRef}
           nodes={nodes}
           edges={edges}
           selectedNodeId={selectedNodeId}

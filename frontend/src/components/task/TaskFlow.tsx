@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useRef, type FC, type CSSProperties, type ComponentType } from 'react';
+import { useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef, type FC, type CSSProperties, type ComponentType } from 'react';
 import type { MouseEvent } from 'react';
 import {
   ReactFlow,
@@ -226,6 +226,13 @@ const FlowControls: FC = () => {
 
 /* ==================== Props ==================== */
 
+export interface TaskFlowHandle {
+  addNode: (node: Node) => void;
+  removeNodes: (ids: string[]) => void;
+  addEdge: (edge: Edge) => void;
+  removeEdges: (ids: string[]) => void;
+}
+
 export interface TaskFlowProps {
   nodes: Node[];
   edges: Edge[];
@@ -241,35 +248,40 @@ export interface TaskFlowProps {
 
 /* ==================== TaskFlow Component ==================== */
 
-export const TaskFlow: FC<TaskFlowProps> = ({
-  nodes: initialNodes,
-  edges: initialEdges,
-  selectedNodeId,
-  onNodeClick,
-  onNodesChange: externalNodesChange,
-  onEdgesChange: externalEdgesChange,
-  onConnect: externalConnect,
-  onNodesDelete: externalNodesDelete,
-  onEdgesDelete: externalEdgesDelete,
-  onPaneClick,
-}) => {
-  const theme = useTheme();
-  const isLight = theme === 'light';
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
+    nodes: initialNodes,
+    edges: initialEdges,
+    selectedNodeId,
+    onNodeClick,
+    onNodesChange: externalNodesChange,
+    onEdgesChange: externalEdgesChange,
+    onPaneClick,
+  }, ref) => {
+    const theme = useTheme();
+    const isLight = theme === 'light';
+    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  useEffect(() => {
-    injectDashAnimation();
-  }, []);
+    // Imperative API for parent to mutate ReactFlow state
+    useImperativeHandle(ref, () => ({
+      addNode: (node: Node) => { setNodes(nds => [...nds, node]); },
+      removeNodes: (ids: string[]) => { setNodes(nds => nds.filter(n => !ids.includes(n.id))); setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target))); },
+      addEdge: (edge: Edge) => { setEdges(eds => [...eds, edge]); },
+      removeEdges: (ids: string[]) => { setEdges(eds => eds.filter(e => !ids.includes(e.id))); },
+    }), [setNodes, setEdges]);
 
-  const initialSyncDone = useRef(false);
-  useEffect(() => {
-    if (!initialSyncDone.current) {
-      setNodes(initialNodes);
-      setEdges(initialEdges);
-      initialSyncDone.current = true;
-    }
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+    useEffect(() => {
+      injectDashAnimation();
+    }, []);
+
+    const initialSyncDone = useRef(false);
+    useEffect(() => {
+      if (!initialSyncDone.current) {
+        setNodes(initialNodes);
+        setEdges(initialEdges);
+        initialSyncDone.current = true;
+      }
+    }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   const handleNodeClick = useCallback((_event: MouseEvent, node: Node) => {
     onNodeClick(node.id);
@@ -369,6 +381,6 @@ export const TaskFlow: FC<TaskFlowProps> = ({
       </ReactFlow>
     </div>
   );
-};
+});
 
 export default TaskFlow;
