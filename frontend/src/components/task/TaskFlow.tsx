@@ -259,7 +259,7 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-    // Imperative API for parent to mutate ReactFlow state
+    // Imperative API for parent
     useImperativeHandle(ref, () => ({
       addNode: (node: Node) => { setNodes(nds => [...nds, node]); },
       removeNodes: (ids: string[]) => { setNodes(nds => nds.filter(n => !ids.includes(n.id))); setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target))); },
@@ -270,15 +270,6 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
     useEffect(() => {
       injectDashAnimation();
     }, []);
-
-    const initialSyncDone = useRef(false);
-    useEffect(() => {
-      if (!initialSyncDone.current) {
-        setNodes(initialNodes);
-        setEdges(initialEdges);
-        initialSyncDone.current = true;
-      }
-    }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   const handleNodeClick = useCallback((_event: MouseEvent, node: Node) => {
     onNodeClick(node.id);

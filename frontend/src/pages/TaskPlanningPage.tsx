@@ -334,6 +334,7 @@ export function TaskPlanningPage() {
 
   // ═══ Load task_graph from backend on mount (standalone resource, not from message) ═══
   const [loaded, setLoaded] = useState(false);
+  const [mountKey, setMountKey] = useState(0);
   useEffect(() => {
     if (sessionId && !loaded) {
       getTaskGraph(sessionId).then(data => {
@@ -341,6 +342,7 @@ export function TaskPlanningPage() {
         if (apiNodes.length > 0) {
           const tg = convertToTaskGraph(apiNodes);
           if (tg) useTaskStore.getState().setTaskGraph(tg);
+          setMountKey(k => k + 1); // force TaskFlow remount with correct data
         }
         setLoaded(true);
       }).catch(() => setLoaded(true));
@@ -531,6 +533,7 @@ export function TaskPlanningPage() {
       <div className="flex-1 flex overflow-hidden relative">
         <TaskFlow
           ref={tfRef}
+          key={mountKey}
           nodes={nodes}
           edges={edges}
           selectedNodeId={selectedNodeId}
