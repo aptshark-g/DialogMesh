@@ -342,7 +342,9 @@ export const TaskFlow = forwardRef<TaskFlowHandle, TaskFlowProps>(({
         nodesConnectable={true}
         deleteKeyCode="Backspace"
         elementsSelectable={true}
-        panOnDrag={true}
+        panOnScroll={true}
+        zoomOnScroll={true}
+        panOnScrollMode={0}
         selectionOnDrag={false}
         fitView
         onNodeDoubleClick={(_, node) => { onNodeClick?.(node.id); }}
