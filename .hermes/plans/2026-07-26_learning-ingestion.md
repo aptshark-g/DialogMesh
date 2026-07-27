@@ -120,9 +120,10 @@ def learn(self, hypotheses, intent) -> LearningResult:
 ## 文件清单
 
 ```
-core/agent/learning/          (~500L 新增)
+core/agent/learning/          (~600L 新增)
   __init__.py
-  web_search.py     (4源并行搜索)
+  sources.py        (SearchSource 抽象基类 + 4内置源)
+  source_registry.py(注册表 — register/search/parallel)
   content_fetcher.py(抓取+bs4提取+分块)
   embedder.py       (LM Studio 768d)
   credibility.py    (四维评分+学习更新)
@@ -133,6 +134,58 @@ tests/test_learning_e2e.py              (E2E)
 
 docs/BUSINESS_CHAIN_12_LEARNING.md       (业务链文档)
 ```
+
+## 架构: 可扩展搜索源注册表
+
+```
+                    ┌────────────────────┐
+                    │  SourceRegistry    │
+                    │  register(source)  │
+                    │  search_all(q)     │
+                    │  get_authority(d)  │
+                    └──────┬─────────────┘
+                           │
+          ┌────────────────┼────────────────────────────────┐
+          ▼                ▼                ▼               ▼
+   ┌────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────┐
+   │ArxivSource │  │DDGSource     │  │ScholarSrc  │  │GitHubSrc   │
+   │authority:.95│ │authority:.55 │  │authority:.90│ │authority:.85│
+   └────────────┘  └──────────────┘  └────────────┘  └────────────┘
+          │                │                │               │
+          └────────────────┴────────────────┴───────────────┘
+                           │
+                    并行 search_all(query)
+                           │
+                    去重 + 按 authority 排序 + 抓取 top-N
+```
+
+**扩展新来源 = 实现 SearchSource 接口 + 注册**:
+
+```python
+from core.agent.learning.sources import SearchSource
+
+class MyNewSource(SearchSource):
+    name = "my_source"
+    def search(self, query: str, max_results: int = 5) -> list[dict]:
+        # 调任何 API, 返回 [{title, url, snippet, timestamp}]
+        ...
+    def authority(self) -> float:
+        return 0.7  # 域名权威
+
+# 注册即生效
+from core.agent.learning.source_registry import SourceRegistry
+SourceRegistry.register(MyNewSource())
+```
+
+### 注册表 API
+
+| 方法 | 说明 |
+|------|------|
+| `register(source)` | 注册新搜索源 |
+| `unregister(name)` | 移除搜索源 |
+| `search_all(query, max_per_source=3)` | 并行搜索所有已注册源 |
+| `get_authority(domain)` | 查询域名权威(所有注册源中取最大值) |
+| `list_sources()` | 列出所有已注册源及其状态 |
 
 ## 环境适配
 
