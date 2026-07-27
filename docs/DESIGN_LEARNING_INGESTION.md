@@ -77,103 +77,101 @@ PDF 是扫描件?
 
 ---
 
-## 四、RAG 存储 — 复用持久化层
+## 四、双仓存储 — ChromaDB + HybridIndex
 
-### 4.1 现有存储适配
+### 4.1 分离原则
+
+```
+外部内容 (ChromaDB)              内部知识 (HybridIndex/EventLog)
+┌─────────────────────┐         ┌──────────────────────────┐
+│ 论文/网页/代码      │         │ Sessions / Events        │
+│ 向量索引 (HNSW)      │         │ Relations / Profiles     │
+│ 聚类 (k-means)      │         │ SHA256 链 EventLog       │
+│                     │         │                          │
+│ cluster → LLM压缩    │ ──单向──▶ 压缩成规则 → EventLog    │
+│   "从这个簇提炼规则"  │         │ Meta 验证规则准确率       │
+│   provenance: url    │         │ 规则融入 Behavior 选择    │
+└─────────────────────┘         └──────────────────────────┘
+```
+
+**单向流动**: ChromaDB → 凝练 → 规则 → EventLog。不双向, 不复杂 ETL。
+
+### 4.2 ChromaDB 集群/压缩管线
 
 ```python
-# 学习内容摄入 → HybridIndex
-from core.agent.persistence.hybrid_index import HybridIndex
+# 聚类
+store = ChromaStore()
+clusters = store.cluster(n_clusters=5, query_text="agent orchestration")
+# → [{cluster_id, size, top_terms, centroid, docs}]
 
-index = HybridIndex(db_path="data/learning_index.db")
-
-def ingest(content: str, metadata: dict, embedding: list[float]):
-    """摄入一篇学习内容到持久化存储"""
-    index.index(
-        doc_id=hash(content) % 10**9,
-        vector=embedding,
-        content=content,  # 原始文本(FTS5 全文搜索)
-        metadata={
-            "source_url": metadata.get("url"),
-            "domain": extract_domain(metadata.get("url")),
-            "timestamp": time.time(),
-            "content_type": metadata.get("type", "webpage"),
-            "title": metadata.get("title", ""),
-            "credibility": metadata.get("credibility", 0.5),
-        },
-    )
+# 凝练 — 每个簇提炼一条规则
+for cluster in clusters:
+    docs_text = "\n".join(d["text"] for d in cluster["docs"])
+    prompt = f"基于以下{cluster['size']}篇文献, 提炼一条可复用的规则或最佳实践:\n{docs_text}"
+    rule = llm.generate(prompt)
+    # 存入 EventLog, provenance = [d["doc_id"] for d in cluster["docs"]]
 ```
 
-### 4.2 索引 schema
+### 4.3 存储路由
 
-```
-learning_index 表:
-  doc_id        TEXT PRIMARY KEY
-  content       TEXT          -- 原文(FTS5 全文索引)
-  embedding     BLOB          -- 768d vector(VectorStore)
-  metadata_json TEXT          -- JSON(domain, timestamp, credibility, ...)
-  created_at    REAL
-  last_accessed REAL
-```
+| 内容类型 | 存储 | 用途 |
+|---------|------|------|
+| 外部网页/论文/代码 | ChromaDB | 语义搜索 + 聚类 + 凝练 |
+| 内部 sessions | HybridIndex | 会话历史查询 |
+| 执行事件 | EventLog | 审计 + Meta 评分 |
+| 关系图谱 | GraphStore | 实体关联查询 |
 
 ---
 
-## 五、来源可信度评估 — L5 因果层第一步
+## 五、来源可信度评估 — SelfCheckGPT 三层
 
-### 5.1 四维评分
+### 5.1 三层架构
+
+```
+L1 快速层: domain_authority (查表, 0ms)
+  → arxiv.org=0.95, github.com=0.85, medium.com=0.50
+
+L2 计算层: freshness + citations (计算, ~1ms)
+  → freshness = e^(-days/365)
+  → citations = min(1.0, 0.3 + count/50)
+
+L3 LLM层: SelfCheck (LLM 自我一致性检查, ~500ms)
+  → 内容 → LLM 判断: 内部是否一致? 引用是否可信? 0-10分
+  → 权重: domain 25% + freshness 20% + citations 15% + selfcheck 40%
+```
+
+### 5.2 SelfCheck 原理
+
+```
+输入: 网页/论文全文(≤1500 chars)
+LLM 评估:
+  1. 该内容是否有明显矛盾? (是/否)
+  2. 其数据或引用是否可信? (是/否/不确定)
+  3. 整体可靠性 0-10 分
+→ 解析 → 归一化 0-1
+
+LLM不可用时: 默认中性 0.5, 不回退到旧 consistency 字段
+```
+
+### 5.3 权重设计
 
 ```python
-def evaluate_credibility(source: dict) -> float:
-    """
-    来源可信度 = domain_authority × freshness × citations × consistency
+W_AUTHORITY  = 0.25  # 域名权威(快速, 缓存)
+W_FRESHNESS  = 0.20  # 时效性(计算)
+W_CITATIONS  = 0.15  # 引用数(归一化)
+W_SELFCHECK  = 0.40  # SelfCheck LLM(核心决策)
 
-    domain_authority:  域名权威(预置表, 可学习)
-    freshness:         e^(-days/365) 时间衰减
-    citations:         引用数归一化
-    consistency:       与 EventLog 中已知事实的一致性
-    """
-    # 1. 域名权威
-    authority = DOMAIN_AUTHORITY.get(source["domain"], 0.5)
-
-    # 2. 时效性: 1年内=1.0, 2年=0.37, 3年=0.13
-    days_old = (time.time() - source.get("timestamp", time.time())) / 86400
-    freshness = max(0.1, 2.71828 ** (-days_old / 365))
-
-    # 3. 引用数: 有引用=0.8+, 无引用=基线0.3
-    citations = source.get("citations", 0)
-    citation_score = min(1.0, 0.3 + citations / 50)
-
-    # 4. 一致性: 与已有事实匹配度(需 EventLog 中已有评价)
-    consistency = 0.5  # 默认中性, 学习后更新
-
-    return 0.3 * authority + 0.25 * freshness + 0.2 * citation_score + 0.25 * consistency
-
-# 预置域名权威表(后续可学习调整)
-DOMAIN_AUTHORITY = {
-    "arxiv.org": 0.95,
-    "github.com": 0.85,
-    "semanticscholar.org": 0.90,
-    "docs.python.org": 0.95,
-    "en.wikipedia.org": 0.80,
-    "medium.com": 0.50,
-    "reddit.com": 0.35,
-    "stackoverflow.com": 0.70,
-    "blog.csdn.net": 0.40,
-    "zhihu.com": 0.45,
-}
+credibility = W_AUTHORITY*authority + W_FRESHNESS*freshness
+            + W_CITATIONS*citations + W_SELFCHECK*selfcheck
 ```
 
-### 5.2 置信度学习
+### 5.4 与传统 consistency 的区别
 
-```
-每次使用学习内容 → EventLog 记录 → Meta 异步审计:
-  - 该来源的信息是否正确? (与执行结果对比)
-  - 如连续3次正确 → consistency_score += 0.1
-  - 如连续3次错误 → consistency_score -= 0.2
-  - 权重更新: credibility 融入 domain_authority 修正
-
-这 = L5 因果层第一步: "这个信息来源可信吗?"
-```
+| 之前 | 现在 |
+|------|------|
+| consistency = EventLog 中已知事实匹配 | 去掉, 合并到 SelfCheck |
+| 静态 0.5 默认值 | LLM 主动判断 |
+| 依赖历史数据积累 | 即时可用, 历史数据作为 Meta 验证 |
 
 ---
 
@@ -212,31 +210,38 @@ def learn(self, hypotheses, intent) -> LearningResult:
 
 ## 七、宏任务考虑
 
-| 维度 | 当前 | 宏任务后 |
-|------|------|---------|
-| 搜索源 | arxiv only | arxiv + DDG + Semantic Scholar + GitHub |
-| 内容提取 | 不提取 | urllib + bs4 提取 + OCR 可选 |
-| 持久化 | 无 | HybridIndex(FTS5+Vector) |
-| 可信度 | 无 | 四维评分 + 学习更新 |
-| 多模态 | 无 | OCR可选 / 多模态模型可选 |
+| 维度 | 之前 | 现在 | 
+|------|------|------|
+| 搜索源 | arxiv only | 5源 (arxiv/DDG/Scholar/GitHub/Tavily) ✅ |
+| DuckDuckGo | 正则解析 HTML | `duckduckgo_search` 官方库 ✅ |
+| 正文提取 | `re.sub()` | trafilatura → newspaper3k → bs4 ✅ |
+| 持久化 | 无 | ChromaDB(外部) + HybridIndex(内部) ✅ |
+| 可信度 | 静态域名表 | SelfCheckGPT(L1 域名 + L2 计算 + L3 LLM) ✅ |
+| 聚类 | 无 | ChromaDB HNSW + k-means ✅ |
+| 规则凝练 | 无 | cluster → LLM compress → EventLog ✅ |
+| OCR | 无 | pymupdf(可选) |
+| 多模态 | 无 | 未来 |
 
 ### 宏切换
 
 ```
-宏 1(仅元数据):  搜索 → 标题+摘要 → 不抓取全文   ← 当前(arxiv)
-宏 2(文本提取):  搜索 → 抓取 → bs4 提取文本       ← 本次目标
-宏 3(OCR):      宏2 + PDF扫描件 OCR               ← 可选
-宏 4(多模态):   宏3 + 将图像直接喂多模态模型理解     ← 未来
+宏 1(仅元数据):  搜索 → 标题+摘要 → 不抓取全文           ✅ 已实现
+宏 2(文本提取):  搜索 → 抓取 → trafilatura 提取文本        ✅ 已实现
+宏 3(OCR):      宏2 + PDF扫描件 OCR → pymupdf             ⬜ 可选
+宏 4(多模态):   宏3 + 将图像直接喂多模态模型理解             ⬜ 未来
 ```
 
 ---
 
-## 八、实施优先级
+## 八、实施状态
 
-| 步骤 | 内容 | 估时 |
+| 步骤 | 内容 | 状态 |
 |------|------|:---:|
-| P0 | DuckDuckGo 搜索 + urllib 抓取 + bs4 提取 | 1天 |
-| P1 | HybridIndex 摄入 + credibility 评估 | 0.5天 |
-| P2 | Semantic Scholar + GitHub 搜索源 | 0.5天 |
-| P3 | OCR 可选开关 + 多模态模型可选开关 | 1天 |
-| P4 | credibility 学习闭环(EventLog→Meta→修正) | 0.5天 |
+| P0 | 5源搜索 (arxiv/DDG/Scholar/GitHub/Tavily) | ✅ |
+| P1 | trafilatura → newspaper3k → bs4 提取 | ✅ |
+| P2 | SelfCheckGPT 三层可信度 | ✅ |
+| P3 | ChromaDB 存储 + HNSW 聚类 | ✅ |
+| P4 | 凝练管线 (cluster → LLM → rule → EventLog) | ✅ |
+| P5 | OCR 可选开关 | ⬜ |
+| P6 | 多模态模型可选开关 | ⬜ |
+| P7 | credibility 学习闭环 (Meta → 修正 domain_authority) | ⬜ |
