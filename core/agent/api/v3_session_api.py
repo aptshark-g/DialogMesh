@@ -310,6 +310,45 @@ async def edit_dag(session_id: str, req: DAGEditRequest):
         return {"status": "error", "error": str(e)[:200], "nodes": req.current_nodes}
 
 
+class TaskGraphUpdateRequest(BaseModel):
+    nodes: list = []
+    edges: list = []
+
+
+@router.put("/{session_id}/task-graph")
+async def update_task_graph(session_id: str, req: TaskGraphUpdateRequest):
+    """Persist user-modified task graph back to the session."""
+    try:
+        import json, os
+        path = "data/v3_sessions.json"
+        if not os.path.exists(path):
+            return {"status": "error", "error": "no sessions file"}
+        with open(path, "r") as f:
+            sessions = json.load(f)
+        if session_id not in sessions:
+            return {"status": "error", "error": f"session {session_id} not found"}
+
+        # Merge updated nodes/edges into the latest assistant message's task_graph
+        for msg in reversed(sessions[session_id].get("messages", [])):
+            if msg.get("role") == "assistant" and msg.get("metadata", {}).get("taskGraph"):
+                msg["metadata"]["taskGraph"] = req.nodes
+                break
+        else:
+            # No existing task_graph — create one on the latest assistant message
+            for msg in reversed(sessions[session_id].get("messages", [])):
+                if msg.get("role") == "assistant":
+                    msg.setdefault("metadata", {})["taskGraph"] = req.nodes
+                    break
+
+        with open(path, "w") as f:
+            json.dump(sessions, f, ensure_ascii=False, indent=2)
+        logger.info("Updated task_graph for session %s: %d nodes", session_id[:8], len(req.nodes))
+        return {"status": "ok", "nodes": req.nodes, "edges": req.edges}
+    except Exception as e:
+        logger.warning("Task graph update failed: %s", e)
+        return {"status": "error", "error": str(e)[:200]}
+
+
 @router.post("/{session_id}/clarify", response_model=ClarifyResponse)
 async def submit_clarification(session_id: str, req: ClarifyRequest):
     return ClarifyResponse(

@@ -1,10 +1,12 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { Node, Edge } from '@reactflow/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TaskFlow } from '@/components/task/TaskFlow';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTaskStore } from '@/stores/taskStore';
+import { useChatStore } from '@/stores/chatStore';
+import { saveTaskGraph } from '@/api/session';
 import type { TaskNode } from '@/types/task';
 import {
   Play, Pause, RotateCcw, LayoutGrid, Download, Settings, X, AlertTriangle, FileText, Clock, CheckCircle2, Loader2, XCircle as XIcon, Plus,
@@ -325,6 +327,7 @@ export function TaskPlanningPage() {
   const storeGraph = useTaskStore(s => s.taskGraph);
   const storeStatus = useTaskStore(s => s.executionStatus);
   const setSelectedNode = useTaskStore(s => s.setSelectedNode);
+  const sessionId = useChatStore(s => s.sessionId);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Convert store TaskGraph → ReactFlow Nodes/Edges
@@ -337,6 +340,16 @@ export function TaskPlanningPage() {
   useEffect(() => { setNodes(rfNodes); setEdges(rfEdges); }, [rfNodes, rfEdges]);
 
   const executionStatus = storeStatus === 'idle' && storeGraph ? 'running' : (storeStatus as TaskExecutionStatus) || 'idle';
+
+  // ═══ Auto-save to backend when storeGraph changes ═══
+  const lastSaveRef = useRef(0);
+  useEffect(() => {
+    if (!sessionId || !storeGraph || !storeGraph.nodes.length) return;
+    const now = Date.now();
+    if (now - lastSaveRef.current < 2000) return; // debounce 2s
+    lastSaveRef.current = now;
+    saveTaskGraph(sessionId, storeGraph.nodes, storeGraph.edges).catch(() => {});
+  }, [storeGraph, sessionId]);
 
   const selectedNode = useMemo(() => {
     return nodes.find((n) => n.id === selectedNodeId) || null;

@@ -72,6 +72,14 @@ export function editDAG(sessionId: string, instruction: string, currentNodes: an
   }).then(res => res.json());
 }
 
+export function saveTaskGraph(sessionId: string, nodes: any[], edges: any[]): Promise<{status: string}> {
+  return fetch(`${API_BASE}/v3/session/${sessionId}/task-graph`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes, edges }),
+  }).then(res => res.json());
+}
+
 export function getHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>('/v3/health');
 }
