@@ -14,12 +14,23 @@ router = APIRouter(prefix="/v6", tags=["stubs"])
 # ═══════════════════════════════════════════════════════
 @router.get("/profile")
 async def get_profile():
+    # Read actual session count for turn_count
+    import json, os
+    turn_count = 0
+    try:
+        if os.path.exists("data/v3_sessions.json"):
+            with open("data/v3_sessions.json") as f:
+                sessions = json.load(f)
+            turn_count = sum(len(s.get("messages", [])) for s in sessions.values())
+    except Exception:
+        pass
+    # Base profile + dynamic turn count
     return {
         "oceAN_dims": {"O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
         "mbti": "INFJ",
-        "turn_count": 0,
+        "turn_count": turn_count,
         "top_dimensions": ["O", "N", "C"],
-        "bfi_history": 0,
+        "bfi_history": turn_count // 2 if turn_count > 0 else 0,
         "bfi_latest": {"C": 4.5},
     }
 
