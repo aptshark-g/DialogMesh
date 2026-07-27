@@ -49,12 +49,17 @@ class ChromaStore:
     def _init(self):
         try:
             import chromadb
-            self._client = chromadb.PersistentClient(path=self.persist_dir)
+            import os
+            # Use absolute path to avoid cwd issues
+            persist_path = os.path.abspath(self.persist_dir)
+            os.makedirs(persist_path, exist_ok=True)
+            self._client = chromadb.PersistentClient(path=persist_path)
             self._collection = self._client.get_or_create_collection(
                 name=COLLECTION_NAME,
                 metadata={"hnsw:space": "cosine"},
             )
-            logger.info("ChromaDB initialized at %s (%d docs)", self.persist_dir, self._collection.count())
+            count = self._collection.count()
+            logger.info("ChromaDB initialized at %s (%d docs)", persist_path, count)
         except ImportError:
             logger.warning("chromadb not installed — ChromaStore unavailable")
             self._client = None
@@ -67,6 +72,13 @@ class ChromaStore:
     @property
     def available(self) -> bool:
         return self._collection is not None
+
+    def reload(self):
+        """Force re-initialization (e.g. after installing chromadb)."""
+        self._client = None
+        self._collection = None
+        self._available = None
+        self._init()
 
     def add(self, doc_id: str, text: str, embedding: List[float],
             metadata: dict = None) -> bool:
