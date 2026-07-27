@@ -244,4 +244,19 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* ═══ Light mode surface overrides ═══
+     Tailwind classes use hardcoded dark hex values.
+     When .light is on <html>, override with CSS variables that have light values. */
+  :root.light .bg-surface-card { background-color: var(--bg-card) !important; }
+  :root.light .bg-surface-sidebar { background-color: var(--bg-sidebar) !important; }
+  :root.light .bg-surface-input { background-color: var(--bg-input) !important; }
+  :root.light .text-text-primary { color: var(--text-primary) !important; }
+  :root.light .text-text-secondary { color: var(--text-secondary) !important; }
+  :root.light .text-text-muted { color: var(--text-muted) !important; }
+  :root.light .border-border-subtle { border-color: var(--border-subtle) !important; }
+  :root.light .border-gray-200 { border-color: #e5e7eb !important; }
+  :root.light .border-gray-700,
+  :root.light .border-gray-800 { border-color: var(--border-subtle) !important; }
+  :root.light body { background-color: var(--bg-surface) !important; color: var(--text-primary) !important; }
 }
