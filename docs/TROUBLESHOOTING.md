@@ -368,3 +368,78 @@ export function GatewayPage() {
 | 测试 0ms | 只读缓存不实测 | HTTP GET base_url 计时 |
 | 列表抖动（整体） | 全局 state 变化触发整页渲染 | memo 提到顶层 + JSON 比较跳过 |
 | `gatewayProviders is not defined` | 移到顶层后闭包引用断裂 | 逐项补齐 props |
+
+---
+
+## 9. 前端亮暗模式切换失效 (2026-07-27)
+
+### 9a. 现象
+
+点击亮暗切换按钮无效，或部分区域切换了但主内容区仍然是暗色。
+
+### 9b. 根因
+
+三层问题叠加：
+
+**1. CSS 层级陷阱**
+
+```css
+/* @layer base 内的规则 — 无论 !important 多强, Tailwind @layer utilities 总是覆盖它 */
+@layer base {
+  html.light .bg-surface-card { background-color: #FFF !important; }  /* ❌ 无效 */
+}
+
+/* 全局级（无 @layer） — 最高优先级 */
+html.light .bg-surface-card { background-color: #FFF !important; }     /* ✅ 生效 */
+```
+
+Tailwind 按 `@layer` 优先级排序：`utilities > components > base`。`!important` 不能跨越层级。
+
+**2. Vite CSS import 不打包**
+
+```css
+/* index.css 里的 @import — Vite 不解析 */
+@import './light.css';  /* ❌ 不进 dist */
+```
+
+必须用 JS import：
+
+```ts
+// main.tsx
+import './light.css';   /* ✅ Vite 打包进 dist */
+```
+
+**3. 类名覆盖不全**
+
+Tailwind 生成的实际类名和源码中的类名不同：
+- 源码 `hover:bg-surface-card-hover` → 生成 `.hover\:bg-surface-card-hover:hover`
+- 源码 `bg-surface/50` → 生成 `.bg-surface\/50`
+- 源码 `bg-surface` 是 41 处在使用的**主背景色**，之前从未覆盖
+
+### 9c. 正确修法
+
+不用逐类名匹配——用**属性通配选择器**覆盖全部 Tailwind 变体：
+
+```css
+/* light.css — 全局级, 无 @layer, JS import */
+
+/* 通配: 匹配所有含 bg-surface 的类名, 包括 /50, /80 等变体 */
+html.light [class*="bg-surface"]:not([class*="hover"]) { background-color: #FDFCF8 !important; }
+html.light [class*="bg-surface-card"] { background-color: #FFF !important; }
+html.light [class*="text-text-primary"] { color: #1F2937 !important; }
+
+/* Tailwind 的 hover 前缀会生成独立类名, 也通配 */
+html.light [class*="hover:bg-surface-card-hover"]:hover { background-color: #F3F0EB !important; }
+
+/* 特殊类 */
+html.light .bg-black\/60 { background-color: transparent !important; }
+```
+
+### 9d. 小记
+
+| 错误 | 原因 | 修法 |
+|------|------|------|
+| 切换完全无效 | light.css 没打包进 dist | JS import 代替 CSS @import |
+| 左右侧边栏切换了, 主内容区不变 | 只覆盖了 bg-surface-card 等类, 漏了 bg-surface(41处使用) | 属性通配选择器 `[class*="bg-surface"]` |
+| hover 不变 | Tailwind 生成 `.hover\:xxx:hover`, 精确类名不匹配 | 属性通配选择器 `[class*="hover:bg-surface-card-hover"]:hover` |
+| 反复"又回到之前状态" | CSS 在 @layer base 内, !important 不生效 | 全局级(无 @layer) + JS import |
