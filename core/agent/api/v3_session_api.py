@@ -328,21 +328,25 @@ class TaskGraphUpdateRequest(BaseModel):
 @router.get("/{session_id}/task-graph")
 async def get_task_graph(session_id: str):
     """Return the standalone task graph for a session."""
-    import json, os
-    path = f"data/task_graphs/{session_id}.json"
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return json.load(f)
-    # Fallback: extract from session messages
-    session_path = "data/v3_sessions.json"
-    if os.path.exists(session_path):
-        with open(session_path, "r") as f:
-            sessions = json.load(f)
-        s = sessions.get(session_id, {})
-        for msg in reversed(s.get("messages", [])):
-            if msg.get("metadata", {}).get("taskGraph"):
-                return {"nodes": msg["metadata"]["taskGraph"], "edges": []}
-    return {"nodes": [], "edges": []}
+    try:
+        import json, os
+        path = f"data/task_graphs/{session_id}.json"
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+        # Fallback: extract from session messages
+        session_path = "data/v3_sessions.json"
+        if os.path.exists(session_path):
+            with open(session_path, "r") as f:
+                sessions = json.load(f)
+            s = sessions.get(session_id, {})
+            for msg in reversed(s.get("messages", [])):
+                if msg.get("metadata", {}).get("taskGraph"):
+                    return {"nodes": msg["metadata"]["taskGraph"], "edges": []}
+        return {"nodes": [], "edges": []}
+    except Exception as e:
+        logger.warning("Get task_graph failed: %s", e)
+        return {"nodes": [], "edges": []}
 
 
 @router.put("/{session_id}/task-graph")
