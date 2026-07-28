@@ -10,8 +10,6 @@ import { MobileBottomNav } from './MobileBottomNav.tsx';
 import { SidePanel } from './ui/SidePanel.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 
-import { ChatAssistant } from './ChatAssistant.tsx';
-
 export function Layout() {
   const location = useLocation();
 
@@ -60,9 +58,6 @@ export function Layout() {
 
       {/* Global Popup / Confirm Dialog */}
       <ConfirmDialog />
-
-      {/* Floating Chat Assistant — accessible from any page */}
-      <ChatAssistant />
     </div>
   );
 }
