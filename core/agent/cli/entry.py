@@ -395,6 +395,37 @@ def _dispatch_app(args):
     m.get((cmd, about), lambda a: print(f"dm {cmd} <...>"))(args)
 
 
+def _dispatch_p8(args):
+    """Dispatch P8 write commands."""
+    from core.agent.cli.commands.write_cmd import (
+        cmd_discourse_split, cmd_discourse_merge, cmd_discourse_delete,
+        cmd_discourse_promote, cmd_discourse_demote,
+        cmd_obs_put, cmd_obs_mark, cmd_obs_evict, cmd_obs_clear,
+        cmd_knowledge_add, cmd_knowledge_remove,
+        cmd_event_log, cmd_profile_set, cmd_rules_add, cmd_rules_delete,
+        cmd_annotations_add, cmd_corrections_add, cmd_feedback_add,
+        cmd_data_list, cmd_data_clean, cmd_registry,
+    )
+    cmd = args.command
+    op = getattr(args, "d_op", getattr(args, "k_op", getattr(args, "subcommand", "")))
+    m = {
+        ("d","split"): cmd_discourse_split, ("d","merge"): cmd_discourse_merge,
+        ("d","delete"): cmd_discourse_delete, ("d","promote"): cmd_discourse_promote,
+        ("d","demote"): cmd_discourse_demote,
+        ("obs-put",""): cmd_obs_put, ("obs","mark"): cmd_obs_mark,
+        ("obs","evict"): cmd_obs_evict, ("obs","clear"): cmd_obs_clear,
+        ("knowledge","add"): cmd_knowledge_add, ("knowledge","remove"): cmd_knowledge_remove,
+        ("event-log",""): cmd_event_log, ("profile-set",""): cmd_profile_set,
+        ("rules","add"): cmd_rules_add, ("rules-delete",""): cmd_rules_delete,
+        ("annotations-add",""): cmd_annotations_add, ("corrections-add",""): cmd_corrections_add,
+        ("feedback-add",""): cmd_feedback_add, ("data","list"): cmd_data_list,
+        ("data","clean"): cmd_data_clean, ("registry",""): cmd_registry,
+    }
+    key = (cmd, op)
+    if key in m: m[key](args)
+    else: print(f"P8 dispatch miss: {key}. Available: {list(m)}")
+
+
 def _dispatch_task_ops(args):
     """Dispatch task node/edge operations."""
     from core.agent.cli.commands.p7_cmd import (
@@ -476,6 +507,50 @@ def main():
     tae = te2s.add_parser("add"); tae.add_argument("from_"); tae.add_argument("to_")
     tre = te2s.add_parser("remove"); tre.add_argument("from_"); tre.add_argument("to_")
 
+    # ── P8: Write operations (discourse, obs, knowledge, events, profile, rules, data) ──
+    # Discourse write
+    pd = sub.add_parser("d", help="Discourse write ops (shorthand)")
+    pds = pd.add_subparsers(dest="d_op")
+    p1 = pds.add_parser("split"); p1.add_argument("block_id"); p1.add_argument("--position", default="0")
+    p2a = pds.add_parser("merge"); p2a.add_argument("blocks")
+    p3a = pds.add_parser("delete"); p3a.add_argument("block_id")
+    p4a = pds.add_parser("promote"); p4a.add_argument("block_id"); p4a.add_argument("--levels", default="1")
+    p5a = pds.add_parser("demote"); p5a.add_argument("block_id"); p5a.add_argument("--levels", default="1")
+
+    # Observation write
+    pp = sub.add_parser("obs-put", help="Add to ObservationPool")
+    pp.add_argument("domain"); pp.add_argument("content")
+
+    # Knowledge
+    pk = sub.add_parser("knowledge", help="Knowledge graph ops")
+    pks = pk.add_subparsers(dest="k_op")
+    pka = pks.add_parser("add"); pka.add_argument("name"); pka.add_argument("--type", default="concept"); pka.add_argument("--domain", default="general")
+    pkr = pks.add_parser("remove"); pkr.add_argument("name")
+
+    # Event log
+    pel = sub.add_parser("event-log", help="Event log tail")
+    pel.add_argument("--limit", default="20")
+
+    # Profile set
+    pps = sub.add_parser("profile-set", help="Set profile dimension")
+    pps.add_argument("dimension"); pps.add_argument("value")
+
+    # Rules
+    prd = sub.add_parser("rules-delete", help="Remove rule")
+    prd.add_argument("rule_id")
+
+    # Annotations/Corrections/Feedback
+    pan = sub.add_parser("annotations-add", help="Add annotation")
+    pan.add_argument("type"); pan.add_argument("content"); pan.add_argument("target")
+    pco = sub.add_parser("corrections-add", help="Record correction")
+    pco.add_argument("dimension"); pco.add_argument("value"); pco.add_argument("reason")
+    pfb = sub.add_parser("feedback-add", help="Record feedback")
+    pfb.add_argument("type"); pfb.add_argument("message")
+
+    # Registry inspect
+    preg = sub.add_parser("registry", help="Subsystem registry")
+    preg.add_argument("--filter", default="")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -532,11 +607,22 @@ def main():
     elif args.command in ("profile", "engineering", "concepts", "mind"):
         _dispatch_p4(args)
     elif args.command in ("rules", "abc", "annotations", "corrections", "feedback", "inertia", "versions", "metrics"):
-        _dispatch_p5(args)
+        # P5: show commands first, then P8 for write ops
+        sub = getattr(args, "subcommand", "")
+        if sub in ("add", "delete", "edit"):
+            _dispatch_p8(args)
+        else:
+            _dispatch_p5(args)
     elif args.command in ("chat", "test", "ab", "monitor", "export", "data"):
         _dispatch_app(args)
     elif args.command == "task" and getattr(args, "subcommand", "") in ("node", "edge"):
         _dispatch_task_ops(args)
+    elif args.command in ("d", "obs-put", "knowledge", "event-log", "profile-set",
+                          "rules-delete", "annotations-add", "corrections-add",
+                          "feedback-add", "registry"):
+        _dispatch_p8(args)
+    elif hasattr(args, "d_op"):
+        _dispatch_p8(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
