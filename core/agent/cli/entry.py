@@ -356,6 +356,25 @@ def _dispatch_p5(args):
     m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
 
+def _dispatch_app(args):
+    """Dispatch app commands: chat, test, ab, monitor, export, data."""
+    about = getattr(args, "subcommand", "")
+    cmd = args.command
+    from core.agent.cli.commands.app_cmd import (
+        cmd_chat, cmd_test, cmd_ab, cmd_monitor, cmd_export, cmd_data_show, cmd_data_clean,
+    )
+    m = {
+        ("chat","start"): cmd_chat,
+        ("test","run"): cmd_test,
+        ("ab","run"): cmd_ab,
+        ("monitor","show"): cmd_monitor,
+        ("export","all"): cmd_export,
+        ("data","show"): cmd_data_show,
+        ("data","clean"): cmd_data_clean,
+    }
+    m.get((cmd, about), lambda a: print(f"dm {cmd} <...>"))(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -468,6 +487,8 @@ def main():
         _dispatch_p4(args)
     elif args.command in ("rules", "abc", "annotations", "corrections", "feedback", "inertia", "versions", "metrics"):
         _dispatch_p5(args)
+    elif args.command in ("chat", "test", "ab", "monitor", "export", "data"):
+        _dispatch_app(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
