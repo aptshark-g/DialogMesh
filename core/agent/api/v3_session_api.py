@@ -3,6 +3,10 @@
 import uuid, time, logging, traceback, json, os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+TASK_GRAPHS_DIR = os.path.join(DATA_DIR, "task_graphs")
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
@@ -10,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v3/session")
 
 # ═══ Persistence ═══
-_SESSIONS_FILE = Path("data/v3_sessions.json")
+_SESSIONS_FILE = Path(os.path.join(DATA_DIR, "v3_sessions.json"))
 _SESSIONS_LOCK = __import__("threading").Lock()
 
 def _load_sessions() -> Dict[str, Dict[str, Any]]:
@@ -210,7 +214,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
         tg_context = ""
         try:
             import os as _os2
-            tg_path = f"data/task_graphs/{session_id}.json"
+            tg_path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
             if _os2.path.exists(tg_path):
                 with open(tg_path, "r", encoding="utf-8") as f:
                     tg_data = json.load(f)
@@ -278,8 +282,8 @@ async def send_message(session_id: str, req: SendMessageRequest):
     if task_graph:
         try:
             import os as _os
-            _os.makedirs("data/task_graphs", exist_ok=True)
-            with open(f"data/task_graphs/{session_id}.json", "w") as f:
+            _os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
+            with open(os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json"), "w") as f:
                 json.dump({"nodes": task_graph, "edges": []}, f, ensure_ascii=False)
         except Exception:
             pass
@@ -347,12 +351,12 @@ async def get_task_graph(session_id: str):
     """Return the standalone task graph for a session."""
     try:
         import json, os
-        path = f"data/task_graphs/{session_id}.json"
+        path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
         if os.path.exists(path):
             with open(path, "r") as f:
                 return json.load(f)
         # Fallback: extract from session messages
-        session_path = "data/v3_sessions.json"
+        session_path = os.path.join(DATA_DIR, "v3_sessions.json")
         if os.path.exists(session_path):
             with open(session_path, "r") as f:
                 sessions = json.load(f)
@@ -371,8 +375,8 @@ async def update_task_graph(session_id: str, req: TaskGraphUpdateRequest):
     """Persist user-modified task graph as a standalone resource."""
     try:
         import json, os
-        os.makedirs("data/task_graphs", exist_ok=True)
-        path = f"data/task_graphs/{session_id}.json"
+        os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
+        path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
         with open(path, "w") as f:
             json.dump({"nodes": req.nodes, "edges": req.edges}, f, ensure_ascii=False, indent=2)
         logger.info("Saved task_graph for session %s: %d nodes", session_id[:8], len(req.nodes))
