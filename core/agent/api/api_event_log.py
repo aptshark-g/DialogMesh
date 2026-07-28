@@ -121,3 +121,21 @@ class EventLog:
             "SELECT COUNT(*) FROM event_log WHERE consumed=0"
         ).fetchone()[0]
         return {"total": total, "unconsumed": unconsumed}
+
+    def tail(self, limit: int = 20) -> list:
+        """Return last N events (CLI)."""
+        if not self._conn:
+            return []
+        rows = self._conn.execute(
+            "SELECT event_id, kind, payload, trace_id, created_at FROM event_log ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {"id": r[0], "kind": r[1], "payload": json.loads(r[2]) if r[2] else {},
+             "trace_id": r[3], "created_at": r[4]}
+            for r in reversed(rows)
+        ]
+
+    def recent(self, limit: int = 20) -> list:
+        """Alias for tail (CLI)."""
+        return self.tail(limit)

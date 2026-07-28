@@ -98,3 +98,15 @@ class ObservationPool:
                 "consumed": len(self._consumed),
                 "by_domain": {d: len(ids) for d, ids in self._by_domain.items()},
             }
+
+    def clear(self) -> None:
+        """Remove all bundles (CLI)."""
+        with self._lock:
+            self._bundles.clear()
+            self._by_event.clear()
+            self._by_domain.clear()
+            self._consumed.clear()
+
+    def reset(self) -> None:
+        """Alias for clear (CLI)."""
+        self.clear()

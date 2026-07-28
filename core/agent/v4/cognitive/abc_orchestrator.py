@@ -138,3 +138,18 @@ class ABCOrchestrator:
                 "A": self._config["layers"]["A_enabled"],
             },
         }
+
+
+    def add_rule(self, rule: dict) -> None:
+        """Add a neuro-symbolic rule (CLI)."""
+        if not hasattr(self, '_custom_rules'):
+            self._custom_rules = []
+        self._custom_rules.append(rule)
+
+    def remove_rule(self, rule_id: str) -> bool:
+        """Remove a rule by id (CLI)."""
+        if not hasattr(self, '_custom_rules'):
+            return False
+        before = len(self._custom_rules)
+        self._custom_rules = [r for r in self._custom_rules if r.get('id') != rule_id]
+        return len(self._custom_rules) < before

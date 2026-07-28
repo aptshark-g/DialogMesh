@@ -914,3 +914,80 @@ class DiscourseBlockTreeManager:
             "current_branch": tree.current_branch,
             "max_depth": max(b.depth for b in tree.blocks.values()) if tree.blocks else 0,
         }
+
+    # ── CLI write ops ──
+
+    def split_block(self, session_id: str, block_id: str, position: int = 0) -> bool:
+        """Split a block at the given EDU position. Returns True on success."""
+        tree = self._trees.get(session_id)
+        if not tree or block_id not in tree.blocks:
+            return False
+        block = tree.blocks[block_id]
+        if len(block.edus) <= 1:
+            return False
+        split_at = max(1, min(position, len(block.edus) - 1))
+        left_edus = block.edus[:split_at]
+        right_edus = block.edus[split_at:]
+        block.edus = left_edus
+        new_block = DiscourseBlock(
+            block_id=f"blk_{uuid.uuid4().hex[:8]}",
+            edus=right_edus,
+        )
+        tree.add_block(new_block, parent=block.parent or tree.root_id)
+        return True
+
+    def merge_blocks(self, session_id: str, block_ids: list) -> bool:
+        """Merge blocks into the first one. Returns True on success."""
+        tree = self._trees.get(session_id)
+        if not tree or len(block_ids) < 2:
+            return False
+        target = tree.blocks.get(block_ids[0])
+        if not target:
+            return False
+        for bid in block_ids[1:]:
+            b = tree.blocks.get(bid)
+            if b:
+                target.edus.extend(b.edus)
+                del tree.blocks[bid]
+        return True
+
+    def delete_block(self, session_id: str, block_id: str) -> bool:
+        """Delete a block. Children are reparented to the deleted block's parent."""
+        tree = self._trees.get(session_id)
+        if not tree or block_id not in tree.blocks:
+            return False
+        block = tree.blocks[block_id]
+        parent_id = block.parent
+        for child in list(block.children):
+            if child in tree.blocks:
+                tree.blocks[child].parent = parent_id
+        del tree.blocks[block_id]
+        if block_id == tree.current_branch:
+            tree.current_branch = next(iter(tree.blocks.keys())) if tree.blocks else tree.root_id
+        return True
+
+    def promote_block(self, session_id: str, block_id: str, levels: int = 1) -> bool:
+        """Move block up in the hierarchy. Returns True on success."""
+        tree = self._trees.get(session_id)
+        if not tree or block_id not in tree.blocks:
+            return False
+        block = tree.blocks[block_id]
+        for _ in range(levels):
+            parent = tree.blocks.get(block.parent)
+            if not parent or block.parent == tree.root_id:
+                break
+            block.parent = parent.parent or tree.root_id
+
+    def demote_block(self, session_id: str, block_id: str, levels: int = 1) -> bool:
+        """Move block down (under its first sibling). Returns True on success."""
+        tree = self._trees.get(session_id)
+        if not tree or block_id not in tree.blocks:
+            return False
+        block = tree.blocks[block_id]
+        for _ in range(levels):
+            parent = tree.blocks.get(block.parent)
+            if not parent:
+                break
+            siblings = [c for c in parent.children if c != block_id and c in tree.blocks]
+            if siblings:
+                block.parent = siblings[0]

@@ -93,3 +93,23 @@ class KnowledgeGraph:
 
     def get_anti_patterns(self) -> List[KnowledgeNode]:
         return self.get_by_type(KnowledgeType.ANTIPATTERN)
+
+
+    def remove(self, name: str) -> bool:
+        """Remove a node by name (CLI)."""
+        if hasattr(self, '_nodes') and name in self._nodes:
+            del self._nodes[name]
+            return True
+        return False
+
+    def get_node(self, name: str):
+        """Get a node by name (CLI)."""
+        if hasattr(self, '_nodes'):
+            return self._nodes.get(name)
+        return None
+
+    def search(self, query: str) -> list:
+        """Search nodes by name substring (CLI)."""
+        if hasattr(self, '_nodes'):
+            return [k for k in self._nodes if query.lower() in k.lower()]
+        return []
