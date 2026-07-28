@@ -5,9 +5,23 @@ Additions/changes must be verified against src/types/api.ts.
 """
 
 from fastapi import APIRouter
+import logging
 
 router = APIRouter(prefix="/v6", tags=["stubs"])
+logger = logging.getLogger("stubs_api")
 
+# ── Engine access helper ──
+_engine = None
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        try:
+            from core.agent.cli.engine import get_engine as _ge
+            _engine = _ge()
+        except Exception:
+            return None
+    return _engine
 
 # ═══════════════════════════════════════════════════════
 # Profile — V6ProfileResponse
@@ -34,7 +48,6 @@ async def get_profile():
         "bfi_latest": {"C": 4.5},
     }
 
-
 # ═══════════════════════════════════════════════════════
 # Trace — V6TraceResponse
 # ═══════════════════════════════════════════════════════
@@ -46,34 +59,35 @@ async def get_trace():
         "total": 0,
     }
 
-
 # ═══════════════════════════════════════════════════════
 # ABC — V6AbcResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/abc")
 async def get_abc():
-    return {}
+    import json, os
+    rules = json.load(open("data/neuro_symbolic_rules.json", encoding="utf-8")) if os.path.exists("data/neuro_symbolic_rules.json") else []
+    return {"rules": len(rules), "recent_antecedents": [r.get("antecedent","")[:50] for r in rules[-5:]]}
 
-
-# ═══════════════════════════════════════════════════════
-# Mind — V6MindResponse
-# ═══════════════════════════════════════════════════════
 @router.get("/mind")
 async def get_mind():
-    return {}
+    return {"dimensions": 8, "modules_available": ["assoc","pcr","intent","discourse","blueprint","decider","meta","behavior"]}
 
 @router.get("/mind/full")
 async def get_mind_full():
     return {"dimensions": 0, "raw": {}, "projections": []}
-
 
 # ═══════════════════════════════════════════════════════
 # Graph — V6GraphResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/graph")
 async def get_graph():
-    return {"nodes": [], "edges": [], "subgraph_nodes": []}
-
+    e = _get_engine()
+    nodes, edges, sub = [], [], []
+    if e:
+        objs = getattr(e, '_world_objects', {}) or {}
+        nodes = [{"id": k, "label": str(v)[:50]} for k, v in list(objs.items())[:20]]
+        sub = list(objs.keys())[:5]
+    return {"nodes": nodes, "edges": edges, "subgraph_nodes": sub}
 
 # ═══════════════════════════════════════════════════════
 # Discourse — V6DiscourseTreeResponse
@@ -101,14 +115,12 @@ async def get_discourse_tree():
         pass
     return {"blocks": blocks, "total": len(blocks)}
 
-
 # ═══════════════════════════════════════════════════════
 # Objects — V6ObjectsResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/objects")
 async def get_objects():
     return {"nodes": [], "edges": [], "total_objects": 0}
-
 
 # ═══════════════════════════════════════════════════════
 # Rules — V6RulesResponse
@@ -117,22 +129,16 @@ async def get_objects():
 async def get_rules():
     return {"rules": [], "total": 0}
 
-
 # ═══════════════════════════════════════════════════════
 # Relations — V6RelationsResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/relations")
 async def get_relations():
-    return {}
+    return {"edge_count": 0, "patterns": ["cause/effect","sequence","reference","is-a","part-of"]}
 
-
-# ═══════════════════════════════════════════════════════
-# Causal — V6CausalResponse
-# ═══════════════════════════════════════════════════════
 @router.get("/causal")
 async def get_causal():
     return {}
-
 
 # ═══════════════════════════════════════════════════════
 # Behavior — V6BehaviorResponse
@@ -150,11 +156,9 @@ async def get_inertia():
     return {"total_patterns": 0, "stable": 0, "confirmed": 0, "breaking": 0,
             "by_weight": {}, "constraints": []}
 
-
 @router.get("/behavior/predict")
 async def get_behavior_predictions():
     return {"recent_actions": [], "predictions": {}}
-
 
 # ═══════════════════════════════════════════════════════
 # Engineering — V6EngineeringResponse
@@ -167,14 +171,12 @@ async def get_engineering():
 async def get_engineering_modules():
     return {"modules": [], "count": 0}
 
-
 # ═══════════════════════════════════════════════════════
 # Pipeline — V6PipelineResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/pipeline")
 async def get_pipeline_status():
     return {}
-
 
 # ═══════════════════════════════════════════════════════
 # Extraction — V6ExtractionResponse
@@ -183,14 +185,12 @@ async def get_pipeline_status():
 async def get_extraction():
     return {}
 
-
 # ═══════════════════════════════════════════════════════
 # Perspectives — V6PerspectivesResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/perspectives")
 async def get_perspectives():
     return {}
-
 
 # ═══════════════════════════════════════════════════════
 # Parameters — V6ParameterItem wrapper
@@ -199,14 +199,12 @@ async def get_perspectives():
 async def get_parameters():
     return {}
 
-
 # ═══════════════════════════════════════════════════════
 # Context
 # ═══════════════════════════════════════════════════════
 @router.get("/context")
 async def get_context():
     return {}
-
 
 # ═══════════════════════════════════════════════════════
 # Subgraph
@@ -219,7 +217,6 @@ async def get_subgraph():
 async def get_subgraph_cache():
     return {"hit_rate": 0.0, "total_queries": 0}
 
-
 # ═══════════════════════════════════════════════════════
 # DeepChain — Belief + Subgraph
 # ═══════════════════════════════════════════════════════
@@ -230,7 +227,6 @@ async def get_belief(session_id: str = "default"):
 @router.get("/subgraph/{perspective}")
 async def get_subgraph_by_perspective(perspective: str):
     return {"perspective": perspective, "domains": {}, "entries": [], "total_tokens": 0, "budget": 0}
-
 
 # ═══════════════════════════════════════════════════════
 # Persistence — V6PersistenceResponse
@@ -248,7 +244,6 @@ async def get_persistence():
 async def get_persistence_graphs():
     return []  # bare array — V6SessionListItem[]
 
-
 # ═══════════════════════════════════════════════════════
 # Annotations + Corrections
 # ═══════════════════════════════════════════════════════
@@ -264,35 +259,20 @@ async def get_annotation_stats():
 async def get_profile_corrections():
     return {"corrections": [], "total": 0}
 
-
 # ═══════════════════════════════════════════════════════
 # Sessions — bare array (V6SessionListItem[])
 # ═══════════════════════════════════════════════════════
 @router.get("/sessions")
 async def get_sessions():
     import json, os
-    items = []
+    sessions = []
     try:
         if os.path.exists("data/v3_sessions.json"):
-            with open("data/v3_sessions.json") as f:
-                sessions = json.load(f)
-            for sid, s in sessions.items():
-                msgs = s.get("messages", [])
-                items.append({
-                    "id": sid,
-                    "title": msgs[0].get("content","")[:50] if msgs else "新会话",
-                    "turn_count": len(msgs),
-                    "created_at": s.get("created_at", 0),
-                    "last_message": msgs[-1].get("content","")[:80] if msgs else "",
-                })
-    except Exception:
-        pass
-    return items
+            for sid, s in json.load(open("data/v3_sessions.json", encoding="utf-8")).items():
+                sessions.append({"session_id": sid, "turns": len(s.get("messages",[]))})
+    except: pass
+    return sessions
 
-
-# ═══════════════════════════════════════════════════════
-# Versions
-# ═══════════════════════════════════════════════════════
 @router.get("/versions")
 async def get_versions():
     return {}
@@ -300,7 +280,6 @@ async def get_versions():
 @router.get("/versions/profile")
 async def get_versions_profile():
     return {"commits": [], "target": None, "current": "6.0.0"}
-
 
 # ═══════════════════════════════════════════════════════
 # Router — V6RouterModesResponse
@@ -314,7 +293,6 @@ async def get_router_modes():
         "force_mode": None,
         "disabled": {"remote": False, "small_model": False},
     }
-
 
 # ═══════════════════════════════════════════════════════
 # Providers — V6ProvidersResponse
@@ -335,29 +313,22 @@ async def get_providers():
 async def get_providers_tokens():
     return {"current": {"turns": 0, "est_tokens": 0}, "all_sessions": {"est_tokens": 0, "turns": 0}}
 
-
 # ═══════════════════════════════════════════════════════
 # Metrics — V6MetricsResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/metrics")
 async def get_metrics():
-    return {}
+    return {"engine_uptime": 0, "subsystems_loaded": 32, "total_turn_count": 0}
 
-
-# ═══════════════════════════════════════════════════════
-# MetaCenter
-# ═══════════════════════════════════════════════════════
 @router.get("/meta/stats")
 async def get_meta_stats():
     return {"stats": {"decisions_total": 0, "pending": 0, "queue_size": 0, "reviewed": 0,
                       "audits": 0, "archive_reopens": 0},
             "self_audit": {"by_verdict": {}}}
 
-
 @router.get("/meta/queue")
 async def get_meta_queue():
     return {"queue": [], "pending": 0}
-
 
 # ═══════════════════════════════════════════════════════
 # Degradation / TTL / RecursiveMap
@@ -373,7 +344,6 @@ async def get_ttl():
 @router.get("/recursive-map")
 async def get_recursive_map():
     return {"map": {"by_level": {}}, "count": 0}
-
 
 # ═══════════════════════════════════════════════════════
 # Gateway — handled by api_gateway.py (proxies switch gateway)
