@@ -110,6 +110,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
     t0 = time.time()
     content = ""
+    msg_id = str(uuid.uuid4())[:8]  # generate early for tracing
     try:
         # Phase 1: Cognitive analysis via AgentOrchestrator
         import json as _json
@@ -269,9 +270,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         content = _fallback_reply(req.content)
-    content = reply_parts[0] if reply_parts else "(empty)"
     latency = int((time.time() - t0) * 1000)
-    msg_id = str(uuid.uuid4())[:8]
     session["messages"].append({"role": "assistant", "content": content})
     _save_sessions()
 
