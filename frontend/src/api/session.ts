@@ -8,15 +8,12 @@ import type {
 } from '../types/api.ts';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-// v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
-const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${AUTH_TOKEN}`,
       ...(options?.headers || {}),
     },
   });
@@ -61,7 +58,7 @@ export function getHistory(sessionId: string, limit?: number, offset?: number): 
 }
 
 export function getSessionStatus(sessionId: string): Promise<SessionStatusResponse> {
-  return fetch(`${API_BASE}/v3/session/${sessionId}/status`).then(res => res.json());
+  return apiFetch<SessionStatusResponse>(`/v3/session/${sessionId}/status`);
 }
 
 export function editDAG(sessionId: string, instruction: string, currentNodes: any[]): Promise<{status: string; nodes: any[]; error?: string}> {
@@ -73,15 +70,14 @@ export function editDAG(sessionId: string, instruction: string, currentNodes: an
 }
 
 export function saveTaskGraph(sessionId: string, nodes: any[], edges: any[]): Promise<{status: string}> {
-  return fetch(`${BASE_URL}/v3/session/${sessionId}/task-graph`, {
+  return apiFetch<{status: string}>(`/v3/session/${sessionId}/task-graph`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nodes, edges }),
-  }).then(res => res.json());
+  });
 }
 
 export function getTaskGraph(sessionId: string): Promise<{nodes: any[]; edges: any[]}> {
-  return fetch(`${BASE_URL}/v3/session/${sessionId}/task-graph`).then(res => res.json());
+  return apiFetch<{nodes: any[]; edges: any[]}>(`/v3/session/${sessionId}/task-graph`);
 }
 
 export function getHealth(): Promise<HealthResponse> {
