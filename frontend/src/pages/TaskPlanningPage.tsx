@@ -18,10 +18,11 @@ function apiNodesToCanvas(apiNodes: any[]): FNode[] {
   }));
 }
 
-function canvasNodesToApi(nodes: FNode[]): any[] {
+function canvasNodesToApi(nodes: FNode[], edges: FEdge[]): any[] {
   return nodes.map(n => ({
     id: n.id, name: n.label, type: n.type,
-    dependencies: [], children: [],
+    dependencies: edges.filter(e => e.target === n.id).map(e => e.source),
+    children: edges.filter(e => e.source === n.id).map(e => e.target),
     status: 'pending' as const, parentId: null, progress: 0,
   }));
 }
@@ -70,7 +71,7 @@ export function TaskPlanningPage() {
     const now = Date.now();
     if (now - lastSaveRef.current < 2000) return;
     lastSaveRef.current = now;
-    const apiNodes = canvasNodesToApi(nodes);
+    const apiNodes = canvasNodesToApi(nodes, edges);
     const apiEdges = canvasEdgesToApi(edges);
     // Update Zustand store
     useTaskStore.getState().setTaskGraph({
