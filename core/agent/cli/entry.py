@@ -161,36 +161,56 @@ def cmd_event_send(args):
     # Extract PCR result
     pcr = getattr(engine, '_last_pcr', None)
 
-    # Call LLM for reply
-    try:
-        system_prompt = "你是 DialogMesh v6 认知助手。用中文回复，简洁专业。"
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": text},
-        ]
-        req = type("req", (), {
-            "prompt": "",
-            "messages": messages,
-            "system_prompt": system_prompt,
-            "max_tokens": 800,
-            "temperature": 0.3,
-        })
-        from core.agent.llm_providers.base import GenerateRequest
-        req2 = GenerateRequest(prompt="", messages=messages, system_prompt=system_prompt, max_tokens=800, temperature=0.3)
-        llm_reply = provider.generate(req2)
-        reply_text = llm_reply.text if hasattr(llm_reply, 'text') else str(llm_reply)
-    except Exception as e:
-        reply_text = f"[LLM error: {e}]"
+    # Call LLM with tool support (max 3 tool-call loops)
+    import core.agent.tools.builtin  # registers all built-in tools
+    from core.agent.tools.protocol import build_tool_system_prompt, parse_tool_calls, execute_tool_calls, strip_tool_calls, ExecutionTrace
+
+    trace = ExecutionTrace()
+    reply_text = ""
+    llm_ok = False
+    system_prompt = "你是 DialogMesh v6 认知助手。用中文回复，简洁专业。"
+    system_prompt += build_tool_system_prompt()
+    
+    for loop in range(3):
+        try:
+            from core.agent.llm_providers.base import GenerateRequest
+            req = GenerateRequest(prompt="", messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ], system_prompt=system_prompt, max_tokens=800, temperature=0.3)
+            llm_reply = provider.generate(req)
+            reply_text = llm_reply.text if hasattr(llm_reply, 'text') else str(llm_reply)
+            llm_ok = True
+        except Exception as e:
+            reply_text = f"[LLM error: {e}]"
+            llm_ok = False
+            break
+
+        # Check for tool calls
+        calls = parse_tool_calls(reply_text)
+        if not calls:
+            break  # no tool calls, reply is final
+        
+        # Execute tools
+        results_text = execute_tool_calls(calls, trace)
+        # Inject tool results for next LLM round
+        text = f"<tool_results>\n{results_text}\n</tool_results>\n\nBased on these results, continue your response."
+        system_prompt = "你是 DialogMesh v6 认知助手。用中文简洁回复。参考上面的工具结果。"
+
     import json as _json
     import os as _os
     elapsed = (__import__("time").time() - t0) * 1000
 
     result = {
         "session_id": sid,
-        "reply": reply_text,
-        "text": text,
+        "reply": reply_text if llm_ok else reply_text,
+        "text": " ".join(args.text) if isinstance(args.text, list) else args.text,
         "latency_ms": round(elapsed, 1),
+        "tool_loops": loop + 1 if llm_ok else 0,
     }
+    # Include task_graph from tool execution
+    if trace.calls:
+        result["task_graph"] = trace.to_task_graph()
     if pcr:
         result["pcr"] = {
             "zone": getattr(pcr, 'expectation', '?'),
