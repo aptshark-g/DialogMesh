@@ -204,9 +204,27 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
         # Enrich messages if decider provided context
         history = session["messages"][-20:]
+
+        # Read confirmed task_graph from standalone storage
+        tg_context = ""
+        try:
+            import os as _os2
+            tg_path = f"data/task_graphs/{session_id}.json"
+            if _os2.path.exists(tg_path):
+                with open(tg_path, "r", encoding="utf-8") as f:
+                    tg_data = json.load(f)
+                tg_nodes = tg_data.get("nodes", [])
+                tg_edges = tg_data.get("edges", [])
+                if tg_nodes or tg_edges:
+                    tg_context = f"\n\n[用户已确认的任务规划]\n节点: {json.dumps(tg_nodes, ensure_ascii=False)}\n连线: {json.dumps(tg_edges, ensure_ascii=False)}"
+        except Exception:
+            pass
+
         all_messages = [{"role": "system", "content": system_prompt}] + history
         if decider_context:
             all_messages[-1]["content"] = f"{req.content}\n\n{decider_context}"
+        if tg_context:
+            all_messages[-1]["content"] = all_messages[-1]["content"] + tg_context
 
         # Phase 4: Call LLM via switch gateway
         import urllib.request

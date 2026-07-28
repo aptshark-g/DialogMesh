@@ -1,5 +1,6 @@
 /** Task Planning Page — data management + FlowchartCanvas */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FlowchartCanvas } from '@/components/task/FlowchartCanvas';
 import type { FNode, FEdge } from '@/components/task/FlowchartCanvas';
 import { useChatStore } from '@/stores/chatStore';
@@ -33,9 +34,11 @@ function canvasEdgesToApi(edges: FEdge[]): any[] {
 
 export function TaskPlanningPage() {
   const sessionId = useChatStore(s => s.sessionId);
+  const navigate = useNavigate();
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Load from backend on mount
   useEffect(() => {
@@ -118,6 +121,19 @@ export function TaskPlanningPage() {
     reader.readAsText(file);
   };
 
+  const handleConfirm = async () => {
+    setSaving(true);
+    const apiNodes = canvasNodesToApi(nodes, edges);
+    const apiEdges = canvasEdgesToApi(edges);
+    try {
+      await saveTaskGraph(sessionId!, apiNodes, apiEdges);
+      // Store confirmed state for next chat turn
+      sessionStorage.setItem(`confirmed_tg_${sessionId}`, JSON.stringify({ nodes: apiNodes, edges: apiEdges }));
+    } catch {}
+    setSaving(false);
+    navigate('/chat');
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface">
       {/* Toolbar */}
@@ -131,6 +147,10 @@ export function TaskPlanningPage() {
         </label>
         <button onClick={handleExport}
           className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs">导出 JSON</button>
+        <button onClick={handleConfirm} disabled={saving}
+          className="px-4 py-1.5 rounded bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50">
+          {saving ? '保存中...' : '✓ 确认'}
+        </button>
         <button onClick={() => { setNodes([]); setEdges([]); }}
           className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs">清空</button>
         <button onClick={() => window.location.reload()}
