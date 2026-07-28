@@ -1,6 +1,6 @@
 # DialogMesh CLI — 白盒化完整设计
 
-> v3.0 | 2026-07-28
+> v4.0 | 2026-07-28
 > 每模块均可查看、可修改、可回溯。Unix 管道，stdin/stdout JSON。
 
 ---
@@ -90,17 +90,97 @@
 
 ---
 
-## 七、上下文 (ContextCompiler)
+## 七、上下文编译器 & 子图 & 序列化
+
+### ContextIR (中间表示) — 结构化上下文
 
 | 命令 | 功能 |
 |------|------|
-| `dm context compile` | 编译 ContextIR (当前会话) |
-| `dm context show` | 最近编译结果 |
-| `dm context entry <idx>` | 查看某条 entry |
-| `dm context add <type> <domain> <content>` | 手动注入 entry |
-| `dm context remove <idx>` | 删除 entry |
-| `dm context subgraph <entity>` | 子图裁剪 |
-| `dm context tokens` | Token 使用统计 |
+| `dm context compile` | 编译 ContextIR：子图裁剪→结构化序列化 |
+| `dm context show` | 最近 ContextIR：sections + token 分布 |
+| `dm context section <type>` | 查看某 section：topic/reasoning/constraints/history/profile |
+| `dm context ir export` | 导出完整 ContextIR JSON |
+| `dm context ir format` | 当前序列化格式 (xml/markdown/json) |
+| `dm context ir format set <fmt>` | 切换序列化格式 |
+
+### 子图 (Subgraph) — 从 Persistent Graph 裁剪
+
+| 命令 | 功能 |
+|------|------|
+| `dm subgraph compile <anchor>` | 从锚点出发 k-hop 扩展 |
+| `dm subgraph show` | 当前子图：节点/边/类型分布 |
+| `dm subgraph hop <N>` | 设置扩展跳数 (default 2) |
+| `dm subgraph weight <edge-type> <w>` | 设置边类型权重 |
+| `dm subgraph budget <tokens>` | 设置 token 预算 |
+| `dm subgraph strategy` | 当前策略：greedy_ilp / summary_fallback |
+| `dm subgraph strategy set <s>` | 切换策略 |
+| `dm subgraph node <id>` | 查看子图节点详情 |
+| `dm subgraph path <from> <to>` | 子图内两节点路径 |
+
+### 序列化 / 结构化格式
+
+| 命令 | 功能 |
+|------|------|
+| `dm format encode` | 将子图序列化为 token 序列 |
+| `dm format decode` | 从 token 序列反序列化 |
+| `dm format template show` | 当前序列化模板 |
+| `dm format template set <name>` | 切换模板 (xml/compact/list/prompt) |
+| `dm format template edit` | 编辑模板 |
+| `dm format tokens` | 统计 token 使用 (by section) |
+| `dm format test <text>` | 测试一段文本的序列化结果 |
+
+### 持久化图 (Persistent Graph)
+
+| 命令 | 功能 |
+|------|------|
+| `dm graph show` | 图概览：节点数/边数/类型分布 |
+| `dm graph node <id>` | 节点详情：text/type/embedding/activation |
+| `dm graph node add <type> <text>` | 添加节点 |
+| `dm graph node edit <id> <key=val>...` | 修改节点 |
+| `dm graph node remove <id>` | 删除节点 |
+| `dm graph node search <keyword>` | 搜索节点 |
+| `dm graph edge show <id>` | 查看边 |
+| `dm graph edge add <from> <to> <type>` | 添加边 |
+| `dm graph edge weight <id> <w>` | 设置权重 |
+| `dm graph edge remove <id>` | 删除边 |
+| `dm graph edge types` | 边类型：depends/creates/updates/constrains/reason/corrects/extends |
+| `dm graph stats` | 统计：节点按类型/边按类型/平均 degree/activation |
+| `dm graph export` | 导出完整 Graph JSON |
+| `dm graph import <file>` | 从 JSON 导入 |
+
+### 事件日志 (EventLog) + 内存编译器 (MemoryCompiler)
+
+| 命令 | 功能 |
+|------|------|
+| `dm eventlog show` | 事件列表 (最近 N 条) |
+| `dm eventlog get <id>` | 查看单条事件 |
+| `dm eventlog search <keyword>` | 搜索事件 |
+| `dm eventlog type <type>` | 按类型筛选：behavior/correction/topic_switch/profile_update/checkpoint |
+| `dm eventlog session <sid>` | 按会话筛选 |
+| `dm eventlog stats` | 事件统计 |
+| `dm eventlog export` | 导出事件日志 |
+| `dm eventlog clear` | 清空 (危险) |
+| `dm memory compile` | 触发：Event→Merge→Conflict→Rewrite |
+| `dm memory show` | 最近 Merge 结果 |
+| `dm memory conflict show` | 冲突列表 |
+| `dm memory conflict resolve <id> <decision>` | 手动解决冲突 |
+| `dm memory checkpoint` | 手动触发 checkpoint |
+| `dm memory checkpoint list` | checkpoint 历史 |
+| `dm memory checkpoint rollback <id>` | 回滚到 checkpoint |
+| `dm memory stats` | summary/compression 统计 |
+
+### 多层级内存 (Cold Storage)
+
+| 命令 | 功能 |
+|------|------|
+| `dm memory tier show` | 三层状态：Hot/Warm/Cold |
+| `dm memory tier hot` | Hot 层列表 (~10 nodes, <5ms) |
+| `dm memory tier warm` | Warm 层列表 (~1000 nodes, <50ms) |
+| `dm memory tier cold` | Cold 层列表 (long-term, <500ms) |
+| `dm memory tier promote <id>` | 晋升 Cold→Warm→Hot |
+| `dm memory tier demote <id>` | 降级 Hot→Warm→Cold |
+| `dm memory compress` | 触发热→温压缩 |
+| `dm memory compress cold` | 触发温→冷压缩 (v4 summary) |
 
 ---
 
@@ -355,9 +435,10 @@
 | Phase | 内容 | 命令数 |
 |-------|------|:-----:|
 | P1 | engine + session + event send + reply + task | ~30 |
-| P2 | discourse + pcr + intent + context | ~35 |
+| P2 | discourse + pcr + intent + context + subgraph + format + graph | ~55 |
 | P3 | blueprint + decider + meta | ~25 |
-| P4 | association + behavior + engineering | ~25 |
-| P5 | profile + rules + obs + knowledge + concepts + mind | ~45 |
-| P6 | app layer 移植 + data 管理 | ~15 |
-| **Total** | | **~175** |
+| P4 | eventlog + memory + memory-tier | ~20 |
+| P5 | association + behavior + engineering | ~25 |
+| P6 | profile + rules + obs + knowledge + concepts + mind | ~45 |
+| P7 | app layer 移植 + data 管理 | ~15 |
+| **Total** | | **~215** |
