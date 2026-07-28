@@ -147,14 +147,14 @@ async def get_relations():
 
 @router.get("/causal")
 async def get_causal():
-    return {}
+    return {"relations": [], "substrates": 0}
 
 # ═══════════════════════════════════════════════════════
 # Behavior — V6BehaviorResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/behavior")
 async def get_behavior():
-    return {}
+    return {"edge_count": 0, "patterns": [], "predictions": []}
 
 @router.get("/behavior/patterns")
 async def get_behavior_patterns():
@@ -174,7 +174,7 @@ async def get_behavior_predictions():
 # ═══════════════════════════════════════════════════════
 @router.get("/engineering")
 async def get_engineering():
-    return {}
+    return {"constraints": [], "propagations": 0, "violations": 0}
 
 @router.get("/engineering/modules")
 async def get_engineering_modules():
