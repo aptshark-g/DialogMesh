@@ -393,7 +393,24 @@
 
 ---
 
-## 二十一、应用层 (保留)
+## 二十二、注解 & 修正 & 反馈 & 度量
+
+| 命令 | 功能 |
+|------|------|
+| `dm annotations show` | 注解列表 |
+| `dm annotations add <type> <content> <target>` | 添加注解 |
+| `dm annotations remove <id>` | 删除注解 |
+| `dm annotations stats` | 注解统计 |
+| `dm corrections show` | 画像修正列表 |
+| `dm corrections add <dim> <delta> <reason>` | 添加修正 |
+| `dm corrections resolve <id>` | 标记已解决 |
+| `dm feedback show` | 反馈列表 |
+| `dm feedback add <type> <target> <content>` | 添加反馈 |
+| `dm inertia show` | 惯性值 |
+| `dm versions` | 引擎/模块版本 |
+| `dm metrics show` | 质量度量 |
+
+## 二十三、应用层 (保留)
 
 | 命令 | 说明 |
 |------|------|
@@ -440,5 +457,6 @@
 | P4 | eventlog + memory + memory-tier | ~20 |
 | P5 | association + behavior + engineering | ~25 |
 | P6 | profile + rules + obs + knowledge + concepts + mind | ~45 |
-| P7 | app layer 移植 + data 管理 | ~15 |
-| **Total** | | **~215** |
+| P7 | annotations + corrections + feedback + inertia + versions + metrics | ~15 |
+| P8 | app layer 移植 + data 管理 | ~15 |
+| **Total** | | **~230** |
