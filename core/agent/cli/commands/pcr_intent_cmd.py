@@ -87,3 +87,5 @@ def register_cmds(subparsers):
     p = subparsers.add_parser("context", help="Context compilation")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show", help="Show compiled context")
+    sp.add_parser("compile", help="Compile context from session")
+    sp.add_parser("section"); sp.add_parser("ir-export"); sp.add_parser("ir-format")

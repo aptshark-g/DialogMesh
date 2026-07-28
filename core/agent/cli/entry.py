@@ -476,7 +476,9 @@ def _dispatch_p9(args):
         ("context","compile"): cmd_context_compile, ("context","section"): cmd_context_section,
         ("context","ir-export"): cmd_context_ir_export, ("context","ir-format"): cmd_context_ir_format,
         ("format","encode"): cmd_format_encode, ("format","decode"): cmd_format_decode,
-        ("format","template"): cmd_format_template_show,
+        ("format","template_show"): cmd_format_template_show,
+        ("format","template_set"): cmd_format_template_set,
+        ("format","template_edit"): cmd_format_template_edit,
         ("graph","node"): cmd_graph_node, ("graph","node-add"): cmd_graph_node_add,
         ("graph","node-edit"): cmd_graph_node_edit, ("graph","node-remove"): cmd_graph_node_remove,
         ("graph","node-search"): cmd_graph_node_search, ("graph","edge-types"): cmd_graph_edge_types,
@@ -524,12 +526,8 @@ def _dispatch_p9(args):
         ("discourse","topic-show"): cmd_discourse_topic_show, ("discourse","topic-add"): cmd_discourse_topic_add,
         ("discourse","topic-remove"): cmd_discourse_topic_remove, ("discourse","topic-heat"): cmd_discourse_topic_heat,
     }
-    # Special handlers: format template set, context ir-format set, graph import, reply set
-    if cmd == "format" and getattr(args, "template_op", "") == "set":
-        cmd_format_template_set(args)
-    elif cmd == "format" and getattr(args, "template_op", "") == "edit":
-        cmd_format_template_edit(args)
-    elif cmd == "context" and getattr(args, "ir_format_op", "") == "set":
+    # Special handlers: context ir-format set, graph import
+    if cmd == "context" and getattr(args, "ir_format_op", "") == "set":
         cmd_context_ir_format_set(args)
     elif cmd == "graph" and sub == "import":
         cmd_graph_import_(args)
@@ -601,6 +599,39 @@ def main():
     from core.agent.cli.commands import register_all
     register_all(sub)
 
+    # ── P9: New modules ──
+    p9 = sub.add_parser("graph", help="Persistent Graph ops")
+    sp9 = p9.add_subparsers(dest="subcommand")
+    sp9.add_parser("show")
+    gn = sp9.add_parser("node"); gn.add_argument("id", nargs="*", default=["?"])
+    gna = sp9.add_parser("node-add"); gna.add_argument("name", nargs="*", default=["?"]); gna.add_argument("--type", default="concept")
+    gne = sp9.add_parser("node-edit"); gne.add_argument("id", nargs="*", default=["?"])
+    gnr = sp9.add_parser("node-remove"); gnr.add_argument("id", nargs="*", default=["?"])
+    gns = sp9.add_parser("node-search"); gns.add_argument("keyword", nargs="*", default=[""])
+    sp9.add_parser("edge-types")
+    sp9.add_parser("stats"); sp9.add_parser("export")
+
+    p9f = sub.add_parser("format", help="Serialization ops")
+    sp9f = p9f.add_subparsers(dest="subcommand")
+    sp9f.add_parser("encode"); sp9f.add_parser("decode")
+    sp9f.add_parser("template_show"); sp9f.add_parser("template_set"); sp9f.add_parser("template_edit")
+    sp9f.add_parser("tokens")
+    ft = sp9f.add_parser("test"); ft.add_argument("text", nargs="*", default=[""])
+
+    p9e = sub.add_parser("eventlog", help="Event log ops")
+    sp9e = p9e.add_subparsers(dest="subcommand")
+    sp9e.add_parser("show"); sp9e.add_parser("get"); sp9e.add_parser("search")
+    sp9e.add_parser("type"); sp9e.add_parser("session"); sp9e.add_parser("stats")
+    sp9e.add_parser("export"); sp9e.add_parser("clear")
+
+    p9m = sub.add_parser("memory", help="Memory compiler ops")
+    sp9m = p9m.add_subparsers(dest="subcommand")
+    sp9m.add_parser("compile"); sp9m.add_parser("show"); sp9m.add_parser("conflict-show")
+    sp9m.add_parser("conflict-resolve"); sp9m.add_parser("checkpoint"); sp9m.add_parser("checkpoint-list")
+    sp9m.add_parser("checkpoint-rollback"); sp9m.add_parser("stats")
+    sp9m.add_parser("tier-show"); sp9m.add_parser("tier-hot"); sp9m.add_parser("tier-warm"); sp9m.add_parser("tier-cold")
+    sp9m.add_parser("tier-promote"); sp9m.add_parser("tier-demote"); sp9m.add_parser("compress"); sp9m.add_parser("compress-cold")
+
     # Task
     p = sub.add_parser("task", help="Task graph operations")
     p2 = p.add_subparsers(dest="subcommand")
@@ -666,6 +697,28 @@ def main():
 
     # ── P9: Design-complete subcommands (added to existing parsers) ──
     # No new parsers needed — subcommands added via dispatch map only
+    # ── P9: Extra commands (non-conflicting names) ──
+    bp2 = sub.add_parser("bp", help="Blueprint write ops")
+    bps = bp2.add_subparsers(dest="subcommand")
+    x = bps.add_parser("node-add"); x.add_argument("chain", nargs="*", default=["pcr"])
+    y = bps.add_parser("node-remove"); y.add_argument("id", nargs="*", default=["?"])
+    z = bps.add_parser("node-edit"); z.add_argument("id", nargs="*", default=["?"])
+    bps.add_parser("edge-add"); bps.add_parser("edge-remove"); bps.add_parser("edge-required")
+    bps.add_parser("strategy"); bps.add_parser("strategy-set")
+
+    dc2 = sub.add_parser("dc", help="Decider write ops")
+    dcs = dc2.add_subparsers(dest="subcommand")
+    dcs.add_parser("tick"); t = dcs.add_parser("chain"); t.add_argument("name", nargs="*", default=["all"])
+
+    ds2 = sub.add_parser("ds", help="Discourse write ops")
+    dss = ds2.add_subparsers(dest="subcommand")
+    dss.add_parser("compress")
+    su = dss.add_parser("summary"); su.add_argument("block_id", nargs="*", default=["?"]); su.add_argument("text", nargs="*", default=[""])
+    dss.add_parser("topic-show")
+    ta = dss.add_parser("topic-add"); ta.add_argument("topic", nargs="*", default=["?"])
+    tr = dss.add_parser("topic-remove"); tr.add_argument("topic", nargs="*", default=["?"])
+    dss.add_parser("topic-heat")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -703,8 +756,12 @@ def main():
         from core.agent.cli.commands.pcr_intent_cmd import cmd_intent
         cmd_intent(args)
     elif args.command == "context":
-        from core.agent.cli.commands.pcr_intent_cmd import cmd_context
-        cmd_context(args)
+        sub = getattr(args, "subcommand", "")
+        if sub == "show":
+            from core.agent.cli.commands.pcr_intent_cmd import cmd_context
+            cmd_context(args)
+        else:
+            _dispatch_p9(args)
     elif args.command == "blueprint":
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb
@@ -728,6 +785,31 @@ def main():
             _dispatch_p8(args)
         else:
             _dispatch_p5(args)
+    elif args.command in ("bp", "dc", "ds"):
+        # Aliases: bp → blueprint, dc → decider, ds → discourse
+        from core.agent.cli.commands.p9_cmd import (
+            cmd_blueprint_node_add, cmd_blueprint_node_remove, cmd_blueprint_node_edit,
+            cmd_blueprint_edge_add, cmd_blueprint_edge_remove, cmd_blueprint_edge_required,
+            cmd_blueprint_strategy, cmd_blueprint_strategy_set,
+            cmd_decider_tick, cmd_decider_chain,
+            cmd_discourse_compress, cmd_discourse_summary,
+            cmd_discourse_topic_show, cmd_discourse_topic_add,
+            cmd_discourse_topic_remove, cmd_discourse_topic_heat,
+        )
+        cmd = args.command; sub = getattr(args, "subcommand", "")
+        if cmd == "bp":
+            {"node-add":cmd_blueprint_node_add,"node-remove":cmd_blueprint_node_remove,
+             "node-edit":cmd_blueprint_node_edit,"edge-add":cmd_blueprint_edge_add,
+             "edge-remove":cmd_blueprint_edge_remove,"edge-required":cmd_blueprint_edge_required,
+             "strategy":cmd_blueprint_strategy,"strategy-set":cmd_blueprint_strategy_set}.get(sub, lambda a:0)(args)
+        elif cmd == "dc":
+            {"tick":cmd_decider_tick,"chain":cmd_decider_chain}.get(sub, lambda a:0)(args)
+        elif cmd == "ds":
+            {"compress":cmd_discourse_compress,"summary":cmd_discourse_summary,
+             "topic-show":cmd_discourse_topic_show,"topic-add":cmd_discourse_topic_add,
+             "topic-remove":cmd_discourse_topic_remove,"topic-heat":cmd_discourse_topic_heat}.get(sub, lambda a:0)(args)
+    elif args.command in ("graph", "format", "eventlog", "memory"):
+        _dispatch_p9(args)
     elif args.command in ("chat", "test", "ab", "monitor", "export", "data"):
         _dispatch_app(args)
     elif args.command == "task" and getattr(args, "subcommand", "") in ("node", "edge"):
