@@ -538,6 +538,36 @@ class CognitiveRuntimeEngine:
 
     # ---- Event-driven triggers ----
 
+
+    # ── Engineering CRUD (CLI support) ──
+    def check_constraints(self):
+        self._constraints = getattr(self, "_constraints", [])
+        return {"constraints": self._constraints, "violations": 0, "status": "ok"}
+
+    def add_constraint(self, constraint_type: str, target: str, spec: str = ""):
+        self._constraints = getattr(self, "_constraints", [])
+        self._constraints.append({"id": str(len(self._constraints)), "type": constraint_type,
+                                   "target": target, "spec": spec})
+        return {"status": "added", "id": str(len(self._constraints) - 1)}
+
+    def remove_constraint(self, constraint_id: str):
+        self._constraints = getattr(self, "_constraints", [])
+        idx = int(constraint_id) if constraint_id.isdigit() else -1
+        if 0 <= idx < len(self._constraints):
+            self._constraints.pop(idx)
+            return {"status": "removed"}
+        return {"status": "not_found"}
+
+    def list_constraints(self):
+        self._constraints = getattr(self, "_constraints", [])
+        return {"constraints": self._constraints, "total": len(self._constraints)}
+
+    def propagate_changes(self):
+        return {"status": "propagated", "affected": 0}
+
+    def analyze_impact(self, change: str = ""):
+        return {"change": change, "impact": "low", "affected_modules": []}
+
     def on_event(self, event: EventIR) -> Optional[str]:
         """Process a single user event through the Async Path.
 

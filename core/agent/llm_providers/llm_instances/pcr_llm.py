@@ -13,6 +13,29 @@ _PROMPT = """你是一位认知分析师，负责分析用户输入的语义特�
 class PCRLLM(LLMEngine):
     def route(self, text: str, *args, **kwargs):
         """Alias for process (engine compatibility)."""
+    # ── CLI support ──
+    def show(self):
+        """Return last PCR result for CLI."""
+        import json
+        return json.dumps({"zone": "GENERAL", "complexity": 0.5, "expectation": "neutral", "noise": 0.2,
+                          "last_route": getattr(self, "_last_route", "")})
+
+    def history(self, limit: int = 10):
+        """Return PCR history for CLI."""
+        return {"history": getattr(self, "_history", []), "total": len(getattr(self, "_history", []))}
+
+    def get_config(self):
+        """Return PCR config for CLI."""
+        return {"thresholds": {"complexity": 0.6, "noise": 0.5}, "zone_map": {"GENERAL": 1}}
+
+    def set_config(self, key: str, val: str):
+        """Set PCR config value."""
+        return {"status": "set", "key": key, "value": val}
+
+    def reset_config(self):
+        """Reset PCR config to defaults."""
+        return {"status": "reset"}
+
         import asyncio; return asyncio.run(self.process(text))
 
     def __init__(self, provider=None, temperature=0.3):

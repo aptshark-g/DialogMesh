@@ -1,4 +1,4 @@
-"""P9: Full design coverage — context, format, graph, eventlog, memory, blueprint, decider, meta, association, behavior, engineering, profile, reply fine-grained commands."""
+"""P9: Full design coverage commands."""
 import json, os, time, uuid
 from core.agent.cli.engine import get_engine, get_session, get_provider, PROJECT_ROOT
 
@@ -396,3 +396,10 @@ def cmd_discourse_topic_remove(args):
 
 def cmd_discourse_topic_heat(args):
     print(json.dumps({"heat": {}}, ensure_ascii=False))
+
+# ── Batch 4: auto-inject real handlers after all functions defined ──
+try:
+    from .batch4_init import _injected
+    _has_b4 = _injected
+except ImportError:
+    _has_b4 = False
