@@ -1,4 +1,4 @@
-from .models import MetaRole, SkeletonMatch, CausalConstraints
+from .models import MetaRole  # SkeletonMatch, CausalConstraints moved to lazy import
 from .meta_roles import MetaRoles
 from .skeleton_library import SkeletonLibrary
 from .skeleton_matcher import ConstraintExtractor, SkeletonMatcher

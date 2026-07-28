@@ -1,5 +1,27 @@
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
+
+class MetaRole(IntEnum):
+    SOURCE = 1
+    SINK = 2
+    DISSIPATE = 3
+    STORE_P = 4
+    STORE_K = 5
+    TRANSFORM = 6
+    JSUM = 7
+    JSPLIT = 8
+
+
+class SkeletonMatch:
+    """Match between a behavior chain and a causal skeleton. (stub)"""
+    score: float
+    skeleton_id: str
+
+
+class CausalConstraints:
+    """Constraints for causal substrate reasoning. (stub)"""
+    pass
+
 
 class TrackType(str, Enum):
     TRACK_0 = "algo"

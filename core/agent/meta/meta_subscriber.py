@@ -31,7 +31,9 @@ class MetaSubscriber:
                    EventType.INTENT_PARSED, EventType.REPLY_GENERATED,
                    EventType.PROFILE_UPDATED, EventType.BEHAVIOR_RECORDED,
                    EventType.ABC_EVALUATED, EventType.MIND_LEARNED):
-            self._bus.subscribe(et, "meta", self._on_event)
+            if self._bus is not None:
+
+                self._bus.subscribe(et, "meta", self._on_event)
 
     def _on_event(self, event: dict):
         kind = event.get("kind", "")
@@ -59,5 +61,9 @@ class MetaSubscriber:
                     "profile_drift": self._state.profile_drift, "action": "none"}
         if self._state.profile_drift > 0.3:
             findings["action"] = "recalibrate_profile"
-            self._bus.publish("anomaly_detected", {"type": "profile_drift"})
-        self._bus.publish("meta_reviewed", findings)
+            if self._bus is not None:
+
+                self._bus.publish("anomaly_detected", {"type": "profile_drift"})
+        if self._bus is not None:
+
+            self._bus.publish("meta_reviewed", findings)

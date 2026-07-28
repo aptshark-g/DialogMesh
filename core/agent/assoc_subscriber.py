@@ -35,7 +35,9 @@ class AssociationSubscriber:
         for et in (EventType.PCR_COMPUTED, EventType.ROUTE_GENERATED,
                    EventType.INTENT_PARSED, EventType.REPLY_GENERATED,
                    EventType.BEHAVIOR_RECORDED):
-            self._bus.subscribe(et, "assoc", self._on_event)
+            if self._bus is not None:
+
+                self._bus.subscribe(et, "assoc", self._on_event)
 
     def _on_event(self, event: dict):
         kind = event.get("kind", "")
@@ -58,7 +60,9 @@ class AssociationSubscriber:
 
     def _discover_and_publish(self):
         result = self._funnel.run()
-        self._bus.publish("association_discovered", {
+        if self._bus is not None:
+
+            self._bus.publish("association_discovered", {
             "intent": self._state.current_intent,
             "behavior_count": self._state.behavior_count,
             "funnel": {
