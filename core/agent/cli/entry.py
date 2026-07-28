@@ -334,6 +334,28 @@ def _dispatch_p4(args):
     m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
 
+def _dispatch_p5(args):
+    """Dispatch P5 commands: rules, abc, annotations, corrections, feedback, inertia, versions, metrics."""
+    about = getattr(args, "subcommand", "")
+    cmd = args.command
+    from core.agent.cli.commands.p5_cmd import (
+        cmd_rules_show, cmd_rules_add, cmd_abc_show,
+        cmd_annotations_show, cmd_corrections_show, cmd_feedback_show,
+        cmd_inertia_show, cmd_versions_show, cmd_metrics_show,
+    )
+    m = {
+        ("rules","show"): cmd_rules_show, ("rules","add"): cmd_rules_add,
+        ("abc","show"): cmd_abc_show,
+        ("annotations","show"): cmd_annotations_show,
+        ("corrections","show"): cmd_corrections_show,
+        ("feedback","show"): cmd_feedback_show,
+        ("inertia","show"): cmd_inertia_show,
+        ("versions","show"): cmd_versions_show,
+        ("metrics","show"): cmd_metrics_show,
+    }
+    m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -444,6 +466,8 @@ def main():
         _dispatch_p3(args)
     elif args.command in ("profile", "engineering", "concepts", "mind"):
         _dispatch_p4(args)
+    elif args.command in ("rules", "abc", "annotations", "corrections", "feedback", "inertia", "versions", "metrics"):
+        _dispatch_p5(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
