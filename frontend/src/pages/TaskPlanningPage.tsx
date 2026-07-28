@@ -86,6 +86,38 @@ export function TaskPlanningPage() {
     <div className="flex-1 flex items-center justify-center text-text-muted text-sm bg-surface">加载中...</div>
   );
 
+  const handleExport = () => {
+    const json = JSON.stringify({ nodes: canvasNodesToApi(nodes, edges), edges: canvasEdgesToApi(edges) }, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `task-graph-${sessionId?.slice(0,8) || 'export'}.json`; a.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string);
+        const apiNodes = data.nodes || [];
+        if (apiNodes.length > 0) {
+          setNodes(apiNodesToCanvas(apiNodes));
+          const apiEdges: FEdge[] = [];
+          apiNodes.forEach((n: any) => {
+            (n.dependencies || []).forEach((depId: string) => {
+              apiEdges.push({ id: `e_${depId}_${n.id}`, source: depId, target: n.id, sourceHandle: 'bottom', targetHandle: 'top', mode: 'auto' });
+            });
+          });
+          setEdges(apiEdges);
+        } else if (data.nodes && data.edges) {
+          // Already in canvas format
+          setNodes(data.nodes);
+          setEdges(data.edges);
+        }
+      } catch { alert('JSON 格式无效'); }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface">
       {/* Toolbar */}
@@ -93,6 +125,12 @@ export function TaskPlanningPage() {
         <h1 className="text-sm font-semibold text-primary">任务规划</h1>
         <div className="flex-1" />
         <span className="text-[11px] text-text-muted">{nodes.length} 节点 · {edges.length} 连线</span>
+        <label className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs cursor-pointer hover:text-primary">
+          导入 JSON
+          <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+        </label>
+        <button onClick={handleExport}
+          className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs">导出 JSON</button>
         <button onClick={() => { setNodes([]); setEdges([]); }}
           className="px-3 py-1 rounded bg-surface-card border border-subtle text-text-secondary text-xs">清空</button>
         <button onClick={() => window.location.reload()}
