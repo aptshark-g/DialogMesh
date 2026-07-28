@@ -69,16 +69,17 @@ class EventLog:
 
     def ack_event(self, event_id: str) -> bool:
         """Mark event as consumed."""
-        try:
-            with self._conn:
-                self._conn.execute(
-                    "UPDATE event_log SET consumed=1 WHERE event_id=?",
-                    (event_id,),
-                )
-            return True
-        except Exception as e:
-            logger.error("EventLog ack failed: %s", e)
+        if not self._conn:
             return False
+        self._conn.execute(
+            "UPDATE event_log SET consumed=1 WHERE event_id=?", (event_id,)
+        )
+        self._conn.commit()
+        return True
+
+    def record_event(self, *args, **kwargs):
+        """Alias for put_event (engine compatibility)."""
+        return self.put_event(*args, **kwargs)
 
     def replay_unconsumed(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Return unconsumed events ordered by creation time."""

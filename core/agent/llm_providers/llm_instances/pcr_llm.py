@@ -11,6 +11,10 @@ _PROMPT = """你是一位认知分析师，负责分析用户输入的语义特�
 请输出 JSON，包含 noise_analysis、expectation_inference、cognitive_snapshot 和 confidence 字段。仅输出 JSON。"""
 
 class PCRLLM(LLMEngine):
+    def route(self, text: str, *args, **kwargs):
+        """Alias for process (engine compatibility)."""
+        import asyncio; return asyncio.run(self.process(text))
+
     def __init__(self, provider=None, temperature=0.3):
         super().__init__("PCR-LLM", provider, CogType.PERCEPTION, _PROMPT, temperature, 512)
     def _build_prompt(self, ctx):
