@@ -383,6 +383,15 @@ def main():
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.discourse_cmd import cmd_show as d1, cmd_tree as d2, cmd_block as d3, cmd_feed as d4, cmd_search as d5
         {"show": d1, "tree": d2, "block": d3, "feed": d4, "search": d5}.get(about, lambda a: print("Usage: dm discourse <show|tree|block|feed|search>"))(args)
+    elif args.command == "pcr":
+        from core.agent.cli.commands.pcr_intent_cmd import cmd_pcr
+        cmd_pcr(args)
+    elif args.command == "intent":
+        from core.agent.cli.commands.pcr_intent_cmd import cmd_intent
+        cmd_intent(args)
+    elif args.command == "context":
+        from core.agent.cli.commands.pcr_intent_cmd import cmd_context
+        cmd_context(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
