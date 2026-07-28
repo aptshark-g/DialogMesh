@@ -115,9 +115,11 @@ export function ChatOverlay() {
             <div key={i} className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
               <div className={cn(
                 'max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words',
-                isUser ? 'bg-primary text-white rounded-br-none' : 'bg-surface-card-hover text-text-primary rounded-bl-none border border-subtle'
+                isUser
+                  ? 'bg-primary/10 text-text-primary'
+                  : 'bg-surface-card-hover text-text-primary border border-subtle'
               )}>
-                {msg.content?.slice(0, 400)}{(msg.content?.length || 0) > 400 ? '...' : ''}
+                {msg.content}
               </div>
               {(msg as any).metadata?.taskGraph && (
                 <span className="text-[10px] text-primary">📋 已生成任务规划</span>
