@@ -1,194 +1,133 @@
-﻿#!/usr/bin/env python3
-"""
-DialogMesh v3.0 CLI — 跨平台命令行客户端
+"""DialogMesh CLI — talks to the backend API directly, no frontend."""
+import sys, json, urllib.request, os, uuid
 
-通过 HTTP API 与 DialogMesh 后端通信，无需浏览器/WebSocket/Node.js。
+BASE = os.environ.get("DM_API", "http://localhost:8000")
 
-用法:
-  python scripts/cli.py                        交互模式
-  python scripts/cli.py "scan memory"          单次查询
-  python scripts/cli.py --json "read value"    JSON输出（给AI工具用）
-  echo "query" | python scripts/cli.py         管道输入
-  python scripts/cli.py --help                 帮助
-
-安装依赖: 无需额外安装 (只用标准库 urllib)
-"""
-
-import json
-import sys
-import urllib.request
-import urllib.parse
-import argparse
-
-VERSION = "3.0.0"
-DEFAULT_BASE = "http://localhost:8000"
-
-
-def post(base: str, path: str, data: dict = None) -> dict:
-    body = json.dumps(data or {}).encode("utf-8")
-    req = urllib.request.Request(
-        f"{base}{path}",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+def _api(method, path, body=None):
+    url = f"{BASE}{path}"
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")[:200]
-        raise SystemExit(f"[ERROR] HTTP {e.code} {e.reason}: {detail}")
-    except urllib.error.URLError as e:
-        raise SystemExit(f"[ERROR] 无法连接到 {url}: {e.reason}")
+        err = e.read().decode()[:500]
+        return {"error": f"HTTP {e.code}", "detail": err}
+    except Exception as e:
+        return {"error": str(e)[:200]}
 
+def cmd_session(cmd, sid=None):
+    if cmd == "new":
+        sid = str(uuid.uuid4())[:12]
+        print(f"session_id: {sid}")
+        return sid
+    elif cmd == "list":
+        # Fetch recent sessions from v6
+        r = _api("GET", "/v6/sessions?limit=10")
+        for s in r.get("sessions", r.get("data", [])):
+            sid = s.get("session_id", s.get("id", "?"))
+            title = s.get("title", s.get("messages", [{}])[0].get("content", "")[:40] if s.get("messages") else "(empty)")
+            print(f"  {sid[:12]}  {title}")
+    elif cmd == "use":
+        print(f"Using session: {sid}")
+    return None
 
-def get(base: str, path: str) -> dict:
-    """发送 GET 请求并返回 JSON。"""
-    url = f"{base}{path}"
-    req = urllib.request.Request(url, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")[:200]
-        raise SystemExit(f"[ERROR] HTTP {e.code}: {detail}")
-    except urllib.error.URLError as e:
-        raise SystemExit(f"[ERROR] 无法连接到 {url}: {e.reason}")
+def cmd_chat(sid, msg):
+    print(f"[You] {msg}")
+    r = _api("POST", f"/v3/session/{sid}/message", {
+        "content": msg,
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash"
+    })
+    if "error" in r:
+        print(f"[Error] {r['error']}")
+        return
+    content = r.get("content", "(empty)")
+    print(f"[AI] {content}")
+    tg = r.get("task_graph")
+    if tg:
+        print(f"\n  📋 任务规划 ({len(tg)} 步骤):")
+        for n in tg:
+            deps = ", ".join(n.get("dependencies", [])) or "无"
+            print(f"    {n.get('id','?')}. {n.get('name','?')} [依赖: {deps}]")
+    return r
 
+def cmd_task(sid, subcmd, *args):
+    if subcmd == "show":
+        r = _api("GET", f"/v3/session/{sid}/task-graph")
+        nodes = r.get("nodes", [])
+        edges = r.get("edges", [])
+        if not nodes:
+            print("  (无任务)")
+            return
+        print(f"  任务图: {len(nodes)} 节点, {len(edges)} 连线")
+        for n in nodes:
+            deps = ", ".join(n.get("dependencies", [])) or "—"
+            print(f"    [{n.get('id','?')}] {n.get('name','?')}  状态:{n.get('status','?')}  依赖:{deps}")
+        if edges:
+            print("  连线:")
+            for e in edges:
+                print(f"    {e['source']} → {e['target']}")
+    elif subcmd == "save":
+        # Read JSON from stdin or file
+        if args:
+            with open(args[0]) as f:
+                data = json.load(f)
+        else:
+            data = json.load(sys.stdin)
+        r = _api("PUT", f"/v3/session/{sid}/task-graph", {
+            "nodes": data.get("nodes", []),
+            "edges": data.get("edges", [])
+        })
+        print(f"  {'✅' if r.get('status') == 'ok' else '❌'} {r.get('status','?')}")
+    elif subcmd == "confirm":
+        print(f"  ✅ 任务已确认，下次对话 LLM 将收到该任务图并执行")
 
-def health_check(base: str) -> bool:
-    """检查后端是否可用。"""
-    try:
-        r = get(base, "/v3/health")
-        ok = r.get("status") == "ok" or "status" in r
-        if ok:
-            print(f"[OK] 后端已就绪 (version={r.get('version','?')})", file=sys.stderr)
-        return ok
-    except Exception:
-        return False
-
-
-def create_session(base: str) -> str:
-    """创建新会话，返回 session_id。"""
-    r = post(base, "/v3/session")
-    sid = r.get("session_id", "")
-    if not sid:
-        raise SystemExit("[ERROR] 创建会话失败：返回中没有 session_id")
-    print(f"[会话] {sid[:12]}...", file=sys.stderr)
-    return sid
-
-
-def format_response(r: dict) -> str:
-    """格式化响应内容为可读文本。"""
-    lines = []
-
-    # 回答内容
-    content = r.get("content") or r.get("answer") or ""
-    if content:
-        lines.append(content)
-
-    # 结构化信息
-    info_parts = []
-    if r.get("intent"):
-        info_parts.append(f"Intent: {r['intent']}")
-    if r.get("latency_ms"):
-        info_parts.append(f"Latency: {r['latency_ms']:.0f}ms")
-    if r.get("status"):
-        info_parts.append(f"Status: {r['status']}")
-    if r.get("confidence"):
-        info_parts.append(f"Confidence: {r['confidence']:.2f}")
-    if info_parts:
-        lines.append("  " + " | ".join(info_parts))
-
-    # 建议/澄清
-    if r.get("suggestions"):
-        lines.append("  Suggestions:")
-        for s in r["suggestions"]:
-            lines.append(f"    - {s}")
-
-    # 错误
-    if r.get("error"):
-        lines.append(f"  [ERROR] {r['error']}")
-
-    # 任务图
-    if r.get("task_graph"):
-        nodes = r["task_graph"].get("nodes", [])
-        if nodes:
-            lines.append(f"  Plan: {len(nodes)} steps")
-
-    return "\n".join(lines)
-
+def cmd_export(sid, path):
+    r = _api("GET", f"/v3/session/{sid}/task-graph")
+    with open(path, "w") as f:
+        json.dump(r, f, ensure_ascii=False, indent=2)
+    print(f"  ✅ 导出到 {path}")
 
 def main():
-    p = argparse.ArgumentParser(
-        description="DialogMesh v3.0 CLI — 跨平台命令行客户端",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  python scripts/cli.py "scan memory at 0x004000"
-  python scripts/cli.py --json "read value"
-  echo "help me" | python scripts/cli.py
-  python scripts/cli.py --base http://192.168.1.100:8000
-        """,
-    )
-    p.add_argument("query", nargs="?", help="查询内容（省略则进入交互模式）")
-    p.add_argument("--json", action="store_true", help="输出 JSON 格式（供 AI/脚本调用）")
-    p.add_argument("--base", default=DEFAULT_BASE, help=f"后端地址 (默认: {DEFAULT_BASE})")
-    p.add_argument("--session", default=None, help="指定已有 session_id 而非新建")
-    p.add_argument("--no-health", action="store_true", help="跳过健康检查")
-    p.add_argument("--version", action="store_true", help="显示版本号")
-    args = p.parse_args()
-
-    if args.version:
-        print(f"DialogMesh CLI v{VERSION}")
+    args = sys.argv[1:]
+    if not args:
+        print(__doc__.strip())
+        print("\nCommands:")
+        print("  session new                    创建新会话")
+        print("  session list                   列出最近会话")
+        print("  session use <id>               设置当前会话")
+        print("  chat <sid> <msg>               发送消息 (需要 session-id)")
+        print("  task show <sid>                查看任务图")
+        print("  task save <sid> [file.json]    保存任务图 (从文件或stdin)")
+        print("  task confirm <sid>             确认任务图")
+        print("  export <sid> <file.json>       导出任务图到文件")
+        print()
+        print("Example:")
+        print("  sid=$(python scripts/cli.py session new)")
+        print("  python scripts/cli.py chat $sid '规划一个用户登录系统'")
+        print("  python scripts/cli.py task show $sid")
         return
 
-    base = args.base.rstrip("/")
-
-    # 健康检查
-    if not args.no_health:
-        if not health_check(base):
-            print(f"[WARN] 后端 {base} 无响应，继续尝试...", file=sys.stderr)
-
-    # 获取或创建会话
-    sid = args.session
-    if not sid:
-        try:
-            sid = create_session(base)
-        except Exception as e:
-            print(f"[ERROR] 创建会话失败: {e}", file=sys.stderr)
-            sys.exit(1)
-
-    # 获取查询列表
-    if args.query:
-        queries = [args.query]
-    elif not sys.stdin.isatty():
-        # 管道输入
-        queries = [line.strip() for line in sys.stdin if line.strip()]
-    else:
-        # 交互模式
-        print("DialogMesh v3.0 CLI. 输入 exit/quit 退出。", file=sys.stderr)
-        queries = [line.strip() for line in sys.stdin if line.strip()]
-
-    # 执行查询
-    for q in queries:
-        if q.lower() in ("exit", "quit"):
-            break
-        if not q:
-            continue
-
-        try:
-            r = post(base, f"/v3/session/{sid}/message", {"content": q})
-            if args.json:
-                print(json.dumps(r, ensure_ascii=False))
-            else:
-                print(format_response(r))
-                print()
-        except SystemExit:
-            raise
-        except Exception as e:
-            print(f"[ERROR] 查询失败: {e}", file=sys.stderr)
-
+    cmd = args[0]
+    if cmd == "session":
+        cmd_session(args[1] if len(args) > 1 else "new", args[2] if len(args) > 2 else None)
+    elif cmd == "chat":
+        if len(args) < 3:
+            print("Usage: cli chat <session-id> <message>")
+            return
+        cmd_chat(args[1], " ".join(args[2:]))
+    elif cmd == "task":
+        if len(args) < 3:
+            print("Usage: cli task <show|save|confirm> <session-id> [file]")
+            return
+        cmd_task(args[2], args[1], *args[3:])
+    elif cmd == "export":
+        if len(args) < 3:
+            print("Usage: cli export <session-id> <file.json>")
+            return
+        cmd_export(args[1], args[2])
 
 if __name__ == "__main__":
     main()
