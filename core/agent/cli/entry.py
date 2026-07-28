@@ -142,30 +142,80 @@ def cmd_session_history(args):
 
 def cmd_event_send(args):
     engine = get_engine()
+    provider = get_provider()
     text = " ".join(args.text) if isinstance(args.text, list) else args.text
     sid = get_session(args.sid if hasattr(args, 'sid') else None)
 
-    # Build EventIR and send through engine
+    # Build EventIR and process through engine
     from core.agent.events.event_ir import DialogAdapter
     adapter = DialogAdapter()
     event = adapter.adapt(text, session_id=sid, turn_number=1)
 
+    t0 = __import__("time").time()
+    r = None
     try:
-        reply = engine.on_event(event)
-        result = {
-            "session_id": sid,
-            "reply": reply or "(no response)",
-            "text": text,
-        }
-        # Extract task_graph if available from last PCR/intent analysis
-        pcr = getattr(engine, '_last_pcr', None)
-        if pcr:
-            result["pcr"] = {
-                "zone": getattr(pcr, 'expectation', '?'),
-                "complexity": getattr(pcr, 'complexity_level', 0),
-            }
+        r = engine.on_event(event)
     except Exception as e:
-        result = {"error": str(e), "session_id": sid, "text": text}
+        r = str(e)
+
+    # Extract PCR result
+    pcr = getattr(engine, '_last_pcr', None)
+
+    # Call LLM for reply
+    try:
+        system_prompt = "你是 DialogMesh v6 认知助手。用中文回复，简洁专业。"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+        req = type("req", (), {
+            "prompt": "",
+            "messages": messages,
+            "system_prompt": system_prompt,
+            "max_tokens": 800,
+            "temperature": 0.3,
+        })
+        from core.agent.llm_providers.base import GenerateRequest
+        req2 = GenerateRequest(prompt="", messages=messages, system_prompt=system_prompt, max_tokens=800, temperature=0.3)
+        llm_reply = provider.generate(req2)
+        reply_text = llm_reply.text if hasattr(llm_reply, 'text') else str(llm_reply)
+    except Exception as e:
+        reply_text = f"[LLM error: {e}]"
+    import json as _json
+    import os as _os
+    elapsed = (__import__("time").time() - t0) * 1000
+
+    result = {
+        "session_id": sid,
+        "reply": reply_text,
+        "text": text,
+        "latency_ms": round(elapsed, 1),
+    }
+    if pcr:
+        result["pcr"] = {
+            "zone": getattr(pcr, 'expectation', '?'),
+            "complexity": round(getattr(pcr, 'complexity_level', 0), 2),
+        }
+
+    # Persist messages to v3_sessions.json
+    try:
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), "data")
+        _os.makedirs(data_dir, exist_ok=True)
+        sess_path = os.path.join(data_dir, "v3_sessions.json")
+        if os.path.exists(sess_path):
+            with open(sess_path, encoding="utf-8") as f:
+                sessions = _json.load(f)
+        else:
+            sessions = {}
+        if sid not in sessions:
+            sessions[sid] = {"created_at": __import__("time").time(), "messages": []}
+        sessions[sid]["messages"].append({"role": "user", "content": text})
+        sessions[sid]["messages"].append({"role": "assistant", "content": reply_text})
+        with open(sess_path, "w", encoding="utf-8") as f:
+            _json.dump(sessions, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

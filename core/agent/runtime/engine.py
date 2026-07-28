@@ -640,7 +640,6 @@ class CognitiveRuntimeEngine:
             else:
                 pas.failure_count += 1
 
-        import time, re
         # ---- Topic Tree: record fact + update heat ----
         if text and self._topic_tree:
             self._topic_tree.touch(
