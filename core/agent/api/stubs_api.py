@@ -65,7 +65,9 @@ async def get_trace():
 @router.get("/abc")
 async def get_abc():
     import json, os
-    rules = json.load(open("data/neuro_symbolic_rules.json", encoding="utf-8")) if os.path.exists("data/neuro_symbolic_rules.json") else []
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    rf = os.path.join(root, "data", "neuro_symbolic_rules.json")
+    rules = json.load(open(rf, encoding="utf-8")) if os.path.exists(rf) else []
     return {"rules": len(rules), "recent_antecedents": [r.get("antecedent","")[:50] for r in rules[-5:]]}
 
 @router.get("/mind")
