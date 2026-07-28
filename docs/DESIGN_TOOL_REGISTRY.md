@@ -1,7 +1,7 @@
 # Tool Registry — 动态工具发现与注册
 
-> v1.0 | 2026-07-28 | 状态: 设计评审
-> 原则: LLM 自主编排，工具箱不足时自动扩展，task_graph 记录真实执行轨迹
+> v2.0 | 2026-07-28 | 状态: 设计评审
+> 三级自主: 直接调 → 自动装 → 自写工具。task_graph 记录真实执行轨迹
 
 ---
 
@@ -24,7 +24,104 @@
 
 ---
 
-## 二、架构
+## 二、三级自主能力
+
+**真正的 agent 不是"调工具"，是"工具不够自己写"**。
+
+```
+Level 1: 工具已注册 → 直接调用
+         arxiv_search ✓ → execute()
+         耗时: < 1s
+
+Level 2: 工具不存在 → 自动安装
+         ocr_extract ✗ → pip install paddleocr → 注册 → execute()
+         耗时: ~30s
+
+Level 3: 不存在且装不了 → LLM 自写工具
+         web_fetch 被 403 → "我来写一个绕过反爬的爬虫"
+         → 生成 Python ToolAdapter 代码
+         → sandbox 编译检查
+         → 注册 → execute()
+         → 如果成功: 持久化为可重用 Skill + 规则
+         → 如果失败: 告知用户 "需要你帮忙写 X 工具"
+         耗时: ~60s (LLM 生成代码 + 测试)
+```
+
+### Level 3 流程详解
+
+```
+用户: "帮我从这个网站爬取表格数据 www.example.com/data"
+  ↓
+web_fetch("www.example.com/data") → 失败: 403, 疑似反爬
+  ↓
+LLM 诊断: "该站点有 Cloudflare 保护, 通用爬虫无法抓取。我来写专用提取器。"
+  ↓
+LLM 生成代码:
+  ```python
+  class ExampleExtractor(ToolAdapter):
+      name = "example_table_extractor"
+      description = "绕过 www.example.com 反爬保护, 提取表格数据"
+      category = "web"
+      dependencies = ["requests", "beautifulsoup4"]
+      input_schema = {"url": "string"}
+
+      def execute(self, url, **kwargs):
+          import requests, re
+          from bs4 import BeautifulSoup
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 ...",
+              "Accept": "text/html,application/xhtml+xml",
+              "Referer": "https://www.google.com/"
+          })
+          # 先访问首页获取 cookie
+          session.get("https://www.example.com")
+          # 再请求目标页面
+          resp = session.get(url, timeout=15)
+          soup = BeautifulSoup(resp.text, "html.parser")
+          tables = []
+          for table in soup.find_all("table"):
+              rows = [[td.get_text(strip=True) for td in row.find_all(["td","th"])]
+                      for row in table.find_all("tr")]
+              tables.append(rows)
+          return ToolResult(tool_name=self.name, success=True, data=tables, ...)
+  ```
+  ↓
+Sandbox 验证:
+  1. ast.parse() 语法检查 ✓
+  2. 无禁止 import (os.system, subprocess, ...) ✓
+  3. 静态分析: 无死循环/递归 ✓
+  4. 注册到 ToolRegistry
+  ↓
+execute("www.example.com/data") → 成功返回表格数据 ✓
+  ↓
+持久化:
+  ├── tools/generated/example_table_extractor.py  (可重用)
+  └── TriggerRule(domain="example.com", action="blocked",
+                   fallback="example_table_extractor")
+  ↓
+task_graph 记录:
+  {"id":"2", "name":"自写爬虫绕过反爬",
+   "tool":"example_table_extractor",
+   "status":"completed",
+   "custom_code": true, "lines": 47, "latency_ms": 3200}
+```
+
+### 与用户交互
+
+```
+LLM 无法自写时:
+  "我无法自动处理 www.example.com 的数据抓取:
+   1. 网站使用了自定义 Canvas 渲染, 无法用静态解析
+   2. 需要的解决方案: Puppeteer + 用户登录态
+   
+   建议: 你可以写一个 getExampleData() 函数, 我来帮你注册为工具。
+   格式: class YourTool(ToolAdapter): name=... description=... def execute(...)"
+```
+
+---
+
+## 三、架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -230,9 +327,11 @@ SubsystemRegistry                  ToolRegistry
 | T1 | ToolAdapter + ToolRegistry 核心 (注册/发现/执行) | 200行 |
 | T2 | LLM 工具调用协议 (系统提示词 + `<tool_call>` 解析) | 150行 |
 | T3 | arxiv_search + web_fetch + pdf_extract 首批工具 | 300行 |
-| T4 | 动态安装 + 自动注册 | 100行 |
-| T5 | task_graph 记录工具执行轨迹 | 200行 |
-| T6 | BlueprintEngine 集成 (LLM 工具计划 → DAG 执行) | 200行 |
+| T4 | Level 2 动态安装 + 自动注册 | 100行 |
+| T5 | **Level 3 Sandbox** (ast.parse + import 白名单 + 静态分析 + 沙箱执行) | 250行 |
+| T6 | task_graph 记录工具执行轨迹 + 自写工具节点 | 200行 |
+| T7 | TriggerRule 生成 + 持久化自写工具 | 150行 |
+| T8 | BlueprintEngine 集成 (LLM 工具计划 → DAG 执行) | 200行 |
 
 ---
 
