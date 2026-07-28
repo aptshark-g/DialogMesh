@@ -392,6 +392,18 @@ def main():
     elif args.command == "context":
         from core.agent.cli.commands.pcr_intent_cmd import cmd_context
         cmd_context(args)
+    elif args.command == "blueprint":
+        about = getattr(args, "subcommand", "")
+        from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb
+        {"show": bs, "build": bb}.get(about, lambda a: print("dm blueprint <show|build>"))(args)
+    elif args.command == "decider":
+        about = getattr(args, "subcommand", "")
+        from core.agent.cli.commands.blueprint_cmd import cmd_decider_show as ds, cmd_decider_chains as dc, cmd_decider_execute as dx
+        {"show": ds, "chains": dc, "execute": dx}.get(about, lambda a: print("dm decider <show|chains|execute>"))(args)
+    elif args.command == "subgraph":
+        about = getattr(args, "subcommand", "")
+        from core.agent.cli.commands.subgraph_cmd import cmd_subgraph_show as sg1, cmd_subgraph_expand as sg2
+        {"show": sg1, "expand": sg2}.get(about, lambda a: print("dm subgraph <show|expand>"))(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
