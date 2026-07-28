@@ -298,6 +298,25 @@ def cmd_task_confirm(args):
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _dispatch_p3(args):
+    """Dispatch P3 commands: behavior, meta, assoc, obs."""
+    about = getattr(args, "subcommand", "")
+    cmd = args.command
+    from core.agent.cli.commands.p3_cmd import (
+        cmd_behavior_show, cmd_behavior_predict,
+        cmd_meta_show, cmd_meta_review,
+        cmd_assoc_show, cmd_assoc_trace,
+        cmd_obs_show, cmd_obs_query,
+    )
+    map = {
+        ("behavior","show"): cmd_behavior_show, ("behavior","predict"): cmd_behavior_predict,
+        ("meta","show"): cmd_meta_show, ("meta","review"): cmd_meta_review,
+        ("assoc","show"): cmd_assoc_show, ("assoc","trace"): cmd_assoc_trace,
+        ("obs","show"): cmd_obs_show, ("obs","query"): cmd_obs_query,
+    }
+    map.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -404,6 +423,8 @@ def main():
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.subgraph_cmd import cmd_subgraph_show as sg1, cmd_subgraph_expand as sg2
         {"show": sg1, "expand": sg2}.get(about, lambda a: print("dm subgraph <show|expand>"))(args)
+    elif args.command in ("behavior", "meta", "assoc", "obs"):
+        _dispatch_p3(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
