@@ -67,8 +67,12 @@ async def get_abc():
     import json, os
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     rf = os.path.join(root, "data", "neuro_symbolic_rules.json")
-    rules = json.load(open(rf, encoding="utf-8")) if os.path.exists(rf) else []
-    return {"rules": len(rules), "recent_antecedents": [r.get("antecedent","")[:50] for r in rules[-5:]]}
+    rules_data = json.load(open(rf, encoding="utf-8")) if os.path.exists(rf) else {}
+    if isinstance(rules_data, list):
+        rules = rules_data
+    else:
+        rules = list(rules_data.values()) if rules_data else []
+    return {"rules": len(rules), "recent_antecedents": [r.get("antecedent","")[:50] if isinstance(r,dict) else str(r)[:50] for r in rules[-5:]]}
 
 @router.get("/mind")
 async def get_mind():
