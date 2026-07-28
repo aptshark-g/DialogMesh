@@ -1,14 +1,10 @@
-"""P2-P3 CLI commands."""
-from .discourse_cmd import register_cmds as _discourse
-from .pcr_intent_cmd import register_cmds as _pcr_intent
-from .blueprint_cmd import register_cmds as _blueprint
-from .subgraph_cmd import register_cmds as _subgraph
+"""CLI command modules."""
+from .discourse_cmd import register_cmds as _d
+from .pcr_intent_cmd import register_cmds as _p
+from .blueprint_cmd import register_cmds as _b
+from .subgraph_cmd import register_cmds as _s
 from .p3_cmd import register_cmds as _p3
+from .p4_cmd import register_cmds as _p4
 
-
-def register_all(subparsers):
-    _discourse(subparsers)
-    _pcr_intent(subparsers)
-    _blueprint(subparsers)
-    _subgraph(subparsers)
-    _p3(subparsers)
+def register_all(sp):
+    _d(sp); _p(sp); _b(sp); _s(sp); _p3(sp); _p4(sp)

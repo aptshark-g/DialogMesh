@@ -317,6 +317,23 @@ def _dispatch_p3(args):
     map.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
 
+def _dispatch_p4(args):
+    """Dispatch P4 commands: profile, engineering, concepts, mind."""
+    about = getattr(args, "subcommand", "")
+    cmd = args.command
+    from core.agent.cli.commands.p4_cmd import (
+        cmd_profile_show, cmd_profile_edit,
+        cmd_engineering_show, cmd_concepts_show, cmd_mind_show,
+    )
+    m = {
+        ("profile","show"): cmd_profile_show, ("profile","edit"): cmd_profile_edit,
+        ("engineering","show"): cmd_engineering_show,
+        ("concepts","show"): cmd_concepts_show,
+        ("mind","show"): cmd_mind_show,
+    }
+    m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -425,6 +442,8 @@ def main():
         {"show": sg1, "expand": sg2}.get(about, lambda a: print("dm subgraph <show|expand>"))(args)
     elif args.command in ("behavior", "meta", "assoc", "obs"):
         _dispatch_p3(args)
+    elif args.command in ("profile", "engineering", "concepts", "mind"):
+        _dispatch_p4(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
