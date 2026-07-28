@@ -426,6 +426,119 @@ def _dispatch_p8(args):
     else: print(f"P8 dispatch miss: {key}. Available: {list(m)}")
 
 
+def _dispatch_p9(args):
+    """P9 dispatcher: context, format, graph, eventlog, memory, blueprint, decider, meta, assoc, behavior, engineering, profile, reply, discourse, session."""
+    from core.agent.cli.commands.p9_cmd import (
+        cmd_context_compile, cmd_context_section, cmd_context_ir_export,
+        cmd_context_ir_format, cmd_context_ir_format_set,
+        cmd_format_encode, cmd_format_decode, cmd_format_template_show,
+        cmd_format_template_set, cmd_format_template_edit,
+        cmd_format_tokens, cmd_format_test,
+        cmd_graph_node, cmd_graph_node_add, cmd_graph_node_edit,
+        cmd_graph_node_remove, cmd_graph_node_search,
+        cmd_graph_edge_types, cmd_graph_stats, cmd_graph_export, cmd_graph_import_,
+        cmd_eventlog_get, cmd_eventlog_search, cmd_eventlog_type,
+        cmd_eventlog_session, cmd_eventlog_stats, cmd_eventlog_export, cmd_eventlog_clear,
+        cmd_memory_compile, cmd_memory_show, cmd_memory_conflict_show,
+        cmd_memory_conflict_resolve, cmd_memory_checkpoint, cmd_memory_checkpoint_list,
+        cmd_memory_checkpoint_rollback, cmd_memory_stats, cmd_memory_tier_show,
+        cmd_memory_tier_hot, cmd_memory_tier_warm, cmd_memory_tier_cold,
+        cmd_memory_tier_promote, cmd_memory_tier_demote,
+        cmd_memory_compress, cmd_memory_compress_cold,
+        cmd_blueprint_node_add, cmd_blueprint_node_remove, cmd_blueprint_node_edit,
+        cmd_blueprint_edge_add, cmd_blueprint_edge_remove, cmd_blueprint_edge_required,
+        cmd_blueprint_strategy, cmd_blueprint_strategy_set,
+        cmd_decider_tick, cmd_decider_chain,
+        cmd_meta_anomaly_add, cmd_meta_correction_add, cmd_meta_correction_apply,
+        cmd_meta_correction_discard, cmd_meta_queue, cmd_meta_queue_process,
+        cmd_assoc_layer, cmd_assoc_promote, cmd_assoc_demote,
+        cmd_assoc_add, cmd_assoc_remove, cmd_assoc_search, cmd_assoc_path,
+        cmd_behavior_stats, cmd_behavior_edge_show, cmd_behavior_edge_add,
+        cmd_behavior_edge_weight, cmd_behavior_edge_remove,
+        cmd_behavior_pattern, cmd_behavior_pattern_add,
+        cmd_engineering_constraint_check, cmd_engineering_constraint_add,
+        cmd_engineering_constraint_remove, cmd_engineering_constraint_list,
+        cmd_engineering_propagate, cmd_engineering_impact,
+        cmd_profile_dimension, cmd_profile_mbti, cmd_profile_bfi_set,
+        cmd_profile_correction_add, cmd_profile_correction_list,
+        cmd_profile_correction_undo, cmd_profile_reset,
+        cmd_profile_history, cmd_profile_export,
+        cmd_reply_generate, cmd_reply_instances, cmd_reply_instance,
+        cmd_discourse_compress, cmd_discourse_summary,
+        cmd_discourse_topic_show, cmd_discourse_topic_add,
+        cmd_discourse_topic_remove, cmd_discourse_topic_heat,
+    )
+    cmd = args.command
+    sub = getattr(args, "subcommand", "")
+    op = sub  # Use subcommand directly
+    
+    m = {
+        ("context","compile"): cmd_context_compile, ("context","section"): cmd_context_section,
+        ("context","ir-export"): cmd_context_ir_export, ("context","ir-format"): cmd_context_ir_format,
+        ("format","encode"): cmd_format_encode, ("format","decode"): cmd_format_decode,
+        ("format","template"): cmd_format_template_show,
+        ("graph","node"): cmd_graph_node, ("graph","node-add"): cmd_graph_node_add,
+        ("graph","node-edit"): cmd_graph_node_edit, ("graph","node-remove"): cmd_graph_node_remove,
+        ("graph","node-search"): cmd_graph_node_search, ("graph","edge-types"): cmd_graph_edge_types,
+        ("graph","stats"): cmd_graph_stats, ("graph","export"): cmd_graph_export,
+        ("eventlog","get"): cmd_eventlog_get, ("eventlog","search"): cmd_eventlog_search,
+        ("eventlog","type"): cmd_eventlog_type, ("eventlog","session"): cmd_eventlog_session,
+        ("eventlog","stats"): cmd_eventlog_stats, ("eventlog","export"): cmd_eventlog_export,
+        ("eventlog","clear"): cmd_eventlog_clear,
+        ("memory","compile"): cmd_memory_compile, ("memory","show"): cmd_memory_show,
+        ("memory","conflict-show"): cmd_memory_conflict_show, ("memory","conflict-resolve"): cmd_memory_conflict_resolve,
+        ("memory","checkpoint"): cmd_memory_checkpoint, ("memory","checkpoint-list"): cmd_memory_checkpoint_list,
+        ("memory","checkpoint-rollback"): cmd_memory_checkpoint_rollback, ("memory","stats"): cmd_memory_stats,
+        ("memory","tier-show"): cmd_memory_tier_show, ("memory","tier-hot"): cmd_memory_tier_hot,
+        ("memory","tier-warm"): cmd_memory_tier_warm, ("memory","tier-cold"): cmd_memory_tier_cold,
+        ("memory","tier-promote"): cmd_memory_tier_promote, ("memory","tier-demote"): cmd_memory_tier_demote,
+        ("memory","compress"): cmd_memory_compress, ("memory","compress-cold"): cmd_memory_compress_cold,
+        ("blueprint","node-add"): cmd_blueprint_node_add, ("blueprint","node-remove"): cmd_blueprint_node_remove,
+        ("blueprint","node-edit"): cmd_blueprint_node_edit, ("blueprint","edge-add"): cmd_blueprint_edge_add,
+        ("blueprint","edge-remove"): cmd_blueprint_edge_remove, ("blueprint","edge-required"): cmd_blueprint_edge_required,
+        ("blueprint","strategy"): cmd_blueprint_strategy, ("blueprint","strategy-set"): cmd_blueprint_strategy_set,
+        ("decider","tick"): cmd_decider_tick, ("decider","chain"): cmd_decider_chain,
+        ("meta","anomaly-add"): cmd_meta_anomaly_add, ("meta","correction-add"): cmd_meta_correction_add,
+        ("meta","correction-apply"): cmd_meta_correction_apply, ("meta","correction-discard"): cmd_meta_correction_discard,
+        ("meta","queue"): cmd_meta_queue, ("meta","queue-process"): cmd_meta_queue_process,
+        ("assoc","layer"): cmd_assoc_layer, ("assoc","promote"): cmd_assoc_promote,
+        ("assoc","demote"): cmd_assoc_demote, ("assoc","add"): cmd_assoc_add,
+        ("assoc","remove"): cmd_assoc_remove, ("assoc","search"): cmd_assoc_search, ("assoc","path"): cmd_assoc_path,
+        ("behavior","stats"): cmd_behavior_stats, ("behavior","edge-show"): cmd_behavior_edge_show,
+        ("behavior","edge-add"): cmd_behavior_edge_add, ("behavior","edge-weight"): cmd_behavior_edge_weight,
+        ("behavior","edge-remove"): cmd_behavior_edge_remove, ("behavior","pattern"): cmd_behavior_pattern,
+        ("behavior","pattern-add"): cmd_behavior_pattern_add,
+        ("engineering","constraint-check"): cmd_engineering_constraint_check,
+        ("engineering","constraint-add"): cmd_engineering_constraint_add,
+        ("engineering","constraint-remove"): cmd_engineering_constraint_remove,
+        ("engineering","constraint-list"): cmd_engineering_constraint_list,
+        ("engineering","propagate"): cmd_engineering_propagate, ("engineering","impact"): cmd_engineering_impact,
+        ("profile","dimension"): cmd_profile_dimension, ("profile","mbti"): cmd_profile_mbti,
+        ("profile","bfi-set"): cmd_profile_bfi_set, ("profile","correction-add"): cmd_profile_correction_add,
+        ("profile","correction-list"): cmd_profile_correction_list,
+        ("profile","correction-undo"): cmd_profile_correction_undo, ("profile","reset"): cmd_profile_reset,
+        ("profile","history"): cmd_profile_history, ("profile","export"): cmd_profile_export,
+        ("reply","generate"): cmd_reply_generate, ("reply","instances"): cmd_reply_instances,
+        ("reply","instance"): cmd_reply_instance,
+        ("discourse","compress"): cmd_discourse_compress, ("discourse","summary"): cmd_discourse_summary,
+        ("discourse","topic-show"): cmd_discourse_topic_show, ("discourse","topic-add"): cmd_discourse_topic_add,
+        ("discourse","topic-remove"): cmd_discourse_topic_remove, ("discourse","topic-heat"): cmd_discourse_topic_heat,
+    }
+    # Special handlers: format template set, context ir-format set, graph import, reply set
+    if cmd == "format" and getattr(args, "template_op", "") == "set":
+        cmd_format_template_set(args)
+    elif cmd == "format" and getattr(args, "template_op", "") == "edit":
+        cmd_format_template_edit(args)
+    elif cmd == "context" and getattr(args, "ir_format_op", "") == "set":
+        cmd_context_ir_format_set(args)
+    elif cmd == "graph" and sub == "import":
+        cmd_graph_import_(args)
+    elif (cmd, sub) in m:
+        m[(cmd, sub)](args)
+    else:
+        print(f"P9: no handler for ({cmd}, {sub})")
+
+
 def _dispatch_task_ops(args):
     """Dispatch task node/edge operations."""
     from core.agent.cli.commands.p7_cmd import (
@@ -551,6 +664,8 @@ def main():
     preg = sub.add_parser("registry", help="Subsystem registry")
     preg.add_argument("--filter", default="")
 
+    # ── P9: Design-complete subcommands (added to existing parsers) ──
+    # No new parsers needed — subcommands added via dispatch map only
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -623,6 +738,8 @@ def main():
         _dispatch_p8(args)
     elif hasattr(args, "d_op"):
         _dispatch_p8(args)
+    elif args.command in ("context", "format", "graph", "eventlog", "memory"):
+        _dispatch_p9(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
