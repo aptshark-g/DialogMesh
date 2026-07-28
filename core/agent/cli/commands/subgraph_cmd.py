@@ -24,8 +24,9 @@ def cmd_subgraph_expand(args):
         return
     text = " ".join(args.text) if isinstance(args.text, list) else args.text
     try:
-        result = sg.expand_from_phrase(text)
-        nodes = [{"id": nd.id, "type": nd.type if hasattr(nd, 'type') else '?',
+        result = sg.expand_from_phrase(text) if hasattr(sg, 'expand_from_phrase') else (
+            sg.expand(text) if hasattr(sg, 'expand') else None)
+        if result:
                    "label": getattr(nd, 'label', str(nd))} for nd in (result.nodes if result else [])]
         print(json.dumps({"nodes": nodes}, indent=2, ensure_ascii=False, default=str))
     except Exception as err:

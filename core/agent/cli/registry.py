@@ -213,8 +213,11 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
                required=True, init_order=0, description="GlobalDecider (state machine)")
 
     # ── Tier 1: PCR + Intent (init_order 10-20) ──
-    r.register("pcr_router", "core.agent.llm_providers.llm_instances.pcr_llm:PCRLLM",
-               required=False, init_order=10, description="Pre-Cognitive Router (LLM instance)")
+    def _pcr_factory():
+        from core.agent.llm_providers.llm_instances.pcr_llm import PCRLLM
+        return PCRLLM(provider=getattr(engine, '_llm_provider', None))
+    r.register("pcr_router", "", required=False, init_order=10,
+               description="Pre-Cognitive Router", factory=_pcr_factory)
     r.register("topic_tree", "core.agent.topic_tree.manager:TopicTreeManager",
                required=False, init_order=15, description="TopicTree")
     r.register("discourse_tree", "core.agent.compiler.discourse_block_tree:DiscourseBlockTreeManager",
