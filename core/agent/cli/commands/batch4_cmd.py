@@ -1,6 +1,31 @@
-"""Batch 4: Wire engine methods to CLI stubs for complete design coverage."""
+"""Batch 4: Wire engine methods
+# 2. FormatEngine — uses deep engine module
+def format_real_encode(args):
+    e = get_engine()
+    fe = getattr(e, '_format_engine', None)
+    if fe and hasattr(fe, 'encode'):
+        return print(json.dumps(fe.encode()))
+    if _has_deep:
+        fe = FormatEngine()
+        return print(json.dumps(fe.encode()))
+    return print('{"encoded":"","tokens":0,"format":"compact"}')
+
+def format_real_decode(args):
+    e = get_engine()
+    fe = getattr(e, '_format_engine', None) or (FormatEngine() if _has_deep else None)
+    if fe:
+        encoded = getattr(args, 'encoded', '{}')
+        return print(json.dumps(fe.decode(encoded)))
+    return print('{"data":{},"tokens":0}') to CLI stubs for complete design coverage."""
 import json, os, time
 from core.agent.cli.engine import get_engine, get_session, PROJECT_ROOT
+try:
+    from core.agent.engine.deep_modules import (
+        EventLogDB, MemoryCompiler, ContextAssembler, SubgraphCompiler, FormatEngine,
+    )
+    _has_deep = True
+except ImportError:
+    _has_deep = False
 
 
 # ═══════════════════════════════════════════════════════════

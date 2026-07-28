@@ -307,6 +307,20 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
                required=False, init_order=90, description="ABC Orchestrator")
     r.register("strategy_engine", "core.agent.v4.cognitive.contextual_strategy:ContextualStrategyEngine",
                required=False, init_order=92, description="Contextual Strategy Engine")
+
+    # ── Tier 8: Deep engine modules (init_order 100-120) ──
+    r.register("memory_compiler", "", required=False, init_order=100,
+               description="MemoryCompiler (Hot/Warm/Cold tier)",
+               deps=[], factory=lambda: __import__("core.agent.engine.deep_modules", fromlist=["MemoryCompiler"]).MemoryCompiler())
+    r.register("context_ir_compiler", "", required=False, init_order=102,
+               description="Context Assembler v2 (ContextIR compilation)",
+               deps=[], factory=lambda: __import__("core.agent.engine.deep_modules", fromlist=["ContextAssembler"]).ContextAssembler())
+    r.register("format_serializer", "", required=False, init_order=104,
+               description="FormatEngine (serialize/deserialize to tokens)",
+               deps=[], factory=lambda: __import__("core.agent.engine.deep_modules", fromlist=["FormatEngine"]).FormatEngine())
+    r.register("event_log_store", "", required=False, init_order=106,
+               description="EventLogDB (SQLite persistent event log)",
+               deps=[], factory=lambda: __import__("core.agent.engine.deep_modules", fromlist=["EventLogDB"]).EventLogDB())
     r.register("ocean_analyst", "core.agent.v4.cognitive.ocean_profile:OCEANProfileAnalyst",
                required=False, init_order=95, description="OCEAN Profile Analyst")
 

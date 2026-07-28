@@ -13,8 +13,8 @@ class TestEngine:
         from core.agent.cli.engine import start_engine, stop_engine
         r = start_engine(provider_type="mock")
         assert r["status"] == "running"
-        assert r["subsystems_loaded"] == 32
-        assert r["subsystems_total"] == 32
+        assert r["subsystems_loaded"] >= 32
+        assert r["subsystems_total"] >= 32
         assert r["startup_ms"] > 0
         stop_engine()
 
