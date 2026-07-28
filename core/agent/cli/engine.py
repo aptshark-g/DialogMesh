@@ -45,7 +45,10 @@ _state = _load_state()
 def get_engine():
     global _engine
     if _engine is None or not getattr(_engine, '_running', False):
-        raise RuntimeError("Engine not started. Run 'dm engine start' first.")
+        # Auto-start with saved config
+        result = start_engine()
+        if result.get("status") != "running":
+            raise RuntimeError(f"Engine auto-start failed: {result.get('error', result)}")
     return _engine
 
 

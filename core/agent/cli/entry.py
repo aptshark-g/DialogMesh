@@ -340,6 +340,10 @@ def main():
     p_raw = p2.add_parser("raw", help="Raw LLM call")
     p_raw.add_argument("prompt", nargs="+")
 
+    # ── P2: Discourse, PCR, Intent, Context, Subgraph, Format, Graph ──
+    from core.agent.cli.commands import register_all
+    register_all(sub)
+
     # Task
     p = sub.add_parser("task", help="Task graph operations")
     p2 = p.add_subparsers(dest="subcommand")
@@ -375,6 +379,10 @@ def main():
     fn = cmd_map.get((args.command, getattr(args, "subcommand", None)))
     if fn:
         fn(args)
+    elif args.command == "discourse":
+        about = getattr(args, "subcommand", "")
+        from core.agent.cli.commands.discourse_cmd import cmd_show as d1, cmd_tree as d2, cmd_block as d3, cmd_feed as d4, cmd_search as d5
+        {"show": d1, "tree": d2, "block": d3, "feed": d4, "search": d5}.get(about, lambda a: print("Usage: dm discourse <show|tree|block|feed|search>"))(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
