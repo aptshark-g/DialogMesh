@@ -573,7 +573,7 @@ def _dispatch_p9(args):
     m = {
         ("context","compile"): cmd_context_compile, ("context","section"): cmd_context_section,
         ("context","ir-export"): cmd_context_ir_export, ("context","ir-format"): cmd_context_ir_format,
-        ("format","encode"): _fmt_encode, ("format","decode"): cmd_format_decode,
+        ("format","encode"): cmd_format_encode, ("format","decode"): cmd_format_decode,
         ("format","template_show"): cmd_format_template_show,
         ("format","template_set"): cmd_format_template_set,
         ("format","template_edit"): cmd_format_template_edit,
