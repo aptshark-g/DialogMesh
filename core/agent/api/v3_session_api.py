@@ -278,13 +278,15 @@ async def send_message(session_id: str, req: SendMessageRequest):
     session["messages"].append({"role": "assistant", "content": content})
     _save_sessions()
 
-    # Also save task_graph as standalone resource
+    # Also save task_graph as standalone resource — only if no user-confirmed version exists
     if task_graph:
         try:
             import os as _os
-            _os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
-            with open(os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json"), "w") as f:
-                json.dump({"nodes": task_graph, "edges": []}, f, ensure_ascii=False)
+            tg_path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
+            if not _os.path.exists(tg_path):  # don't overwrite user's confirmed edits
+                _os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
+                with open(tg_path, "w") as f:
+                    json.dump({"nodes": task_graph, "edges": []}, f, ensure_ascii=False)
         except Exception:
             pass
 
