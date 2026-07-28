@@ -60,7 +60,8 @@
 |------|------|
 | `docs/GUI_API.md` | 60 端点 + 8 业务域 + 前端组件映射 |
 | `docs/DESIGN_AUDIT.md` | 白盒化+高自由度 100% 达标审计 |
-| `docs/CLI_REFERENCE.md` | 8 CLI 命令完整用法 |
+| `docs/CLI_REFERENCE.md` | 8 CLI 命令完整用法 (历史) |
+| `docs/DESIGN_CLI.md` | **CLI v2**: 40+ 命令，全模块引擎直连 Unix 管道 |
 | `docs/DESIGN_SPECIFICATION.md` | 设计规范 |
 | `docs/ARCHITECTURE_INDEX.md` | 架构索引 |
 

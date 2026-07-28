@@ -1,178 +1,336 @@
-# DialogMesh CLI — 设计文档
+# DialogMesh CLI — 完整设计
 
-> 版本: v1.0 | 日期: 2026-07-28 | 状态: 设计评审
-> 原则: Unix 风格，每个命令一个职责，stdin/stdout JSON 管道组合即业务流
+> 版本: v2.0 | 日期: 2026-07-28 | 状态: 设计评审
+> 原则: Unix 管道组合，每个命令一个职责，stdin/stdout JSON，stderr 日志
+> 覆盖: 10 链 + 引擎 + 会话 + 应用层
 
 ---
 
 ## 一、架构定位
 
 ```
-┌─────────────────────────────────────────────┐
-│  dm (CLI entry)                             │
-│  ┌── dm engine start/stop/status           │
-│  ├── dm session new/list/use                │
-│  ├── dm event send <text>    ← 全链路       │
-│  ├── dm pcr <text>                          │
-│  ├── dm intent <text>                       │
-│  ├── dm blueprint [--intent]                │
-│  ├── dm decider [--dag]                     │
-│  ├── dm reply [--ctx]                       │
-│  └── dm task show/save/confirm              │
-└──────────────┬──────────────────────────────┘
-               │ 直接调用 (同进程, 不经过 HTTP)
+┌─────────────────────────────────────────────────────────┐
+│  dm (CLI entry)                                        │
+│                                                         │
+│  ┌─ 引擎 ─────────────────────────────────────────────┐│
+│  │ engine start/stop/status                           ││
+│  ├─ 会话 ─────────────────────────────────────────────┤│
+│  │ session new/list/use/history                        ││
+│  ├─ 全链路 ───────────────────────────────────────────┤│
+│  │ event send <text>    (PCR→Intent→Plan→Decider→Reply)││
+│  ├─ 逐层调试 ─────────────────────────────────────────┤│
+│  │ pcr → intent → discourse → context → blueprint     ││
+│  │ → decider → reply → meta → association → behavior  ││
+│  │ → engineering → profile-show → rules               ││
+│  ├─ 知识/观察 ────────────────────────────────────────┤│
+│  │ obs show/search  knowledge export  concepts         ││
+│  ├─ 任务图 ───────────────────────────────────────────┤│
+│  │ task show/save/confirm                              ││
+│  ├─ 应用层 ───────────────────────────────────────────┤│
+│  │ chat/test/ab/profile/monitor/export/config/clean    ││
+│  └─ 数据管理 ─────────────────────────────────────────┘│
+│  data paths/export/info                                │
+└──────────────┬──────────────────────────────────────────┘
+               │ 直接调用 (同进程, 不过 HTTP)
                ▼
-┌─────────────────────────────────────────────┐
-│  CognitiveRuntimeEngine                     │
-│  ┌── on_event() → Async Path               │
-│  ├── PCR Router                             │
-│  ├── MultiLayerLLM (6 instances)            │
-│  ├── BlueprintEngine → DAG                  │
-│  ├── Decider → EventBus (12 chain)          │
-│  └── ObservationPool / ConceptGraph / ...   │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  CognitiveRuntimeEngine                                 │
+│  ┌── Async Path: on_event() → PCR → Discourse → ...    │
+│  ├── MultiLayerLLM (pcr/intent/planning/meta/answer/   │
+│  │                   reflective)                        │
+│  ├── BlueprintEngine → Decider → EventBus (12 chain)   │
+│  ├── ContextCompiler → ContextIR                        │
+│  ├── ObservationPool → ConceptGraph → SemanticIndex     │
+│  ├── BehaviorChain, AssociationFunnel, MetaCognitive    │
+│  └── Profile: OCEAN/MBTI/BFI, ABC Rules, Mind           │
+└─────────────────────────────────────────────────────────┘
 ```
-
-CLI 与引擎**同进程直连**，不经过 HTTP API。HTTP API (`v3_session_api.py`) 作为可选前端接入层保留，但 CLI 是主要交互面。
 
 ---
 
-## 二、命令粒度
+## 二、命令全集
 
-每个命令:
-- **stdin** 接受 JSON (管道输入)
-- **stdout** 输出 JSON (管道输出)
-- **stderr** 输出日志/进度
+### 通用约定
+- 每个命令 stdin 接受 JSON (管道输入)，stdout 输出 JSON
 - 退出码: 0=成功, 1=引擎未启动, 2=模块错误, 3=参数错误
+- 命令通过引擎单例共享状态，避免每次初始化
 
-```
-# 完整对话 (event 内部走全链路)
-dm session new | dm event send "规划登录系统"
+### 引擎生命周期
 
-# 逐层调试
-echo '{"text":"写代码"}' | dm pcr | dm intent | dm blueprint | dm decider | dm reply
-
-# 任务图
-dm task show <sid> | jq '.nodes[0].name="注册"' | dm task save <sid>
-```
-
----
-
-## 三、模块分阶段实现
-
-### Phase 1: `dm engine` — 引擎生命周期
-
-| 命令 | 输入 | 输出 | 功能 |
+| 命令 | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `dm engine start` | — | `{"status":"running"}` | 启动 CognitiveRuntimeEngine, 加载 LLM provider, 加载设计文档到 pool/graph |
-| `dm engine stop` | — | `{"status":"stopped"}` | 停止引擎, 清理 |
-| `dm engine status` | — | `{"running":bool, "event_count":N, "chains":{...}, "pool":{...}}` | 状态摘要 |
+| `dm engine start` | — | `{"status":"running"}` | 启动 CRG，加载 LLM provider，注入设计文档到 pool/graph |
+| `dm engine start --llm=deepseek --key=SK-...` | — | 同上 | 指定 LLM provider |
+| `dm engine start --docs=docs/v3.0/*.md` | — | 同上 | 指定设计文档路径 |
+| `dm engine stop` | — | `{"status":"stopped"}` | 停止引擎 |
+| `dm engine status` | — | `{"running":bool,"chains":{...},"stats":{...}}` | 全状态 |
 
-**实现**: `core/agent/cli/commands/engine_cmd.py`
-**依赖**: `CognitiveRuntimeEngine.start()` / `.stop()` / 状态查询
-**验证**: 启动后 `dm engine status` 输出非空 JSON
+### 会话管理
 
-### Phase 2: `dm session` — 会话管理
-
-| 命令 | 输入 | 输出 | 功能 |
+| 命令 | 输入 | 输出 | 说明 |
 |------|------|------|------|
 | `dm session new` | — | `{"session_id":"uuid"}` | 创建会话 |
 | `dm session list` | — | `[{"id":"...","title":"...","turns":N}]` | 列出会话 |
-| `dm session use <id>` | — | `{"session_id":"id"}` | 设置当前会话 (写入 state 文件) |
+| `dm session use <id>` | — | `{"session_id":"id"}` | 设置当前会话 |
+| `dm session history` | — | `[{"role":"user","content":"..."},...]` | 当前会话消息历史 |
 
-**实现**: `core/agent/cli/commands/session_cmd.py`
-**依赖**: 引擎的 session 管理 (复用现有 session 机制)
-**验证**: `dm session new | jq .session_id` 返回非空
+### 全链路对话 (核心)
 
-### Phase 3: `dm event send` — 全链路对话 (核心)
-
-| 命令 | 输入 | 输出 | 功能 |
+| 命令 | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `dm event send <text>` | 管道: `{"text":"...","session_id":"..."}` | `{"reply":"...","task_graph":[...], "pcr":{...}, "intent":{...}}` | 发送消息 → 引擎全链路 → 回复 + 元数据 |
+| `dm event send <text>` | 管道: `{"text":"...","sid":"..."}` | `{"reply":"...","task_graph":[...],"pcr":{...},"intent":{...},"discourse":{...}}` | 完整 PCR→Intent→Blueprint→Decider→Reply |
 
-**内部流程**:
+**event send 内部流程**:
 ```
 用户文本 → DialogAdapter.adapt() → EventIR
-  → engine.on_event(event)
-    → PCR: expectation/zone
-    → DiscourseBlockTree: 对话块
-    → Decider: BlueprintDAG → EventBus 3 Tick
-    → LLM: 回复生成
-  → 返回 {reply, task_graph, pcr, intent, discourse, chains}
+  → engine.on_event(event)        # Async Path
+    → PCR: zone/expectation/noise
+    → DiscourseBlockTree: 对话块 + 话题
+    → Intent: segments/entities/ambiguities
+    → ContextCompiler: ContextIR (subgraph 裁剪)
+    → BlueprintEngine: 意图→BlueprintDAG
+    → Decider: DAG→EventBus 3 Tick (12 chain)
+    → AnswerLLM: 最终回复
+  → 返回 {reply, task_graph, pcr, intent, discourse, blueprint, chains}
 ```
 
-**实现**: `core/agent/cli/commands/event_cmd.py`
-**依赖**: Phase 1 (engine started), Phase 2 (session), `engine.on_event()`
-**验证**: `dm event send "hello"` 返回非空 reply，含 task_graph
+---
 
-### Phase 4: `dm task` — 任务图 CRUD
+## 三、逐层调试命令 (每个对应一个引擎模块)
 
-| 命令 | 输入 | 输出 | 功能 |
+### PCR (Pre-Cognitive Router)
+
+| 命令 | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `dm task show <sid>` | — | `{"nodes":[...],"edges":[...]}` | 查看会话任务图 |
-| `dm task save <sid>` | stdin: `{"nodes":[...],"edges":[...]}` | `{"status":"ok"}` | 覆写任务图 |
-| `dm task confirm <sid>` | — | `{"status":"confirmed"}` | 标记确认 |
+| `dm pcr <text>` | 管道: `{"text":"..."}` | `{"zone":"TOOL\|ADVISOR\|...","complexity":0.6,"expectation":"...","profile":{}}` | 认知路由分析 |
 
-**实现**: `core/agent/cli/commands/task_cmd.py`
-**依赖**: Phase 3 (event 已生成 task_graph), 持久化层
-**验证**: 管道 round-trip: `dm task show | dm task save`
+### Intent (意图分析)
 
-### Phase 5: 细颗粒调试命令
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm intent <text>` | 管道: `{"text":"...","pcr":{...}}` | `{"segments":["..."],"entities":[...],"ambiguities":[...],"confidence":0.8}` | 意图分解 + 实体提取 |
 
-| 命令 | 输入 | 输出 | 对应模块 |
-|------|------|------|---------|
-| `dm pcr <text>` | — | zone/expectation | PCR Router |
-| `dm intent <text>` | stdin: PCR 输出 | segments/entities | Intent Parser |
-| `dm blueprint` | stdin: intent 输出 | DAG JSON | BlueprintEngine |
-| `dm decider` | stdin: DAG JSON | chain_outputs | Decider + EventBus |
-| `dm reply` | stdin: decider 输出 + 上下文 | reply text | Answer LLM |
+### Discourse (对话树)
 
-每层可独立运行，也可管道串联。用于调试和验证单个模块。
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm discourse list` | — | `[{"id":"...","text":"...","parent":"..."}]` | 对话块列表 |
+| `dm discourse tree` | — | `{"root":"...","blocks":{...},"tree":{...}}` | 对话树结构 |
+| `dm discourse feed <text>` | 管道: `{"text":"...","sid":"..."}` | `{"route":"...","blocks_added":N}` | 喂文本 → 生成对话块 |
+| `dm discourse topic` | — | `{"topics":["..."]}` | 话题树快照 |
+
+### Context (上下文编译)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm context compile` | 管道: `{"text":"...","sid":"..."}` | `{"entries":[...],"tokens_total":N}` | 编译 ContextIR |
+| `dm context show` | — | `{"entries":[...]}` | 最近编译的上下文 |
+| `dm context subgraph` | 管道: `{"entity":"..."}` | `{"nodes":[...],"edges":[...]}` | 子图裁剪结果 |
+
+### Blueprint + Decider (编排)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm blueprint` | 管道: `{"intent":"...","segments":[...]}` | `{"dag":{"nodes":[...],"edges":[...]}, "strategy":"HYBRID"}` | 从意图构建 DAG |
+| `dm blueprint strategy` | — | `["TEMPLATE","HYBRID","LLM_DRIVEN"]` | 可用策略 |
+| `dm decider` | 管道: `{"dag":{...},"user_text":"..."}` | `{"chain_outputs":{...},"llm_reply":"...","ticks":[...]}` | 执行 DAG |
+| `dm decider chains` | — | `{"pcr":"✅","intent":"✅",...}` | 12 链状态 |
+
+### Reply (LLM 回复)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm reply` | 管道: `{"context":{...},"chain_outputs":{...}}` | `{"reply":"...","model":"deepseek-chat"}` | 生成最终回复 |
+| `dm reply raw <prompt>` | 管道: `{"prompt":"..."}` | `{"reply":"..."}` | 裸 LLM 调用 |
+
+### Meta (元认知)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm meta review` | 管道: `{"reply":"...","pipelie_outputs":{...}}` | `{"anomalies":[...],"corrections":[...],"score":0.7}` | 复盘审查 |
+| `dm meta corrections` | — | `[{"target":"pcr","action":"..."}]` | 待修正列表 |
+| `dm meta apply` | 管道: `{"corrections":[...]}` | `{"applied":N}` | 批量应用修正 |
+
+### Association (关联链 L1→L5)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm association show` | — | `{"funnel":{"L1":N,"L2":N,...},"relations":[...]}` | 关联漏斗状态 |
+| `dm association search <entity>` | — | `{"matches":[...],"path":"L1→L2→..."}` | 搜索关联 |
+| `dm association promote <entity>` | — | `{"from":"L2","to":"L3"}` | 手动晋升 |
+
+### Behavior (行为链)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm behavior predict` | 管道: `{"context":{...}}` | `{"prediction":"...","confidence":0.7,"tree_path":[...]}` | 行为预测 |
+| `dm behavior stats` | — | `{"edges":N,"patterns":[...]}` | 行为统计 |
+
+### Engineering (工程链)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm engineering constraint <spec>` | 管道: `{"type":"...","target":"..."}` | `{"satisfied":bool,"violations":[...]}` | 约束检查 |
+| `dm engineering propagate` | 管道: `{"change":"...","affected":[...]}` | `{"impact":[...],"delta":[...]}` | 变更传播 |
+
+### Profile (画像)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm profile show` | — | OCEAN 10 维 + MBTI + BFI | 当前画像 (保留原 CLI 输出格式) |
+| `dm profile reset` | — | `{"status":"reset"}` | 重置画像 |
+| `dm profile history` | — | `[{"turn":N,"dims":{...},"mbti":"..."}]` | 画像变化历史 |
+
+### Rules (ABC 规则)
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm rules show` | — | `[{"id":"...","antecedent":"...","behavior":"...","consequence":"..."}]` | 所有规则 |
+| `dm rules search <keyword>` | — | `[{"id":"...",...}]` | 搜索规则 |
+| `dm rules add` | 管道: `{"antecedent":"...","behavior":"...","consequence":"..."}` | `{"id":"...","status":"added"}` | 手动添加规则 |
+
+### 知识图谱 / 观察
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm obs show` | — | `{"total":N,"by_domain":{...}}` | 观察池统计 |
+| `dm obs search <query>` | — | `[{"domain":"...","content":"..."}]` | 搜索观察 |
+| `dm knowledge export` | — | `{"objects":N}` (JSON 到 stdout) | 导出知识对象 |
+| `dm concepts` | — | `["concept1","concept2",...]` | 概念列表 |
+
+### 任务图
+
+| 命令 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `dm task show` | — | `{"nodes":[...],"edges":[...]}` | 当前会话任务图 |
+| `dm task save` | 管道: JSON | `{"status":"ok"}` | 覆写任务图 |
+| `dm task confirm` | — | `{"status":"confirmed"}` | 标记确认 (下次 event 注入) |
 
 ---
 
-## 四、持久化
+## 四、应用层命令 (保留现有)
 
-CLI 状态文件: `~/.dialogmesh/state.json`
-```
-{
-  "current_session": "abc123",
-  "sessions": {
-    "abc123": {
-      "created": "2026-07-28T12:00:00",
-      "turns": 5,
-      "last_task_graph": {"nodes":[...], "edges":[...], "confirmed": true}
-    }
-  }
-}
-```
-
-任务图文件: `data/task_graphs/{session_id}.json` (已有，复用)
-
-引擎持久化: `data/event_log.db` (已有，复用)
+| 命令 | 说明 | 保留 |
+|------|------|:---:|
+| `dm chat [--turns N]` | 交互对话 + 画像追踪 | ✅ |
+| `dm test [bench]` | benchmark (live/controlled/implicit/monitored) | ✅ |
+| `dm ab` | A/B OCEAN 对比 | ✅ |
+| `dm monitor [--list]` | 查看会话日志 | ✅ |
+| `dm export [--format json\|csv]` | 导出会话数据 | ✅ |
+| `dm config` | 查看配置/持久化状态 | ✅ |
+| `dm clean [--all]` | 重置数据 | ✅ |
 
 ---
 
-## 五、目录结构
+## 五、数据管理
+
+| 命令 | 说明 |
+|------|------|
+| `dm data paths` | 列出所有数据文件路径和大小 |
+| `dm data export <module>` | 导出指定模块数据 (profile/rules/mind/annotations/monitor/obs/knowledge/graph) |
+
+---
+
+## 六、典型工作流
+
+### 完整对话 + 调试
+```bash
+# 启动
+dm engine start
+
+# 全链路对话
+dm event send "规划登录系统"
+# → {reply, task_graph, pcr, intent, discourse, chains}
+
+# 查看 PCR 怎么判的
+dm pcr "规划登录系统" | jq .zone
+
+# 查看对话树
+dm discourse tree | jq .tree
+
+# 查看蓝图 DAG
+dm blueprint --pipe '{"intent":"code_generation"}' | jq .dag
+
+# 修改任务图
+dm task show | jq '.nodes += [{"id":"5","name":"测试"}]' | dm task save
+
+# 确认
+dm task confirm
+
+# 继续对话 (LLM 收到确认的 task_graph)
+dm event send "开始执行"
+```
+
+### 画像分析
+```bash
+dm chat --turns 10    # 对话建立画像
+dm profile show        # 查看 OCEAN/MBTI
+dm chat --turns 10    # 再对话 (画像累进)
+dm ab                  # 对比变化
+dm export --format csv # 导出
+```
+
+---
+
+## 七、目录结构
 
 ```
 core/agent/cli/
 ├── __init__.py
-├── entry.py              # dm 入口 (argparse, dispatch)
-├── state.py              # CLI state: ~/.dialogmesh/state.json 读写
+├── entry.py              # dm 入口 (argparse → subcommands)
+├── engine.py             # 引擎单例 (全局共享)
+├── state.py              # CLI state: ~/.dialogmesh/state.json
 ├── commands/
 │   ├── __init__.py
-│   ├── engine_cmd.py     # Phase 1: dm engine
-│   ├── session_cmd.py    # Phase 2: dm session
-│   ├── event_cmd.py      # Phase 3: dm event
-│   ├── task_cmd.py       # Phase 4: dm task
-│   ├── pcr_cmd.py        # Phase 5: dm pcr
-│   ├── intent_cmd.py     # Phase 5: dm intent
-│   ├── blueprint_cmd.py  # Phase 5: dm blueprint
-│   ├── decider_cmd.py    # Phase 5: dm decider
-│   └── reply_cmd.py      # Phase 5: dm reply
-├── old_main.py           # 旧 V4CLI (保留引用)
-└── old_cli.py            # 旧 v6 cli.py (保留引用)
+│   ├── engine_cmd.py     # dm engine *
+│   ├── session_cmd.py    # dm session *
+│   ├── event_cmd.py      # dm event send
+│   ├── pcr_cmd.py        # dm pcr
+│   ├── intent_cmd.py     # dm intent
+│   ├── discourse_cmd.py  # dm discourse *
+│   ├── context_cmd.py    # dm context *
+│   ├── blueprint_cmd.py  # dm blueprint *
+│   ├── decider_cmd.py    # dm decider *
+│   ├── reply_cmd.py      # dm reply *
+│   ├── meta_cmd.py       # dm meta *
+│   ├── association_cmd.py# dm association *
+│   ├── behavior_cmd.py   # dm behavior *
+│   ├── engineering_cmd.py# dm engineering *
+│   ├── profile_cmd.py    # dm profile *
+│   ├── rules_cmd.py      # dm rules *
+│   ├── obs_cmd.py        # dm obs *, knowledge, concepts
+│   ├── task_cmd.py       # dm task *
+│   ├── app_cmd.py        # dm chat/test/ab/monitor/export/config/clean
+│   └── data_cmd.py       # dm data *
+├── _old/
+│   ├── main.py           # 旧 V4CLI
+│   └── cli.py            # 旧 v6 cli.py
+└── tests/
+    └── test_cli.py
 ```
 
-旧 CLI 文件重命名保留，不删除——设计文档和测试可能引用。
+---
+
+## 八、实现路径
+
+### Phase 1: 引擎 + 会话 (基础)
+- `dm engine start/stop/status`
+- `dm session new/list/use/history`
+- 引擎单例 + state 持久化
+
+### Phase 2: 全链路 (核心)
+- `dm event send` — 打通 PCR→Intent→Blueprint→Decider→Reply
+- 结果包含 task_graph, pcr, intent, discourse, chains
+
+### Phase 3: 任务图 + 应用层
+- `dm task show/save/confirm`
+- `dm chat/test/ab/profile/monitor/export/config/clean` (移植)
+
+### Phase 4: 逐层调试 (10 链)
+- pcr → intent → discourse → context → blueprint → decider → reply
+- meta → association → behavior → engineering
+- profile-show/history, rules show/search/add
+
+### Phase 5: 知识/观察/数据
+- obs show/search, knowledge export, concepts
+- data paths/export
