@@ -26,17 +26,18 @@ def cmd_subgraph_expand(args):
     try:
         result = sg.expand_from_phrase(text) if hasattr(sg, 'expand_from_phrase') else (
             sg.expand(text) if hasattr(sg, 'expand') else None)
-        if result:
-                   "label": getattr(nd, 'label', str(nd))} for nd in (result.nodes if result else [])]
+        nodes = []
+        if result and hasattr(result, 'nodes'):
+            nodes = [{"id": nd.id, "type": getattr(nd, 'type', '?'),
+                       "label": getattr(nd, 'label', str(nd))} for nd in result.nodes]
         print(json.dumps({"nodes": nodes}, indent=2, ensure_ascii=False, default=str))
     except Exception as err:
         print(json.dumps({"error": str(err)}, ensure_ascii=False))
 
 
 def register_cmds(subparsers):
-    # Subgraph
-    p = subparsers.add_parser("subgraph", help="Subgraph compiler operations")
+    p = subparsers.add_parser("subgraph", help="Subgraph compiler")
     sp = p.add_subparsers(dest="subcommand")
-    sp.add_parser("show", help="Subgraph status")
-    e = sp.add_parser("expand", help="Expand subgraph from phrase")
+    sp.add_parser("show")
+    e = sp.add_parser("expand")
     e.add_argument("text", nargs="+")

@@ -375,6 +375,22 @@ def _dispatch_app(args):
     m.get((cmd, about), lambda a: print(f"dm {cmd} <...>"))(args)
 
 
+def _dispatch_task_ops(args):
+    """Dispatch task node/edge operations."""
+    from core.agent.cli.commands.p7_cmd import (
+        cmd_task_node_add, cmd_task_node_edit, cmd_task_node_remove,
+        cmd_task_edge_add, cmd_task_edge_remove,
+    )
+    node_op = getattr(args, "node_op", getattr(args, "edge_op", ""))
+    cmd = getattr(args, "subcommand", "")
+    m = {
+        ("node", "add"): cmd_task_node_add, ("node", "edit"): cmd_task_node_edit,
+        ("node", "remove"): cmd_task_node_remove,
+        ("edge", "add"): cmd_task_edge_add, ("edge", "remove"): cmd_task_edge_remove,
+    }
+    m.get((cmd, node_op), lambda a: print("dm task node <add|edit|remove> | dm task edge <add|remove>"))(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -429,6 +445,16 @@ def main():
     p_save.add_argument("--input", required=True, help="JSON file or 'stdin'")
     p_save.add_argument("--sid", help="Session ID")
     p2.add_parser("confirm", help="Confirm task graph")
+    # Task node/edge subcommands
+    tn = p2.add_parser("node", help="Task node operations")
+    tn2 = tn.add_subparsers(dest="node_op")
+    ta = tn2.add_parser("add"); ta.add_argument("name"); ta.add_argument("--deps", default="")
+    te = tn2.add_parser("edit"); te.add_argument("id"); te.add_argument("keyval", nargs="+")
+    tr = tn2.add_parser("remove"); tr.add_argument("id")
+    te2 = p2.add_parser("edge", help="Task edge operations")
+    te2s = te2.add_subparsers(dest="edge_op")
+    tae = te2s.add_parser("add"); tae.add_argument("from_"); tae.add_argument("to_")
+    tre = te2s.add_parser("remove"); tre.add_argument("from_"); tre.add_argument("to_")
 
     args = parser.parse_args()
     if not args.command:
@@ -489,6 +515,8 @@ def main():
         _dispatch_p5(args)
     elif args.command in ("chat", "test", "ab", "monitor", "export", "data"):
         _dispatch_app(args)
+    elif args.command == "task" and getattr(args, "subcommand", "") in ("node", "edge"):
+        _dispatch_task_ops(args)
     else:
         if args.command == "reply" and args.subcommand is None:
             cmd_reply_model(args)
