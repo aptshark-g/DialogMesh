@@ -496,19 +496,23 @@ def _dispatch_batch1(args):
 
 def _dispatch_batch2(args):
     """Batch 2: se, eg, rp, an, cr, cfg, dt, gl."""
-    import json
+    import json, os
+    from core.agent.cli.commands.batch3_cmd import (
+        cmd_session_clear, cmd_session_delete, cmd_engine_stats, cmd_reply_real_show,
+    )
+    from core.agent.cli.engine import PROJECT_ROOT as _ROOT
     cmd = args.command; sub = getattr(args, "subcommand", "")
     handlers = {
-        ("se","clear"): lambda a: print('{"status":"cleared"}'),
-        ("se","delete"): lambda a: print('{"status":"deleted"}'),
-        ("eg","stats"): lambda a: print('{"calls":0,"latency_avg":0,"success_rate":1.0}'),
-        ("rp","show"): lambda a: print('{"last_reply":"","turn_count":0}'),
+        ("se","clear"): cmd_session_clear,
+        ("se","delete"): cmd_session_delete,
+        ("eg","stats"): cmd_engine_stats,
+        ("rp","show"): cmd_reply_real_show,
         ("an","remove"): lambda a: print('{"status":"removed"}'),
         ("an","stats"): lambda a: print('{"total":0,"by_type":{}}'),
         ("cr","resolve"): lambda a: print('{"status":"resolved"}'),
         ("cfg","show"): lambda a: print('{"provider":"deepseek","model":"v4-flash","debug":false}'),
         ("cfg","export"): lambda a: print('{"config":{},"version":"6.0.0"}'),
-        ("dt","paths"): lambda a: print('{"data_dir":"data/","size_bytes":0,"files":[]}'),
+        ("dt","paths"): lambda a: (lambda root: print(json.dumps({"data_dir":os.path.join(root,"data"),"files":os.listdir(os.path.join(root,"data"))[:10]})))(_ROOT),
         ("dt","export"): lambda a: print('{"status":"exported","module":"%s"}' % (getattr(a,"module",""))),
         ("dt","import"): lambda a: print('{"status":"imported"}'),
         ("dt","backup"): lambda a: print('{"status":"backed_up","file":"data_backup.tar.gz"}'),
@@ -569,7 +573,7 @@ def _dispatch_p9(args):
     m = {
         ("context","compile"): cmd_context_compile, ("context","section"): cmd_context_section,
         ("context","ir-export"): cmd_context_ir_export, ("context","ir-format"): cmd_context_ir_format,
-        ("format","encode"): cmd_format_encode, ("format","decode"): cmd_format_decode,
+        ("format","encode"): _fmt_encode, ("format","decode"): cmd_format_decode,
         ("format","template_show"): cmd_format_template_show,
         ("format","template_set"): cmd_format_template_set,
         ("format","template_edit"): cmd_format_template_edit,
