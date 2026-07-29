@@ -187,6 +187,15 @@ async def get_graph():
                     })
         except: pass
 
+    # Add edges: sequential for session nodes, parent-child for discourse
+    session_nodes = [(i, n) for i, n in enumerate(nodes) if n.get("type") == "session"]
+    for i in range(len(session_nodes) - 1):
+        edges.append({
+            "id": f"seq_{session_nodes[i][1]['id']}→{session_nodes[i+1][1]['id']}",
+            "source": session_nodes[i][1]["id"],
+            "target": session_nodes[i+1][1]["id"],
+            "type": "sequence",
+        })
     return {"nodes": nodes, "edges": edges, "subgraph_nodes": [n["id"] for n in nodes[:8]]}
 
 # ═══════════════════════════════════════════════════════

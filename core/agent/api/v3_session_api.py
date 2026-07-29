@@ -254,12 +254,27 @@ async def send_message(session_id: str, req: SendMessageRequest):
             import os as _osp
             root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "data")
             os.makedirs(root, exist_ok=True)
-            # Discourse: feed block tree
-            from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
-            dt = DiscourseBlockTreeManager()
-            dt.feed(req.content, session_id)
-            dt.feed(content[:500], session_id)
-            rel = dt.get_block_relations(session_id)
+            # Discourse: use engine's tree (not fresh instance)
+            try:
+                from core.agent.cli.engine import get_engine
+                eng = get_engine()
+                dt = getattr(eng, '_discourse_tree', None)
+                if dt:
+                    dt.feed(req.content, session_id)
+                    dt.feed(content[:500], session_id)
+                    rel = dt.get_block_relations(session_id)
+                else:
+                    from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
+                    dt = DiscourseBlockTreeManager()
+                    dt.feed(req.content, session_id)
+                    dt.feed(content[:500], session_id)
+                    rel = dt.get_block_relations(session_id)
+            except:
+                from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
+                dt = DiscourseBlockTreeManager()
+                dt.feed(req.content, session_id)
+                dt.feed(content[:500], session_id)
+                rel = dt.get_block_relations(session_id)
             with open(os.path.join(root, "discourse_state.json"), "w", encoding="utf-8") as f:
                 json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
             # Profile: OCEAN dimension analysis from conversation
