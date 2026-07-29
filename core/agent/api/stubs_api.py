@@ -94,10 +94,41 @@ async def get_mind_full():
 # ═══════════════════════════════════════════════════════
 @router.get("/graph")
 async def get_graph():
-    """Return discourse block tree as graph nodes + edges."""
+    """Return discourse block tree from engine (SyntacticDecomposer + MacroMicroQuantizer),
+    fallback to v3_sessions.json."""
     import json, os
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     nodes, edges = [], []
+
+    # Try engine's DiscourseBlockTree first (real algorithmic tree)
+    try:
+        from core.agent.cli.engine import get_engine, get_session
+        e = get_engine()
+        tree_mgr = getattr(e, '_discourse_tree', None)
+        if tree_mgr:
+            sid = get_session()
+            rel = tree_mgr.get_block_relations(sid)
+            blocks = rel.get("blocks", {})
+            relations = rel.get("relations", [])
+            for bid, binfo in blocks.items():
+                nodes.append({
+                    "id": bid,
+                    "label": binfo.get("summary", "") or f"Block {bid[:8]}",
+                    "type": "session",
+                    "size": binfo.get("edus", 1),
+                    "temperature": binfo.get("temperature", "warm"),
+                    "entities": binfo.get("entities", [])[:3],
+                })
+            for r in relations:
+                edges.append({
+                    "id": f"{r['from']}→{r['to']}",
+                    "source": r["from"], "target": r["to"],
+                    "type": r.get("type", "related"),
+                })
+            if nodes:
+                return {"nodes": nodes, "edges": edges, "subgraph_nodes": [n["id"] for n in nodes[:8]]}
+    except Exception:
+        pass
     # Read discourse blocks from most active session
     try:
         sp = os.path.join(root, "data", "v3_sessions.json")

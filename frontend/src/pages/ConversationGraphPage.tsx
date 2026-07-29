@@ -176,6 +176,12 @@ export function ConversationGraphPage() {
       const nextId = selectedNodeId === nodeId ? null : nodeId;
       setSelectedNodeId(nextId);
       graphStore.setSelectedNode(nextId);
+      // Navigate to chat if session-type node
+      const node = nodes.find(n => n.id === nodeId);
+      if (node && (node.type === 'session' || (node as any).type === 'session')) {
+        // Session node: ID is the session_id, navigate to /chat with it
+        navigate(`/chat?sid=${nodeId}`);
+      }
     },
     [graphStore, selectedNodeId, editMode, graph]
   );
