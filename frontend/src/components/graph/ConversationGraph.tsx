@@ -176,10 +176,9 @@ export function ConversationGraph({
     const g = new dagre.graphlib.Graph();
     g.setDefaultEdgeLabel(() => ({}));
     g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80 });
-    g.nodes().forEach(n => g.removeNode(n));  // clear
 
     graphNodes.forEach(n => g.setNode(n.id, { width: 160, height: 50 }));
-    graphEdges.forEach(e => g.setEdge(e.source, e.target));
+    graphEdges.forEach(e => { try { g.setEdge(e.source, e.target); } catch {} });
 
     dagre.layout(g);
 
