@@ -368,7 +368,29 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     ("intent_parsed", {"category": "chat", "text": req.content, "session_id": session_id}),
                     ("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id}),
                 ]:
-                    eng._publish(evt[0], evt[1])
+                    eng._last_behavior_topic = to_conc
+                except: pass
+                # Record association: link current topic to entity mentions
+                try:
+                    l1 = getattr(eng, '_l1_modifier', None)
+                    l2 = getattr(eng, '_l2_5_belief', None)
+                    if l1 and hasattr(l1, 'extract'):
+                        modifiers = l1.extract(req.content)
+                        for mod in (modifiers or [])[:3]:
+                            if hasattr(eng, '_storage') and eng._storage:
+                                eng._storage.warm.insert_association(
+                                    req.content[:30], str(mod)[:50], "mentions", 0.5, session_id)
+                except: pass
+                # Record behavior edge: user navigated from previous message topic
+                try:
+                    bg = getattr(eng, '_behavior_graph', None)
+                    if bg and hasattr(bg, 'load'):
+                        from_conc = getattr(eng, '_last_behavior_topic', None)
+                        to_conc = req.content[:50]
+                        if from_conc and bg and hasattr(bg, 'mark_correction'):
+                            bg.mark_correction(from_conc, to_conc)
+                        eng._last_behavior_topic = to_conc
+                except: pass
                 if tracer and parent_span:
                     tracer.record("v3_api", "subscribers_fired", True, 0, parent_span_id=parent_span)
                 logger.debug("EventBus pipeline unified: subscribers fired")
