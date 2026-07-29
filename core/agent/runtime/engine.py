@@ -210,6 +210,12 @@ class CognitiveRuntimeEngine:
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
         from core.agent.assoc_subscriber import AssociationSubscriber
         self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
+        # Phase 1: additional subscribers (Discourse/Behavior/Profile/Persistence)
+        try:
+            from core.agent.event.subscribers import wire_subscribers
+            self._sub_stats = wire_subscribers(self)
+        except Exception:
+            self._sub_stats = {}
         from core.agent.topic_tree.manager import TopicTreeManager
         self._topic_tree = TopicTreeManager()
         logger.info('EventLog+EventBus+TopicTree ready')
@@ -791,14 +797,17 @@ class CognitiveRuntimeEngine:
                 logger.warning('PCR evaluate failed: %s', e)
 
     def _publish(self, event_type, payload=None):
-        """Fire-and-forget publish. Never blocks hot path."""
-        if self._event_log and self._event_bus:
-            try:
-                kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
-                self._event_log.put_event(kind, payload or {}, trace_id=getattr(self, '_trace_id', ''))
-                self._event_bus.publish(kind, payload or {})
-            except Exception as e:
-                logger.debug('Publish skipped: %s', e)
+        """Fire-and-forget publish. Notifies subscribers."""
+        kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
+        payload = payload or {}
+        if self._event_bus:
+            try: self._event_bus.publish(kind, payload)
+            except: pass
+        # Notify direct subscribers
+        subs = getattr(self, '_event_subscribers', {})
+        for name, sub in subs.items():
+            try: sub.handle(kind, payload)
+            except: pass
 
         # ---- V4.0 Cognitive Coordinate Router ----
         route = None
