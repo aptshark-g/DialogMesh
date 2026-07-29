@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Globe, Database, ScrollText, Loader2, RefreshCw, Pencil, Save, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { cn } from '../lib/utils';
 import { ApiConfigPanel } from '../components/ApiConfigPanel';
 import { Toast } from '../components/ui/Toast';
-import { getRules, editRule } from '../api/v6';
-import type { V6Rule } from '../types/api';
+import { getRules, editRule, getHealth, getMetrics, getProviders, getPersistence } from '../api/v6';\nimport type { V6Rule, V6MetricsResponse, V6ProvidersResponse, V6PersistenceResponse } from '../types/api';
 
 interface RuleEditForm {
   confidence: string;
@@ -18,6 +18,29 @@ export function SettingsPage() {
   const [editForm, setEditForm] = useState<RuleEditForm>({ confidence: '', conclusion: '' });
   const [savingRule, setSavingRule] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [health, setHealth] = useState<{ status: string; version: string } | null>(null);
+  const [metrics, setMetrics] = useState<V6MetricsResponse | null>(null);
+  const [providers, setProviders] = useState<V6ProvidersResponse | null>(null);
+  const [persistence, setPersistence] = useState<V6PersistenceResponse | null>(null);
+  const [sysLoading, setSysLoading] = useState(false);
+
+  const loadSystem = useCallback(async () => {
+    setSysLoading(true);
+    try {
+      const [h, m, p, pers] = await Promise.all([
+        getHealth().catch(() => null),
+        getMetrics().catch(() => null),
+        getProviders().catch(() => null),
+        getPersistence().catch(() => null),
+      ]);
+      if (h) setHealth(h);
+      if (m) setMetrics(m);
+      if (p) setProviders(p);
+      if (pers) setPersistence(pers);
+    } catch { } finally { setSysLoading(false); }
+  }, []);
+
+  useEffect(() => { loadSystem(); }, [loadSystem]);
 
   const loadRules = useCallback(async () => {
     setRulesLoading(true);
@@ -110,7 +133,54 @@ export function SettingsPage() {
         <div className="space-y-4">
           <ApiConfigPanel />
 
-          <motion.div
+          {/* System Info Cards */}
+          <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-surface-card rounded-xl border p-4">
+              <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
+                <Globe className="w-3.5 h-3.5" /> 引擎状态
+              </div>
+              <p className="text-lg font-bold text-text-primary">{health?.status ?? '—'}</p>
+              <p className="text-xs text-text-muted">v{health?.version ?? '—'}</p>
+            </div>
+            <div className="bg-surface-card rounded-xl border p-4">
+              <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
+                <Database className="w-3.5 h-3.5" /> 子系统
+              </div>
+              <p className="text-lg font-bold text-text-primary">{metrics?.subsystems_loaded ?? '—'}</p>
+              <p className="text-xs text-text-muted">已加载 / {metrics?.subsystems_total ?? '—'}</p>
+            </div>
+            <div className="bg-surface-card rounded-xl border p-4">
+              <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
+                <ScrollText className="w-3.5 h-3.5" /> 总会话数
+              </div>
+              <p className="text-lg font-bold text-text-primary">{metrics?.total_turn_count ?? '—'}</p>
+              <p className="text-xs text-text-muted">turns</p>
+            </div>
+            <div className="bg-surface-card rounded-xl border p-4">
+              <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
+                <RefreshCw className={cn('w-3.5 h-3.5', sysLoading && 'animate-spin')} /> Provider
+              </div>
+              <p className="text-lg font-bold text-text-primary">{providers?.active_provider ?? '—'}</p>
+              <p className="text-xs text-text-muted">{providers?.active_model ?? '—'}</p>
+            </div>
+          </motion.div>
+
+          {/* Data Persistence */}
+          {persistence && (
+            <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="bg-surface-card rounded-xl border p-5">
+              <h2 className="text-sm font-semibold text-text-primary mb-3">数据持久化</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                {Object.entries(persistence).map(([k,v]) => (
+                  <div key={k} className="bg-surface-sidebar rounded-lg p-2">
+                    <span className="text-text-muted">{k}: </span>
+                    <span className="text-text-primary font-medium">{typeof v === 'boolean' ? (v ? '✅' : '—') : String(v ?? '—').substring(0,20)}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Rules Section */}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}

@@ -58,8 +58,6 @@ import type {
 } from '../types/api';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-// v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
-const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
@@ -67,7 +65,6 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      Authorization: `Bearer ${AUTH_TOKEN}`,
       ...(options?.headers || {}),
     },
   });
@@ -253,6 +250,10 @@ export function getContext(): Promise<V6ContextResponse> {
 
 export function getPersistence(): Promise<V6PersistenceResponse> {
   return apiFetch<V6PersistenceResponse>('/v6/persistence');
+}
+
+export function getHealth(): Promise<{ status: string; version: string }> {
+  return apiFetch<{ status: string; version: string }>('/v3/health');
 }
 
 export function getPersistenceGraphs(): Promise<V6PersistenceGraphsResponse> {
