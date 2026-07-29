@@ -168,8 +168,7 @@ def _trace_handle(name, handler, engine, kind, payload):
         tracer.record(name, kind, success, latency)
 
 def wire_subscribers(engine) -> dict:
-    """Create all subscribers and register them with engine's EventBus.
-    Returns stats dict for monitoring."""
+    """Create all subscribers, wrap with tracing, register with EventBus."""
     subs = {
         "discourse": DiscourseSubscriber(engine),
         "behavior": BehaviorSubscriber(engine),
@@ -179,7 +178,25 @@ def wire_subscribers(engine) -> dict:
         "persistence": PersistenceSubscriber(engine),
     }
 
-    # Store on engine for CLI inspection
+    # Wrap each handle with tracer for full-chain visibility
+    for name, sub in subs.items():
+        original = sub.handle
+        def make_wrapped(orig, sname):
+            def wrapped(kind, payload):
+                import time as _t
+                st = _t.time(); ok = True
+                try: orig(kind, payload)
+                except: ok = False
+                lat = (_t.time() - st) * 1000
+                try:
+                    from core.agent.event.tracer import MetricsCollector
+                    MetricsCollector.record(sname, "success" if ok else "error", lat)
+                    if hasattr(engine, '_tracer') and engine._tracer:
+                        engine._tracer.record(sname, kind, ok, lat)
+                except: pass
+            return wrapped
+        sub.handle = make_wrapped(original, name)
+
     engine._event_subscribers = subs
 
     # Register with EventBus if available

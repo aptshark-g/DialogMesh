@@ -121,10 +121,17 @@ def start_engine(provider_type: str = None, api_key: str = None,
 
         # Gap closure: RateGuard + CapabilityGuard + HotReloader
         try:
-            from core.agent.event.closure import RateGuard, CapabilityGuard, HotReloader
+            from core.agent.event.closure import RateGuard, CapabilityGuard, HotReloader, CascadeDetector
             _engine._rate_guard = RateGuard()
+            _engine._cascade = CascadeDetector(_engine._rate_guard)
             _engine._cap_guard = CapabilityGuard()
             _engine._hot_reloader = HotReloader()
+        except: pass
+
+        # P2: State Machine Engine
+        try:
+            from core.agent.event.statemachine import DeciderStateMachine, PipelinePhase
+            _engine._state_machine = DeciderStateMachine()
         except: pass
 
         # Wire cross-deps
