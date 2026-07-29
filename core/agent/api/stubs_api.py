@@ -301,8 +301,31 @@ async def get_behavior_predictions():
 # Engineering — V6EngineeringResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/engineering")
-async def get_engineering():
-    return {"constraints": [], "propagations": 0, "violations": 0}
+async def get_engineering_page():
+    """Read engineering rules from disk."""
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    data_dir = os.path.join(root, "data")
+    rules, annotations, corrections = [], [], []
+    rp = os.path.join(data_dir, "engineering_rules.json")
+    if os.path.exists(rp):
+        try: rules = json.load(open(rp, encoding="utf-8")).get("rules", [])
+        except: pass
+    ap = os.path.join(data_dir, "annotations.json")
+    if os.path.exists(ap):
+        try: annotations = json.load(open(ap, encoding="utf-8"))
+        except: pass
+    cp = os.path.join(data_dir, "corrections.json")
+    if os.path.exists(cp):
+        try: corrections = json.load(open(cp, encoding="utf-8"))
+        except: pass
+    return {
+        "rules": rules, "total_rules": len(rules),
+        "annotations": annotations, "violations": len(annotations),
+        "corrections": corrections,
+        "constraints": [r.get("pattern","") for r in rules if r.get("type")=="constraint"],
+        "propagations": len(annotations),
+    }
 
 @router.get("/engineering/modules")
 async def get_engineering_modules():

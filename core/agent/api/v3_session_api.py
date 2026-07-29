@@ -299,7 +299,34 @@ async def send_message(session_id: str, req: SendMessageRequest):
             # Meta: save turn count
             with open(os.path.join(root, "meta_state.json"), "w", encoding="utf-8") as f:
                 json.dump({"turn_count": saved["turn_count"]}, f, indent=2, ensure_ascii=False)
-            logger.debug("Pipeline state persisted: discourse + profile + meta")
+            logger.debug("Pipeline state persisted: discourse + profile + meta")            # Rule enforcement: check engineering constraints against user message
+            try:
+                rules_path = os.path.join(root, "data", "engineering_rules.json")
+                rules_data = {}
+                if os.path.exists(rules_path):
+                    rules_data = json.load(open(rules_path, encoding="utf-8"))
+                for rule in rules_data.get("rules", []):
+                    pattern = rule.get("pattern", "")
+                    rtype = rule.get("type", "")
+                    if pattern and pattern.lower() in req.content.lower():
+                        # Rule triggered — record annotation
+                        ann_path = os.path.join(root, "data", "annotations.json")
+                        annotations = []
+                        if os.path.exists(ann_path):
+                            try: annotations = json.load(open(ann_path, encoding="utf-8"))
+                            except: pass
+                        annotations.append({
+                            "rule_id": rule.get("id", ""),
+                            "type": rtype,
+                            "pattern": pattern,
+                            "message": req.content[:100],
+                            "session_id": session_id,
+                            "timestamp": time.time(),
+                        })
+                        with open(ann_path, "w", encoding="utf-8") as f:
+                            json.dump(annotations[-20:], f, indent=2, ensure_ascii=False)
+            except: pass
+        except Exception as _ep:
         except Exception as _ep:
             logger.debug("Pipeline state persist skipped: %s", _ep)
 

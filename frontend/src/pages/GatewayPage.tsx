@@ -783,7 +783,7 @@ export function GatewayPage() {
                   <span className="ml-2 text-sm text-text-muted">加载 Provider...</span>
                 </div>
               )}
-              {gatewayProviders?.providers.map((provider) => (
+              {(gatewayProviders?.providers ?? []).map((provider) => (
                 <ProviderCard key={provider.name} provider={provider}
                 isExpanded={expandedProvider === provider.name}
                 isActive={gatewayProviders?.active_provider === provider.name}
@@ -925,7 +925,7 @@ export function GatewayPage() {
                 <div>
                   <label className="text-xs text-text-muted">降级链</label>
                   <div className="flex items-center gap-2 mt-1">
-                    {config.failover_chain.map((name, idx) => (
+                    {(config?.failover_chain ?? []).map((name, idx) => (
                       <div key={name} className="flex items-center gap-2">
                         <span className="text-xs font-medium px-2 py-1 rounded bg-surface-sidebar text-text-primary">{name}</span>
                         {idx < config.failover_chain.length - 1 && <ArrowRight className="h-3 w-3 text-text-muted" />}
@@ -1185,7 +1185,7 @@ export function GatewayPage() {
                     </div>
                     {checkpointResult.results && checkpointResult.results.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        {checkpointResult.results.map((r) => (
+                        {(checkpointResult?.results ?? []).map((r) => (
                           <span
                             key={r.adapter}
                             className={cn(
