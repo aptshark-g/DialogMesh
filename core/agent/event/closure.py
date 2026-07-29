@@ -190,6 +190,48 @@ class RateGuard:
                 for stage, b in self._buckets.items()}
 
 
+class CascadeDetector:
+    """Detect cascade failures — when one slow stage causes upstream stalls.
+
+    DESIGN_GUARD_SYSTEM.md §1 — CascadeDetector.
+    """
+
+    def __init__(self, rate_guard: RateGuard, threshold_ms: float = 500):
+        self._guard = rate_guard
+        self._threshold = threshold_ms
+        self._stage_latencies: Dict[str, List[float]] = {}
+        self._lock = threading.Lock()
+
+    def record(self, stage: str, latency_ms: float):
+        with self._lock:
+            if stage not in self._stage_latencies:
+                self._stage_latencies[stage] = []
+            lst = self._stage_latencies[stage]
+            lst.append(latency_ms)
+            if len(lst) > 20:
+                lst.pop(0)
+
+    def check(self) -> dict:
+        """Check for cascade: if any stage is slow, flag it."""
+        alerts = {}
+        with self._lock:
+            for stage, latencies in self._stage_latencies.items():
+                if len(latencies) < 5:
+                    continue
+                avg = sum(latencies) / len(latencies)
+                if avg > self._threshold:
+                    alerts[stage] = {
+                        "avg_latency_ms": round(avg, 1),
+                        "threshold_ms": self._threshold,
+                        "action": "throttle",
+                    }
+                    # Auto-throttle: reduce rate by 50%
+                    bucket = self._guard._buckets.get(stage)
+                    if bucket:
+                        bucket._rate = max(1, bucket._rate * 0.5)
+        return {"alerts": alerts, "stages_monitored": len(self._stage_latencies)}
+
+
 # ═══════════════════════════════════════════════════════════
 #  Gap 4: Capability Model — per-subsystem permissions
 # ═══════════════════════════════════════════════════════════
