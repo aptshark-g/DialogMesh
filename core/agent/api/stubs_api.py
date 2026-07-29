@@ -274,23 +274,32 @@ async def get_causal():
 # ═══════════════════════════════════════════════════════
 @router.get("/behavior")
 async def get_behavior():
-    """Read from engine's CausalPlanner or BehaviorGraphAdapter."""
+    """Read from engine's _behavior_graph or CausalPlanner."""
     try:
         from core.agent.cli.engine import get_engine
         e = get_engine()
+        # Try BehaviorGraphAdapter (has record_step)
+        bg = getattr(e, '_behavior_graph', None)
+        if bg and hasattr(bg, '_graph'):
+            g = bg._graph
+            stats = getattr(g, 'stats', None)
+            if stats:
+                return {
+                    "edge_count": getattr(stats, 'edge_count', 0),
+                    "node_count": getattr(stats, 'node_count', 0),
+                    "total_samples": getattr(stats, 'total_samples', 0),
+                    "patterns": [e.edge_id for e in list(getattr(g, 'edges', {}).values())[:5]] if hasattr(g, 'edges') else [],
+                    "predictions": [],
+                }
+        # Fallback to CausalPlanner
         cp = getattr(e, '_causal_planner', None)
         if cp and hasattr(cp, 'get_recent_chain'):
             recent = cp.get_recent_chain(20)
             return {"edge_count": len(recent), "patterns": [], "predictions": [],
                     "recent_edges": [{"action": getattr(s, 'event_type', str(s)),
                                      "ts": getattr(s, 'timestamp', 0)} for s in recent[:10]]}
-        bg = getattr(e, '_behavior_graph_adapter', None)
-        if bg:
-            chain = bg.get_recent_chain(20)
-            return {"edge_count": len(chain.steps) if hasattr(chain, 'steps') else 0,
-                    "patterns": [], "predictions": []}
-    except Exception:
-        pass
+    except: pass
+    return {"edge_count": 0, "patterns": [], "predictions": []}
     return {"edge_count": 0, "patterns": [], "predictions": []}
 
 @router.get("/behavior/patterns")

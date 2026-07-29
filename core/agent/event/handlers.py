@@ -84,13 +84,34 @@ def register_all_handlers(engine, tracer=None):
     # ── BEHAVIOR — BehaviorGraph record ──
     def handle_behavior(ctx):
         bg = getattr(engine, '_behavior_graph', None)
-        if bg and hasattr(bg, 'load'):
+        text = ctx.get("text", "")
+        if bg and text:
+            # Record conversation turns as behavior steps → creates real edges
             try:
-                bg.load()
-                chain = bg.get_recent_chain(5) if hasattr(bg, 'get_recent_chain') else []
-                return {"recorded": True, "chain_len": len(chain)}
-            except:
-                pass
+                from core.agent.events.event_ir import EventIR
+                import uuid, time
+                evt = EventIR(
+                    id=f"turn_{uuid.uuid4().hex[:8]}",
+                    kind="user_message",
+                    payload={"text": text[:200], "session_id": ctx.get("session_id", "")},
+                    metadata={},
+                    timestamp=time.time(),
+                )
+                if hasattr(bg, 'record_step'):
+                    edge_id = bg.record_step(evt, success=True)
+                    if edge_id:
+                        return {
+                            "recorded": True,
+                            "edge_count": len(getattr(bg, '_step_buffer', [])),
+                            "last_edge": edge_id,
+                        }
+                elif hasattr(bg, 'load'):
+                    # Fallback: load from disk if adapter pattern
+                    bg.load()
+                    chain = bg.get_recent_chain(5) if hasattr(bg, 'get_recent_chain') else []
+                    return {"recorded": True, "chain_len": len(chain)}
+            except Exception as e:
+                logger.debug("Behavior record failed: %s", e)
         return {"recorded": False}
     sm.register_handler(PipelinePhase.BEHAVIOR, lambda ctx: _trace("behavior", handle_behavior, ctx))
 
@@ -98,20 +119,36 @@ def register_all_handlers(engine, tracer=None):
     def handle_meta(ctx):
         mc = getattr(engine, '_meta_cognition', None)
         text = ctx.get("text", "")
+        results = {"reviewed": False}
         if mc:
             if hasattr(mc, 'retrospect'):
                 try:
                     mc.retrospect(target=ctx.get("intent", {}).get("category", "general"))
-                    return {"reviewed": True}
+                    results["reviewed"] = True
                 except:
                     pass
             if hasattr(mc, 'scan'):
                 try:
                     mc.scan()
-                    return {"scanned": True}
+                    results["scanned"] = True
                 except:
                     pass
-        return {"reviewed": False}
+            # Extract visible stats
+            stats = getattr(mc, 'stats', None)
+            if stats:
+                if callable(stats):
+                    try: results.update(stats())
+                    except: pass
+                elif isinstance(stats, dict):
+                    results.update({k: v for k, v in stats.items() if isinstance(v, (str, int, float, bool))})
+            elif hasattr(mc, 'get_stats'):
+                try: results.update(mc.get_stats())
+                except: pass
+            elif hasattr(mc, '_history'):
+                results["history_len"] = len(getattr(mc, '_history', []))
+            elif hasattr(mc, '_reviews'):
+                results["reviews"] = len(getattr(mc, '_reviews', []))
+        return results
     sm.register_handler(PipelinePhase.META, lambda ctx: _trace("meta", handle_meta, ctx))
 
     # ── PROFILE — OCEAN analysis ──
