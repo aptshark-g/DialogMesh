@@ -62,7 +62,7 @@ class MetaSubscriber:
         if not mc: return
         try:
             if hasattr(mc, 'retrospect'):
-                mc.retrospect()
+                mc.retrospect(target=payload.get("category", kind))
                 self.events += 1
             elif hasattr(mc, 'process_queue'):
                 mc.process_queue()
@@ -82,17 +82,14 @@ class ProfileSubscriber:
         ocean = getattr(e, '_ocean_analyst', None)
         if not ocean: return
         text = payload.get("text", "")
+        reply = payload.get("reply", "")
         if text and hasattr(ocean, 'analyze'):
             try:
-                # analyze() takes session_id or text
-                ocean.analyze(session_id=payload.get("session_id", "default"))
+                # API: analyze(engine, turn_text, llm_response)
+                ocean.analyze(e, text, reply or text)
                 self.events += 1
             except Exception:
-                try:
-                    ocean.analyze_with_bfi_override(text)
-                    self.events += 1
-                except Exception:
-                    pass
+                pass
 
 
 class AssociationSubscriber:

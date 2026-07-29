@@ -28,13 +28,12 @@ class DummyEventBus:
 
 
 class DummyMeta:
-    def retrospect(self): return True
+    def retrospect(self, target=""): return True
     def process_queue(self): return []
 
 
 class DummyOcean:
-    def analyze(self, session_id=""): return {}
-    def analyze_with_bfi_override(self, text): return {}
+    def analyze(self, engine, turn_text, llm_response): return {}
 
 
 class DummyL1:
