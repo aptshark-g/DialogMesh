@@ -78,13 +78,14 @@ def trace_span(name: str, metadata: dict = None):
 
 @dataclass
 class TraceRecord:
-    """One subsystem step recorded during message processing."""
+    """One subsystem step with parent/child span hierarchy."""
     trace_id: str
     span_id: str
-    subsystem: str
-    kind: str          # "pcr_computed", "intent_parsed", etc.
-    success: bool
-    latency_ms: float
+    parent_span_id: str = "root"  # span hierarchy
+    subsystem: str = ""
+    kind: str = ""          # "pcr_computed", "intent_parsed", etc.
+    success: bool = True
+    latency_ms: float = 0
     timestamp: float = field(default_factory=time.time)
     metadata: dict = field(default_factory=dict)
 
@@ -282,12 +283,14 @@ class PipelineTracer:
     store: TraceStore = field(default_factory=TraceStore)
 
     def record(self, subsystem: str, kind: str, success: bool,
-               latency_ms: float, metadata: dict = None):
-        """Record a pipeline step."""
+               latency_ms: float, metadata: dict = None, parent_span_id: str = "root"):
+        """Record a pipeline step with span hierarchy."""
         ctx = get_trace_context()
+        span_id = f"{subsystem}_{uuid.uuid4().hex[:6]}"
         rec = TraceRecord(
             trace_id=ctx["trace_id"],
-            span_id=ctx.get("span_id", "root"),
+            span_id=span_id,
+            parent_span_id=parent_span_id,
             subsystem=subsystem,
             kind=kind,
             success=success,
@@ -296,6 +299,7 @@ class PipelineTracer:
         )
         self.store.add(rec)
         MetricsCollector.record(subsystem, "success" if success else "error", latency_ms)
+        return span_id  # Return span so callers can create children
 
     @contextmanager
     def span(self, subsystem: str, kind: str):

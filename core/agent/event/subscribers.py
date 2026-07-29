@@ -149,6 +149,24 @@ class PersistenceSubscriber:
 #  EventBus Wiring — registers all subscribers with engine
 # ═══════════════════════════════════════════════════════════
 
+
+def _trace_handle(name, handler, engine, kind, payload):
+    """Wrap subscriber handle with auto-tracing."""
+    from core.agent.event.tracer import PipelineTracer as _PT, MetricsCollector as _MC
+    import time as _time
+    start = _time.time()
+    success = True
+    try:
+        handler(kind, payload)
+    except Exception:
+        success = False
+    latency = (_time.time() - start) * 1000
+    _MC.record(name, "success" if success else "error", latency)
+    # Also record to engine's tracer if available
+    tracer = getattr(engine, '_tracer', None)
+    if tracer:
+        tracer.record(name, kind, success, latency)
+
 def wire_subscribers(engine) -> dict:
     """Create all subscribers and register them with engine's EventBus.
     Returns stats dict for monitoring."""
