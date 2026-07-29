@@ -19,7 +19,8 @@ html.light .bg-black\/60,
 html.light .bg-black { background-color: transparent !important; }
 
 /* === Hover backgrounds === */
-html.light [class*="hover:bg-surface-card-hover"]:hover { background-color: #F3F0EB !important; }
+html.light [class*="hover:bg-surface-card-hover"]:hover,
+html.light [class*="bg-surface-card-hover"]:not([class*="hover:"]) { background-color: #F3F0EB !important; }
 
 /* === Text === */
 html.light body,
