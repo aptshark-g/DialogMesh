@@ -565,7 +565,34 @@ export function ConversationGraphPage() {
               <span>缩放: {Math.round(zoomLevel * 100)}%</span>
               <span>·</span>
               <span>视图: {viewMode === 'force' ? '力导向' : viewMode === 'timeline' ? '时间线' : '树形'}</span>
-            </div>
+              </div>
+
+              {/* Node Data Table */}
+              {nodes.length > 0 && (
+              <div className="px-4 pb-4">
+                <details className="bg-surface-card rounded-lg border border-subtle">
+                  <summary className="px-4 py-2 text-xs font-medium text-text-secondary cursor-pointer hover:text-text-primary">
+                    📋 节点数据 ({nodes.length})
+                  </summary>
+                  <div className="max-h-40 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-surface-sidebar text-text-muted sticky top-0">
+                        <tr><th className="px-3 py-1.5 text-left">标签</th><th className="px-3 py-1.5 text-left">类型</th><th className="px-3 py-1.5 text-right">大小/状态</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-subtle">
+                        {nodes.slice(0, 30).map(n => (
+                          <tr key={n.id} className="hover:bg-surface-card-hover cursor-pointer" onClick={() => handleNodeClick(n.id)}>
+                            <td className="px-3 py-1.5 text-text-primary truncate max-w-[300px]">{n.label || n.id}</td>
+                            <td className="px-3 py-1.5 text-text-muted">{n.type || 'session'}</td>
+                            <td className="px-3 py-1.5 text-text-secondary text-right">{(n as any).size || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </div>
+              )}
           </div>
         </>
       )}
