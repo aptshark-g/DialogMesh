@@ -86,7 +86,6 @@ def register_all_handlers(engine, tracer=None):
         bg = getattr(engine, '_behavior_graph', None)
         text = ctx.get("text", "")
         if bg and text:
-            # Record conversation turns as behavior steps → creates real edges
             try:
                 from core.agent.events.event_ir import EventIR
                 import uuid, time
@@ -97,16 +96,18 @@ def register_all_handlers(engine, tracer=None):
                     metadata={},
                     timestamp=time.time(),
                 )
-                if hasattr(bg, 'record_step'):
-                    edge_id = bg.record_step(evt, success=True)
-                    if edge_id:
-                        return {
-                            "recorded": True,
-                            "edge_count": len(getattr(bg, '_step_buffer', [])),
-                            "last_edge": edge_id,
-                        }
-                elif hasattr(bg, 'load'):
-                    # Fallback: load from disk if adapter pattern
+                # BehaviorGraphAdapter uses record_event (adapter.py:174)
+                # CausalPlanner uses record_step (planner.py:180)
+                for method in ['record_event', 'record_step']:
+                    if hasattr(bg, method):
+                        getattr(bg, method)(evt, success=True)
+                        if method == 'record_event':
+                            return {"recorded": True, "event_id": evt.id}
+                        else:
+                            buf = getattr(bg, '_step_buffer', [])
+                            return {"recorded": True, "edge_count": len(buf), "last_step": evt.id}
+                # Fallback
+                if hasattr(bg, 'load'):
                     bg.load()
                     chain = bg.get_recent_chain(5) if hasattr(bg, 'get_recent_chain') else []
                     return {"recorded": True, "chain_len": len(chain)}
