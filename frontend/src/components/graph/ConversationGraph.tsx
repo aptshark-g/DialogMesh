@@ -269,7 +269,7 @@ export function ConversationGraph({
   const bgColor = isDark ? '#0C0A0F' : '#FDFCF8';
 
   return (
-    <div className={cn('w-full h-full rounded-xl overflow-hidden border border-subtle relative', className)}>
+    <div className={cn('absolute inset-0 rounded-xl overflow-hidden border border-subtle', className)}>
       {nodes.length === 0 ? (
         <div className="flex items-center justify-center h-full text-text-muted text-sm">
           {graphNodes.length === 0 ? '📭 暂无图数据 — 开始聊天后自动生成' : '⏳ 加载中...'}
