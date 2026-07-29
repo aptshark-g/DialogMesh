@@ -587,7 +587,7 @@ class CognitiveRuntimeEngine:
             except: pass
         
         # 2. Behavior edges
-        if hasattr(self, '_behavior_graph_adapter') and self._behavior_graph_adapter:
+        if hasattr(self, '_behavior_graph_adapter') and self._behavior_graph_adapter is not None:
             try:
                 chain = self._behavior_graph_adapter.get_recent_chain(50)
                 steps = getattr(chain, 'steps', [])
