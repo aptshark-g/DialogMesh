@@ -299,6 +299,7 @@ export function ConversationGraph({
         <Background color={isDark ? '#2A2635' : '#E5E7EB'} gap={20} />
         <Controls className="[&>button]:!bg-surface-card [&>button]:!border-subtle [&>button]:!text-text-secondary" />
       </ReactFlow>
+      )}
 
       {/* Context Menu */}
       {contextMenu && (
