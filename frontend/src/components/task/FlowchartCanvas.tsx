@@ -1,5 +1,6 @@
 /** SVG Flowchart Canvas — pure rendering, no business logic */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useThemeStore } from '@/stores/themeStore';
 
 /* ── Types ── */
 export interface FNode { id: string; label: string; x: number; y: number; w: number; h: number; type: string; }
@@ -27,6 +28,24 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const [vy, setVy] = useState(0);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [clickMode, setClickMode] = useState<'select' | 'delete'>('select');
+  const theme = useThemeStore(s => s.theme);
+  // Force colors to update: derive from theme every render
+  const isLight = theme === 'light';
+  const colors = useMemo(() => ({
+    bg: isLight ? '#fafaf7' : '#0a0a0a',
+    grid: isLight ? '#c0c0c0' : '#333',
+    nodeFill: isLight ? '#ffffff' : '#1e1e2e',
+    nodeStroke: isLight ? '#94a3b8' : '#475569',
+    nodeStrokeSel: '#6366F1',
+    textFill: isLight ? '#0f172a' : '#e2e8f0',
+    edgeBase: isLight ? '#94a3b8' : '#64748b',
+    edgeSel: '#6366F1',
+    edgeConn: '#a78bfa',
+    handleStroke: '#6366F1',
+    handleFill: isLight ? '#ffffff' : '#1e1e2e',
+    resizeFill: '#6366F1',
+    arrowFill: isLight ? '#94a3b8' : '#64748b',
+  }), [isLight]); 
   const [connLine, setConnLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
@@ -106,6 +125,21 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     setZoom(z => { const nz = Math.max(0.1, Math.min(5, z * f)); setVx(v => mx - (mx - v) * (nz / z)); setVy(v => my - (my - v) * (nz / z)); return nz; });
   }, []);
 
+  // Attach native wheel listener (non-passive) for zoom + preventDefault
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const f = e.deltaY > 0 ? 0.9 : 1.11;
+      setZoom(z => { const nz = Math.max(0.1, Math.min(5, z * f)); setVx(v => mx - (mx - v) * (nz / z)); setVy(v => my - (my - v) * (nz / z)); return nz; });
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, []);
+
   /* ── Edge click ── */
   const onEdgeClick = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation(); setSelEdge(id === selEdge ? null : id); setSel(null);
@@ -127,13 +161,13 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     const mm = (e: MouseEvent) => {
       const c = connRef.current; if (!c) return;
       const r = svgRef.current?.getBoundingClientRect(); if (!r) return;
-      setConnLine({ x1: c.sx, y1: c.sy, x2: (e.clientX - r.left + vx) / zoom, y2: (e.clientY - r.top + vy) / zoom });
+      setConnLine({ x1: c.sx, y1: c.sy, x2: (e.clientX - r.left - vx) / zoom, y2: (e.clientY - r.top - vy) / zoom });
     };
     const mu = (e: MouseEvent) => {
       const svgRect = svgRef.current?.getBoundingClientRect();
       if (svgRect) {
-        const mx = (e.clientX - svgRect.left + vx) / zoom;
-        const my = (e.clientY - svgRect.top + vy) / zoom;
+        const mx = (e.clientX - svgRect.left - vx) / zoom;
+        const my = (e.clientY - svgRect.top - vy) / zoom;
         const c = connRef.current;
         if (c) {
           // Expanded hit detection: 20px padding around node bounds
@@ -188,7 +222,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
     return `M ${sx} ${sy} C ${sx} ${sy + dx}, ${tx} ${ty - dx}, ${tx} ${ty}`;
   };
 
-  const colorForEdge = (e: FEdge) => selEdge === e.id ? '#6366F1' : connRef.current?.source === e.source ? '#a78bfa' : '#94a3b8';
+  const colorForEdge = (e: FEdge) => selEdge === e.id ? colors.edgeSel : connRef.current?.source === e.source ? colors.edgeConn : colors.edgeBase;
 
   const visibleEdges = useMemo(() =>
     (edges || []).filter(e => e && (nodes || []).some(n => n && n.id === e.source) && (nodes || []).some(n => n && n.id === e.target)),
@@ -198,10 +232,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const showHandles = (id: string) => sel === id || hoverNode === id;
 
   return (
-    <div className="flex-1 overflow-hidden relative bg-[#f8f8f8] dark:bg-[#0a0a0a]"
+    <div className="flex-1 overflow-hidden relative"
+      style={{ backgroundColor: colors.bg }}
       onMouseDown={onCanvasDown}>
       <div className="absolute inset-0 pointer-events-none opacity-15" style={{
-        backgroundImage: 'radial-gradient(circle, #999 1px, transparent 1px)',
+        backgroundImage: `radial-gradient(circle, ${colors.grid} 1px, transparent 1px)`,
         backgroundSize: `${40 * zoom}px ${40 * zoom}px`, backgroundPosition: `${vx}px ${vy}px`,
       }} />
       <svg ref={svgRef} width="100%" height="100%" tabIndex={0}
@@ -226,11 +261,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
           ))}
           {connLine && (
             <path d={`M ${connLine.x1} ${connLine.y1} C ${connLine.x1} ${connLine.y1 + 40}, ${connLine.x2} ${connLine.y2 - 40}, ${connLine.x2} ${connLine.y2}`}
-              fill="none" stroke="#6366F1" strokeWidth={2} strokeDasharray="6 3" />
+              fill="none" stroke={colors.edgeSel} strokeWidth={2} strokeDasharray="6 3" />
           )}
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX={8} refY={5} markerWidth={6} markerHeight={6} orient="auto">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+              <path d="M 0 0 L 10 5 L 0 10 z" fill={colors.arrowFill} />
             </marker>
           </defs>
           {nodes.map(n => (
@@ -243,11 +278,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
             >
               {showHandles(n.id) && (['top', 'bottom', 'left', 'right'] as const).map(h => {
                 const hp = HANDLES[h](n.w, n.h);
-                return <circle key={h} data-handle={h} data-node={n.id} cx={hp.x} cy={hp.y} r={5} fill="white" stroke="#6366F1" strokeWidth={1.5}
+                return <circle key={h} data-handle={h} data-node={n.id} cx={hp.x} cy={hp.y} r={5} fill={colors.handleFill} stroke={colors.handleStroke} strokeWidth={1.5}
                   style={{ cursor: 'crosshair' }} onMouseDown={e => onHandleDown(e, n.id, h)} />;
               })}
-              <rect width={n.w} height={n.h} rx={6} fill="white"
-                stroke={sel === n.id ? '#6366F1' : '#94a3b8'}
+              <rect width={n.w} height={n.h} rx={6} fill={colors.nodeFill}
+                stroke={sel === n.id ? colors.nodeStrokeSel : colors.nodeStroke}
                 strokeWidth={sel === n.id ? 2.5 : 1.5}
                 filter="drop-shadow(0 1px 3px rgba(0,0,0,0.08))" />
               {editing === n.id ? (
@@ -258,11 +293,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
                 </foreignObject>
               ) : (
                 <text x={n.w / 2} y={n.h / 2} textAnchor="middle" dominantBaseline="central"
-                  fontSize={13} fill="#1e293b" fontFamily="system-ui, sans-serif" fontWeight={500}
+                  fontSize={13} fill={colors.textFill} fontFamily="system-ui, sans-serif" fontWeight={500}
                   style={{ pointerEvents: 'none', userSelect: 'none' }}>{n.label || ''}</text>
               )}
               {hoverNode === n.id && (
-                <circle cx={n.w} cy={n.h} r={5} fill="#6366F1" stroke="white" strokeWidth={1.5}
+                <circle cx={n.w} cy={n.h} r={5} fill={colors.resizeFill} stroke={colors.handleFill} strokeWidth={1.5}
                   style={{ cursor: 'nwse-resize' }} onMouseDown={e => onResizeDown(e, n.id)} />
               )}
             </g>
