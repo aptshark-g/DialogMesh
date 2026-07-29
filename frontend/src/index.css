@@ -4,6 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Force text visibility — always readable regardless of theme */
+body {
+  color: #E8E6F0;
+  background: #0C0A0F;
+  font-family: 'Inter', 'Noto Sans SC', sans-serif;
+}
+html.light body {
+  color: #1A1724;
+  background: #FDFCF8;
+}
+
 @layer base {
   :root {
     /* === 暗色模式默认 (Dark Mode as Default) === */
