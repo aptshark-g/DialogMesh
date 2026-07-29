@@ -668,6 +668,8 @@ def _dispatch_p10(args):
         "profile-analyze": cmd_profile_analyze, "memory-compile": cmd_memory_compile_events,
         "context-paradigm": cmd_context_paradigm, "causal-trigger": cmd_causal_trigger,
         "eventbus-wire": cmd_eventbus_wire,
+        "trace-show": cmd_trace_show,
+        "trace-metrics": cmd_trace_metrics,
         "assoc-analyze": cmd_assoc_analyze,
     }
     if sub in m: m[sub](args)

@@ -527,6 +527,21 @@ async def get_session_detail(filename: str):
             return sessions[filename].get("messages", [])
     return []
 
+
+@router.get("/trace/recent")
+async def get_trace_recent(limit: int = 10):
+    """Recent pipeline traces from tracer."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        tracer = getattr(e, '_tracer', None)
+        if tracer:
+            return {"traces": tracer.recent(limit=limit),
+                    "metrics": tracer.metrics(),
+                    "stats": tracer.stats()}
+    except: pass
+    return {"traces": [], "metrics": {}, "stats": {}}
+
 @router.get("/metrics")
 async def get_metrics():
     """Read from engine stats."""

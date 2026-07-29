@@ -220,6 +220,13 @@ class CognitiveRuntimeEngine:
                        self._storage.cold._dir)
         except Exception:
             self._storage = None
+        # Phase 4: PipelineTracer
+        try:
+            from core.agent.event.tracer import PipelineTracer
+            self._tracer = PipelineTracer()
+            logger.info("PipelineTracer ready: %s", self._tracer.stats())
+        except Exception:
+            self._tracer = None
         from core.agent.topic_tree.manager import TopicTreeManager
         self._topic_tree = TopicTreeManager()
         logger.info('EventLog+EventBus+TopicTree ready')
@@ -789,29 +796,38 @@ class CognitiveRuntimeEngine:
         self._on_event_continue(event, pcr_output=pcr_output, parse_result=None, unified_result=None, text=text)
 
     def _publish(self, event_type, payload=None):
-        """Fire-and-forget publish. Priority-scheduled via DeciderScheduler."""
+        """Fire-and-forget publish. Priority-scheduled with tracing."""
         kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
         payload = payload or {}
-        if self._event_bus:
-            try: self._event_bus.publish(kind, payload)
-            except: pass
-        # Phase 2: priority-scheduled dispatch
-        subs = getattr(self, '_event_subscribers', {})
-        if subs:
-            try:
-                from core.agent.event.scheduler import DeciderScheduler, create_scheduled_task
-                sched = getattr(self, '_scheduler', None)
-                if sched is None:
-                    sched = DeciderScheduler()
-                    self._scheduler = sched
-                for name, sub in subs.items():
-                    sched.submit(create_scheduled_task(name, sub.handle, kind, payload))
-                sched.run_batch()
-            except Exception:
-                # Fallback: direct dispatch
-                for name, sub in subs.items():
-                    try: sub.handle(kind, payload)
-                    except: pass
+        tracer = getattr(self, '_tracer', None)
+        start = time.time()
+        success = True
+        try:
+            if self._event_bus:
+                try: self._event_bus.publish(kind, payload)
+                except: pass
+            subs = getattr(self, '_event_subscribers', {})
+            if subs:
+                try:
+                    from core.agent.event.scheduler import DeciderScheduler, create_scheduled_task
+                    sched = getattr(self, '_scheduler', None)
+                    if sched is None:
+                        sched = DeciderScheduler()
+                        self._scheduler = sched
+                    for name, sub in subs.items():
+                        sched.submit(create_scheduled_task(name, sub.handle, kind, payload))
+                    sched.run_batch()
+                except Exception:
+                    for name, sub in subs.items():
+                        try: sub.handle(kind, payload)
+                        except: pass
+        except Exception:
+            success = False
+            raise
+        finally:
+            if tracer:
+                latency = (time.time() - start) * 1000
+                tracer.record("publish", kind, success, latency)
 
     def _on_event_continue(self, event, pcr_output=None, parse_result=None, unified_result=None, text=""):
         """Phase 2 of on_event — V4 Router after PCR."""

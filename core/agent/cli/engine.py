@@ -107,6 +107,18 @@ def start_engine(provider_type: str = None, api_key: str = None,
         _engine._running = True
         _engine._session_active = True
 
+        # Phase 3+4: Wire storage + tracer
+        try:
+            from core.agent.event.storage import StorageLayer
+            if getattr(_engine, '_storage', None) is None:
+                _engine._storage = StorageLayer()
+        except: pass
+        try:
+            from core.agent.event.tracer import PipelineTracer
+            if getattr(_engine, '_tracer', None) is None:
+                _engine._tracer = PipelineTracer()
+        except: pass
+
         # Wire cross-deps
         event_log = loaded.get("event_log")
         event_bus = loaded.get("event_bus")

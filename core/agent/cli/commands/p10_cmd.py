@@ -208,3 +208,20 @@ def cmd_eventbus_wire(args):
     stats = wire_subscribers(e)
     print(json.dumps({"status":"wired","subscribers":stats["subscribers"],
                       "names":stats["names"]}, ensure_ascii=False))
+
+def cmd_trace_show(args):
+    """dm alg trace-show — show recent pipeline traces."""
+    e = get_engine()
+    tracer = getattr(e, '_tracer', None)
+    if not tracer:
+        return print('{"error":"tracer not loaded"}')
+    traces = tracer.recent(limit=getattr(args, 'limit', 10) if hasattr(args, 'limit') else 10)
+    print(json.dumps({"traces": traces, "stats": tracer.stats()}, ensure_ascii=False, default=str))
+
+def cmd_trace_metrics(args):
+    """dm alg trace-metrics — show per-subsystem metrics."""
+    e = get_engine()
+    tracer = getattr(e, '_tracer', None)
+    if not tracer:
+        return print('{"error":"tracer not loaded"}')
+    print(json.dumps(tracer.metrics(), indent=2, ensure_ascii=False, default=str))
