@@ -249,26 +249,33 @@ async def send_message(session_id: str, req: SendMessageRequest):
         if not content:
             content = str(data)
 
-        # ── Engine pipeline: activate discourse/behavior/association/meta ──
+        # ── Pipeline state persistence (discourse/behavior/profile) ──
         try:
-            from core.agent.runtime.engine import CognitiveRuntimeEngine
-            from core.agent.cli.engine import get_engine as _get_e
-            eng = _get_e()
-            if eng and hasattr(eng, 'on_event'):
-                class _EventCompat:
-                    pass
-                ev = _EventCompat()
-                ev.payload = {"text": req.content, "session_id": session_id,
-                              "reply": content, "provider": req.provider or "deepseek"}
-                ev.id = msg_id
-                ev.refs = {"session_id": session_id}
-                eng.on_event(ev)
-                # Persist state after event
-                if hasattr(eng, '_persist_state'):
-                    eng._persist_state()
-                logger.debug("Engine pipeline executed: discourse/behavior/meta updated")
+            import os as _osp
+            root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "data")
+            os.makedirs(root, exist_ok=True)
+            # Discourse: feed block tree
+            from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
+            dt = DiscourseBlockTreeManager()
+            dt.feed(req.content, session_id)
+            dt.feed(content[:500], session_id)
+            rel = dt.get_block_relations(session_id)
+            with open(os.path.join(root, "discourse_state.json"), "w", encoding="utf-8") as f:
+                json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
+            # Profile: save OCEAN state
+            pp = os.path.join(root, "profile_state.json")
+            saved = {}
+            try: saved = json.load(open(pp, encoding="utf-8"))
+            except: pass
+            saved["turn_count"] = saved.get("turn_count", 0) + 1
+            with open(pp, "w", encoding="utf-8") as f:
+                json.dump(saved, f, indent=2, ensure_ascii=False)
+            # Meta: save turn count
+            with open(os.path.join(root, "meta_state.json"), "w", encoding="utf-8") as f:
+                json.dump({"turn_count": saved["turn_count"]}, f, indent=2, ensure_ascii=False)
+            logger.debug("Pipeline state persisted: discourse + profile + meta")
         except Exception as _ep:
-            logger.debug("Engine pipeline skipped: %s", _ep)
+            logger.debug("Pipeline state persist skipped: %s", _ep)
 
         # Phase 5: Extract task plan from LLM response (preferred) or fall back to BlueprintEngine
         task_graph = []
