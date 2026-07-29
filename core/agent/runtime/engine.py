@@ -65,6 +65,24 @@ class PathStats:
     last_triggered_at: float = 0.0
 
 
+
+def _feed_discourse(engine, ctx):
+    """Helper for state machine: feed discourse tree."""
+    text = ctx.get("text", "")
+    sid = ctx.get("session_id", "default")
+    if hasattr(engine, '_discourse_tree') and engine._discourse_tree:
+        engine._discourse_tree.feed(text, sid)
+        return {"blocks": len(engine._discourse_tree.get_block_relations(sid).get("blocks", {}))}
+    return {}
+
+def _record_behavior(engine, ctx):
+    """Helper for state machine: record behavior edge."""
+    bg = getattr(engine, '_behavior_graph', None)
+    if bg and hasattr(bg, 'load'):
+        bg.load()
+        return {"recorded": True}
+    return {}
+
 class CognitiveRuntimeEngine:
     """Orchestrates v4 cognitive modules across Fast/Async/Slow/Deep paths.
 
