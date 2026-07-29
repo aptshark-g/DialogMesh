@@ -80,7 +80,8 @@ function Tile({ icon, label, value, ok, metrics }: TileProps) {
           {metrics.map(([k, v]) => (
             <span
               key={k}
-              className="px-1.5 py-0.5 rounded bg-surface-card-hover text-[11px] text-text-secondary font-mono"
+              className="px-1.5 py-0.5 rounded font-mono text-[11px]"
+              style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)' }}
             >
               {k}: {v}
             </span>
