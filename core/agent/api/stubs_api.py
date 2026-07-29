@@ -347,14 +347,14 @@ async def get_providers_tokens():
 async def get_session_detail(filename: str):
     """Return session detail data from v3_sessions.json."""
     import json, os
-    from core.agent.cli.engine import PROJECT_ROOT
-    sess_path = os.path.join(PROJECT_ROOT, "data", "v3_sessions.json")
+    # stubs_api.py is at <root>/core/agent/api/stubs_api.py — go up 4 levels
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    sess_path = os.path.join(root, "data", "v3_sessions.json")
     if os.path.exists(sess_path):
         with open(sess_path, encoding="utf-8") as f:
             sessions = json.load(f)
         if filename in sessions:
-            msgs = sessions[filename].get("messages", [])
-            return msgs  # V6SessionData = array of messages
+            return sessions[filename].get("messages", [])
     return []
 
 @router.get("/metrics")
