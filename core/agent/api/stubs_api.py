@@ -75,8 +75,21 @@ async def get_trace():
 # ═══════════════════════════════════════════════════════
 @router.get("/abc")
 async def get_abc():
+    """ABC reasoning chains — read from engine EventLog or disk."""
     import json, os
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    # Try engine event log for real chains
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        el = getattr(e, '_event_log', None)
+        if el and hasattr(el, 'get_recent_events'):
+            events = el.get_recent_events(10)
+            chains = [{"id": ev.id, "kind": ev.kind, "ts": getattr(ev,'timestamp',0)} for ev in events]
+            if chains:
+                return {"rules": len(chains), "recent_rules": [c["kind"] for c in chains[-5:]]}
+    except: pass
+    # Fallback: disk file
     rf = os.path.join(root, "data", "neuro_symbolic_rules.json")
     rules_data = json.load(open(rf, encoding="utf-8")) if os.path.exists(rf) else {"rules": []}
     if isinstance(rules_data, list):
@@ -87,7 +100,30 @@ async def get_abc():
 
 @router.get("/mind")
 async def get_mind():
-    return {"dimensions": 8, "modules_available": ["assoc","pcr","intent","discourse","blueprint","decider","meta","behavior"]}
+    """Engine-level mental state snapshot."""
+    result = {"dimensions": 8, "modules_available": ["assoc","pcr","intent","discourse","blueprint","decider","meta","behavior"]}
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        if e:
+            # Active states from engine
+            sm = getattr(e, '_state_machine', None)
+            if sm:
+                snap = sm.snapshot() if hasattr(sm, 'snapshot') else None
+                if snap:
+                    result["current_phase"] = getattr(snap, 'phase', 'unknown').value if hasattr(snap.phase, 'value') else str(snap.phase)
+                    result["turn_count"] = getattr(snap, 'turn_count', 0)
+            # Scheduler stats
+            sched = getattr(e, '_scheduler', None)
+            if sched and hasattr(sched, 'stats'):
+                result["scheduler"] = sched.stats()
+            # Recent traces
+            tracer = getattr(e, '_tracer', None)
+            if tracer and hasattr(tracer, 'recent'):
+                recent = tracer.recent(3)
+                result["recent_traces"] = len(recent)
+    except: pass
+    return result
 
 @router.get("/mind/full")
 async def get_mind_full():
