@@ -11,7 +11,6 @@ import {
   Handle,
   Position,
   addEdge,
-  Background,
   Controls,
   type Connection,
   type Node,
@@ -19,6 +18,7 @@ import {
   type NodeProps,
   type NodeMouseHandler,
 } from '@reactflow/core';
+import { Background } from '@reactflow/background';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/stores/themeStore';
 import '@reactflow/core/dist/style.css';
