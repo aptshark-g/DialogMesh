@@ -225,3 +225,54 @@ def cmd_trace_metrics(args):
     if not tracer:
         return print('{"error":"tracer not loaded"}')
     print(json.dumps(tracer.metrics(), indent=2, ensure_ascii=False, default=str))
+
+
+# ── Gap closure CLI ──
+
+def cmd_cli_version(args):
+    """dm alg cli-version — show CLI ABI compatibility info."""
+    from core.agent.event.closure import get_cli_abi, check_compatibility
+    abi = get_cli_abi()
+    print(json.dumps({"abi": abi, "compat": "stable"}, ensure_ascii=False))
+
+def cmd_hotreload(args):
+    """dm alg hotreload <subsystem> — hot-reload a subsystem without restart."""
+    e = get_engine()
+    hr = getattr(e, '_hot_reloader', None)
+    if not hr:
+        return print('{"error":"hot_reloader not loaded"}')
+    name = " ".join(args.subsystem) if hasattr(args, 'subsystem') else ""
+    result = hr.reload(e, name) if name else hr.list_reloadable(e)
+    print(json.dumps(result, ensure_ascii=False, default=str))
+
+def cmd_rate_guard(args):
+    """dm alg rate-guard — show rate limiter stats."""
+    e = get_engine()
+    rg = getattr(e, '_rate_guard', None)
+    if not rg:
+        return print('{"error":"rate_guard not loaded"}')
+    print(json.dumps(rg.stats(), indent=2, ensure_ascii=False))
+
+def cmd_capability(args):
+    """dm alg capability <subsystem> — show capability permissions."""
+    e = get_engine()
+    cg = getattr(e, '_cap_guard', None)
+    if not cg:
+        return print('{"error":"capability guard not loaded"}')
+    name = " ".join(args.subsystem) if hasattr(args, 'subsystem') and args.subsystem else ""
+    if name:
+        p = cg.profile(name)
+        result = {"name": name, "allowed": [c.value for c in p.allowed]} if p else {"error": "not found"}
+    else:
+        result = cg.all_profiles()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+def cmd_subprocess_run(args):
+    """dm alg subprocess-run <module> <func> [args...] — run in isolated subprocess."""
+    from core.agent.event.closure import SubprocessRunner
+    runner = SubprocessRunner()
+    mod = args.module if hasattr(args, 'module') else ""
+    fn = args.func if hasattr(args, 'func') else ""
+    extra = args.args if hasattr(args, 'args') else []
+    result = runner.run_isolated("cli", mod, fn, tuple(extra))
+    print(json.dumps(result, ensure_ascii=False, default=str))

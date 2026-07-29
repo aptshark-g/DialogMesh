@@ -670,6 +670,11 @@ def _dispatch_p10(args):
         "eventbus-wire": cmd_eventbus_wire,
         "trace-show": cmd_trace_show,
         "trace-metrics": cmd_trace_metrics,
+        "cli-version": cmd_cli_version,
+        "hotreload": cmd_hotreload,
+        "rate-guard": cmd_rate_guard,
+        "capability": cmd_capability,
+        "subprocess-run": cmd_subprocess_run,
         "assoc-analyze": cmd_assoc_analyze,
     }
     if sub in m: m[sub](args)
@@ -971,6 +976,14 @@ def main():
     cp.add_argument("text", nargs="*", default=[""]); cp.add_argument("--max-tokens", type=int, default=2000)
     als.add_parser("causal-trigger", help="dm alg causal-trigger — CausalPlanner.process_chain")
     aa = als.add_parser("eventbus-wire", help="dm alg eventbus-wire — activate EventBus subscribers")
+    aa = als.add_parser("cli-version", help="dm alg cli-version — show CLI ABI")
+    hr = als.add_parser("hotreload", help="dm alg hotreload <name>")
+    hr.add_argument("subsystem", nargs="*", default=[""])
+    als.add_parser("rate-guard", help="dm alg rate-guard — rate limiter stats")
+    cp = als.add_parser("capability", help="dm alg capability [name]")
+    cp.add_argument("subsystem", nargs="*", default=[""])
+    sr = als.add_parser("subprocess-run", help="dm alg subprocess-run <mod> <func> [args]")
+    sr.add_argument("module"); sr.add_argument("func"); sr.add_argument("args", nargs="*", default=[])
     aa = als.add_parser("assoc-analyze", help="dm alg assoc-analyze <text> — L1 modifier extraction")
     aa.add_argument("text", nargs="*", default=[""])
 

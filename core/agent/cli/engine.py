@@ -119,6 +119,14 @@ def start_engine(provider_type: str = None, api_key: str = None,
                 _engine._tracer = PipelineTracer()
         except: pass
 
+        # Gap closure: RateGuard + CapabilityGuard + HotReloader
+        try:
+            from core.agent.event.closure import RateGuard, CapabilityGuard, HotReloader
+            _engine._rate_guard = RateGuard()
+            _engine._cap_guard = CapabilityGuard()
+            _engine._hot_reloader = HotReloader()
+        except: pass
+
         # Wire cross-deps
         event_log = loaded.get("event_log")
         event_bus = loaded.get("event_bus")
