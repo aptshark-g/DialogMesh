@@ -123,7 +123,7 @@ export function SettingsPage() {
       {toast && (
         <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />
       )}
-      <div className="h-full flex flex-col max-w-5xl mx-auto">
+      <div className="min-h-full flex flex-col max-w-5xl mx-auto">
         <div className="mb-4">
           <h1 className="text-2xl font-bold text-text-primary">设置</h1>
           <p className="text-sm text-text-secondary mt-1">

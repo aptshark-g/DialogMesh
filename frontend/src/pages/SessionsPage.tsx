@@ -69,7 +69,7 @@ export function SessionsPage() {
   );
 
   return (
-    <div className="h-full flex flex-col max-w-5xl mx-auto">
+    <div className="min-h-full flex flex-col max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
