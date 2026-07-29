@@ -689,7 +689,7 @@ class CognitiveRuntimeEngine:
         # ---- EventLog persistence ----
         if self._event_log is not None:
             try:
-                self._event_log.record_event(event, trace_id=event.id)
+                self._event_log.record_event(event)
                 logger.debug("Event persisted to EventLog: %s", event.id)
             except Exception as e:
                 logger.warning("EventLog record failed: %s", e)
@@ -770,7 +770,7 @@ class CognitiveRuntimeEngine:
                     def prompt_style(self): return self.r.prompt_style
                 pcr_output = _PCRCompat(pcr_result)
                 self._last_pcr = pcr_output
-                self._publish(ET.PCR_COMPUTED.value, {"expectation": pcr_result.zone})
+                self._publish("pcr_computed", {"expectation": pcr_result.zone})
                 if self._decider:
                     from core.agent.state.global_decider import Command, EventType
                     self._decider.evolve(self._decider.decide(
@@ -796,7 +796,7 @@ class CognitiveRuntimeEngine:
             try:
                 result, route = self._router_v4.route(text, pcr_output=pcr_output)
                 logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
-                self._publish(ET.ROUTE_GENERATED.value, {"zone": route.zone, "strategy": route.strategy})
+                self._publish("route_generated", {"zone": route.zone, "strategy": route.strategy})
                 if self._decider:
                     from core.agent.state.global_decider import Command
                     self._decider.evolve(self._decider.decide(
@@ -825,7 +825,7 @@ class CognitiveRuntimeEngine:
                 self._last_intent_context = intent_context
                 self._last_parse_result = parse_result
                 cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
-                self._publish(ET.INTENT_PARSED.value, {"category": cat})
+                self._publish("intent_parsed", {"category": cat})
                 if self._decider and parse_result:
                     from core.agent.state.global_decider import Command
                     cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
@@ -871,7 +871,7 @@ class CognitiveRuntimeEngine:
                     finally:
                         loop.close()
                     self._last_plan_result = plan_result
-                    self._publish(ET.PLAN_GENERATED.value)
+                    self._publish("plan_generated")
                     if self._decider and plan_result:
                         from core.agent.state.global_decider import Command
                         tg = getattr(plan_result, 'task_graph', None)

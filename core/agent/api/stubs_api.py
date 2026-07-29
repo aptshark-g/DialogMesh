@@ -497,10 +497,9 @@ async def get_meta_stats():
             }
     except Exception:
         pass
-    import json, os
-    turn_count = 0
-    try:
-        if os.path.exists("data/v3_sessions.json"):
+    return {"queue_size": 0, "pending": 0, "reviewed": 0, "decisions_total": 0}
+
+
 @router.get("/meta/queue")
 async def get_meta_queue():
     return {"queue": [], "pending": 0}
