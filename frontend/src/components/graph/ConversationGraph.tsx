@@ -270,6 +270,11 @@ export function ConversationGraph({
 
   return (
     <div className={cn('w-full h-full rounded-xl overflow-hidden border border-subtle relative', className)}>
+      {nodes.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-text-muted text-sm">
+          {graphNodes.length === 0 ? '📭 暂无图数据 — 开始聊天后自动生成' : '⏳ 加载中...'}
+        </div>
+      ) : (
       <ReactFlow
         nodes={nodes.map((n) =>
           editingNode === n.id
@@ -332,6 +337,7 @@ export function ConversationGraph({
           <button onClick={handleEditSubmit} className="px-3 py-1 bg-primary text-white rounded text-xs font-medium hover:bg-primary-dark">确认</button>
           <button onClick={() => setEditingNode(null)} className="px-2 py-1 text-text-muted text-xs hover:text-text-primary">取消</button>
         </div>
+      )}
       )}
     </div>
   );
