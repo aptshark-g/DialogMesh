@@ -125,15 +125,10 @@ export function SessionsPage() {
       />
 
       {/* 会话列表 */}
-      <div className="bg-surface-card rounded-xl border border-subtle shadow-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-subtle flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-text-primary">
-            会话列表
-            {!loading && (
-              <span className="ml-2 text-xs font-normal text-text-muted">
-                共 {sessions.length} 个
-              </span>
-            )}
+      <div className="bg-surface-card rounded-xl border border-subtle shadow-card overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div className="px-5 py-4 border-b border-subtle flex items-center justify-between shrink-0">
+          <h2 className="text-sm font-semibold text-text-primary">会话列表
+            {!loading && (<span className="ml-2 text-xs font-normal text-text-muted">共 {sessions.length} 个</span>)}
           </h2>
           <button
             type="button"
@@ -168,7 +163,7 @@ export function SessionsPage() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-border-subtle">
+          <div className="divide-y divide-border-subtle overflow-y-auto flex-1 min-h-0">
             {sessions.map((session, idx) => {
               const active = selected === session.name;
               return (
