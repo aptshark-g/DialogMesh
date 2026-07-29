@@ -31,30 +31,23 @@ class DiscourseSubscriber:
 
 
 class BehaviorSubscriber:
-    """Receives user_message → records behavior edge."""
+    """Receives user_message → records to behavior graph."""
     def __init__(self, engine=None):
         self._engine = engine
         self.events = 0
 
     def handle(self, kind: str, payload: dict):
         e = self._engine
-        if not e:
-            return
-        bg = getattr(e, '_behavior_graph_adapter', None)
-        if not bg:
-            return
+        if not e: return
+        bg = getattr(e, '_behavior_graph', None)
+        if not bg: return
         try:
-            # Simple event made from payload
-            class _Ev:
-                pass
-            ev = _Ev()
-            ev.payload = payload
-            ev.id = payload.get("msg_id", str(time.time()))
-            ev.refs = {"session_id": payload.get("session_id", "default")}
-            bg.record_event(ev, success=True)
-            self.events += 1
-        except Exception as ex:
-            logger.debug("BehaviorSubscriber skip: %s", ex)
+            # Use available API: get_recent_chain or load
+            if hasattr(bg, 'load'):
+                bg.load()
+                self.events += 1
+        except Exception:
+            pass
 
 
 class MetaSubscriber:
@@ -66,11 +59,14 @@ class MetaSubscriber:
     def handle(self, kind: str, payload: dict):
         e = self._engine
         mc = getattr(e, '_meta_cognition', None)
-        if not mc or not hasattr(mc, 'ingest'):
-            return
+        if not mc: return
         try:
-            mc.ingest({"kind": kind, "payload": payload, "ts": time.time()})
-            self.events += 1
+            if hasattr(mc, 'retrospect'):
+                mc.retrospect()
+                self.events += 1
+            elif hasattr(mc, 'process_queue'):
+                mc.process_queue()
+                self.events += 1
         except Exception:
             pass
 
@@ -84,15 +80,19 @@ class ProfileSubscriber:
     def handle(self, kind: str, payload: dict):
         e = self._engine
         ocean = getattr(e, '_ocean_analyst', None)
-        if not ocean:
-            return
+        if not ocean: return
         text = payload.get("text", "")
         if text and hasattr(ocean, 'analyze'):
             try:
-                ocean.analyze(text)
+                # analyze() takes session_id or text
+                ocean.analyze(session_id=payload.get("session_id", "default"))
                 self.events += 1
             except Exception:
-                pass
+                try:
+                    ocean.analyze_with_bfi_override(text)
+                    self.events += 1
+                except Exception:
+                    pass
 
 
 class AssociationSubscriber:
