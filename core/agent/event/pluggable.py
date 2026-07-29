@@ -131,6 +131,16 @@ class ChromaBridge:
     def count(self) -> int:
         return self._collection.count() if self._collection else 0
 
+    def close(self):
+        """Close ChromaDB client to release file locks."""
+        if self._client:
+            try:
+                self._client.reset()
+            except Exception:
+                pass
+            self._client = None
+            self._collection = None
+
 
 # ═══════════════════════════════════════════════════════════
 #  OpenTelemetry bridge (optional)
