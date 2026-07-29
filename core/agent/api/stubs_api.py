@@ -40,15 +40,20 @@ async def get_profile():
             if "dims" in saved: dims = saved["dims"]
             turn_count = saved.get("turn_count", 0)
         except: pass
-    # Try engine for richer data
+    # Engine dims override disk only if disk dims are defaults
     try:
         from core.agent.cli.engine import get_engine
         e = get_engine()
-        ocean = getattr(e, '_ocean_analyst', None)
-        if ocean and hasattr(ocean, 'profile') and hasattr(ocean.profile, 'dims'):
-            dims = {k: float(v) for k, v in ocean.profile.dims.items()}
         tc = getattr(e, '_turn_counter', turn_count)
         if tc > turn_count: turn_count = tc
+        # Only use engine dims if disk hasn't changed from defaults
+        all_default = all(abs(v - 0.5) < 0.01 for v in dims.values())
+        if all_default:
+            ocean = getattr(e, '_ocean_analyst', None)
+            if ocean and hasattr(ocean, 'profile') and hasattr(ocean.profile, 'dims'):
+                edims = {k: float(v) for k, v in ocean.profile.dims.items()}
+                if any(abs(v - 0.5) > 0.01 for v in edims.values()):
+                    dims = edims
     except: pass
     return {
         "oceAN_dims": dims,
