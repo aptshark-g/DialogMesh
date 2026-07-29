@@ -11,7 +11,6 @@ import {
   Handle,
   Position,
   addEdge,
-  Controls,
   type Connection,
   type Node,
   type Edge,
@@ -297,7 +296,6 @@ export function ConversationGraph({
         multiSelectionKeyCode="Shift"
       >
         <Background color={isDark ? '#2A2635' : '#E5E7EB'} gap={20} />
-        <Controls className="[&>button]:!bg-surface-card [&>button]:!border-subtle [&>button]:!text-text-secondary" />
       </ReactFlow>
       )}
 
