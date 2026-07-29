@@ -140,11 +140,11 @@ async def get_graph():
                 sessions = json.load(open(sp2, encoding="utf-8"))
                 for sid, s in list(sessions.items())[:20]:
                     msgs = s.get("messages", [])
-                    # Use last user message as label
+                    # Use first meaningful message as label
                     label = sid[:8]
-                    for m in reversed(msgs):
-                        if m.get("role") == "user":
-                            label = m.get("content", sid[:8])[:30]
+                    for m in msgs:
+                        if m.get("role") == "user" and m.get("content", "").strip():
+                            label = m.get("content", "")[:40]
                             break
                     nodes.append({
                         "id": sid, "label": label, "type": "session",

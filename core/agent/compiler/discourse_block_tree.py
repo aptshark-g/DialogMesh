@@ -766,7 +766,7 @@ class DiscourseBlockTreeManager:
                     prev_edus = tree.blocks[last_bid].edus
                     if prev_edus:
                         cohesion = self._quantizer.compute(prev_edus[-1], edu)
-                        if cohesion.decision == "fork":
+                        if cohesion.decision in ("fork", "gray_zone"):
                             # Fork from last turn's block
                             parent = tree.blocks[last_bid].parent if last_bid in tree.blocks else tree.root_id
                             block = self._new_block([edu], tree, parent)
@@ -793,7 +793,7 @@ class DiscourseBlockTreeManager:
             else:
                 # Fork: new block
                 cohesion = self._quantizer.compute(edus[i - 1], edu)
-                if cohesion.decision == "fork":
+                if cohesion.decision in ("fork", "gray_zone"):
                     parent = tree.blocks[last_bid].parent if last_bid and last_bid in tree.blocks else tree.root_id
                     block = self._new_block([edu], tree, parent)
                     last_bid = block.block_id
