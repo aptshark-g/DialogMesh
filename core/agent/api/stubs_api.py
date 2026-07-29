@@ -353,21 +353,47 @@ async def get_subgraph_by_perspective(perspective: str):
 # ═══════════════════════════════════════════════════════
 @router.get("/persistence")
 async def get_persistence():
+    """Read engine state from disk files — reflects real pipeline state."""
     import json, os
-    from core.agent.cli.engine import PROJECT_ROOT
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    data_dir = os.path.join(root, "data")
     tc = 0
     try:
-        sp = os.path.join(PROJECT_ROOT, "data", "v3_sessions.json")
+        sp = os.path.join(data_dir, "v3_sessions.json")
         if os.path.exists(sp):
             sessions = json.load(open(sp, encoding="utf-8"))
             tc = sum(len(s.get("messages",[])) for s in sessions.values())
     except: pass
-    return {
+    result = {
         "annotation_store": {"status": "running", "records": tc},
         "unified_store": {"status": "running", "records": tc},
-        "oceAN_saved": True,
-        "rules_saved": True,
+        "oceAN_saved": False, "rules_saved": False,
+        "discourse_blocks": 0, "behavior_edges": 0,
+        "profile_updated": False,
     }
+    # Read discourse state
+    dp = os.path.join(data_dir, "discourse_state.json")
+    if os.path.exists(dp):
+        try:
+            ds = json.load(open(dp, encoding="utf-8"))
+            result["discourse_blocks"] = len(ds.get("blocks", {}))
+        except: pass
+    # Read behavior state
+    bp = os.path.join(data_dir, "behavior_state.json")
+    if os.path.exists(bp):
+        try:
+            bs = json.load(open(bp, encoding="utf-8"))
+            result["behavior_edges"] = bs.get("edges", 0)
+        except: pass
+    # Read profile state
+    pp = os.path.join(data_dir, "profile_state.json")
+    if os.path.exists(pp):
+        try:
+            ps = json.load(open(pp, encoding="utf-8"))
+            result["oceAN_saved"] = "dims" in ps
+            result["profile_updated"] = ps.get("turn_count", 0) > 0
+        except: pass
+    return result
 
 @router.get("/persistence/graphs")
 async def get_persistence_graphs():
