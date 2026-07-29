@@ -602,6 +602,16 @@ class CognitiveRuntimeEngine:
         # 3. Profile OCEAN dims
         if hasattr(self, '_ocean_analyst') and self._ocean_analyst:
             try:
+                # Run OCEAN analysis on recent conversation to update dims
+                recent_text = ""
+                if hasattr(self, '_event_buffer'):
+                    for ev in self._event_buffer[-5:]:
+                        if hasattr(ev, 'payload') and ev.payload.get('text'):
+                            recent_text += ev.payload.get('text', '')[:200] + " "
+                if recent_text and hasattr(self._ocean_analyst, 'analyze'):
+                    try:
+                        self._ocean_analyst.analyze(recent_text)
+                    except: pass
                 dims = {}
                 if hasattr(self._ocean_analyst, 'profile') and hasattr(self._ocean_analyst.profile, 'dims'):
                     dims = dict(self._ocean_analyst.profile.dims)
