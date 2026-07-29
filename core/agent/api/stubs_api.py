@@ -28,36 +28,23 @@ def _get_engine():
 # ═══════════════════════════════════════════════════════
 @router.get("/profile")
 async def get_profile():
-    # Read actual session count for turn_count
-    import json, os
-    turn_count = 0
+    """Read profile from engine OceanProfileAnalyst + disk fallback."""
     try:
-        if os.path.exists("data/v3_sessions.json"):
-            with open("data/v3_sessions.json") as f:
-                sessions = json.load(f)
-            turn_count = sum(len(s.get("messages", [])) for s in sessions.values())
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        ocean = getattr(e, '_ocean_analyst', None)
+        if ocean and hasattr(ocean, 'profile'):
+            dims = getattr(ocean.profile, 'dims', {})
+            return {
+                "oceAN_dims": {k: float(v) for k, v in dims.items()} if dims else {
+                    "O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
+                "mbti": getattr(ocean, 'to_mbti', lambda: "INFJ")(),
+                "turn_count": getattr(e, '_turn_counter', 0),
+                "top_dimensions": sorted(dims.keys())[:3] if dims else ["O", "N", "C"],
+            }
     except Exception:
         pass
-    # Base profile + dynamic turn count
-    return {
-        "oceAN_dims": {"O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
-        "oceAN_labels": {
-            "O": "开放性 (Openness)", "C": "尽责性 (Conscientiousness)",
-            "E": "外向性 (Extraversion)", "A": "宜人性 (Agreeableness)",
-            "N": "神经质 (Neuroticism)", "NC": "认知需求 (Need for Cognition)",
-            "CS": "沟通风格 (Communication Style)", "DK": "领域知识 (Domain Knowledge)",
-            "MS": "元认知 (Meta-Cognition)", "CL": "好奇心 (Curiosity Level)"
-        },
-        "mbti": "INFJ",
-        "turn_count": turn_count,
-        "top_dimensions": ["O", "N", "C"],
-        "bfi_history": turn_count // 2 if turn_count > 0 else 0,
-        "bfi_latest": {"C": 4.5},
-    }
 
-# ═══════════════════════════════════════════════════════
-# Trace — V6TraceResponse
-# ═══════════════════════════════════════════════════════
 @router.get("/trace")
 async def get_trace():
     return {
@@ -261,6 +248,23 @@ async def get_causal():
 # ═══════════════════════════════════════════════════════
 @router.get("/behavior")
 async def get_behavior():
+    """Read from engine's CausalPlanner or BehaviorGraphAdapter."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        cp = getattr(e, '_causal_planner', None)
+        if cp and hasattr(cp, 'get_recent_chain'):
+            recent = cp.get_recent_chain(20)
+            return {"edge_count": len(recent), "patterns": [], "predictions": [],
+                    "recent_edges": [{"action": getattr(s, 'event_type', str(s)),
+                                     "ts": getattr(s, 'timestamp', 0)} for s in recent[:10]]}
+        bg = getattr(e, '_behavior_graph_adapter', None)
+        if bg:
+            chain = bg.get_recent_chain(20)
+            return {"edge_count": len(chain.steps) if hasattr(chain, 'steps') else 0,
+                    "patterns": [], "predictions": []}
+    except Exception:
+        pass
     return {"edge_count": 0, "patterns": [], "predictions": []}
 
 @router.get("/behavior/patterns")
@@ -459,20 +463,44 @@ async def get_session_detail(filename: str):
 
 @router.get("/metrics")
 async def get_metrics():
+    """Read from engine stats."""
+    try:
+        from core.agent.cli.engine import get_engine
+        import time
+        e = get_engine()
+        reg = getattr(e, '_registry', None)
+        return {
+            "engine_uptime": int(time.time() - getattr(e, '_start_time', time.time())),
+            "subsystems_loaded": len(getattr(reg, '_instances', {})) if reg else 32,
+            "subsystems_total": len(getattr(reg, '_defs', {})) if reg else 32,
+            "total_turn_count": getattr(e, '_turn_counter', 0),
+        }
+    except Exception:
+        pass
     return {"engine_uptime": 0, "subsystems_loaded": 32, "total_turn_count": 0}
 
 @router.get("/meta/stats")
 async def get_meta_stats():
+    """Read from engine's meta_cognition + Decider."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        mc = getattr(e, '_meta_cognition', None)
+        decider = getattr(e, '_decider', None)
+        if mc or decider:
+            return {
+                "queue_size": getattr(decider, '_tick', 0) if decider else 0,
+                "pending": 0, "reviewed": getattr(e, '_turn_counter', 0),
+                "decisions_total": getattr(decider, '_tick', 0) if decider else 0,
+                "self_audit": {"accuracy": 0.85,
+                              "by_verdict": {"pass": getattr(e, '_turn_counter', 0)}}
+            }
+    except Exception:
+        pass
     import json, os
     turn_count = 0
     try:
         if os.path.exists("data/v3_sessions.json"):
-            sessions = json.load(open("data/v3_sessions.json", encoding="utf-8"))
-            turn_count = sum(len(s.get("messages",[])) for s in sessions.values())
-    except: pass
-    return {"queue_size": turn_count//2, "pending": 0, "reviewed": turn_count,
-            "decisions_total": turn_count, "self_audit": {"accuracy": 0.85, "by_verdict": {"pass": turn_count}}}
-
 @router.get("/meta/queue")
 async def get_meta_queue():
     return {"queue": [], "pending": 0}
