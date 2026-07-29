@@ -94,16 +94,65 @@ async def get_mind_full():
 # ═══════════════════════════════════════════════════════
 @router.get("/graph")
 async def get_graph():
+    """Return discourse block tree as graph nodes + edges."""
     import json, os
-    nodes, edges, sub = [], [], []
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    nodes, edges = [], []
+    # Read discourse blocks from most active session
     try:
-        if os.path.exists("data/v3_sessions.json"):
-            sessions = json.load(open("data/v3_sessions.json", encoding="utf-8"))
+        sp = os.path.join(root, "data", "v3_sessions.json")
+        if os.path.exists(sp):
+            sessions = json.load(open(sp, encoding="utf-8"))
+            # Find session with most messages
+            best_sid, best_count = None, 0
             for sid, s in sessions.items():
-                nodes.append({"id": sid, "label": f"Session {sid[:8]}", "type": "session", "size": len(s.get("messages",[]))})
-        sub = [n["id"] for n in nodes[:5]]
+                c = len(s.get("messages", []))
+                if c > best_count:
+                    best_sid, best_count = sid, c
+            # Build graph from that session's blocks
+            if best_sid:
+                # Try reading task_graph for that session
+                tgp = os.path.join(root, "data", "task_graphs", f"{best_sid}.json")
+                if os.path.exists(tgp):
+                    tg = json.load(open(tgp, encoding="utf-8"))
+                    for n in tg.get("nodes", []):
+                        nodes.append({
+                            "id": n.get("id", n.get("name", "?")),
+                            "label": n.get("name", n.get("label", "?"))[:40],
+                            "type": "task",
+                            "status": n.get("status", "pending"),
+                            "size": len(n.get("desc", "")) if n.get("desc") else 1,
+                        })
+                    for e in tg.get("edges", []):
+                        edges.append({
+                            "id": f"{e.get('from','')}→{e.get('to','')}",
+                            "source": e.get("from", ""),
+                            "target": e.get("to", ""),
+                            "type": "dependency",
+                        })
     except: pass
-    return {"nodes": nodes, "edges": edges, "subgraph_nodes": sub}
+
+    # Fallback: show sessions if task_graph too small
+    if len(nodes) < 3:
+        try:
+            sp2 = os.path.join(root, "data", "v3_sessions.json")
+            if os.path.exists(sp2):
+                sessions = json.load(open(sp2, encoding="utf-8"))
+                for sid, s in list(sessions.items())[:20]:
+                    msgs = s.get("messages", [])
+                    # Use last user message as label
+                    label = sid[:8]
+                    for m in reversed(msgs):
+                        if m.get("role") == "user":
+                            label = m.get("content", sid[:8])[:30]
+                            break
+                    nodes.append({
+                        "id": sid, "label": label, "type": "session",
+                        "size": len(msgs),
+                    })
+        except: pass
+
+    return {"nodes": nodes, "edges": edges, "subgraph_nodes": [n["id"] for n in nodes[:8]]}
 
 # ═══════════════════════════════════════════════════════
 # Discourse — V6DiscourseTreeResponse

@@ -1,8 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+/**
+ * ConversationGraph — ReactFlow-based interactive graph editor.
+ * Replaces react-force-graph-2d (read-only) with full editing capability.
+ * Reuses TaskFlow's node/edge patterns for consistency.
+ */
+import { useCallback, useMemo, useState } from 'react';
+import {
+  ReactFlow,
+  useNodesState,
+  useEdgesState,
+  Handle,
+  Position,
+  addEdge,
+  Background,
+  Controls,
+  type Connection,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from '@reactflow/core';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/stores/themeStore';
+import '@reactflow/core/dist/style.css';
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import { getIntentColor } from '@/types/graph';
-import ForceGraph2D from 'react-force-graph-2d';
 
 export interface ConversationGraphProps {
   nodes: GraphNode[];
@@ -17,308 +36,157 @@ export interface ConversationGraphProps {
   className?: string;
 }
 
-interface GraphData {
-  nodes: Array<{
-    id: string;
-    label: string;
-    type: string;
-    intent: string;
-    val: number;
-    color: string;
-    x?: number;
-    y?: number;
-  }>;
-  links: Array<{
-    source: string;
-    target: string;
-    color: string;
-  }>;
+/* ─── Node Type Registry ──────────────────────────────────────── */
+
+const HANDLE_STYLE: React.CSSProperties = {
+  width: 8, height: 8, background: '#6366f1', border: 'none', borderRadius: 4,
+};
+
+function SessionNode({ data }: NodeProps) {
+  const size = (data?.size as number) || 1;
+  return (
+    <div className={cn(
+      'rounded-xl border-2 px-4 py-3 min-w-[120px] max-w-[200px] shadow-lg transition-all',
+      size > 5 ? 'border-primary bg-surface-card-active' : 'border-subtle bg-surface-card',
+    )}>
+      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
+      <div className="text-xs font-semibold text-text-primary truncate">
+        {data?.label as string || '?'}
+      </div>
+      <div className="text-[10px] text-text-muted mt-1">
+        {size} 条消息
+      </div>
+      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
+    </div>
+  );
 }
 
+function TaskNode({ data }: NodeProps) {
+  const status = (data?.status as string) || 'pending';
+  const colorMap: Record<string, string> = {
+    pending: 'border-status-pending', running: 'border-primary',
+    completed: 'border-status-success', failed: 'border-status-error',
+  };
+  return (
+    <div className={cn(
+      'rounded-lg border-2 px-4 py-2.5 min-w-[110px] max-w-[200px] shadow-md transition-all',
+      colorMap[status] || 'border-subtle',
+      'bg-surface-card',
+    )}>
+      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
+      <div className="text-xs font-medium text-text-primary truncate">
+        {data?.label as string || '?'}
+      </div>
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className={cn('w-2 h-2 rounded-full', colorMap[status]?.replace('border-', 'bg-') || 'bg-text-muted')} />
+        <span className="text-[10px] text-text-muted">{status}</span>
+      </div>
+      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
+    </div>
+  );
+}
+
+function FallbackNode({ data }: NodeProps) {
+  return (
+    <div className="rounded-lg border border-subtle px-3 py-2 min-w-[80px] bg-surface-card shadow-sm">
+      <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
+      <div className="text-xs text-text-muted truncate">{data?.label as string || '?'}</div>
+      <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
+    </div>
+  );
+}
+
+const CUSTOM_NODE_TYPES = {
+  session: SessionNode,
+  task: TaskNode,
+  concept: FallbackNode,
+  default: FallbackNode,
+} as const;
+
+/* ─── Main Component ──────────────────────────────────────────── */
+
 export function ConversationGraph({
-  nodes,
-  edges,
+  nodes: graphNodes,
+  edges: graphEdges,
   searchQuery,
   activeFilters,
   selectedNodeId,
   onNodeClick,
   onEdgeClick,
-  zoomLevel: _zoomLevel,
-  onZoomChange,
   className,
 }: ConversationGraphProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
-  // Observe container size
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        setDimensions({ width, height });
-      }
-    });
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  // Build filtered graph data
-  const graphData = useCallback((): GraphData => {
-    const query = searchQuery.trim().toLowerCase();
-    const hasActiveFilters = activeFilters.length > 0;
-
-    const filteredNodes = nodes.filter((node) => {
-      const matchesSearch =
-        !query ||
-        node.label?.toLowerCase().includes(query) ||
-        node.id.toLowerCase().includes(query);
-      const matchesFilter =
-        !hasActiveFilters || activeFilters.includes(node.intent || 'UNKNOWN');
-      return matchesSearch && matchesFilter;
-    });
-
-    const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
-
-    const filteredEdges = edges.filter(
-      (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
-    );
-
-    const graphNodes = filteredNodes.map((node) => {
-      const intentColor = getIntentColor(node.intent || 'UNKNOWN');
-      const isSelected = node.id === selectedNodeId;
-      const isSearchMatch = query && node.label?.toLowerCase().includes(query);
-
-      return {
-        id: node.id,
-        label: node.label || node.id,
-        type: node.type || 'unknown',
-        intent: node.intent || 'UNKNOWN',
-        val: node.val ?? (node.type === 'cluster' ? 8 : 4),
-        color: intentColor.hex,
-        x: node.x,
-        y: node.y,
-        isSelected,
-        isSearchMatch,
-      };
-    });
-
-    const graphLinks = filteredEdges.map((edge) => ({
-      source: edge.source,
-      target: edge.target,
-      color: edge.color || '#3A3548',
-    }));
-
-    return { nodes: graphNodes, links: graphLinks };
-  }, [nodes, edges, searchQuery, activeFilters, selectedNodeId]);
-
-  const data = graphData();
-
-  // Handle node canvas rendering
-  const nodeCanvasObject = useCallback(
-    (
-      node: {
-        id: string;
-        label: string;
-        type: string;
-        intent: string;
-        val: number;
-        color: string;
-        x?: number;
-        y?: number;
-        isSelected?: boolean;
-        isSearchMatch?: boolean;
-      },
-      ctx: CanvasRenderingContext2D,
-      globalScale: number
-    ) => {
-      const isCluster = node.type === 'cluster';
-      const radius = isCluster ? node.val * 4 + 4 : node.val * 3 + 2;
-
-      // Draw selection glow
-      if (node.isSelected) {
-        ctx.beginPath();
-        ctx.arc(node.x ?? 0, node.y ?? 0, radius + 4, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(217, 119, 6, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = '#D97706';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-
-      // Draw search highlight
-      if (node.isSearchMatch) {
-        ctx.beginPath();
-        ctx.arc(node.x ?? 0, node.y ?? 0, radius + 6, 0, 2 * Math.PI);
-        ctx.strokeStyle = 'rgba(217, 119, 6, 0.6)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      // Draw node body
-      if (isCluster) {
-        // Cluster: dashed circle
-        ctx.beginPath();
-        ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI);
-        ctx.strokeStyle = node.color;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = `${node.color}10`;
-        ctx.fill();
-      } else {
-        // Regular node: filled circle with border
-        ctx.beginPath();
-        ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI);
-        ctx.fillStyle = `${node.color}10`;
-        ctx.fill();
-        ctx.strokeStyle = node.color;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-
-      // Skip label when zoomed out to avoid overlap
-      if (globalScale < 0.6) return;
-
-      const fontSize = Math.max(10, 12 / Math.max(0.5, globalScale * 0.5));
-      ctx.font = `${isCluster ? '500' : '400'} ${fontSize}px var(--font-sans, sans-serif)`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      const maxChars = isCluster ? 10 : 6;
-      const displayLabel =
-        node.label.length > maxChars
-          ? `${node.label.slice(0, maxChars)}…`
-          : node.label;
-
-      const textMetrics = ctx.measureText(displayLabel);
-      const textWidth = textMetrics.width;
-      const paddingX = 6;
-      const paddingY = 3;
-      const bgWidth = textWidth + paddingX * 2;
-      const bgHeight = fontSize + paddingY * 2;
-      const labelY = (node.y ?? 0) + radius + fontSize + 2;
-
-      // Draw semi-transparent rounded background
-      const bgX = (node.x ?? 0) - bgWidth / 2;
-      const bgY = labelY - bgHeight / 2;
-      const cornerRadius = 4;
-
-      ctx.beginPath();
-      ctx.moveTo(bgX + cornerRadius, bgY);
-      ctx.lineTo(bgX + bgWidth - cornerRadius, bgY);
-      ctx.arcTo(bgX + bgWidth, bgY, bgX + bgWidth, bgY + cornerRadius, cornerRadius);
-      ctx.lineTo(bgX + bgWidth, bgY + bgHeight - cornerRadius);
-      ctx.arcTo(bgX + bgWidth, bgY + bgHeight, bgX + bgWidth - cornerRadius, bgY + bgHeight, cornerRadius);
-      ctx.lineTo(bgX + cornerRadius, bgY + bgHeight);
-      ctx.arcTo(bgX, bgY + bgHeight, bgX, bgY + bgHeight - cornerRadius, cornerRadius);
-      ctx.lineTo(bgX, bgY + cornerRadius);
-      ctx.arcTo(bgX, bgY, bgX + cornerRadius, bgY, cornerRadius);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Draw label text
-      ctx.fillStyle = isCluster ? '#6B6680' : '#E8E6F0';
-      ctx.fillText(displayLabel, node.x ?? 0, labelY);
+  // Convert external GraphNode/GraphEdge to ReactFlow format
+  const initialNodes = useMemo(() => graphNodes.map((n) => ({
+    id: n.id,
+    type: (n.type || 'default') as string,
+    position: { x: Math.random() * 400, y: Math.random() * 300 },
+    data: {
+      label: n.label,
+      type: n.type,
+      size: (n as any).size,
+      status: (n as any).status,
     },
-    []
+    selected: n.id === selectedNodeId,
+    style: searchQuery && !n.label?.toLowerCase().includes(searchQuery.toLowerCase())
+      ? { opacity: 0.3 } : undefined,
+    hidden: activeFilters.length > 0 && !activeFilters.includes(n.type || ''),
+  })), [graphNodes, selectedNodeId, searchQuery, activeFilters]);
+
+  const initialEdges = useMemo(() => graphEdges.map((e) => ({
+    id: e.id || `${e.source}-${e.target}`,
+    source: e.source,
+    target: e.target,
+    type: 'smoothstep',
+    animated: true,
+    style: { stroke: isDark ? '#4A4560' : '#D1D5DB', strokeWidth: 2 },
+    label: e.type || '',
+    labelStyle: { fill: isDark ? '#6B6680' : '#9CA3AF', fontSize: 10 },
+    labelBgStyle: { fill: isDark ? '#1A1724' : '#FFFFFF', fillOpacity: 0.9 },
+  })), [graphEdges, isDark]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  const onConnect = useCallback(
+    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, type: 'smoothstep', animated: true }, eds)),
+    [setEdges]
   );
 
-  // Handle node click
   const handleNodeClick = useCallback(
-    (node: { id: string }) => {
-      onNodeClick(node.id);
-    },
+    (_: React.MouseEvent, node: Node) => onNodeClick(node.id),
     [onNodeClick]
   );
 
-  // Handle link click (edge id uses the `${source}-${target}` convention)
-  const handleLinkClick = useCallback(
-    (link: { source: unknown; target: unknown }) => {
-      if (!onEdgeClick) return;
-      const sourceId =
-        typeof link.source === 'string'
-          ? link.source
-          : (link.source as { id?: string })?.id;
-      const targetId =
-        typeof link.target === 'string'
-          ? link.target
-          : (link.target as { id?: string })?.id;
-      if (sourceId && targetId) {
-        onEdgeClick(`${sourceId}-${targetId}`);
-      }
-    },
+  const handleEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: Edge) => onEdgeClick?.(edge.id),
     [onEdgeClick]
   );
 
-  // Handle zoom
-  const handleZoom = useCallback(
-    (transform: { k: number }) => {
-      onZoomChange?.(transform.k);
-    },
-    [onZoomChange]
-  );
+  const bgColor = isDark ? '#0C0A0F' : '#FDFCF8';
 
   return (
-    <div
-      ref={containerRef}
-      className={cn('relative w-full h-full overflow-hidden', className)}
-    >
-      {data.nodes.length > 0 ? (
-        <ForceGraph2D
-          graphData={data}
-          width={dimensions.width}
-          height={dimensions.height}
-          backgroundColor="transparent"
-          nodeRelSize={4}
-          nodeCanvasObject={nodeCanvasObject as unknown as (
-            node: Record<string, unknown>,
-            ctx: CanvasRenderingContext2D,
-            globalScale: number
-          ) => void}
-          nodeCanvasObjectMode={() => 'replace'}
-          linkColor={() => '#3A3548'}
-          linkWidth={1}
-          linkDirectionalArrowLength={4}
-          linkDirectionalArrowRelPos={1}
-          linkDirectionalArrowColor={() => '#3A3548'}
-          onNodeClick={handleNodeClick as unknown as (
-            node: Record<string, unknown>,
-            event: MouseEvent
-          ) => void}
-          onLinkClick={handleLinkClick as unknown as (
-            link: Record<string, unknown>,
-            event: MouseEvent
-          ) => void}
-          onZoom={handleZoom}
-          enableZoomPanInteraction
-          enableNodeDrag
-          warmupTicks={30}
-          cooldownTicks={100}
-          d3VelocityDecay={0.3}
-          d3AlphaMin={0.01}
-          linkDistance={100}
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-text-muted text-sm">暂无节点数据</p>
-            <p className="text-text-muted text-xs mt-1">
-              尝试调整过滤器或搜索条件
-            </p>
-          </div>
-        </div>
-      )}
+    <div className={cn('w-full h-full rounded-xl overflow-hidden border border-subtle', className)}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
+        nodeTypes={CUSTOM_NODE_TYPES as any}
+        fitView
+        snapToGrid
+        snapGrid={[16, 16]}
+        style={{ background: bgColor }}
+        attributionPosition="bottom-left"
+      >
+        <Background color={isDark ? '#2A2635' : '#E5E7EB'} gap={20} />
+        <Controls className="[&>button]:!bg-surface-card [&>button]:!border-subtle [&>button]:!text-text-secondary" />
+      </ReactFlow>
     </div>
   );
 }
