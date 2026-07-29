@@ -109,23 +109,25 @@ def cmd_obs_clear(args):
 # ═══════════════════════════════════════════════════════════
 
 def cmd_knowledge_add(args):
-    e = get_engine(); kg = getattr(e, '_engineering_knowledge', None)
-    if kg:
-        try:
-            if hasattr(kg, 'add'):
-                kg.add({"name": args.name, "type": args.type, "domain": args.domain})
-                print(json.dumps({"status":"added","name":args.name}, ensure_ascii=False))
-                return
-        except:
-            pass
-    # Fallback: add to world_objects
-    objs = getattr(e, '_world_objects', None)
-    if objs is not None:
-        objs[args.name] = {"type": args.type, "domain": args.domain}
-        print(json.dumps({"status":"added","name":args.name,"location":"world_objects"}, ensure_ascii=False))
+    e = get_engine(); sp = getattr(e, '_semantic_pipeline', None)
+    if sp:
+        obj = sp.add_object(args.name, getattr(args, 'type', 'concept'),
+                           getattr(args, 'identity', ''))
+        print(json.dumps({"status":"added","name":obj.name,"id":obj.identity,"type":obj.obj_type}, ensure_ascii=False))
     else:
-        print(json.dumps({"error":"Knowledge graph not available"}, ensure_ascii=False))
-
+        # Fallback: direct file write
+        pp = os.path.join(PROJECT_ROOT, "data", "world_objects.json")
+        objs = {}
+        if os.path.exists(pp):
+            try: objs = json.load(open(pp, encoding="utf-8"))
+            except: pass
+        oid = f"obj_{args.name}"
+        objs[oid] = {"name": args.name, "type": getattr(args, 'type', 'concept'),
+                     "identity": getattr(args, 'identity', ''), "created": time.time()}
+        os.makedirs(os.path.dirname(pp), exist_ok=True)
+        with open(pp, "w", encoding="utf-8") as f:
+            json.dump(objs, f, indent=2, ensure_ascii=False)
+        print(json.dumps({"status":"added","name":args.name,"id":oid}, ensure_ascii=False))
 def cmd_knowledge_remove(args):
     e = get_engine(); kg = getattr(e, '_engineering_knowledge', None)
     if kg and hasattr(kg, 'remove'):

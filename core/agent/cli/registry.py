@@ -324,4 +324,8 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
     r.register("ocean_analyst", "core.agent.v4.cognitive.ocean_profile:OCEANProfileAnalyst",
                required=False, init_order=95, description="OCEAN Profile Analyst")
 
+    r.register("semantic_pipeline", "", required=False, init_order=108,
+               description="SemanticObjectPipeline (entity extraction + LLM classification)",
+               deps=[], factory=lambda: __import__("core.agent.engine.semantic_pipeline", fromlist=["SemanticObjectPipeline"]).SemanticObjectPipeline())
+
     return r

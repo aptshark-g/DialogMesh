@@ -216,48 +216,31 @@ async def get_discourse_tree():
 # ═══════════════════════════════════════════════════════
 @router.get("/objects")
 async def get_objects():
-    """Return knowledge objects (world_objects) with relations from CLI knowledge commands."""
+    """Return semantic objects from pipeline + graph format."""
     import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    nodes, edges = [], []
-    # Read from CLI-added knowledge objects (world_objects.json)
+    # Try engine pipeline first
     try:
-        wp = os.path.join(root, "data", "world_objects.json")
-        if os.path.exists(wp):
-            objs = json.load(open(wp, encoding="utf-8"))
-            for name, obj in objs.items():
-                nodes.append({
-                    "id": name, "label": name,
-                    "type": obj.get("type", "concept"),
-                    "domain": obj.get("domain", ""),
-                    "identity": str(obj.get("identity", ""))[:40],
-                })
-    except: pass
-    # Fallback: extract entities from v3_sessions.json messages
-    if not nodes:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        sp = getattr(e, '_semantic_pipeline', None)
+        if sp:
+            g = sp.to_graph()
+            return {"nodes": g["nodes"], "edges": g["edges"], "total_objects": len(g["nodes"])}
+    except Exception:
+        pass
+    # Fallback: disk
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    wp = os.path.join(root, "data", "world_objects.json")
+    nodes = []
+    if os.path.exists(wp):
         try:
-            sp = os.path.join(root, "data", "v3_sessions.json")
-            if os.path.exists(sp):
-                sessions = json.load(open(sp, encoding="utf-8"))
-                seen = set()
-                for s in sessions.values():
-                    for m in s.get("messages", []):
-                        content = m.get("content", "")
-                        # Extract capitalized words and Chinese nouns as concepts
-                        for word in content.split()[:10]:
-                            clean = word.strip('.,;:!?()[]{}""\'\'')
-                            if len(clean) > 3 and clean not in seen:
-                                seen.add(clean)
-                                nodes.append({
-                                    "id": clean, "label": clean[:30],
-                                    "type": "entity", "size": 1,
-                                })
+            data = json.load(open(wp, encoding="utf-8"))
+            for k, v in data.items():
+                if isinstance(v, dict):
+                    nodes.append({"id": k, "label": v.get("name", k), "type": v.get("obj_type", "concept"),
+                                   "description": v.get("description", ""), "confidence": v.get("confidence", 0.5)})
         except: pass
-    return {"nodes": nodes, "edges": edges, "total_objects": len(nodes)}
-
-# ═══════════════════════════════════════════════════════
-# Rules — V6RulesResponse
-# ═══════════════════════════════════════════════════════
+    return {"nodes": nodes, "edges": [], "total_objects": len(nodes)}
 @router.get("/rules")
 async def get_rules():
     return {"rules": [], "total": 0}
