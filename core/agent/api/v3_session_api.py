@@ -287,10 +287,19 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     segments = cognitive_ctx.get("intents", {}).get("segments", [])
                     intent = segments[0] if segments else "通用对话"
                 dag = engine.build(req.content, intent=intent)
+                chain_names = {
+                    "pcr": "认知路由分析", "intent": "意图解析",
+                    "planner": "方案规划", "compiler": "上下文编译",
+                    "router": "路由决策", "discourse": "对话结构分析",
+                    "pipeline": "管线调度", "route": "路由分发",
+                    "pcr/compute": "认知计算", "intent/parse": "意图识别",
+                    "pipeline/route": "管线路由",
+                }
                 for n in dag.nodes:
+                    cn = chain_names.get(n.chain, n.chain)
                     task_graph.append({
                         "id": n.node_id,
-                        "name": f"{n.chain}",
+                        "name": cn,
                         "type": n.chain,
                         "status": "pending",
                         "dependencies": [e.from_node for e in dag.edges if e.to_node == n.node_id],
