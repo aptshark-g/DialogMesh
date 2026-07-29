@@ -794,17 +794,29 @@ class CognitiveRuntimeEngine:
         self._on_event_continue(event, pcr_output=pcr_output, parse_result=None, unified_result=None, text=text)
 
     def _publish(self, event_type, payload=None):
-        """Fire-and-forget publish. Notifies subscribers."""
+        """Fire-and-forget publish. Priority-scheduled via DeciderScheduler."""
         kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
         payload = payload or {}
         if self._event_bus:
             try: self._event_bus.publish(kind, payload)
             except: pass
-        # Notify direct subscribers
+        # Phase 2: priority-scheduled dispatch
         subs = getattr(self, '_event_subscribers', {})
-        for name, sub in subs.items():
-            try: sub.handle(kind, payload)
-            except: pass
+        if subs:
+            try:
+                from core.agent.event.scheduler import DeciderScheduler, create_scheduled_task
+                sched = getattr(self, '_scheduler', None)
+                if sched is None:
+                    sched = DeciderScheduler()
+                    self._scheduler = sched
+                for name, sub in subs.items():
+                    sched.submit(create_scheduled_task(name, sub.handle, kind, payload))
+                sched.run_batch()
+            except Exception:
+                # Fallback: direct dispatch
+                for name, sub in subs.items():
+                    try: sub.handle(kind, payload)
+                    except: pass
 
     def _on_event_continue(self, event, pcr_output=None, parse_result=None, unified_result=None, text=""):
         """Phase 2 of on_event — V4 Router after PCR."""
