@@ -23,8 +23,18 @@ export function ChatPage() {
 
   const handleSend = async (content: string) => {
     if (!content.trim() || isThinking) return;
-    const sid = useChatStore.getState().sessionId;
-    if (!sid) return;
+    let sid = useChatStore.getState().sessionId;
+    if (!sid) {
+      try {
+        const { createSession } = await import('../api/session');
+        const resp = await createSession();
+        sid = resp.session_id;
+        useChatStore.getState().setSessionId(sid);
+      } catch (e) {
+        console.error('Failed to create session:', e);
+        return;
+      }
+    }
     addUser(content);
     setThinking(true);
     try {
@@ -32,7 +42,7 @@ export function ChatPage() {
       const reply = resp.content || '';
       if (reply && reply !== '(no reply)' && reply !== '(empty)')
         addAI(reply, { taskGraph: resp.task_graph, metadata: { taskGraph: resp.task_graph, latencyMs: resp.latency_ms } });
-    } catch (e: any) {} finally { setThinking(false); }
+    } catch (e: any) { console.error('Send failed:', e); } finally { setThinking(false); }
   };
 
   return (
