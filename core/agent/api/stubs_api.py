@@ -28,22 +28,34 @@ def _get_engine():
 # ═══════════════════════════════════════════════════════
 @router.get("/profile")
 async def get_profile():
-    """Read profile from engine OceanProfileAnalyst + disk fallback."""
+    """Read profile from disk state (v3_session_api persists there)."""
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    pp = os.path.join(root, "data", "profile_state.json")
+    dims = {"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5}
+    turn_count = 0
+    if os.path.exists(pp):
+        try:
+            saved = json.load(open(pp, encoding="utf-8"))
+            if "dims" in saved: dims = saved["dims"]
+            turn_count = saved.get("turn_count", 0)
+        except: pass
+    # Try engine for richer data
     try:
         from core.agent.cli.engine import get_engine
         e = get_engine()
         ocean = getattr(e, '_ocean_analyst', None)
-        if ocean and hasattr(ocean, 'profile'):
-            dims = getattr(ocean.profile, 'dims', {})
-            return {
-                "oceAN_dims": {k: float(v) for k, v in dims.items()} if dims else {
-                    "O": 0.79, "C": 0.78, "E": 0.39, "A": 0.41, "N": 0.75},
-                "mbti": getattr(ocean, 'to_mbti', lambda: "INFJ")(),
-                "turn_count": getattr(e, '_turn_counter', 0),
-                "top_dimensions": sorted(dims.keys())[:3] if dims else ["O", "N", "C"],
-            }
-    except Exception:
-        pass
+        if ocean and hasattr(ocean, 'profile') and hasattr(ocean.profile, 'dims'):
+            dims = {k: float(v) for k, v in ocean.profile.dims.items()}
+        tc = getattr(e, '_turn_counter', turn_count)
+        if tc > turn_count: turn_count = tc
+    except: pass
+    return {
+        "oceAN_dims": dims,
+        "mbti": "INFJ",
+        "turn_count": turn_count,
+        "top_dimensions": sorted(dims.keys())[:3],
+    }
 
 @router.get("/trace")
 async def get_trace():

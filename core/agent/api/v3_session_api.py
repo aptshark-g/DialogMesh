@@ -262,12 +262,38 @@ async def send_message(session_id: str, req: SendMessageRequest):
             rel = dt.get_block_relations(session_id)
             with open(os.path.join(root, "discourse_state.json"), "w", encoding="utf-8") as f:
                 json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
-            # Profile: save OCEAN state
+            # Profile: OCEAN dimension analysis from conversation
             pp = os.path.join(root, "profile_state.json")
             saved = {}
             try: saved = json.load(open(pp, encoding="utf-8"))
             except: pass
             saved["turn_count"] = saved.get("turn_count", 0) + 1
+            # OCEAN keyword analysis
+            dims = saved.get("dims", {"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5})
+            combined = (req.content + " " + content[:500]).lower()
+            # O: openness — creativity, curiosity, abstract thinking
+            o_kw = ["探索","创造","新","尝试","可能","抽象","设计","概念","模式","模型","哲学","理论"]
+            o_hit = sum(1 for k in o_kw if k in combined)
+            # C: conscientiousness — planning, organization, detail-oriented
+            c_kw = ["计划","步骤","组织","完成","具体","明确","验证","测试","规范","标准","流程","结构"]
+            c_hit = sum(1 for k in c_kw if k in combined)
+            # E: extraversion — social, energetic, talkative
+            e_kw = ["喜欢","觉得","感觉","我想","我觉得","朋友","交流","讨论","合作","团队"]
+            e_hit = sum(1 for k in e_kw if k in combined)
+            # A: agreeableness — cooperative, trusting, helpful  
+            a_kw = ["帮助","相信","信任","合作","友好","同意","支持","理解","尊重","包容"]
+            a_hit = sum(1 for k in a_kw if k in combined)
+            # N: neuroticism — anxiety, emotional intensity
+            n_kw = ["担心","焦虑","可能不行","问题","困难","复杂","麻烦","错误","失败"]
+            n_hit = sum(1 for k in n_kw if k in combined)
+            # Update with momentum (smoothing)
+            alpha = 0.3  # update rate
+            dims["O"] = round(dims["O"] * (1-alpha) + min(1.0, 0.3 + o_hit * 0.07) * alpha, 2)
+            dims["C"] = round(dims["C"] * (1-alpha) + min(1.0, 0.3 + c_hit * 0.07) * alpha, 2)
+            dims["E"] = round(dims["E"] * (1-alpha) + min(1.0, 0.3 + e_hit * 0.07) * alpha, 2)
+            dims["A"] = round(dims["A"] * (1-alpha) + min(1.0, 0.3 + a_hit * 0.07) * alpha, 2)
+            dims["N"] = round(dims["N"] * (1-alpha) + min(1.0, 0.3 + n_hit * 0.07) * alpha, 2)
+            saved["dims"] = dims
             with open(pp, "w", encoding="utf-8") as f:
                 json.dump(saved, f, indent=2, ensure_ascii=False)
             # Meta: save turn count
