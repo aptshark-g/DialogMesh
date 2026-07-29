@@ -573,6 +573,27 @@ async def trace_stream():
     return StreamingResponse(event_generator(), media_type="text/event-stream",
                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+@router.get("/annotations")
+async def get_annotations():
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    ap = os.path.join(root, "data", "annotations.json")
+    if os.path.exists(ap):
+        try: return json.load(open(ap, encoding="utf-8"))
+        except: pass
+    return []
+
+@router.get("/corrections")
+async def get_corrections():
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    cp = os.path.join(root, "data", "corrections.json")
+    if os.path.exists(cp):
+        try: return json.load(open(cp, encoding="utf-8"))
+        except: pass
+    return []
+
 @router.get("/metrics")
 async def get_metrics():
     """Read from engine stats."""
