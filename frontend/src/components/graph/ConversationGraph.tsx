@@ -339,7 +339,6 @@ export function ConversationGraph({
           <button onClick={() => setEditingNode(null)} className="px-2 py-1 text-text-muted text-xs hover:text-text-primary">取消</button>
         </div>
       )}
-      )}
     </div>
   );
 }
