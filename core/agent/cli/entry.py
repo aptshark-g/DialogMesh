@@ -651,6 +651,27 @@ def _dispatch_task_ops(args):
     m.get((cmd, node_op), lambda a: print("dm task node <add|edit|remove> | dm task edge <add|remove>"))(args)
 
 
+def _dispatch_p10(args):
+    """P10: Algorithmic operations."""
+    from core.agent.cli.commands.p10_cmd import (
+        cmd_discourse_decompose, cmd_discourse_cohesion,
+        cmd_discourse_block_tree, cmd_discourse_context_build,
+        cmd_meta_self_audit, cmd_behavior_discover,
+        cmd_profile_analyze, cmd_memory_compile_events,
+        cmd_context_paradigm, cmd_causal_trigger, cmd_assoc_analyze,
+    )
+    sub = getattr(args, "subcommand", "")
+    m = {
+        "decompose": cmd_discourse_decompose, "cohesion": cmd_discourse_cohesion,
+        "block-tree": cmd_discourse_block_tree, "context-build": cmd_discourse_context_build,
+        "self-audit": cmd_meta_self_audit, "discover-patterns": cmd_behavior_discover,
+        "profile-analyze": cmd_profile_analyze, "memory-compile": cmd_memory_compile_events,
+        "context-paradigm": cmd_context_paradigm, "causal-trigger": cmd_causal_trigger,
+        "assoc-analyze": cmd_assoc_analyze,
+    }
+    if sub in m: m[sub](args)
+    else: print(f'alg: unknown subcommand {sub}. Available: {list(m.keys())}')
+
 def main():
     parser = argparse.ArgumentParser(description="DialogMesh CLI", prog="dm")
     sub = parser.add_subparsers(dest="command")
@@ -929,6 +950,26 @@ def main():
     tr = dss.add_parser("topic-remove"); tr.add_argument("topic", nargs="*", default=["?"])
     dss.add_parser("topic-heat")
 
+    # ── P10: Algorithm triggers (expose engine internals as CLI) ──
+    alg = sub.add_parser("alg", help="Algorithmic operations")
+    als = alg.add_subparsers(dest="subcommand")
+    dd = als.add_parser("decompose", help="dm alg decompose <text> — SyntacticDecomposer EDUs")
+    dd.add_argument("text", nargs="+")
+    dc = als.add_parser("cohesion", help="dm alg cohesion <text1> --text2=<text2> — MacroMicroQuantizer")
+    dc.add_argument("text1", nargs="+"); dc.add_argument("--text2", default="")
+    als.add_parser("block-tree", help="dm alg block-tree — DiscourseBlockTree parent/child")
+    als.add_parser("context-build", help="dm alg context-build — build_context from blocks")
+    als.add_parser("self-audit", help="dm alg self-audit — MetaCognition self_audit")
+    bd = als.add_parser("discover-patterns", help="dm alg discover-patterns — BehaviorDiscovery")
+    bd.add_argument("--min-support", type=int, default=3)
+    als.add_parser("profile-analyze", help="dm alg profile-analyze — OCEAN full recalculation")
+    als.add_parser("memory-compile", help="dm alg memory-compile — compile events to memory")
+    cp = als.add_parser("context-paradigm", help="dm alg context-paradigm <text> — ThreeParadigmContext")
+    cp.add_argument("text", nargs="*", default=[""]); cp.add_argument("--max-tokens", type=int, default=2000)
+    als.add_parser("causal-trigger", help="dm alg causal-trigger — CausalPlanner.process_chain")
+    aa = als.add_parser("assoc-analyze", help="dm alg assoc-analyze <text> — L1 modifier extraction")
+    aa.add_argument("text", nargs="*", default=[""])
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1020,6 +1061,8 @@ def main():
              "topic-remove":cmd_discourse_topic_remove,"topic-heat":cmd_discourse_topic_heat}.get(sub, lambda a:0)(args)
     elif args.command in ("beh", "rul", "ob", "kn", "co", "mi", "tk", "pc"):
         _dispatch_batch1(args)
+    elif args.command == "alg":
+        _dispatch_p10(args)
     elif args.command in ("se", "eg", "rp", "an", "cr", "cfg", "dt", "gl"):
         _dispatch_batch2(args)
     elif args.command in ("graph", "format", "eventlog", "memory"):
