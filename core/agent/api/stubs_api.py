@@ -185,7 +185,44 @@ async def get_discourse_tree():
 # ═══════════════════════════════════════════════════════
 @router.get("/objects")
 async def get_objects():
-    return {"nodes": [], "edges": [], "total_objects": 0}
+    """Return knowledge objects (world_objects) with relations from CLI knowledge commands."""
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    nodes, edges = [], []
+    # Read from CLI-added knowledge objects (world_objects.json)
+    try:
+        wp = os.path.join(root, "data", "world_objects.json")
+        if os.path.exists(wp):
+            objs = json.load(open(wp, encoding="utf-8"))
+            for name, obj in objs.items():
+                nodes.append({
+                    "id": name, "label": name,
+                    "type": obj.get("type", "concept"),
+                    "domain": obj.get("domain", ""),
+                    "identity": str(obj.get("identity", ""))[:40],
+                })
+    except: pass
+    # Fallback: extract entities from v3_sessions.json messages
+    if not nodes:
+        try:
+            sp = os.path.join(root, "data", "v3_sessions.json")
+            if os.path.exists(sp):
+                sessions = json.load(open(sp, encoding="utf-8"))
+                seen = set()
+                for s in sessions.values():
+                    for m in s.get("messages", []):
+                        content = m.get("content", "")
+                        # Extract capitalized words and Chinese nouns as concepts
+                        for word in content.split()[:10]:
+                            clean = word.strip('.,;:!?()[]{}""\'\'')
+                            if len(clean) > 3 and clean not in seen:
+                                seen.add(clean)
+                                nodes.append({
+                                    "id": clean, "label": clean[:30],
+                                    "type": "entity", "size": 1,
+                                })
+        except: pass
+    return {"nodes": nodes, "edges": edges, "total_objects": len(nodes)}
 
 # ═══════════════════════════════════════════════════════
 # Rules — V6RulesResponse
