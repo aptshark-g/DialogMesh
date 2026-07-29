@@ -32,17 +32,31 @@ export class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       return (
-        <div style={{ padding: 40, color: '#f87171', background: '#1e1e2e', minHeight: '100vh' }}>
-          <h2>⚠️ Render Error</h2>
-          <p style={{ color: '#a0a0b0' }}>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100vh', fontFamily: 'system-ui',
+          background: '#1a1a2e', color: '#e0e0e0', padding: '2rem',
+        }}>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>⚠️ DialogMesh 加载错误</h1>
+          <pre style={{
+            background: '#16213e', padding: '1rem', borderRadius: '8px',
+            maxWidth: '600px', overflow: 'auto', fontSize: '0.85rem',
+            color: '#ff6b6b', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          }}>
             {this.state.error?.message || 'Unknown error'}
-          </p>
-          <details style={{ marginTop: 16, color: '#6b7280' }}>
-            <summary>Stack trace</summary>
-            <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
-              {this.state.componentStack}
-            </pre>
-          </details>
+            {'\n\n'}
+            {this.state.componentStack || ''}
+          </pre>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: '1rem', padding: '0.5rem 1.5rem',
+              background: '#6366f1', color: 'white', border: 'none',
+              borderRadius: '6px', cursor: 'pointer', fontSize: '1rem',
+            }}
+          >
+            刷新页面
+          </button>
         </div>
       );
     }
