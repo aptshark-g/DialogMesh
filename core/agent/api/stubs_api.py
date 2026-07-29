@@ -393,46 +393,46 @@ async def get_subgraph_by_perspective(perspective: str):
 # ═══════════════════════════════════════════════════════
 @router.get("/persistence")
 async def get_persistence():
-    """Read engine state from disk files — reflects real pipeline state."""
-    import json, os
+    """Read from unified StorageLayer (SQLite + JSON files)."""
+    import json, os, sqlite3
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     data_dir = os.path.join(root, "data")
-    tc = 0
-    try:
-        sp = os.path.join(data_dir, "v3_sessions.json")
-        if os.path.exists(sp):
-            sessions = json.load(open(sp, encoding="utf-8"))
-            tc = sum(len(s.get("messages",[])) for s in sessions.values())
-    except: pass
     result = {
-        "annotation_store": {"status": "running", "records": tc},
-        "unified_store": {"status": "running", "records": tc},
+        "annotation_store": {"status": "running", "records": 0},
+        "unified_store": {"status": "running", "records": 0},
         "oceAN_saved": False, "rules_saved": False,
         "discourse_blocks": 0, "behavior_edges": 0,
-        "profile_updated": False,
+        "profile_updated": False, "event_count": 0,
     }
-    # Read discourse state
-    dp = os.path.join(data_dir, "discourse_state.json")
-    if os.path.exists(dp):
+    # Read from SQLite WarmStore
+    db_path = os.path.join(data_dir, "warm_store.db")
+    if os.path.exists(db_path):
         try:
-            ds = json.load(open(dp, encoding="utf-8"))
-            result["discourse_blocks"] = len(ds.get("blocks", {}))
+            conn = sqlite3.connect(db_path)
+            for table, key in [("events", "event_count"), ("behavior", "behavior_edges"),
+                               ("associations", "association_count"), ("meta_decisions", "meta_decisions")]:
+                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                if key == "event_count":
+                    result["event_count"] = count
+                    result["annotation_store"]["records"] = count
+                    result["unified_store"]["records"] = count
+                elif key == "behavior_edges":
+                    result["behavior_edges"] = count
+            conn.close()
         except: pass
-    # Read behavior state
-    bp = os.path.join(data_dir, "behavior_state.json")
-    if os.path.exists(bp):
-        try:
-            bs = json.load(open(bp, encoding="utf-8"))
-            result["behavior_edges"] = bs.get("edges", 0)
-        except: pass
-    # Read profile state
-    pp = os.path.join(data_dir, "profile_state.json")
-    if os.path.exists(pp):
-        try:
-            ps = json.load(open(pp, encoding="utf-8"))
-            result["oceAN_saved"] = "dims" in ps
-            result["profile_updated"] = ps.get("turn_count", 0) > 0
-        except: pass
+    # Read from ColdStore JSON files  
+    for fname, key in [("discourse_state.json", "discourse_blocks"),
+                       ("profile_state.json", "profile_updated")]:
+        fp = os.path.join(data_dir, fname)
+        if os.path.exists(fp):
+            try:
+                data = json.load(open(fp, encoding="utf-8"))
+                if key == "discourse_blocks":
+                    result["discourse_blocks"] = len(data.get("blocks", {}))
+                elif key == "profile_updated":
+                    result["oceAN_saved"] = "dims" in data
+                    result["profile_updated"] = data.get("turn_count", 0) > 0
+            except: pass
     return result
 
 @router.get("/persistence/graphs")
@@ -541,6 +541,28 @@ async def get_trace_recent(limit: int = 10):
                     "stats": tracer.stats()}
     except: pass
     return {"traces": [], "metrics": {}, "stats": {}}
+
+
+from fastapi.responses import StreamingResponse
+import asyncio
+
+@router.get("/trace/stream")
+async def trace_stream():
+    """SSE endpoint — real-time pipeline trace updates."""
+    async def event_generator():
+        while True:
+            try:
+                from core.agent.cli.engine import get_engine
+                e = get_engine()
+                tracer = getattr(e, '_tracer', None)
+                if tracer:
+                    stats = tracer.stats()
+                    yield f"data: {json.dumps(stats)}\n\n"
+                await asyncio.sleep(2)
+            except Exception:
+                await asyncio.sleep(5)
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @router.get("/metrics")
 async def get_metrics():

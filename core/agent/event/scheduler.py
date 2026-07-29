@@ -25,9 +25,21 @@ class Priority(IntEnum):
     P3_IDLE        = 3   # background only, throttled
 
 
+# ═══════════════════════════════════════════════════════════
+#  CFS weights — Linux-style fair scheduling
+# ═══════════════════════════════════════════════════════════
+
+CFS_WEIGHTS = {
+    Priority.P0_REALTIME:   1024,
+    Priority.P1_INTERACTIVE: 512,
+    Priority.P2_BATCH:       256,
+    Priority.P3_IDLE:        128,
+}
+
+
 @dataclass
 class ScheduledTask:
-    """One unit of work with priority + timeout."""
+    """One unit of work with priority + CFS vruntime + timeout."""
     name: str
     priority: Priority
     handler: Callable
@@ -36,6 +48,7 @@ class ScheduledTask:
     timeout_ms: int = 1000
     max_retries: int = 1
     created_at: float = field(default_factory=time.time)
+    vruntime: float = 0.0  # CFS virtual runtime — lower = sooner
 
 
 @dataclass
@@ -90,9 +103,10 @@ class DeciderScheduler:
             }
 
     def run_batch(self) -> list[TaskResult]:
-        """Execute all queued tasks in priority order. P0 synchronous, P1-P3 threaded."""
+        """CFS-scheduled execution. P0 sync, P1-P3 threaded with timeout preemption."""
         with self._lock:
-            tasks = sorted(self._queue, key=lambda t: t.priority)
+            # CFS sort: by vruntime then by priority as tiebreaker
+            tasks = sorted(self._queue, key=lambda t: (t.vruntime, t.priority))
             self._queue.clear()
 
         results = []
@@ -100,25 +114,37 @@ class DeciderScheduler:
 
         for task in tasks:
             if task.priority <= Priority.P1_INTERACTIVE:
-                # Synchronous — must complete
                 result = self._execute(task)
+                # Update CFS vruntime
+                task.vruntime += result.latency_ms / CFS_WEIGHTS.get(task.priority, 256)
                 results.append(result)
             else:
-                # Threaded — fire and collect later
                 t = threading.Thread(
-                    target=lambda t=task: self._execute(t),
+                    target=lambda t=task: self._execute_with_preempt(t),
                     name=f"sched_{task.name}",
                     daemon=True,
                 )
-                threads.append(t)
+                threads.append((t, task))
                 t.start()
 
-        # Wait for threads with timeout
-        for t in threads:
-            t.join(timeout=2.0)
+        # Wait with preemption
+        for t, task in threads:
+            t.join(timeout=task.timeout_ms / 1000.0)
+            if t.is_alive():
+                # Preempt: thread exceeded timeout, kill and record timeout
+                # Note: daemon threads auto-terminate; Python can't truly kill threads
+                logger.debug("Task %s timed out after %dms", task.name, task.timeout_ms)
+                MetricsCollector.record(task.name, "timeout", task.timeout_ms)
 
-        # Collect threaded results from history
         return results
+
+    def _execute_with_preempt(self, task: ScheduledTask) -> None:
+        """Execute with CFS accounting + timeout guard."""
+        start = time.time()
+        try:
+            self._execute(task)
+        finally:
+            task.vruntime += (time.time() - start) * 1000 / CFS_WEIGHTS.get(task.priority, 256)
 
     def _execute(self, task: ScheduledTask) -> TaskResult:
         """Execute one task with timeout and retry."""
