@@ -25,7 +25,28 @@ class SubprocessRunner:
     def __init__(self, max_workers: int = 4):
         self._max_workers = max_workers
         self._active: Dict[str, subprocess.Popen] = {}
+        self._pool: List[subprocess.Popen] = []  # P6: process pool for reuse
         self._lock = threading.Lock()
+
+    def _get_worker(self) -> Optional[subprocess.Popen]:
+        """Get an available worker from the pool (P6: pool reuse)."""
+        with self._lock:
+            alive = [p for p in self._pool if p.poll() is None]
+            self._pool = alive
+            if len(self._pool) < self._max_workers:
+                return None  # Need to create new
+            return self._pool.pop(0)  # Reuse
+
+    def _return_worker(self, proc: subprocess.Popen):
+        with self._lock:
+            if proc.poll() is None and len(self._pool) < self._max_workers:
+                self._pool.append(proc)
+
+    def pool_stats(self) -> dict:
+        with self._lock:
+            alive = [p for p in self._pool if p.poll() is None]
+            return {"pool_size": len(alive), "max": self._max_workers,
+                    "active": len(self._active)}
 
     def run_isolated(self, name: str, module: str, func: str,
                      args: tuple = (), kwargs: dict = None,
@@ -279,20 +300,34 @@ class CapabilityGuard:
 
     def __init__(self):
         self._profiles: Dict[str, CapabilityProfile] = {}
+        self._audit_log: List[dict] = []  # P8: audit trail
         for name, caps in self.DEFAULT_PROFILES.items():
             self._profiles[name] = CapabilityProfile(name=name, allowed=list(caps))
 
     def check(self, subsystem: str, capability: Capability) -> bool:
-        """Check if a subsystem is allowed to perform an operation."""
+        """Check if a subsystem is allowed to perform an operation.
+        Records audit trail on deny."""
         profile = self._profiles.get(subsystem)
         if not profile:
-            return False  # Unknown subsystem → deny by default
+            self._audit_log.append({"subsystem": subsystem, "capability": capability.value,
+                                    "result": "DENY", "reason": "unknown_subsystem",
+                                    "timestamp": time.time()})
+            return False
 
         if capability in profile.denied:
+            self._audit_log.append({"subsystem": subsystem, "capability": capability.value,
+                                    "result": "DENY", "reason": "explicitly_denied",
+                                    "timestamp": time.time()})
             return False
         if capability in profile.allowed:
             return True
-        return False  # Not explicitly allowed → deny
+        self._audit_log.append({"subsystem": subsystem, "capability": capability.value,
+                                "result": "DENY", "reason": "not_allowed",
+                                "timestamp": time.time()})
+        return False
+
+    def audit_trail(self, limit: int = 50) -> List[dict]:
+        return self._audit_log[-limit:]
 
     def grant(self, subsystem: str, capability: Capability):
         """Grant a capability to a subsystem."""
