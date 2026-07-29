@@ -249,28 +249,53 @@ async def send_message(session_id: str, req: SendMessageRequest):
         if not content:
             content = str(data)
 
-        # Phase 5: BlueprintEngine — build DAG and convert to task_graph
-        task_graph = []
+        # ── Engine pipeline: activate discourse/behavior/association/meta ──
         try:
-            from core.agent.blueprint.engine import BlueprintEngine
-            engine = BlueprintEngine()
-            # Extract intent from cognitive context
-            intent = cognitive_ctx.get("intents", {}).get("primary", "")
-            if not intent:
-                segments = cognitive_ctx.get("intents", {}).get("segments", [])
-                intent = segments[0] if segments else "通用对话"
-            dag = engine.build(req.content, intent=intent)
-            # Convert BlueprintDAG nodes → frontend task_graph format
-            for n in dag.nodes:
-                task_graph.append({
-                    "id": n.node_id,
-                    "name": f"{n.chain}",
-                    "type": n.chain,
-                    "status": "pending",
-                    "dependencies": [e.from_node for e in dag.edges if e.to_node == n.node_id],
-                })
-        except Exception as e:
-            logger.warning("BlueprintEngine failed: %s", e)
+            from core.agent.runtime.engine import CognitiveRuntimeEngine
+            from core.agent.cli.engine import get_engine as _get_e
+            eng = _get_e()
+            if eng and hasattr(eng, 'on_event'):
+                class _EventCompat:
+                    pass
+                ev = _EventCompat()
+                ev.payload = {"text": req.content, "session_id": session_id,
+                              "reply": content, "provider": req.provider or "deepseek"}
+                ev.id = msg_id
+                ev.refs = {"session_id": session_id}
+                eng.on_event(ev)
+                # Persist state after event
+                if hasattr(eng, '_persist_state'):
+                    eng._persist_state()
+                logger.debug("Engine pipeline executed: discourse/behavior/meta updated")
+        except Exception as _ep:
+            logger.debug("Engine pipeline skipped: %s", _ep)
+
+        # Phase 5: Extract task plan from LLM response (preferred) or fall back to BlueprintEngine
+        task_graph = []
+        # Try to parse LLM-generated task JSON first
+        parsed = _parse_plan_json(content)
+        if parsed:
+            task_graph = parsed
+        else:
+            # Fall back to BlueprintEngine
+            try:
+                from core.agent.blueprint.engine import BlueprintEngine
+                engine = BlueprintEngine()
+                intent = cognitive_ctx.get("intents", {}).get("primary", "")
+                if not intent:
+                    segments = cognitive_ctx.get("intents", {}).get("segments", [])
+                    intent = segments[0] if segments else "通用对话"
+                dag = engine.build(req.content, intent=intent)
+                for n in dag.nodes:
+                    task_graph.append({
+                        "id": n.node_id,
+                        "name": f"{n.chain}",
+                        "type": n.chain,
+                        "status": "pending",
+                        "dependencies": [e.from_node for e in dag.edges if e.to_node == n.node_id],
+                    })
+            except Exception as e:
+                logger.warning("BlueprintEngine failed: %s", e)
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         content = _fallback_reply(req.content)
@@ -450,7 +475,8 @@ def _build_system_prompt(profile_text: str = "", cognitive_ctx: dict = {}) -> st
         if zone:
             parts.append(f"路由区域: {zone}")
 
-    parts.append("当用户要求规划任务或编排流程时，你只需生成任务方案的文字描述即可。系统会自动将其转化为任务图并在任务页面展示。不要让用户复制JSON，而是告诉用户\"任务已规划，请在任务页面查看\"。")
+    parts.append("当用户要求规划任务或编排流程时，请在回复末尾附上任务计划 JSON。格式如下：\n```json\n[{\"id\":\"1\",\"name\":\"任务名\",\"description\":\"说明\",\"status\":\"pending\",\"node_type\":\"write|analyze|explain|scan|read\",\"depends_on\":[]}]\n```\n步骤控制在 3-7 个。同时回复文字说明。系统会提取 JSON 在任务页面展示，用户可修改后确认执行。")
+    parts.append("当上下文包含 [用户已确认的任务规划] 时，用户已审核通过这些任务。你应该按任务逐个执行，每完成一个就在回复中标记进度。使用你的工具（terminal、write_file 等）实际完成这些任务，而不是只描述计划。")
     parts.append("用中文回复。支持 Markdown 格式（含 mermaid 流程图）。")
     return "\n".join(parts)
 
