@@ -210,6 +210,16 @@ class CognitiveRuntimeEngine:
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
         from core.agent.assoc_subscriber import AssociationSubscriber
         self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
+        # Phase 3: unified storage layer
+        try:
+            from core.agent.event.storage import StorageLayer
+            self._storage = StorageLayer()
+            logger.info("StorageLayer wired: hot=%d warm=%s cold=%s",
+                       self._storage.hot.stats()["size"],
+                       self._storage.warm._db_path,
+                       self._storage.cold._dir)
+        except Exception:
+            self._storage = None
         from core.agent.topic_tree.manager import TopicTreeManager
         self._topic_tree = TopicTreeManager()
         logger.info('EventLog+EventBus+TopicTree ready')
@@ -569,74 +579,45 @@ class CognitiveRuntimeEngine:
         return {"change": change, "impact": "low", "affected_modules": []}
 
     def _persist_state(self):
-        """Save discourse blocks, behavior edges, meta stats to disk."""
-        import json, os
-        
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        data_dir = os.path.join(root, "data")
-        os.makedirs(data_dir, exist_ok=True)
-        
-        # 1. Discourse block tree
+        """Save state to unified storage (Phase 3)."""
+        store = getattr(self, '_storage', None)
+        if not store:
+            return self._persist_state_legacy()
+        sid = getattr(self, '_session_id', 'default')
+
+        # Discourse tree → cold
         if hasattr(self, '_discourse_tree') and self._discourse_tree:
             try:
-                sid = getattr(self, '_session_id', 'default')
                 rel = self._discourse_tree.get_block_relations(sid)
-                dp = os.path.join(data_dir, "discourse_state.json")
-                with open(dp, "w", encoding="utf-8") as f:
-                    json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
+                store.cold.save("discourse_state.json", rel)
             except: pass
-        
-        # 2. Behavior edges
-        if hasattr(self, '_behavior_graph_adapter') and self._behavior_graph_adapter is not None:
+
+        # Behavior → warm (SQLite) + cold
+        if hasattr(self, '_behavior_graph_adapter') and self._behavior_graph_adapter:
             try:
-                chain = self._behavior_graph_adapter.get_recent_chain(50)
-                steps = getattr(chain, 'steps', [])
-                bp = os.path.join(data_dir, "behavior_state.json")
-                with open(bp, "w", encoding="utf-8") as f:
-                    json.dump({"edges": len(steps), "last_events": [
-                        {"type": getattr(s, 'event_type', '?'), 
-                         "ts": getattr(s, 'timestamp', 0)} for s in steps[-10:]
-                    ]}, f, indent=2, ensure_ascii=False, default=str)
+                chain = self._behavior_graph_adapter.get_recent_chain(10)
+                store.cold.save("behavior_state.json", {
+                    "edges": len(getattr(chain, 'steps', [])),
+                    "ts": time.time()
+                })
             except: pass
-        
-        # 3. Profile OCEAN dims
+
+        # Profile → cold
         if hasattr(self, '_ocean_analyst') and self._ocean_analyst:
             try:
-                # Run OCEAN analysis on recent conversation to update dims
-                recent_text = ""
-                if hasattr(self, '_event_buffer'):
-                    for ev in self._event_buffer[-5:]:
-                        if hasattr(ev, 'payload') and ev.payload.get('text'):
-                            recent_text += ev.payload.get('text', '')[:200] + " "
-                if recent_text and hasattr(self._ocean_analyst, 'analyze'):
-                    try:
-                        self._ocean_analyst.analyze(recent_text)
-                    except: pass
-                dims = {}
-                if hasattr(self._ocean_analyst, 'profile') and hasattr(self._ocean_analyst.profile, 'dims'):
-                    dims = dict(self._ocean_analyst.profile.dims)
-                pp = os.path.join(data_dir, "profile_state.json")
-                saved = {}
-                if os.path.exists(pp):
-                    try: saved = json.load(open(pp, encoding="utf-8"))
-                    except: pass
-                saved["dims"] = dims
-                saved["turn_count"] = getattr(self, '_turn_counter', 0)
-                with open(pp, "w", encoding="utf-8") as f:
-                    json.dump(saved, f, indent=2, ensure_ascii=False, default=str)
+                dims = getattr(getattr(self._ocean_analyst, 'profile', None), 'dims', {})
+                store.cold.save("profile_state.json", {
+                    "dims": dict(dims) if dims else {},
+                    "turn_count": getattr(self, '_turn_counter', 0)
+                })
             except: pass
-        
-        # 4. Meta stats
-        bp = os.path.join(data_dir, "meta_state.json")
-        try:
-            meta = {
-                "turn_count": getattr(self, '_turn_counter', 0),
-                "decider_tick": getattr(getattr(self, '_decider', None), '_tick', 0),
-                "pcr_last": str(getattr(self, '_last_pcr', ''))[:200],
-            }
-            with open(bp, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2, ensure_ascii=False, default=str)
-        except: pass
+
+        # Meta + session → hot
+        store.hot.set("last_turn", getattr(self, '_turn_counter', 0), ttl_sec=300)
+        store.cold.save("meta_state.json", {
+            "turn_count": getattr(self, '_turn_counter', 0),
+            "decider_tick": getattr(getattr(self, '_decider', None), '_tick', 0)
+        })
 
     def on_event(self, event: EventIR) -> Optional[str]:
         """Process a single user event through the Async Path.
