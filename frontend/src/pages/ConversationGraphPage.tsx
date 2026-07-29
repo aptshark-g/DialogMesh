@@ -82,8 +82,8 @@ export function ConversationGraphPage() {
     const apiNodes: GraphNode[] = graph.nodes.map((node) => ({
       id: node.id,
       label: node.label || node.id,
-      type: node.type || 'ai',
-      intent: (node.state?.intent as string) || 'UNKNOWN',
+      type: (node.type || 'session') as string,
+      intent: node.type || 'session',
     }));
     const apiEdges: GraphEdge[] = graph.edges.map((edge) => ({
       id: `${edge.source}-${edge.target}`,

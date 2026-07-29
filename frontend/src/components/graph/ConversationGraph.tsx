@@ -3,7 +3,7 @@
  * Replaces react-force-graph-2d (read-only) with full editing capability.
  * Reuses TaskFlow's node/edge patterns for consistency.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   useNodesState,
@@ -149,6 +149,16 @@ export function ConversationGraph({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Sync props → state when API data loads asynchronously
+  const prevNodeCount = useRef(initialNodes.length);
+  useEffect(() => {
+    if (initialNodes.length !== prevNodeCount.current || initialEdges.length !== (edges.length || 0)) {
+      setNodes(initialNodes);
+      setEdges(initialEdges);
+      prevNodeCount.current = initialNodes.length;
+    }
+  }, [initialNodes, initialEdges]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge({ ...connection, type: 'smoothstep', animated: true }, eds)),
