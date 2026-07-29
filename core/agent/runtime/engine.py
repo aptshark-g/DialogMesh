@@ -210,12 +210,6 @@ class CognitiveRuntimeEngine:
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
         from core.agent.assoc_subscriber import AssociationSubscriber
         self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
-        # Phase 1: additional subscribers (Discourse/Behavior/Profile/Persistence)
-        try:
-            from core.agent.event.subscribers import wire_subscribers
-            self._sub_stats = wire_subscribers(self)
-        except Exception:
-            self._sub_stats = {}
         from core.agent.topic_tree.manager import TopicTreeManager
         self._topic_tree = TopicTreeManager()
         logger.info('EventLog+EventBus+TopicTree ready')
