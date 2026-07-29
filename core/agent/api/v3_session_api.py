@@ -249,155 +249,29 @@ async def send_message(session_id: str, req: SendMessageRequest):
         if not content:
             content = str(data)
 
-        # ── Pipeline state persistence (discourse/behavior/profile) ──
-        try:
-            import os as _osp
-            # Use project-root relative path (4 levels up from core/agent/api/)
-            _this_file = os.path.abspath(__file__)
-            root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_this_file)))), "data")
-            os.makedirs(root, exist_ok=True)
-            logger.debug("Persist root: %s, file=%s", root, __file__)
-            # Discourse: use engine's tree (not fresh instance)
-            try:
-                from core.agent.cli.engine import get_engine
-                eng = get_engine()
-                dt = getattr(eng, '_discourse_tree', None)
-                if dt:
-                    dt.feed(req.content, session_id)
-                    dt.feed(content[:500], session_id)
-                    rel = dt.get_block_relations(session_id)
-                else:
-                    from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
-                    dt = DiscourseBlockTreeManager()
-                    dt.feed(req.content, session_id)
-                    dt.feed(content[:500], session_id)
-                    rel = dt.get_block_relations(session_id)
-            except:
-                from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
-                dt = DiscourseBlockTreeManager()
-                dt.feed(req.content, session_id)
-                dt.feed(content[:500], session_id)
-                rel = dt.get_block_relations(session_id)
-            with open(os.path.join(root, "discourse_state.json"), "w", encoding="utf-8") as f:
-                json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
-            # Profile: OCEAN dimension analysis from conversation
-            pp = os.path.join(root, "profile_state.json")
-            saved = {}
-            try: saved = json.load(open(pp, encoding="utf-8"))
-            except: pass
-            saved["turn_count"] = saved.get("turn_count", 0) + 1
-            # OCEAN keyword analysis
-            dims = saved.get("dims", {"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5})
-            combined = (req.content + " " + content[:500]).lower()
-            # O: openness — creativity, curiosity, abstract thinking
-            o_kw = ["探索","创造","新","尝试","可能","抽象","设计","概念","模式","模型","哲学","理论"]
-            o_hit = sum(1 for k in o_kw if k in combined)
-            # C: conscientiousness — planning, organization, detail-oriented
-            c_kw = ["计划","步骤","组织","完成","具体","明确","验证","测试","规范","标准","流程","结构"]
-            c_hit = sum(1 for k in c_kw if k in combined)
-            # E: extraversion — social, energetic, talkative
-            e_kw = ["喜欢","觉得","感觉","我想","我觉得","朋友","交流","讨论","合作","团队"]
-            e_hit = sum(1 for k in e_kw if k in combined)
-            # A: agreeableness — cooperative, trusting, helpful  
-            a_kw = ["帮助","相信","信任","合作","友好","同意","支持","理解","尊重","包容"]
-            a_hit = sum(1 for k in a_kw if k in combined)
-            # N: neuroticism — anxiety, emotional intensity
-            n_kw = ["担心","焦虑","可能不行","问题","困难","复杂","麻烦","错误","失败"]
-            n_hit = sum(1 for k in n_kw if k in combined)
-            # Update with momentum (smoothing)
-            alpha = 0.3  # update rate
-            dims["O"] = round(dims["O"] * (1-alpha) + min(1.0, 0.3 + o_hit * 0.07) * alpha, 2)
-            dims["C"] = round(dims["C"] * (1-alpha) + min(1.0, 0.3 + c_hit * 0.07) * alpha, 2)
-            dims["E"] = round(dims["E"] * (1-alpha) + min(1.0, 0.3 + e_hit * 0.07) * alpha, 2)
-            dims["A"] = round(dims["A"] * (1-alpha) + min(1.0, 0.3 + a_hit * 0.07) * alpha, 2)
-            dims["N"] = round(dims["N"] * (1-alpha) + min(1.0, 0.3 + n_hit * 0.07) * alpha, 2)
-            saved["dims"] = dims
-            with open(pp, "w", encoding="utf-8") as f:
-                json.dump(saved, f, indent=2, ensure_ascii=False)
-            # Meta: save turn count
-            with open(os.path.join(root, "meta_state.json"), "w", encoding="utf-8") as f:
-                json.dump({"turn_count": saved["turn_count"]}, f, indent=2, ensure_ascii=False)
-            logger.debug("Pipeline state persisted: discourse + profile + meta")            # Rule enforcement: check engineering constraints against user message
-            try:
-                rules_path = os.path.join(root, "data", "engineering_rules.json")
-                rules_data = {}
-                if os.path.exists(rules_path):
-                    rules_data = json.load(open(rules_path, encoding="utf-8"))
-                for rule in rules_data.get("rules", []):
-                    pattern = rule.get("pattern", "")
-                    rtype = rule.get("type", "")
-                    if pattern and pattern.lower() in req.content.lower():
-                        # Rule triggered — record annotation
-                        ann_path = os.path.join(root, "data", "annotations.json")
-                        annotations = []
-                        if os.path.exists(ann_path):
-                            try: annotations = json.load(open(ann_path, encoding="utf-8"))
-                            except: pass
-                        annotations.append({
-                            "rule_id": rule.get("id", ""),
-                            "type": rtype,
-                            "pattern": pattern,
-                            "message": req.content[:100],
-                            "session_id": session_id,
-                            "timestamp": time.time(),
-                        })
-                        with open(ann_path, "w", encoding="utf-8") as f:
-                            json.dump(annotations[-20:], f, indent=2, ensure_ascii=False)
-            except: pass
-        except Exception as _ep:
-            logger.debug("Pipeline state persist skipped: %s", _ep)
-
-        # P0: Unify with EventBus pipeline — fire all subscribers
+        # ── StateMachine: unified post-LLM pipeline ──
+        sm_results = {}
         try:
             from core.agent.cli.engine import get_engine
             eng = get_engine()
+            sm = getattr(eng, '_state_machine', None)
+            if sm:
+                from core.agent.event.statemachine import PipelinePhase
+                ctx = {"text": req.content, "reply": content[:500], "session_id": session_id}
+                sm_results = sm.run_pipeline(PipelinePhase.DISCOURSE, ctx)
+                logger.debug("StateMachine: %s phases completed", len(sm_results))
+            # Fire EventBus subscribers in parallel (async, not ordered)
             if eng and hasattr(eng, '_publish'):
                 if not getattr(eng, '_event_subscribers', None):
                     try:
                         from core.agent.event.subscribers import wire_subscribers
                         wire_subscribers(eng)
                     except: pass
-                # Trace: record parent span for this request
-                tracer = getattr(eng, '_tracer', None)
-                parent_span = None
-                if tracer:
-                    parent_span = tracer.record("v3_api", "llm_request", True, 0)
-                # Fire events → triggers all 6 subscribers via scheduler
-                for evt in [
-                    ("pcr_computed", {"expectation": "MIXED", "text": req.content, "session_id": session_id}),
-                    ("intent_parsed", {"category": "chat", "text": req.content, "session_id": session_id}),
-                    ("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id}),
-                ]:
-                    eng._last_behavior_topic = to_conc
-                except: pass
-                # Record association: link current topic to entity mentions
-                try:
-                    l1 = getattr(eng, '_l1_modifier', None)
-                    l2 = getattr(eng, '_l2_5_belief', None)
-                    if l1 and hasattr(l1, 'extract'):
-                        modifiers = l1.extract(req.content)
-                        for mod in (modifiers or [])[:3]:
-                            if hasattr(eng, '_storage') and eng._storage:
-                                eng._storage.warm.insert_association(
-                                    req.content[:30], str(mod)[:50], "mentions", 0.5, session_id)
-                except: pass
-                # Record behavior edge: user navigated from previous message topic
-                try:
-                    bg = getattr(eng, '_behavior_graph', None)
-                    if bg and hasattr(bg, 'load'):
-                        from_conc = getattr(eng, '_last_behavior_topic', None)
-                        to_conc = req.content[:50]
-                        if from_conc and bg and hasattr(bg, 'mark_correction'):
-                            bg.mark_correction(from_conc, to_conc)
-                        eng._last_behavior_topic = to_conc
-                except: pass
-                if tracer and parent_span:
-                    tracer.record("v3_api", "subscribers_fired", True, 0, parent_span_id=parent_span)
-                logger.debug("EventBus pipeline unified: subscribers fired")
-        except Exception as _ep2:
-            logger.debug("EventBus unification skipped: %s", _ep2)
+                eng._publish("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id})
+        except Exception as _ep:
+            logger.debug("Post-LLM pipeline skipped: %s", _ep)
 
-        # Phase 5: Extract task plan from LLM response (preferred) or fall back to BlueprintEngine
+        # Phase 5: Extract task plan from LLM response
         task_graph = []
         # Try to parse LLM-generated task JSON first
         parsed = _parse_plan_json(content)

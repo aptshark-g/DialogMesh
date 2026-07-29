@@ -131,14 +131,9 @@ def start_engine(provider_type: str = None, api_key: str = None,
         # P2: State Machine Engine
         try:
             from core.agent.event.statemachine import DeciderStateMachine, PipelinePhase
+            from core.agent.event.handlers import register_all_handlers
             _engine._state_machine = DeciderStateMachine()
-            # Register handlers that map to real engine methods
-            sm = _engine._state_machine
-            sm.register_handler(PipelinePhase.DISCOURSE,
-                lambda ctx: {"blocks": len(getattr(_engine, '_discourse_tree', {}).get_block_relations(
-                    ctx.get("session_id", "default")).get("blocks", {}))})
-            sm.register_handler(PipelinePhase.PERSIST,
-                lambda ctx: _engine._persist_state() or {})
+            _ = register_all_handlers(_engine, tracer=getattr(_engine, '_tracer', None))
         except: pass
 
         # Wire cross-deps
