@@ -630,11 +630,16 @@ class CognitiveRuntimeEngine:
         # Profile → cold
         if hasattr(self, '_ocean_analyst') and self._ocean_analyst:
             try:
-                dims = getattr(getattr(self._ocean_analyst, 'profile', None), 'dims', {})
-                store.cold.save("profile_state.json", {
-                    "dims": dict(dims) if dims else {},
-                    "turn_count": getattr(self, '_turn_counter', 0)
-                })
+                    dims = getattr(getattr(self._ocean_analyst, 'profile', None), 'dims', {})
+                    # Don't overwrite if file already has keyword-analyzed dims
+                    existing_data = store.cold.load("profile_state.json", {})
+                    existing_dims = existing_data.get("dims", {})
+                    if any(abs(v - 0.5) > 0.01 for v in existing_dims.values()):
+                        dims = {**dict(dims), **existing_dims}  # merge, existing wins
+                    store.cold.save("profile_state.json", {
+                        "dims": dict(dims) if dims else {},
+                        "turn_count": getattr(self, '_turn_counter', 0),
+                    })
             except: pass
 
         # Meta + session → hot
