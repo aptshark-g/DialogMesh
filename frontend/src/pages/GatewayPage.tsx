@@ -210,7 +210,7 @@ const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesti
                       可用模型 ({provider.models.length})
                     </div>
                     <div className="space-y-1">
-                      {provider.models.map((model: V6GatewayModel) => {
+                      {(provider.models ?? []).map((model: V6GatewayModel) => {
                         const isModelActive = isActive && activeModel === model.id;
                         return (
                           <div
