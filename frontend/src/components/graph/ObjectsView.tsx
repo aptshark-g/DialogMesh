@@ -146,7 +146,7 @@ export function ObjectsView({ data, loading, submitting, onEdit }: ObjectsViewPr
                 lifespan: {object.lifespan}
               </span>
             </div>
-            {object.relations.length > 0 && (
+            {object.relations?.length > 0 && (
               <div className="mt-2">
                 <span className="text-[10px] text-text-muted">关系</span>
                 <div className="mt-1 flex items-center gap-1 flex-wrap">
@@ -280,7 +280,7 @@ export function ObjectsView({ data, loading, submitting, onEdit }: ObjectsViewPr
                 <label className={labelClass} htmlFor="object-edit-unrelate-target">
                   要移除的关系
                 </label>
-                {editForm.object.relations.length > 0 ? (
+                {editForm.object.relations?.length > 0 ? (
                   <select
                     id="object-edit-unrelate-target"
                     value={editForm.target}

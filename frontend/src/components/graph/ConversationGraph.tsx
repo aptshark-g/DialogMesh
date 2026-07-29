@@ -20,6 +20,7 @@ import {
 import { Background } from '@reactflow/background';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/stores/themeStore';
+import dagre from 'dagre';
 import '@reactflow/core/dist/style.css';
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import { Plus, Trash2, GripVertical, Pencil, ArrowUp, ArrowDown } from 'lucide-react';
@@ -170,14 +171,30 @@ export function ConversationGraph({
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
 
-  const initialNodes = useMemo(() => graphNodes.map((n) => ({
-    id: n.id, type: (n.type || 'default') as string,
-    position: { x: Math.random() * 400, y: Math.random() * 300 },
-    data: { label: n.label, type: n.type, size: (n as any).size, status: (n as any).status },
-    selected: n.id === selectedNodeId,
-    style: searchQuery && !n.label?.toLowerCase().includes(searchQuery.toLowerCase()) ? { opacity: 0.3 } : undefined,
-    hidden: activeFilters.length > 0 && !activeFilters.includes(n.type || ''),
-  })), [graphNodes, selectedNodeId, searchQuery, activeFilters]);
+  const initialNodes = useMemo(() => {
+    // Use dagre for tree layout instead of random positions
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80 });
+    g.nodes().forEach(n => g.removeNode(n));  // clear
+
+    graphNodes.forEach(n => g.setNode(n.id, { width: 160, height: 50 }));
+    graphEdges.forEach(e => g.setEdge(e.source, e.target));
+
+    dagre.layout(g);
+
+    return graphNodes.map((n) => {
+      const pos = g.node(n.id);
+      return {
+        id: n.id, type: (n.type || 'default') as string,
+        position: pos ? { x: pos.x - 80, y: pos.y - 25 } : { x: 0, y: 0 },
+        data: { label: n.label, type: n.type, size: (n as any).size, status: (n as any).status },
+        selected: n.id === selectedNodeId,
+        style: searchQuery && !n.label?.toLowerCase().includes(searchQuery.toLowerCase()) ? { opacity: 0.3 } : undefined,
+        hidden: activeFilters.length > 0 && !activeFilters.includes(n.type || ''),
+      };
+    });
+  }, [graphNodes, graphEdges, selectedNodeId, searchQuery, activeFilters]);
 
   const initialEdges = useMemo(() => graphEdges.map((e) => ({
     id: e.id || `${e.source}-${e.target}`, source: e.source, target: e.target,
