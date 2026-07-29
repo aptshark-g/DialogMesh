@@ -252,8 +252,11 @@ async def send_message(session_id: str, req: SendMessageRequest):
         # ── Pipeline state persistence (discourse/behavior/profile) ──
         try:
             import os as _osp
-            root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "data")
+            # Use project-root relative path (4 levels up from core/agent/api/)
+            _this_file = os.path.abspath(__file__)
+            root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_this_file)))), "data")
             os.makedirs(root, exist_ok=True)
+            logger.debug("Persist root: %s, file=%s", root, __file__)
             # Discourse: use engine's tree (not fresh instance)
             try:
                 from core.agent.cli.engine import get_engine
