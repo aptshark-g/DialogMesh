@@ -619,6 +619,20 @@ class CognitiveRuntimeEngine:
             "decider_tick": getattr(getattr(self, '_decider', None), '_tick', 0)
         })
 
+    def _persist_state_legacy(self):
+        """Fallback when StorageLayer not available."""
+        import json, os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(root, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        if hasattr(self, '_discourse_tree') and self._discourse_tree:
+            try:
+                sid = getattr(self, '_session_id', 'default')
+                rel = self._discourse_tree.get_block_relations(sid)
+                with open(os.path.join(data_dir, "discourse_state.json"), "w", encoding="utf-8") as f:
+                    json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
+            except: pass
+
     def on_event(self, event: EventIR) -> Optional[str]:
         """Process a single user event through the Async Path.
 
