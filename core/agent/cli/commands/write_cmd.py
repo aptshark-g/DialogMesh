@@ -175,6 +175,16 @@ def cmd_profile_set(args):
             ocean.snapshot.dims[dim] = val
         else:
             return print(json.dumps({"error":"cannot set dimension"}, ensure_ascii=False))
+        # Persist to disk for stubs_api cross-process read
+        pp = os.path.join(PROJECT_ROOT, "data", "profile_state.json")
+        saved = {}
+        if os.path.exists(pp):
+            try: saved = json.load(open(pp, encoding="utf-8"))
+            except: pass
+        saved.setdefault("dims", {})[dim] = val
+        os.makedirs(os.path.dirname(pp), exist_ok=True)
+        with open(pp, "w", encoding="utf-8") as f:
+            json.dump(saved, f, indent=2)
         print(json.dumps({"status":"set","dimension":dim,"value":val}, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error":str(e)}, ensure_ascii=False))

@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { ApiConfigPanel } from '../components/ApiConfigPanel';
 import { Toast } from '../components/ui/Toast';
-import { getRules, editRule, getHealth, getMetrics, getProviders, getPersistence } from '../api/v6';\nimport type { V6Rule, V6MetricsResponse, V6ProvidersResponse, V6PersistenceResponse } from '../types/api';
+import { getRules, editRule, getHealth, getMetrics, getProviders, getPersistence } from '../api/v6';
+import type { V6Rule, V6MetricsResponse, V6ProvidersResponse, V6PersistenceResponse } from '../types/api';
 
 interface RuleEditForm {
   confidence: string;
