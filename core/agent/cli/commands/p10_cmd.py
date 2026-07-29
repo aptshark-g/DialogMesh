@@ -200,3 +200,11 @@ def cmd_assoc_analyze(args):
         entities = list(set(e for edu in edus for e in getattr(edu, 'entities', [])))
         print(json.dumps({"modifiers": [str(e) for e in entities],
                           "count": len(entities), "source": "syntactic"}, ensure_ascii=False, default=str))
+
+def cmd_eventbus_wire(args):
+    """dm alg eventbus-wire — activate all EventBus subscribers."""
+    e = get_engine()
+    from core.agent.event.subscribers import wire_subscribers
+    stats = wire_subscribers(e)
+    print(json.dumps({"status":"wired","subscribers":stats["subscribers"],
+                      "names":stats["names"]}, ensure_ascii=False))

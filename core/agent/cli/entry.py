@@ -667,6 +667,7 @@ def _dispatch_p10(args):
         "self-audit": cmd_meta_self_audit, "discover-patterns": cmd_behavior_discover,
         "profile-analyze": cmd_profile_analyze, "memory-compile": cmd_memory_compile_events,
         "context-paradigm": cmd_context_paradigm, "causal-trigger": cmd_causal_trigger,
+        "eventbus-wire": cmd_eventbus_wire,
         "assoc-analyze": cmd_assoc_analyze,
     }
     if sub in m: m[sub](args)
@@ -967,6 +968,7 @@ def main():
     cp = als.add_parser("context-paradigm", help="dm alg context-paradigm <text> — ThreeParadigmContext")
     cp.add_argument("text", nargs="*", default=[""]); cp.add_argument("--max-tokens", type=int, default=2000)
     als.add_parser("causal-trigger", help="dm alg causal-trigger — CausalPlanner.process_chain")
+    aa = als.add_parser("eventbus-wire", help="dm alg eventbus-wire — activate EventBus subscribers")
     aa = als.add_parser("assoc-analyze", help="dm alg assoc-analyze <text> — L1 modifier extraction")
     aa.add_argument("text", nargs="*", default=[""])
 

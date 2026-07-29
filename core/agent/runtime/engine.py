@@ -790,6 +790,9 @@ class CognitiveRuntimeEngine:
             except Exception as e:
                 logger.warning('PCR evaluate failed: %s', e)
 
+        # Continue pipeline via extracted method
+        self._on_event_continue(event, pcr_output=pcr_output, parse_result=None, unified_result=None, text=text)
+
     def _publish(self, event_type, payload=None):
         """Fire-and-forget publish. Notifies subscribers."""
         kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
@@ -803,6 +806,8 @@ class CognitiveRuntimeEngine:
             try: sub.handle(kind, payload)
             except: pass
 
+    def _on_event_continue(self, event, pcr_output=None, parse_result=None, unified_result=None, text=""):
+        """Phase 2 of on_event — V4 Router after PCR."""
         # ---- V4.0 Cognitive Coordinate Router ----
         route = None
         if self._router_v4 is not None and text:

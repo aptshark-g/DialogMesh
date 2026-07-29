@@ -16,7 +16,7 @@ class DiscourseSubscriber:
         self.events = 0
         self.last_result = None
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         if not e or not hasattr(e, '_discourse_tree'):
             return
@@ -36,7 +36,7 @@ class BehaviorSubscriber:
         self._engine = engine
         self.events = 0
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         if not e:
             return
@@ -63,7 +63,7 @@ class MetaSubscriber:
         self._engine = engine
         self.events = 0
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         mc = getattr(e, '_meta_cognition', None)
         if not mc or not hasattr(mc, 'ingest'):
@@ -81,7 +81,7 @@ class ProfileSubscriber:
         self._engine = engine
         self.events = 0
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         ocean = getattr(e, '_ocean_analyst', None)
         if not ocean:
@@ -101,7 +101,7 @@ class AssociationSubscriber:
         self._engine = engine
         self.events = 0
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         text = payload.get("text", "")
         if not text:
@@ -132,7 +132,7 @@ class PersistenceSubscriber:
         self.events = 0
         self._last_persist = 0
 
-    async def handle(self, kind: str, payload: dict):
+    def handle(self, kind: str, payload: dict):
         e = self._engine
         if not e or not hasattr(e, '_persist_state'):
             return
