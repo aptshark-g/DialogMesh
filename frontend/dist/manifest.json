@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "DialogMesh",
+  "version": "3.0.0",
+  "description": "AI-powered dialogue and memory analysis system",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "DialogMesh",
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "favicon.svg",
+      "32": "favicon.svg"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "icons": {
+    "16": "favicon.svg",
+    "32": "favicon.svg",
+    "48": "favicon.svg",
+    "128": "favicon.svg"
+  }
+}
