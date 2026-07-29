@@ -327,8 +327,26 @@ async def send_message(session_id: str, req: SendMessageRequest):
                             json.dump(annotations[-20:], f, indent=2, ensure_ascii=False)
             except: pass
         except Exception as _ep:
-        except Exception as _ep:
             logger.debug("Pipeline state persist skipped: %s", _ep)
+
+        # P0: Unify with EventBus pipeline — fire all subscribers
+        try:
+            from core.agent.cli.engine import get_engine
+            eng = get_engine()
+            if eng and hasattr(eng, '_publish'):
+                # Wire subscribers if not already wired
+                if not getattr(eng, '_event_subscribers', None):
+                    try:
+                        from core.agent.event.subscribers import wire_subscribers
+                        wire_subscribers(eng)
+                    except: pass
+                # Fire events → triggers all 6 subscribers via scheduler
+                eng._publish("pcr_computed", {"expectation": "MIXED", "text": req.content, "session_id": session_id})
+                eng._publish("intent_parsed", {"category": "chat", "text": req.content, "session_id": session_id})
+                eng._publish("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id})
+                logger.debug("EventBus pipeline unified: subscribers fired")
+        except Exception as _ep2:
+            logger.debug("EventBus unification skipped: %s", _ep2)
 
         # Phase 5: Extract task plan from LLM response (preferred) or fall back to BlueprintEngine
         task_graph = []
