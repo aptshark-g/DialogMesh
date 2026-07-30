@@ -89,6 +89,56 @@ def cmd_search(args):
     print(json.dumps({"found": bid is not None, "block_id": bid}, ensure_ascii=False))
 
 
+def cmd_stats(args):
+    e = get_engine()
+    dt = getattr(e, '_discourse_tree', None)
+    if not dt: return print(json.dumps({"error": "not loaded"}, ensure_ascii=False))
+    sid = get_session(getattr(args, 'sid', None))
+    tree = dt.get_tree(sid)
+    rel = dt.get_block_relations(sid)
+    print(json.dumps({
+        "blocks": len(rel.get("blocks", {})),
+        "relations": len(rel.get("relations", [])),
+        "max_depth": max((getattr(b, 'depth', 0) for b in (tree.blocks.values() if tree else {})), default=0),
+    }, ensure_ascii=False))
+
+
+def cmd_compress(args):
+    e = get_engine()
+    dt = getattr(e, '_discourse_tree', None)
+    if not dt: return print(json.dumps({"error": "not loaded"}))
+    sid = get_session(getattr(args, 'sid', None))
+    count = dt.compress_cold_blocks(sid) if hasattr(dt, 'compress_cold_blocks') else 0
+    print(json.dumps({"compressed": count}, ensure_ascii=False))
+
+
+def cmd_topics(args):
+    e = get_engine()
+    tt = getattr(e, '_topic_tree', None)
+    sid = get_session(getattr(args, 'sid', None))
+    topics = []
+    if tt and hasattr(tt, '_nodes'):
+        for n in tt._nodes[:30]:
+            topics.append({"topic": str(getattr(n, 'topic', n)), "heat": getattr(n, 'heat', 0)})
+    print(json.dumps({"session_id": sid, "topics": topics}, ensure_ascii=False))
+
+
+def cmd_topic_tree(args):
+    e = get_engine()
+    tt = getattr(e, '_topic_tree', None)
+    sid = get_session(getattr(args, 'sid', None))
+    nodes = {}
+    edges = []
+    if tt and hasattr(tt, '_nodes'):
+        for n in tt._nodes[:50]:
+            nid = str(getattr(n, 'topic', id(n)))
+            nodes[nid] = {"heat": getattr(n, 'heat', 0)}
+            parent = getattr(n, 'parent', None)
+            if parent:
+                edges.append({"from": str(getattr(parent, 'topic', 'root')), "to": nid})
+    print(json.dumps({"session_id": sid, "nodes": nodes, "edges": edges}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     p = subparsers.add_parser("discourse", help="DiscourseBlockTree operations")
     sp = p.add_subparsers(dest="subcommand")
@@ -100,3 +150,7 @@ def register_cmds(subparsers):
     f.add_argument("text", nargs="+")
     s = sp.add_parser("search")
     s.add_argument("keyword")
+    sp.add_parser("stats")
+    sp.add_parser("compress")
+    sp.add_parser("topics")
+    sp.add_parser("topic-tree")

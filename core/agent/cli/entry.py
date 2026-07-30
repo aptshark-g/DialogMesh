@@ -1015,8 +1015,9 @@ def main():
         fn(args)
     elif args.command == "discourse":
         about = getattr(args, "subcommand", "")
-        from core.agent.cli.commands.discourse_cmd import cmd_show as d1, cmd_tree as d2, cmd_block as d3, cmd_feed as d4, cmd_search as d5
-        {"show": d1, "tree": d2, "block": d3, "feed": d4, "search": d5}.get(about, lambda a: print("Usage: dm discourse <show|tree|block|feed|search>"))(args)
+        from core.agent.cli.commands.discourse_cmd import cmd_show as d1, cmd_tree as d2, cmd_block as d3, cmd_feed as d4, cmd_search as d5, cmd_stats as d6, cmd_compress as d7, cmd_topics as d8, cmd_topic_tree as d9
+        {"show": d1, "tree": d2, "block": d3, "feed": d4, "search": d5,
+         "stats": d6, "compress": d7, "topics": d8, "topic-tree": d9}.get(about, lambda a: print("Usage: dm discourse <show|tree|block|feed|search|stats|compress|topics|topic-tree>"))(args)
     elif args.command == "pcr":
         from core.agent.cli.commands.pcr_intent_cmd import cmd_pcr
         cmd_pcr(args)
