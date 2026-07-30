@@ -112,6 +112,12 @@ def register_all_handlers(engine, tracer=None):
         sid = ctx.get("session_id", "default")
         if dt:
             if text: dt.feed(text, sid)
+            # ── Coverage gap: TopicTree.touch ──
+            tt = getattr(engine, '_topic_tree', None)
+            if tt and text:
+                import re as _re2
+                entities = _re2.findall(r'[A-Z]{2,}', text)
+                tt.touch(message_id=f"msg_{int(time.time()*1000)}", content=text, entities=entities)
             if reply: dt.feed(reply[:500], sid)
             rel = dt.get_block_relations(sid)
             return {"blocks": len(rel.get("blocks", {})), "relations": len(rel.get("relations", []))}
@@ -149,7 +155,14 @@ def register_all_handlers(engine, tracer=None):
                     chain = bg.get_recent_chain(5) if hasattr(bg, 'get_recent_chain') else []
                     return {"recorded": True, "chain_len": len(chain)}
             except Exception as e:
-                logger.debug("Behavior record failed: %s", e)
+                logger.debug("Behavior handler failed: %s", e)
+        # ── Coverage gap: _feed_trackb ──
+        if text and hasattr(engine, '_feed_trackb'):
+            try:
+                engine._feed_trackb(text)
+            except:
+                pass
+        return {"recorded": False, "msg": "behavior skipped" if not text else "no graph"}
         return {"recorded": False}
     sm.register_handler(PipelinePhase.BEHAVIOR, lambda ctx: _trace("behavior", handle_behavior, ctx))
 
@@ -268,6 +281,12 @@ def register_all_handlers(engine, tracer=None):
                 l2.ingest(ev)
                 results["belief_updated"] = True
             except: pass
+        # ── Coverage gap: _feed_extractions_to_substrate ──
+        if text and hasattr(engine, '_feed_extractions_to_substrate'):
+            try:
+                engine._feed_extractions_to_substrate()
+            except:
+                pass
         return results
     sm.register_handler(PipelinePhase.ASSOCIATION, lambda ctx: _trace("association", handle_association, ctx))
 

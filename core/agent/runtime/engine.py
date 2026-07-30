@@ -841,6 +841,18 @@ class CognitiveRuntimeEngine:
         }
         phase = phase_map.get(start_phase, PipelinePhase.PCR)
 
+        # ── Coverage gap: ConversationTracker + Granularity (legacy on_event) ──
+        _raw = event.payload.get("text", "") if hasattr(event, "payload") else str(event)
+        _concepts = self._extract_concepts_from_text(_raw) if _raw else []
+        if _raw and getattr(self, '_conversation_tracker', None):
+            self._conversation_tracker.add_turn(_raw, concepts=_concepts)
+        self._turn_counter += 1
+        if getattr(self, '_granularity_regulator', None) and self._discourse_tree:
+            _sid = event.payload.get("session_id", "default") if hasattr(event, "payload") else "default"
+            _tree = getattr(self._discourse_tree, "_trees", {}).get(_sid) if hasattr(self._discourse_tree, "_trees") else None
+            if _tree:
+                self._granularity_regulator.regulate(_tree, self._turn_counter)
+
         text = event.payload.get("text", "") if hasattr(event, "payload") else str(event)
         ctx = {
             "text": text,

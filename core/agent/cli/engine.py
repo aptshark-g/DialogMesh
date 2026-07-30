@@ -225,6 +225,7 @@ def start_engine(provider_type: str = None, api_key: str = None,
             _engine._rate_guard = RateGuard()
             _engine._cascade = CascadeDetector(_engine._rate_guard)
             _engine._capability_guard = CapabilityGuard()
+            _engine._cap_guard = _engine._capability_guard  # legacy alias for tests
             _engine._hot_reloader = HotReloader()
         except: pass
 
