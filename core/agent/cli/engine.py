@@ -117,6 +117,12 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.event.cognitive_loop import wire_cognitive_loop
         wire_cognitive_loop(engine, interval_turns=5)
     except: pass
+    # Discourse gaps: backtracking + format router
+    try:
+        from core.agent.event.discourse_gaps import TopicBacktracker, FormatRouter
+        engine._backtracker = TopicBacktracker()
+        engine._format_router = FormatRouter()
+    except: pass
     return engine
 
 
