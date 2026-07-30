@@ -66,6 +66,8 @@ class MetaDecision:
     reasoning: str
     was_correct: Optional[bool] = None  # verified later
 
+MetaReflection = MetaDecision  # backward compat — renamed during v4→v6 merge
+
 
 # ── Meta-cognition Engine ──
 
