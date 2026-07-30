@@ -35,11 +35,13 @@ def cmd_profile_edit(args):
 def cmd_profile_ocean(args):
     e = get_engine()
     ocean = getattr(e, '_ocean_analyst', None)
-    if ocean and hasattr(ocean, 'snapshot'):
-        snap = ocean.snapshot()
-        dims = {k: v for k, v in (snap if isinstance(snap, dict) else getattr(snap, '__dict__', {}).items())
-                if k in ('openness','conscientiousness','extraversion','agreeableness','neuroticism')}
-        print(json.dumps(dims, indent=2, ensure_ascii=False))
+    if ocean and hasattr(ocean, 'profile'):
+        p = ocean.profile
+        dims = getattr(p, 'dims', getattr(p, '__dict__', {}))
+        if not isinstance(dims, dict):
+            dims = getattr(dims, '__dict__', {}) if dims else {}
+        result = {k: v for k, v in dims.items() if k in ('O','C','E','A','N','openness','conscientiousness','extraversion','agreeableness','neuroticism')}
+        print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print(json.dumps({"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5,"msg":"default"}, ensure_ascii=False))
 

@@ -1,6 +1,22 @@
 """Rules, ABC, Annotations, Corrections, Feedback, Inertia, Versions, Metrics."""
-import json
+import json, os as _os
 from core.agent.cli.engine import get_engine, get_session
+
+ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+
+def _disk(key: str, rel_path: str):
+    """Read disk-backed JSON file, print count."""
+    fpath = _os.path.join(ROOT, rel_path)
+    if _os.path.exists(fpath):
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                data = json.load(f)
+            count = len(data) if isinstance(data, list) else (1 if data else 0)
+            print(json.dumps({f"{key}_count": count, "source": rel_path}, ensure_ascii=False))
+        except:
+            print(json.dumps({f"{key}_count": 0, "error": "parse failed"}, ensure_ascii=False))
+    else:
+        print(json.dumps({f"{key}_count": 0, "source": rel_path}, ensure_ascii=False))
 
 
 def cmd_rules_show(args):
@@ -41,33 +57,15 @@ def cmd_abc_show(args):
 
 
 def cmd_annotations_show(args):
-    e = get_engine()
-    mind = getattr(e, '_mind', None)
-    if mind and hasattr(mind, 'mistakes'):
-        mm = mind.mistakes
-        count = len(getattr(mm, 'items', getattr(mm, 'entries', [])))
-        print(json.dumps({"annotations": count}, ensure_ascii=False))
-    else:
-        print(json.dumps({"annotations": 0}, ensure_ascii=False))
+    _disk("annotations", "data/annotations.json")
 
 
 def cmd_corrections_show(args):
-    e = get_engine()
-    ocean = getattr(e, '_ocean_analyst', None)
-    if ocean:
-        hist = getattr(ocean, 'history', [])
-        print(json.dumps({"corrections": len(hist)}, ensure_ascii=False))
-    else:
-        print(json.dumps({"corrections": 0}, ensure_ascii=False))
+    _disk("corrections", "data/corrections.json")
 
 
 def cmd_feedback_show(args):
-    e = get_engine()
-    meta = getattr(e, '_meta_cognition', None)
-    if meta and hasattr(meta, 'reviews'):
-        print(json.dumps({"reviews": len(meta.reviews or [])}, ensure_ascii=False))
-    else:
-        print(json.dumps({"msg": "No feedback data"}, ensure_ascii=False))
+    _disk("feedback", "data/feedback.json")
 
 
 def cmd_inertia_show(args):
@@ -103,12 +101,14 @@ def cmd_versions_show(args):
 
 def cmd_metrics_show(args):
     e = get_engine()
-    stats = getattr(e, '_stats', None) or {}
-    if isinstance(stats, dict):
-        metric_info = {k: v for k, v in stats.items() if isinstance(v, (int, float, str))}
-        print(json.dumps(metric_info, indent=2, ensure_ascii=False))
-    else:
-        print(json.dumps({"msg": "No metrics"}, ensure_ascii=False))
+    sla = getattr(e, '_sla_watchdog', None)
+    sched = getattr(e, '_scheduler', None)
+    info = {"subsystems": sum(1 for _ in [e._state_machine,e._storage,e._tracer,e._event_log,e._decider] if _)}
+    if sla and hasattr(sla, 'stats'):
+        info["sla"] = str(sla.stats())[:80]
+    if sched and hasattr(sched, 'stats'):
+        info["scheduler"] = str(sched.stats())[:80]
+    print(json.dumps(info, indent=2, ensure_ascii=False))
 
 
 def register_cmds(subparsers):
