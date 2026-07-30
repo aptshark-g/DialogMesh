@@ -254,6 +254,29 @@ def start_engine(provider_type: str = None, api_key: str = None,
             _engine._frame_library.load_default()
         except: pass
 
+        # BehaviorGraph adapter
+        try:
+            from core.agent.behavior.adapter import BehaviorGraphAdapter
+            _engine._behavior_graph_adapter = BehaviorGraphAdapter(
+                graph_path="data/behavior_graph.json", auto_save=True)
+        except: pass
+        # ToolRegistry
+        try:
+            from core.agent.tools.registry import ToolRegistry
+            import core.agent.tools.builtin
+            _engine._tool_registry = ToolRegistry()
+        except: pass
+
+        # Learning Ingestion (DESIGN_LEARNING_INGESTION)
+        try:
+            from core.agent.learning.sources import ArxivSource, DuckDuckGoSource, ScholarSource
+            from core.agent.learning.content_fetcher import ContentFetcher
+            from core.agent.learning.credibility import CredibilityEvaluator
+            _engine._learning_sources = [ArxivSource(), DuckDuckGoSource(), ScholarSource()]
+            _engine._content_fetcher = ContentFetcher()
+            _engine._credibility_eval = CredibilityEvaluator()
+        except: pass
+
         # Wire cross-deps
         event_log = loaded.get("event_log")
         event_bus = loaded.get("event_bus")
