@@ -360,7 +360,7 @@ def _dispatch_p3(args):
         cmd_assoc_show, cmd_assoc_trace,
         cmd_assoc_funnel, cmd_assoc_stats, cmd_assoc_filter,
         cmd_obs_show, cmd_obs_query, cmd_obs_stats, cmd_obs_list, cmd_obs_clear,
-        cmd_obs_filter, cmd_obs_mark, cmd_obs_reset,
+        cmd_obs_filter, cmd_obs_mark, cmd_obs_reset, cmd_obs_subscribe,
     )
     from core.agent.cli.commands.knowledge_cmd import (
         cmd_knowledge_query, cmd_knowledge_sources, cmd_knowledge_import,
@@ -379,6 +379,7 @@ def _dispatch_p3(args):
         ("obs","stats"): cmd_obs_stats, ("obs","list"): cmd_obs_list,
         ("obs","clear"): cmd_obs_clear, ("obs","filter"): cmd_obs_filter,
         ("obs","mark"): cmd_obs_mark, ("obs","reset"): cmd_obs_reset,
+        ("obs","subscribe"): cmd_obs_subscribe,
         ("knowledge","query"): cmd_knowledge_query, ("knowledge","sources"): cmd_knowledge_sources,
         ("knowledge","import"): cmd_knowledge_import,
     }

@@ -144,12 +144,12 @@ def cmd_obs_mark(args):
         print(json.dumps({"error": "No pool"}, ensure_ascii=False))
 
 
-def cmd_obs_reset(args):
+def cmd_obs_subscribe(args):
     e = get_engine()
     pool = getattr(e, '_observation_pool', None)
-    if pool:
-        pool.reset()
-        print(json.dumps({"status": "reset"}, ensure_ascii=False))
+    if pool and hasattr(pool, 'subscribe'):
+        pool.subscribe(lambda e: None)
+        print(json.dumps({"subscribed": True}, ensure_ascii=False))
     else:
         print(json.dumps({"error": "No pool"}, ensure_ascii=False))
 
@@ -284,3 +284,4 @@ def register_cmds(subparsers):
     m = sp.add_parser("mark")
     m.add_argument("event_id")
     sp.add_parser("reset")
+    sp.add_parser("subscribe")
