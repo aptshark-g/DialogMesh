@@ -88,6 +88,37 @@ def cmd_engineering_show(args):
         print(json.dumps({"error": "Knowledge graph not loaded"}, ensure_ascii=False))
 
 
+def cmd_engineering_modules(args):
+    e = get_engine()
+    kg = getattr(e, '_engineering_knowledge', None)
+    if kg:
+        items = getattr(kg, 'nodes', None) or getattr(kg, 'objects', None) or getattr(kg, '_items', {})
+        keys = list(items.keys())[:20] if isinstance(items, dict) else (list(items)[:20] if isinstance(items, list) else [])
+        print(json.dumps({"modules": len(keys), "names": keys[:10]}, ensure_ascii=False))
+    else:
+        print(json.dumps({"modules": 0}, ensure_ascii=False))
+
+
+def cmd_engineering_constraints(args):
+    e = get_engine()
+    kg = getattr(e, '_engineering_knowledge', None)
+    if kg and hasattr(kg, 'get_constraints_for'):
+        c = kg.get_constraints_for("") or []
+        print(json.dumps({"constraints": len(c), "sample": str(c[:3])[:100]}, ensure_ascii=False))
+    else:
+        print(json.dumps({"constraints": 0}, ensure_ascii=False))
+
+
+def cmd_engineering_antipatterns(args):
+    e = get_engine()
+    kg = getattr(e, '_engineering_knowledge', None)
+    if kg and hasattr(kg, 'get_anti_patterns'):
+        ap = kg.get_anti_patterns() or []
+        print(json.dumps({"anti_patterns": len(ap), "sample": str(ap[:3])[:150]}, ensure_ascii=False))
+    else:
+        print(json.dumps({"anti_patterns": 0}, ensure_ascii=False))
+
+
 def cmd_concepts_show(args):
     e = get_engine()
     objs = getattr(e, '_world_objects', None)
@@ -123,11 +154,16 @@ def register_cmds(subparsers):
     sp.add_parser("traits")
     sp.add_parser("history")
     sp.add_parser("reset")
+    sp.add_parser("export")
+    sp.add_parser("import")
 
     # Engineering
     p = subparsers.add_parser("engineering", help="Engineering Knowledge Graph")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    sp.add_parser("modules")
+    sp.add_parser("constraints")
+    sp.add_parser("anti-patterns")
 
     # Concepts
     p = subparsers.add_parser("concepts", help="World objects / concept graph")
