@@ -375,17 +375,18 @@ def _dispatch_p5(args):
     about = getattr(args, "subcommand", "")
     cmd = args.command
     from core.agent.cli.commands.p5_cmd import (
-        cmd_rules_show, cmd_rules_add, cmd_abc_show,
+        cmd_rules_show, cmd_rules_add, cmd_rules_stats, cmd_abc_show,
         cmd_annotations_show, cmd_corrections_show, cmd_feedback_show,
-        cmd_inertia_show, cmd_versions_show, cmd_metrics_show,
+        cmd_inertia_show, cmd_inertia_patterns, cmd_versions_show, cmd_metrics_show,
     )
     m = {
         ("rules","show"): cmd_rules_show, ("rules","add"): cmd_rules_add,
+        ("rules","stats"): cmd_rules_stats,
         ("abc","show"): cmd_abc_show,
         ("annotations","show"): cmd_annotations_show,
         ("corrections","show"): cmd_corrections_show,
         ("feedback","show"): cmd_feedback_show,
-        ("inertia","show"): cmd_inertia_show,
+        ("inertia","show"): cmd_inertia_show, ("inertia","patterns"): cmd_inertia_patterns,
         ("versions","show"): cmd_versions_show,
         ("metrics","show"): cmd_metrics_show,
     }

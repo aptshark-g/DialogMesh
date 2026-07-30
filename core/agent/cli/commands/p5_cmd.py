@@ -155,3 +155,9 @@ def register_cmds(subparsers):
     p = subparsers.add_parser("metrics", help="Engine metrics")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+
+    # Add-ons: rules stats, inertia patterns
+    rs = subparsers.add_parser("rules").add_subparsers(dest="subcommand")
+    rs.add_parser("show"); rs.add_parser("add"); rs.add_parser("stats")
+    inert = subparsers.add_parser("inertia").add_subparsers(dest="subcommand")
+    inert.add_parser("show"); inert.add_parser("patterns")
