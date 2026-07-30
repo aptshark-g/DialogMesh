@@ -132,6 +132,16 @@ def _create_engine_instance(provider_type: str = None):
         engine._backtracker = TopicBacktracker()
         engine._format_router = FormatRouter()
     except: pass
+    # Knowledge Graph: RAG bridge + Frame library
+    try:
+        from core.agent.knowledge.rag_bridge import RAGBridge
+        engine._rag_bridge = RAGBridge()
+    except: pass
+    try:
+        from core.agent.knowledge.frame_source import FrameLibrary
+        engine._frame_library = FrameLibrary()
+        engine._frame_library.load_default()
+    except: pass
     return engine
 
 
@@ -231,6 +241,17 @@ def start_engine(provider_type: str = None, api_key: str = None,
             from core.agent.event.handlers import register_all_handlers
             _engine._state_machine = DeciderStateMachine()
             _ = register_all_handlers(_engine, tracer=getattr(_engine, '_tracer', None))
+        except: pass
+
+        # Knowledge Graph
+        try:
+            from core.agent.knowledge.rag_bridge import RAGBridge
+            _engine._rag_bridge = RAGBridge()
+        except: pass
+        try:
+            from core.agent.knowledge.frame_source import FrameLibrary
+            _engine._frame_library = FrameLibrary()
+            _engine._frame_library.load_default()
         except: pass
 
         # Wire cross-deps
