@@ -139,6 +139,39 @@ def cmd_topic_tree(args):
     print(json.dumps({"session_id": sid, "nodes": nodes, "edges": edges}, ensure_ascii=False))
 
 
+def cmd_summary(args):
+    e = get_engine()
+    dt = getattr(e, '_discourse_tree', None)
+    if not dt: return print(json.dumps({"error": "not loaded"}))
+    sid = get_session(getattr(args, 'sid', None))
+    tree = dt.get_tree(sid)
+    if not tree or args.block_id not in tree.blocks:
+        return print(json.dumps({"error": "block not found"}, ensure_ascii=False))
+    block = tree.blocks[args.block_id]
+    block.summary = " ".join(args.text)
+    print(json.dumps({"status": "ok", "block_id": args.block_id}, ensure_ascii=False))
+
+
+def cmd_topic_add(args):
+    e = get_engine()
+    tt = getattr(e, '_topic_tree', None)
+    if not tt: return print(json.dumps({"error": "no topic tree"}))
+    if hasattr(tt, 'add_topic'):
+        tt.add_topic(args.topic)
+    elif hasattr(tt, 'touch'):
+        tt.touch(message_id=f"manual_{args.topic}", content=args.topic, entities=[args.topic])
+    print(json.dumps({"status": "ok", "topic": args.topic}, ensure_ascii=False))
+
+
+def cmd_topic_remove(args):
+    e = get_engine()
+    tt = getattr(e, '_topic_tree', None)
+    if not tt: return print(json.dumps({"error": "no topic tree"}))
+    if hasattr(tt, 'remove_topic'):
+        tt.remove_topic(args.topic)
+    print(json.dumps({"status": "ok", "topic": args.topic}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     p = subparsers.add_parser("discourse", help="DiscourseBlockTree operations")
     sp = p.add_subparsers(dest="subcommand")
@@ -154,3 +187,12 @@ def register_cmds(subparsers):
     sp.add_parser("compress")
     sp.add_parser("topics")
     sp.add_parser("topic-tree")
+
+    # Write ops
+    ts = sp.add_parser("summary")
+    ts.add_argument("block_id")
+    ts.add_argument("text", nargs="+")
+    ta = sp.add_parser("topic-add")
+    ta.add_argument("topic")
+    tr = sp.add_parser("topic-remove")
+    tr.add_argument("topic")
