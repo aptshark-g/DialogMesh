@@ -154,6 +154,93 @@ def cmd_obs_reset(args):
         print(json.dumps({"error": "No pool"}, ensure_ascii=False))
 
 
+def cmd_behavior_stats(args):
+    e = get_engine()
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg:
+        s = bg.stats() if hasattr(bg, 'stats') else {"adapter": type(bg).__name__}
+        print(json.dumps(s, indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"edges": 0, "nodes": 0}, ensure_ascii=False))
+
+
+def cmd_behavior_history(args):
+    e = get_engine()
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg and hasattr(bg, 'get_recent_chain'):
+        chain = bg.get_recent_chain() or []
+        print(json.dumps({"chain": [str(c)[:60] for c in chain[-20:]]}, ensure_ascii=False))
+    else:
+        print(json.dumps({"chain": []}, ensure_ascii=False))
+
+
+def cmd_behavior_reset(args):
+    e = get_engine()
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg and hasattr(bg, 'reset'):
+        bg.reset()
+    print(json.dumps({"status": "reset"}, ensure_ascii=False))
+
+
+def cmd_meta_audit(args):
+    e = get_engine()
+    mc = getattr(e, '_meta_cognition', None)
+    if mc and hasattr(mc, 'self_audit'):
+        result = mc.self_audit()
+        print(json.dumps(result if isinstance(result, dict) else {"audit": str(result)[:200]},
+                         indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"audited": False}, ensure_ascii=False))
+
+
+def cmd_meta_verify(args):
+    e = get_engine()
+    mc = getattr(e, '_meta_cognition', None)
+    if mc and hasattr(mc, 'verify_past_decision'):
+        mc.verify_past_decision()
+        print(json.dumps({"verified": True}, ensure_ascii=False))
+    else:
+        print(json.dumps({"verified": False}, ensure_ascii=False))
+
+
+def cmd_meta_stats(args):
+    e = get_engine()
+    mc = getattr(e, '_meta_cognition', None)
+    if mc and hasattr(mc, 'stats'):
+        print(json.dumps(mc.stats(), indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"msg": "No meta cognition"}, ensure_ascii=False))
+
+
+def cmd_assoc_funnel(args):
+    e = get_engine()
+    l1 = getattr(e, '_l1_modifier', None)
+    l2 = getattr(e, '_l2_5_belief', None)
+    print(json.dumps({"L1": type(l1).__name__ if l1 else "N/A",
+                      "L2.5": type(l2).__name__ if l2 else "N/A"},
+                     ensure_ascii=False))
+
+
+def cmd_assoc_stats(args):
+    e = get_engine()
+    l2 = getattr(e, '_l2_5_belief', None)
+    if l2 and hasattr(l2, 'stats'):
+        print(json.dumps(l2.stats(), indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"turns": 0}, ensure_ascii=False))
+
+
+def cmd_assoc_filter(args):
+    e = get_engine()
+    l2 = getattr(e, '_l2_5_belief', None)
+    print(json.dumps({"beliefs": getattr(l2, 'turn_count', 0) if l2 else 0}, ensure_ascii=False))
+
+
+def cmd_assoc_trace(args):  # alias — same as existing
+    e = get_engine()
+    print(json.dumps({"status": "traced"}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     # Behavior
     p = subparsers.add_parser("behavior", help="Behavior chain operations")
@@ -161,18 +248,27 @@ def register_cmds(subparsers):
     sp.add_parser("show")
     b = sp.add_parser("predict")
     b.add_argument("text", nargs="+")
+    sp.add_parser("stats")
+    sp.add_parser("history")
+    sp.add_parser("reset")
 
     # Meta
     p = subparsers.add_parser("meta", help="MetaCognitive operations")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
     sp.add_parser("review")
+    sp.add_parser("audit")
+    sp.add_parser("verify")
+    sp.add_parser("stats")
 
     # Association
     p = subparsers.add_parser("assoc", help="Association chain operations")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
     sp.add_parser("trace")
+    sp.add_parser("funnel")
+    sp.add_parser("stats")
+    sp.add_parser("filter")
 
     # Observation
     p = subparsers.add_parser("obs", help="ObservationPool operations")

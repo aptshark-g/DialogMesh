@@ -324,15 +324,24 @@ def _dispatch_p3(args):
     cmd = args.command
     from core.agent.cli.commands.p3_cmd import (
         cmd_behavior_show, cmd_behavior_predict,
+        cmd_behavior_stats, cmd_behavior_history, cmd_behavior_reset,
         cmd_meta_show, cmd_meta_review,
+        cmd_meta_audit, cmd_meta_verify, cmd_meta_stats,
         cmd_assoc_show, cmd_assoc_trace,
+        cmd_assoc_funnel, cmd_assoc_stats, cmd_assoc_filter,
         cmd_obs_show, cmd_obs_query, cmd_obs_stats, cmd_obs_list, cmd_obs_clear,
         cmd_obs_filter, cmd_obs_mark, cmd_obs_reset,
     )
     map = {
         ("behavior","show"): cmd_behavior_show, ("behavior","predict"): cmd_behavior_predict,
+        ("behavior","stats"): cmd_behavior_stats, ("behavior","history"): cmd_behavior_history,
+        ("behavior","reset"): cmd_behavior_reset,
         ("meta","show"): cmd_meta_show, ("meta","review"): cmd_meta_review,
+        ("meta","audit"): cmd_meta_audit, ("meta","verify"): cmd_meta_verify,
+        ("meta","stats"): cmd_meta_stats,
         ("assoc","show"): cmd_assoc_show, ("assoc","trace"): cmd_assoc_trace,
+        ("assoc","funnel"): cmd_assoc_funnel, ("assoc","stats"): cmd_assoc_stats,
+        ("assoc","filter"): cmd_assoc_filter,
         ("obs","show"): cmd_obs_show, ("obs","query"): cmd_obs_query,
         ("obs","stats"): cmd_obs_stats, ("obs","list"): cmd_obs_list,
         ("obs","clear"): cmd_obs_clear, ("obs","filter"): cmd_obs_filter,
