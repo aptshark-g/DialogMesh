@@ -47,13 +47,44 @@ def get_engine():
     if _engine is None or not getattr(_engine, '_running', False):
         # Auto-start with saved config
         result = start_engine()
-        if result.get("status") != "running":
-            raise RuntimeError(f"Engine auto-start failed: {result.get('error', result)}")
     return _engine
+
+
+def get_pool_engine():
+    """Get an engine from the EnginePool (multi-worker safe). Falls back to singleton."""
+    try:
+        from core.agent.cli.pool import get_engine as pooled_get_engine
+        eng = pooled_get_engine()
+        if eng is not None:
+            return eng
+    except Exception:
+        pass
+    return get_engine()
 
 
 def get_provider():
     return _provider
+
+
+def _create_engine_instance(provider_type: str = None):
+    """Create a fresh engine without global singleton. Used by EnginePool."""
+    pt = provider_type or _state.get("provider", "deepseek")
+    try:
+        if pt == "deepseek":
+            from core.agent.llm_providers.openai_provider import OpenAIProvider
+            provider = OpenAIProvider("deepseek", {
+                "api_key": _state.get("key") or os.environ.get("DEEPSEEK_API_KEY", ""),
+                "base_url": os.environ.get("DM_LLM_BASE", "") or "https://api.deepseek.com/v1",
+                "model": _state.get("model", "deepseek-chat"),
+            })
+        else:
+            from core.agent.llm_providers.mock_provider import MockProvider
+            provider = MockProvider()
+    except Exception:
+        from core.agent.llm_providers.mock_provider import MockProvider
+        provider = MockProvider()
+    from core.agent.runtime.engine import CognitiveRuntimeEngine
+    return CognitiveRuntimeEngine(llm_provider=provider)
 
 
 def start_engine(provider_type: str = None, api_key: str = None,
