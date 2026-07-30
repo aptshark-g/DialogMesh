@@ -1,5 +1,5 @@
 """Profile, Engineering, Mind, Concepts CLI commands."""
-import json
+import json, os
 from core.agent.cli.engine import get_engine
 
 
@@ -80,8 +80,18 @@ def cmd_profile_reset(args):
 def cmd_profile_sessions(args):
     e = get_engine()
     ocean = getattr(e, '_ocean_analyst', None)
-    count = len(getattr(ocean, 'history', getattr(ocean, '_history', []))) if ocean else 0
-    print(json.dumps({"sessions": count, "msg": "profile updates across sessions"}, ensure_ascii=False))
+    if ocean:
+        hist = getattr(ocean, 'history', getattr(ocean, '_history', [])) or []
+        try:
+            oc_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))), 'data', 'profile', 'ocean_profile.json')
+            updates = os.path.getmtime(oc_file) if os.path.exists(oc_file) else 0
+        except:
+            updates = 0
+        print(json.dumps({"sessions": len(hist), "last_update": int(updates) if updates else 0},
+                         ensure_ascii=False))
+    else:
+        print(json.dumps({"sessions": 0}, ensure_ascii=False))
 
 
 def cmd_profile_stability(args):
@@ -89,10 +99,13 @@ def cmd_profile_stability(args):
     ocean = getattr(e, '_ocean_analyst', None)
     if ocean and hasattr(ocean, 'profile'):
         dims = getattr(ocean.profile, 'dims', {})
-        stable = [k for k, v in dims.items() if abs(v - 0.5) < 0.1]
-        print(json.dumps({"stable_dims": len(stable), "unstable": len(dims)-len(stable)}, ensure_ascii=False))
+        variances = {k: abs(v - 0.5) for k, v in dims.items()}
+        stable = [k for k, v in variances.items() if v < 0.15]
+        unstable = [k for k, v in variances.items() if v >= 0.15]
+        print(json.dumps({"stable": stable, "unstable": unstable, "count": len(stable)},
+                         ensure_ascii=False))
     else:
-        print(json.dumps({"stable_dims": 0}, ensure_ascii=False))
+        print(json.dumps({"stable": 0}, ensure_ascii=False))
 
 
 def cmd_engineering_show(args):

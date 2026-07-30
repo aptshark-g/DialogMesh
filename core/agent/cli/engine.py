@@ -224,7 +224,7 @@ def start_engine(provider_type: str = None, api_key: str = None,
             from core.agent.event.closure import RateGuard, CapabilityGuard, HotReloader, CascadeDetector
             _engine._rate_guard = RateGuard()
             _engine._cascade = CascadeDetector(_engine._rate_guard)
-            _engine._cap_guard = CapabilityGuard()
+            _engine._capability_guard = CapabilityGuard()
             _engine._hot_reloader = HotReloader()
         except: pass
 

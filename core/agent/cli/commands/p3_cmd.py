@@ -293,22 +293,42 @@ def cmd_assoc_trace(args):  # alias — same as existing
 
 def cmd_behavior_filter(args):
     e = get_engine()
-    print(json.dumps({"filtered": True, "msg": "behavior filter applied"}, ensure_ascii=False))
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg and hasattr(bg, 'get_recent_chain'):
+        chain = bg.get_recent_chain() or []
+        kw = getattr(args, 'keyword', '')
+        hits = [str(c)[:80] for c in chain if kw.lower() in str(c).lower()]
+        print(json.dumps({"filtered": len(chain) - len(hits), "matches": len(hits)}, ensure_ascii=False))
+    else:
+        print(json.dumps({"filtered": 0}, ensure_ascii=False))
 
 
 def cmd_assoc_search(args):
     e = get_engine()
-    print(json.dumps({"found": False, "msg": "assoc search not implemented"}, ensure_ascii=False))
+    l1 = getattr(e, '_l1_modifier', None)
+    if l1:
+        atoms = getattr(l1, 'atoms', getattr(l1, '_atoms', {}))
+        kw = getattr(args, 'keyword', '')
+        found = [k for k in atoms.keys() if kw.lower() in str(k).lower()][:5] if atoms else []
+        print(json.dumps({"found": len(found), "matches": found}, ensure_ascii=False))
+    else:
+        print(json.dumps({"found": 0, "msg": "L1 modifier not loaded"}, ensure_ascii=False))
 
 
 def cmd_assoc_export(args):
     e = get_engine()
-    print(json.dumps({"exported": True, "msg": "assoc chains exported"}, ensure_ascii=False))
+    l1 = getattr(e, '_l1_modifier', None)
+    l2 = getattr(e, '_l2_5_belief', None)
+    info = {"L1_atoms": len(getattr(l1, 'atoms', getattr(l1, '_atoms', {}))) if l1 else 0,
+            "L2_beliefs": len(getattr(l2, 'beliefs', getattr(l2, '_beliefs', {}))) if l2 else 0}
+    print(json.dumps({"exported": info}, ensure_ascii=False))
 
 
 def cmd_assoc_history(args):
     e = get_engine()
-    print(json.dumps({"history": 0, "msg": "no assoc history tracked"}, ensure_ascii=False))
+    l1 = getattr(e, '_l1_modifier', None)
+    events = len(getattr(l1, 'atoms', getattr(l1, '_atoms', {}))) if l1 else 0
+    print(json.dumps({"chain_events": events, "msg": "association atom count"}, ensure_ascii=False))
 
 
 def register_cmds(subparsers):
