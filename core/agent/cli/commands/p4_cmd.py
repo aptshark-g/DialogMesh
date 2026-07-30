@@ -136,10 +136,50 @@ def cmd_mind_show(args):
         info = {"type": type(mind).__name__}
         if hasattr(mind, '__dict__'):
             info.update({k: str(v)[:80] for k, v in mind.__dict__.items()
-                         if not k.startswith('_') and not callable(v)})
+                        if not k.startswith('_') and isinstance(v, (str, int, float, bool))})
         print(json.dumps(info, indent=2, ensure_ascii=False, default=str))
     else:
         print(json.dumps({"error": "Mind not loaded"}, ensure_ascii=False))
+
+
+def cmd_concepts_search(args):
+    e = get_engine()
+    objs = getattr(e, '_world_objects', None)
+    found = False
+    if objs and hasattr(objs, 'find'):
+        r = objs.find(getattr(args, 'keyword', ''))
+        found = r is not None
+    print(json.dumps({"found": found, "keyword": getattr(args, 'keyword', '?') or '?'}, ensure_ascii=False))
+
+
+def cmd_concepts_relations(args):
+    e = get_engine()
+    objs = getattr(e, '_world_objects', None)
+    count = len(getattr(objs, 'relations', getattr(objs, 'edges', []))) if objs else 0
+    print(json.dumps({"relations": count}, ensure_ascii=False))
+
+
+def cmd_mind_attention(args):
+    e = get_engine()
+    mind = getattr(e, '_mind', None)
+    if mind and hasattr(mind, 'stats'):
+        s = mind.stats()
+        att = s.get("attention", {})
+        print(json.dumps({"anchors": len(att.get("top_anchors", [])), "updates": att.get("total_updates", 0)},
+                         ensure_ascii=False))
+    else:
+        print(json.dumps({"anchors": 0}, ensure_ascii=False))
+
+
+def cmd_mind_mistakes(args):
+    e = get_engine()
+    mind = getattr(e, '_mind', None)
+    if mind and hasattr(mind, 'stats'):
+        s = mind.stats()
+        m = s.get("mistakes", {})
+        print(json.dumps({"patterns": m.get("patterns", 0), "rules": m.get("rules", 0)}, ensure_ascii=False))
+    else:
+        print(json.dumps({"patterns": 0}, ensure_ascii=False))
 
 
 def register_cmds(subparsers):
@@ -169,8 +209,12 @@ def register_cmds(subparsers):
     p = subparsers.add_parser("concepts", help="World objects / concept graph")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    s = sp.add_parser("search"); s.add_argument("keyword")
+    sp.add_parser("relations")
 
     # Mind
     p = subparsers.add_parser("mind", help="Mind operations")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    sp.add_parser("attention")
+    sp.add_parser("mistakes")

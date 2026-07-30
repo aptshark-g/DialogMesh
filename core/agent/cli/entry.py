@@ -397,7 +397,8 @@ def _dispatch_p4(args):
         cmd_profile_ocean, cmd_profile_traits, cmd_profile_history, cmd_profile_reset,
         cmd_profile_export, cmd_profile_import,
         cmd_engineering_show, cmd_engineering_modules, cmd_engineering_constraints, cmd_engineering_antipatterns,
-        cmd_concepts_show, cmd_mind_show,
+        cmd_concepts_show, cmd_concepts_search, cmd_concepts_relations,
+        cmd_mind_show, cmd_mind_attention, cmd_mind_mistakes,
     )
     m = {
         ("profile","show"): cmd_profile_show, ("profile","edit"): cmd_profile_edit,
@@ -409,7 +410,9 @@ def _dispatch_p4(args):
         ("engineering","constraints"): cmd_engineering_constraints,
         ("engineering","anti-patterns"): cmd_engineering_antipatterns,
         ("concepts","show"): cmd_concepts_show,
+        ("concepts","search"): cmd_concepts_search, ("concepts","relations"): cmd_concepts_relations,
         ("mind","show"): cmd_mind_show,
+        ("mind","attention"): cmd_mind_attention, ("mind","mistakes"): cmd_mind_mistakes,
     }
     m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
@@ -1100,9 +1103,10 @@ def main():
             _dispatch_p9(args)
     elif args.command == "blueprint":
         about = getattr(args, "subcommand", "")
-        from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb, cmd_blueprint_validate as bv, cmd_blueprint_export as bex, cmd_blueprint_build_hybrid as bh, cmd_blueprint_build_llm as bl, cmd_blueprint_history as bhi
+        from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb, cmd_blueprint_validate as bv, cmd_blueprint_export as bex, cmd_blueprint_build_hybrid as bh, cmd_blueprint_build_llm as bl, cmd_blueprint_history as bhi, cmd_blueprint_analyze as ba, cmd_blueprint_template_list as btl, cmd_blueprint_clear as bc
         {"show": bs, "build": bb, "validate": bv, "export": bex,
-         "build-hybrid": bh, "build-llm": bl, "history": bhi}.get(about, lambda a: print("dm blueprint <show|build|validate|export|build-hybrid|build-llm|history>"))(args)
+         "build-hybrid": bh, "build-llm": bl, "history": bhi,
+         "analyze": ba, "template-list": btl, "clear": bc}.get(about, lambda a: print("dm blueprint <...>"))(args)
     elif args.command == "decider":
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.blueprint_cmd import cmd_decider_show as ds, cmd_decider_chains as dc, cmd_decider_execute as dx
