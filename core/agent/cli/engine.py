@@ -103,6 +103,11 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.event.redis_otel import wire_redis_otel
         wire_redis_otel(engine)
     except: pass
+    # Week 5: Production hardening
+    try:
+        from core.agent.event.production import wire_production
+        wire_production(engine)
+    except: pass
     return engine
 
 
