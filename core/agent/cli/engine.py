@@ -142,6 +142,18 @@ def _create_engine_instance(provider_type: str = None):
         engine._frame_library = FrameLibrary()
         engine._frame_library.load_default()
     except: pass
+
+    # SubsystemRegistry: resolve optional subsystems (manual DI handles required ones)
+    try:
+        from core.agent.cli.subsystem_registrations import _registry
+        results = _registry.resolve_all()
+        engine._registry = _registry
+        for name, result in results.items():
+            if result.loaded and result.instance is not None:
+                setattr(engine, f"_{name}", result.instance)
+    except Exception:
+        pass
+
     return engine
 
 
