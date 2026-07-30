@@ -130,7 +130,7 @@ def register_all_handlers(engine, tracer=None):
                     pass
             if hasattr(mc, 'scan'):
                 try:
-                    mc.scan()
+                    mc.scan(engine)  # scan requires engine parameter
                     results["scanned"] = True
                 except:
                     pass
@@ -189,9 +189,12 @@ def register_all_handlers(engine, tracer=None):
                 mods = l1.extract(text)
                 results["modifiers"] = len(mods) if mods else 0
             except: pass
-        if l2 and hasattr(l2, 'ingest'):
+        if l2 and text:
             try:
-                l2.ingest({"text": text, "ts": time.time()})
+                from core.agent.association.l2_5_belief import Evidence
+                ev = Evidence(entity_id=f"msg_{hash(text)%10000}", entity_name=text[:40],
+                              relation_type="user_message", confidence=0.5)
+                l2.ingest(ev)
                 results["belief_updated"] = True
             except: pass
         return results
