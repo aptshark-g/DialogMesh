@@ -32,6 +32,49 @@ def cmd_profile_edit(args):
         print(json.dumps({"error": "OCEAN analyst not available"}, ensure_ascii=False))
 
 
+def cmd_profile_ocean(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    if ocean and hasattr(ocean, 'snapshot'):
+        snap = ocean.snapshot()
+        dims = {k: v for k, v in (snap if isinstance(snap, dict) else getattr(snap, '__dict__', {}).items())
+                if k in ('openness','conscientiousness','extraversion','agreeableness','neuroticism')}
+        print(json.dumps(dims, indent=2, ensure_ascii=False))
+    else:
+        print(json.dumps({"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5,"msg":"default"}, ensure_ascii=False))
+
+
+def cmd_profile_traits(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    traits = {}
+    if ocean and hasattr(ocean, 'snapshot'):
+        snap = ocean.snapshot()
+        src = snap if isinstance(snap, dict) else getattr(snap, '__dict__', {})
+        traits = {k: v for k, v in src.items() if k not in ('O','C','E','A','N','openness','conscientiousness','extraversion','agreeableness','neuroticism')}
+    print(json.dumps(traits or {"msg": "no traits"}, indent=2, ensure_ascii=False))
+
+
+def cmd_profile_history(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    if ocean and hasattr(ocean, 'history'):
+        h = ocean.history()
+        print(json.dumps({"history": h[-20:] if isinstance(h, list) else []}, indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"history": []}, ensure_ascii=False))
+
+
+def cmd_profile_reset(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    if ocean and hasattr(ocean, 'reset'):
+        ocean.reset()
+        print(json.dumps({"status": "reset"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"msg": "No OCEAN analyst to reset"}, ensure_ascii=False))
+
+
 def cmd_engineering_show(args):
     e = get_engine()
     kg = getattr(e, '_engineering_knowledge', None)
@@ -72,8 +115,12 @@ def register_cmds(subparsers):
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
     e = sp.add_parser("edit")
-    e.add_argument("dimension", help="e.g. openness, conscientiousness")
+    e.add_argument("dimension")
     e.add_argument("value")
+    sp.add_parser("ocean")
+    sp.add_parser("traits")
+    sp.add_parser("history")
+    sp.add_parser("reset")
 
     # Engineering
     p = subparsers.add_parser("engineering", help="Engineering Knowledge Graph")

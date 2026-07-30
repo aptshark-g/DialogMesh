@@ -347,10 +347,13 @@ def _dispatch_p4(args):
     cmd = args.command
     from core.agent.cli.commands.p4_cmd import (
         cmd_profile_show, cmd_profile_edit,
+        cmd_profile_ocean, cmd_profile_traits, cmd_profile_history, cmd_profile_reset,
         cmd_engineering_show, cmd_concepts_show, cmd_mind_show,
     )
     m = {
         ("profile","show"): cmd_profile_show, ("profile","edit"): cmd_profile_edit,
+        ("profile","ocean"): cmd_profile_ocean, ("profile","traits"): cmd_profile_traits,
+        ("profile","history"): cmd_profile_history, ("profile","reset"): cmd_profile_reset,
         ("engineering","show"): cmd_engineering_show,
         ("concepts","show"): cmd_concepts_show,
         ("mind","show"): cmd_mind_show,
