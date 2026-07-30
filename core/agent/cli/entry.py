@@ -332,6 +332,9 @@ def _dispatch_p3(args):
         cmd_obs_show, cmd_obs_query, cmd_obs_stats, cmd_obs_list, cmd_obs_clear,
         cmd_obs_filter, cmd_obs_mark, cmd_obs_reset,
     )
+    from core.agent.cli.commands.knowledge_cmd import (
+        cmd_knowledge_query, cmd_knowledge_sources, cmd_knowledge_import,
+    )
     map = {
         ("behavior","show"): cmd_behavior_show, ("behavior","predict"): cmd_behavior_predict,
         ("behavior","stats"): cmd_behavior_stats, ("behavior","history"): cmd_behavior_history,
@@ -346,6 +349,8 @@ def _dispatch_p3(args):
         ("obs","stats"): cmd_obs_stats, ("obs","list"): cmd_obs_list,
         ("obs","clear"): cmd_obs_clear, ("obs","filter"): cmd_obs_filter,
         ("obs","mark"): cmd_obs_mark, ("obs","reset"): cmd_obs_reset,
+        ("knowledge","query"): cmd_knowledge_query, ("knowledge","sources"): cmd_knowledge_sources,
+        ("knowledge","import"): cmd_knowledge_import,
     }
     map.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
@@ -1060,7 +1065,7 @@ def main():
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.subgraph_cmd import cmd_subgraph_show as sg1, cmd_subgraph_expand as sg2
         {"show": sg1, "expand": sg2}.get(about, lambda a: print("dm subgraph <show|expand>"))(args)
-    elif args.command in ("behavior", "meta", "assoc", "obs"):
+    elif args.command in ("behavior", "meta", "assoc", "obs", "knowledge"):
         _dispatch_p3(args)
     elif args.command in ("profile", "engineering", "concepts", "mind"):
         _dispatch_p4(args)
