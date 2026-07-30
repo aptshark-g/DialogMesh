@@ -108,6 +108,10 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.event.production import wire_production
         wire_production(engine)
     except: pass
+    # ToolRegistry: auto-register builtin tools
+    try:
+        import core.agent.tools.builtin  # module-level registration
+    except: pass
     return engine
 
 
