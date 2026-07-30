@@ -1,21 +1,2 @@
-from .l2_summary import (
-    Level2Summary,
-    BehaviorDAG,
-    KeyDecision,
-    DivergencePoint,
-    L2SummaryAggregator,
-    L2SummaryEntry,
-    L2Summary,
-    build_daily_report,
-)
-
-__all__ = [
-    "Level2Summary",
-    "BehaviorDAG",
-    "KeyDecision",
-    "DivergencePoint",
-    "L2SummaryAggregator",
-    "L2SummaryEntry",
-    "L2Summary",
-    "build_daily_report",
-]
+"""v3.2 l2_summary"""
+from core.agent.v3_2.l2_summary.l2_summary import L2SummaryAggregator, L2Summary, L2SummaryEntry

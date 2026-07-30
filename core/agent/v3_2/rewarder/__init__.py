@@ -1,4 +1,4 @@
-from .rewarder import BehaviorRewarder
-from .models import RewardSignal, ABLReflection
-from .abl_reflection import ABLReflectionGenerator
-from .noise_adaptation import NoiseAdaptation
+"""v3.2 rewarder → merged to core.agent.rewarder"""
+from core.agent.rewarder.rewarder import BehaviorRewarder
+from core.agent.rewarder.correction_detector import CorrectionDetector
+from core.agent.rewarder.models import RewardRuleTable

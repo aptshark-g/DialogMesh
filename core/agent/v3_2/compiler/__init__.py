@@ -1,3 +1,3 @@
-# v3.2 约束补全编译器
-from .hybrid_compiler import HybridCompiler
-from .models import SlotValue, ParseResult, ParseContext, ConstraintRule
+"""v3.2 compiler → merged to core.agent.compiler"""
+from core.agent.compiler.hybrid_compiler import HybridCompiler
+from core.agent.compiler.models import ParseResult, ParseContext
