@@ -818,6 +818,48 @@ class CognitiveRuntimeEngine:
         # Continue pipeline via extracted method
         self._on_event_continue(event, pcr_output=pcr_output, parse_result=None, unified_result=None, text=text)
 
+    # ── on_event_sm: StateMachine-based alternative (parallel path) ──
+    def on_event_sm(self, event: EventIR, start_phase: str = "pcr") -> Optional[str]:
+        """Process event through StateMachine pipeline (new path).
+        
+        Kept alongside on_event() for A/B comparison. Config switch:
+          engine.use_state_machine = True → on_event delegates to on_event_sm
+        Original on_event() is NEVER modified — both paths coexist.
+        """
+        from core.agent.event.statemachine import PipelinePhase
+        sm = getattr(self, '_state_machine', None)
+        if not sm:
+            logger.warning("on_event_sm: no StateMachine, falling back to on_event")
+            return self.on_event(event)
+
+        phase_map = {
+            "pcr": PipelinePhase.PCR, "intent": PipelinePhase.INTENT,
+            "discourse": PipelinePhase.DISCOURSE, "behavior": PipelinePhase.BEHAVIOR,
+            "meta": PipelinePhase.META, "profile": PipelinePhase.PROFILE,
+            "persist": PipelinePhase.PERSIST,
+        }
+        phase = phase_map.get(start_phase, PipelinePhase.PCR)
+
+        text = event.payload.get("text", "") if hasattr(event, "payload") else str(event)
+        ctx = {
+            "text": text,
+            "reply": event.payload.get("reply", "") if hasattr(event, "payload") else "",
+            "session_id": getattr(event, "session_id", "default"),
+        }
+
+        try:
+            result = sm.run_pipeline(phase, ctx)
+            phases = result.get("phases", [])
+            logger.info("on_event_sm: %d phases completed", len(phases))
+            # Return last phase's output as response
+            for phase_result in reversed(result.get("results", {}).values()):
+                if isinstance(phase_result, str) and len(phase_result) > 10:
+                    return phase_result
+            return None
+        except Exception as e:
+            logger.warning("on_event_sm failed: %s, falling back to on_event", e)
+            return self.on_event(event)
+
     def _publish(self, event_type, payload=None):
         """Fire-and-forget publish. Priority-scheduled with tracing."""
         kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
