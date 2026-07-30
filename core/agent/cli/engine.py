@@ -98,6 +98,11 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.event.nats_bridge import wire_hybrid_bus
         wire_hybrid_bus(engine)
     except: pass
+    # Week 4: Redis + OTel
+    try:
+        from core.agent.event.redis_otel import wire_redis_otel
+        wire_redis_otel(engine)
+    except: pass
     return engine
 
 
