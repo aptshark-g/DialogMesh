@@ -85,11 +85,15 @@ class SubsystemRegistry:
         d = self._defs[name]
 
         try:
-            if d.factory:
+            if d.factory is True:
+                # factory=True means: import the function and call it
+                fn = self._import_from_path(d.path)
+                instance = fn() if callable(fn) else fn
+            elif callable(d.factory):
+                # factory is a callable — use it directly
                 instance = d.factory()
             else:
                 cls_or_fn = self._import_from_path(d.path)
-                # If it's a class with __init__(self), instantiate it
                 if isinstance(cls_or_fn, type):
                     instance = cls_or_fn()
                 elif callable(cls_or_fn):

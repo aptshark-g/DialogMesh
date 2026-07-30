@@ -66,101 +66,65 @@ def get_provider():
     return _provider
 
 
-def _create_engine_instance(provider_type: str = None):
-    """Create a fresh engine without global singleton. Used by EnginePool."""
-    pt = provider_type or _state.get("provider", "deepseek")
-    try:
-        if pt == "deepseek":
-            from core.agent.llm_providers.openai_provider import OpenAIProvider
-            provider = OpenAIProvider("deepseek", {
-                "api_key": _state.get("key") or os.environ.get("DEEPSEEK_API_KEY", ""),
-                "base_url": os.environ.get("DM_LLM_BASE", "") or "https://api.deepseek.com/v1",
-                "model": _state.get("model", "deepseek-chat"),
-            })
-        else:
-            from core.agent.llm_providers.mock_provider import MockProvider
-            provider = MockProvider("mock", {})
-    except Exception:
-        from core.agent.llm_providers.mock_provider import MockProvider
-        provider = MockProvider("mock", {})
+def _create_engine_instance(provider_config=None) -> CognitiveRuntimeEngine:
+    """Create engine with registry-primary DI.
+
+    SubsystemRegistry resolves all 37 subsystems in topological order.
+    Required subsystems (8) block startup if they fail.
+    Optional subsystems (29) log warning but don't block.
+    """
     from core.agent.runtime.engine import CognitiveRuntimeEngine
-    engine = CognitiveRuntimeEngine(llm_provider=provider)
-    # Ensure EventLog is created and opened (normally done by engine.start())
-    if getattr(engine, '_event_log', None) is None:
-        try:
-            from core.agent.api.api_event_log import EventLog
-            import os as _os
-            _db = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))), "data", "event_log.db")
-            engine._event_log = EventLog(db_path=_db)
-            engine._event_log.open()
-        except: pass
-    # Wire components (per-engine isolation)
+    engine = CognitiveRuntimeEngine()
+
+    # ── Lazy imports for non-registry components ──
     try:
         from core.agent.event.storage import StorageLayer
-        engine._storage = StorageLayer()
-    except: pass
-    try:
+        from core.agent.api.api_event_log import EventLog
         from core.agent.event.tracer import PipelineTracer
-        engine._tracer = PipelineTracer()
-    except: pass
-    try:
-        from core.agent.event.nats_bridge import wire_hybrid_bus
-        wire_hybrid_bus(engine)
-    except: pass
-    # Week 4: Redis + OTel
-    try:
-        from core.agent.event.redis_otel import wire_redis_otel
-        wire_redis_otel(engine)
-    except: pass
-    # Week 5: Production hardening
-    try:
-        from core.agent.event.production import wire_production
-        wire_production(engine)
-    except: pass
-    # ToolRegistry: auto-register builtin tools
-    try:
-        import core.agent.tools.builtin
-    except: pass
-    # Cognitive loop: behavior learn + meta review
-    try:
-        from core.agent.event.cognitive_loop import wire_cognitive_loop
-        wire_cognitive_loop(engine, interval_turns=5)
-    except: pass
-    # Discourse gaps: backtracking + format router
-    try:
-        from core.agent.event.discourse_gaps import TopicBacktracker, FormatRouter
-        engine._backtracker = TopicBacktracker()
-        engine._format_router = FormatRouter()
-    except: pass
-    # Knowledge Graph: RAG bridge + Frame library
-    try:
-        from core.agent.knowledge.rag_bridge import RAGBridge
-        engine._rag_bridge = RAGBridge()
-    except: pass
-    try:
-        from core.agent.knowledge.frame_source import FrameLibrary
-        engine._frame_library = FrameLibrary()
-        engine._frame_library.load_default()
-    except: pass
+        from core.agent.event.statemachine import DeciderStateMachine
+    except ImportError as e:
+        raise RuntimeError(f"Core import failed: {e}")
 
-    # SubsystemRegistry: resolve optional subsystems (manual DI handles required ones)
+    # ── Phase 1: Create engine + required foundation ──
+    engine._running = True
+    engine._session_active = True
+
+    # ── Phase 2: Required subsystems via registry (NO try/except pass) ──
     try:
         from core.agent.cli.subsystem_registrations import _registry
-        results = _registry.resolve_all()
+    except ImportError as e:
+        raise RuntimeError(f"Registry import failed: {e}")
+
+    try:
+        loaded, results = _registry.resolve_all()
         engine._registry = _registry
-        # Name mappings: registry name → engine attr (some differ)
-        _name_map = {"behavior_graph": "_behavior_graph_adapter",
-                     "cascade_detector": "_cascade"}
-        for name, result in results.items():
-            if result.loaded and result.instance is not None:
-                attr_name = _name_map.get(name, f"_{name}")
-                if not hasattr(engine, attr_name):
-                    setattr(engine, attr_name, result.instance)
-    except Exception:
-        pass  # registry is optional — manual DI handles required ones
+    except RuntimeError:
+        raise  # Required subsystem failed — do not start
+    except Exception as e:
+        raise RuntimeError(f"Registry resolve failed: {e}")
+
+    # ── Phase 3: Attach all resolved subsystems to engine ──
+    _name_map = {"behavior_graph": "_behavior_graph_adapter",
+                 "cascade_detector": "_cascade"}
+    attached = 0
+    failed = 0
+    for result in results:
+        if result.loaded and result.instance is not None:
+            attr_name = _name_map.get(result.name, f"_{result.name}")
+            setattr(engine, attr_name, result.instance)
+            attached += 1
+        else:
+            failed += 1
+            if result.error:
+                import logging
+                logging.getLogger("dm.engine").warning(
+                    "Subsystem %s: %s", result.name, result.error)
+
+    # ── Phase 4: Non-registry objects (LLM provider, sessions) ──
+    engine._provider = None
+    engine._provider_type = provider_config.get("type", "mock") if provider_config else "mock"
 
     return engine
-
 
 def start_engine(provider_type: str = None, api_key: str = None,
                  base_url: str = None, model: str = None):
