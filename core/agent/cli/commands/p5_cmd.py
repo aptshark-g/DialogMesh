@@ -5,18 +5,42 @@ from core.agent.cli.engine import get_engine, get_session
 ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 def _disk(key: str, rel_path: str):
-    """Read disk-backed JSON file, print count."""
+    """Read disk-backed JSON with HotStore memory cache."""
     fpath = _os.path.join(ROOT, rel_path)
+    cache_key = f"disk:{rel_path}"
+    
+    # 1. Try HotStore (memory, sub-ms)
+    try:
+        import core.agent.cli.engine as _eng
+        e = _eng._engine
+    except:
+        e = None
+    if e and hasattr(e, '_storage'):
+        hot = e._storage.hot
+        cached = hot.get(cache_key)
+        if cached is not None:  # even empty list is valid cache
+            count = len(cached) if isinstance(cached, list) else (1 if cached else 0)
+            print(json.dumps({f"{key}_count": count, "source": rel_path, "cache": "hot"},
+                             ensure_ascii=False))
+            return
+    
+    # 2. Read from disk
     if _os.path.exists(fpath):
         try:
+            import json as _json
             with open(fpath, encoding="utf-8") as f:
-                data = json.load(f)
+                data = _json.load(f)
             count = len(data) if isinstance(data, list) else (1 if data else 0)
-            print(json.dumps({f"{key}_count": count, "source": rel_path}, ensure_ascii=False))
+            # Cache in HotStore (even if empty)
+            if e and hasattr(e, '_storage'):
+                e._storage.hot.set(cache_key, data)
+            print(json.dumps({f"{key}_count": count, "source": rel_path, "cache": "miss"},
+                             ensure_ascii=False))
+            return
         except:
             print(json.dumps({f"{key}_count": 0, "error": "parse failed"}, ensure_ascii=False))
-    else:
-        print(json.dumps({f"{key}_count": 0, "source": rel_path}, ensure_ascii=False))
+            return
+    print(json.dumps({f"{key}_count": 0, "source": rel_path}, ensure_ascii=False))
 
 
 def cmd_rules_show(args):
