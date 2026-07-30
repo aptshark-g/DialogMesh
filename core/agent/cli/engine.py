@@ -79,10 +79,10 @@ def _create_engine_instance(provider_type: str = None):
             })
         else:
             from core.agent.llm_providers.mock_provider import MockProvider
-            provider = MockProvider()
+            provider = MockProvider("mock", {})
     except Exception:
         from core.agent.llm_providers.mock_provider import MockProvider
-        provider = MockProvider()
+        provider = MockProvider("mock", {})
     from core.agent.runtime.engine import CognitiveRuntimeEngine
     return CognitiveRuntimeEngine(llm_provider=provider)
 

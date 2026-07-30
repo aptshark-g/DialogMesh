@@ -27,8 +27,9 @@ class PipelinePhase(Enum):
     DISCOURSE = "discourse"   # Discourse tree update
     BEHAVIOR = "behavior"     # Behavior graph
     META = "meta"             # Meta cognition review
-    PROFILE = "profile"       # Profile update
-    PERSIST = "persist"       # Persistence
+    PROFILE = "profile"       # OCEAN analysis
+    PERSIST = "persist"       # Persistence to storage
+    ASSOCIATION = "association"  # L1 + L2.5 chain
     DONE = "done"
 
 
