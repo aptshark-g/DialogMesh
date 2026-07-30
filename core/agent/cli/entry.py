@@ -484,12 +484,13 @@ def _dispatch_p8(args):
         cmd_annotations_add, cmd_corrections_add, cmd_feedback_add,
         cmd_data_list, cmd_data_clean, cmd_registry,
     )
+    from core.agent.cli.commands.p7_cmd import cmd_discourse_undo
     cmd = args.command
     op = getattr(args, "d_op", getattr(args, "k_op", getattr(args, "subcommand", "")))
     m = {
         ("d","split"): cmd_discourse_split, ("d","merge"): cmd_discourse_merge,
         ("d","delete"): cmd_discourse_delete, ("d","promote"): cmd_discourse_promote,
-        ("d","demote"): cmd_discourse_demote,
+        ("d","demote"): cmd_discourse_demote, ("d","undo"): cmd_discourse_undo,
         ("obs-put",""): cmd_obs_put, ("obs","mark"): cmd_obs_mark,
         ("obs","evict"): cmd_obs_evict, ("obs","clear"): cmd_obs_clear,
         ("knowledge","add"): cmd_knowledge_add, ("knowledge","remove"): cmd_knowledge_remove,

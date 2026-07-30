@@ -10,10 +10,32 @@ def cmd_discourse_split(args):
     if not t: return print(json.dumps({"error": "not loaded"}, ensure_ascii=False))
     sid = get_session()
     try:
+        # Save pre-split state for undo
+        tree = t.get_tree(sid)
+        if tree:
+            e._undo_discourse = {"blocks": dict(tree.blocks), "session": sid}
         result = t.split_block(sid, args.block_id, args.position)
-        print(json.dumps({"status": "split", "blocks": [result] if result else []}, ensure_ascii=False))
+        print(json.dumps({"status": "split", "blocks": [result] if result else [],
+                          "undo_available": bool(getattr(e, '_undo_discourse', None))}, ensure_ascii=False))
     except Exception as err:
         print(json.dumps({"error": str(err)}, ensure_ascii=False))
+
+
+def cmd_discourse_undo(args):
+    """Undo last discourse operation (split/merge/promote/demote)."""
+    e = get_engine(); t = getattr(e, '_discourse_tree', None)
+    if not t: return print(json.dumps({"error": "not loaded"}, ensure_ascii=False))
+    saved = getattr(e, '_undo_discourse', None)
+    if not saved:
+        return print(json.dumps({"undone": False, "msg": "no undo state"}, ensure_ascii=False))
+    sid = saved["session"]
+    tree = t.get_tree(sid)
+    if tree:
+        tree.blocks = saved["blocks"]
+        e._undo_discourse = None
+        print(json.dumps({"undone": True, "blocks_restored": len(saved["blocks"])}, ensure_ascii=False))
+    else:
+        print(json.dumps({"undone": False, "msg": "tree not found"}, ensure_ascii=False))
 
 
 def cmd_discourse_merge(args):
