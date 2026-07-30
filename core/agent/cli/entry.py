@@ -132,8 +132,38 @@ def cmd_session_history(args):
             msgs = data[sid].get("messages", [])
             history = [{"role": m["role"], "content": m["content"]} for m in msgs]
             print(json.dumps(history, indent=2, ensure_ascii=False))
+
+
+def cmd_session_export(args):
+    sid = get_session(args.id if hasattr(args, 'id') and args.id else None)
+    state_file = os.path.join(PROJECT_ROOT, "data", "v3_sessions.json")
+    if os.path.exists(state_file):
+        import json as _json
+        with open(state_file, encoding="utf-8") as f:
+            data = _json.load(f)
+        if sid in data:
+            export_path = os.path.join(PROJECT_ROOT, "data", f"session_{sid}.json")
+            with open(export_path, "w", encoding="utf-8") as f:
+                _json.dump(data[sid], f, indent=2, ensure_ascii=False)
+            print(json.dumps({"exported": export_path, "turns": len(data[sid].get("messages", []))}, ensure_ascii=False))
             return
-    print(json.dumps([], ensure_ascii=False))
+    print(json.dumps({"error": "Session not found"}, ensure_ascii=False))
+
+
+def cmd_session_delete(args):
+    sid = get_session(args.id if hasattr(args, 'id') and args.id else None)
+    state_file = os.path.join(PROJECT_ROOT, "data", "v3_sessions.json")
+    if os.path.exists(state_file):
+        import json as _json
+        with open(state_file, encoding="utf-8") as f:
+            data = _json.load(f)
+        if sid in data:
+            del data[sid]
+            with open(state_file, "w", encoding="utf-8") as f:
+                _json.dump(data, f, indent=2, ensure_ascii=False)
+            print(json.dumps({"deleted": sid}, ensure_ascii=False))
+            return
+    print(json.dumps({"error": "Session not found"}, ensure_ascii=False))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -727,6 +757,8 @@ def main():
     p_use.add_argument("id")
     p2.add_parser("info", help="Session info")
     p2.add_parser("history", help="Message history")
+    p2.add_parser("export", help="Export session to file")
+    p2.add_parser("delete", help="Delete session")
 
     # Event
     p = sub.add_parser("event", help="Event operations")
