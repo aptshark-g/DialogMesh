@@ -291,10 +291,24 @@ class StorageLayer:
         stats = store.stats()
     """
 
-    def __init__(self, data_dir: str = None, db_path: str = None):
+    def __init__(self, data_dir: str = None, db_path: str = None, pg_dsn: str = None):
         self.hot = HotStore()
         self.warm = WarmStore(db_path)
         self.cold = ColdStore(data_dir)
+        # Week 3: PostgreSQL optional backend
+        self.pg = None
+        self._pg_available = False
+        if pg_dsn:
+            try:
+                from core.agent.event.pluggable import PgBridge
+                self.pg = PgBridge(pg_dsn)
+                self._pg_available = self.pg.available
+            except Exception:
+                pass
+
+    @property
+    def pg_available(self) -> bool:
+        return self._pg_available
 
     def stats(self) -> dict:
         return {

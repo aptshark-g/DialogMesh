@@ -204,6 +204,118 @@ class OTelBridge:
 
 
 # ═══════════════════════════════════════════════════════════
+#  PostgreSQL bridge (optional — Week 3)
+# ═══════════════════════════════════════════════════════════
+
+class PgBridge:
+    """PostgreSQL backend for WarmStore + ColdStore.
+    Falls back gracefully if psycopg2 not installed or server unavailable."""
+
+    def __init__(self, dsn: str = None):
+        self._dsn = dsn or "postgresql://localhost:5432/dialogmesh"
+        self._conn = None
+        self._available = False
+        self._init_tried = False
+
+    @property
+    def available(self) -> bool:
+        if not self._init_tried:
+            self._try_connect()
+        return self._available
+
+    def _try_connect(self):
+        self._init_tried = True
+        try:
+            import psycopg2
+            self._conn = psycopg2.connect(self._dsn, connect_timeout=3)
+            self._conn.autocommit = True
+            self._available = True
+            self._ensure_tables()
+        except Exception:
+            self._available = False
+
+    def _ensure_tables(self):
+        if not self._conn: return
+        cur = self._conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS warm_events (
+                id SERIAL PRIMARY KEY,
+                event_id TEXT UNIQUE, kind TEXT, payload JSONB,
+                trace_id TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+                consumed BOOLEAN DEFAULT FALSE
+            );
+            CREATE TABLE IF NOT EXISTS cold_store (
+                key TEXT PRIMARY KEY,
+                data JSONB,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_warm_kind ON warm_events(kind);
+            CREATE INDEX IF NOT EXISTS idx_warm_created ON warm_events(created_at);
+        """)
+        cur.close()
+
+    def insert_event(self, event_id: str, kind: str, payload: dict, trace_id: str = "") -> bool:
+        if not self._available: return False
+        try:
+            import json
+            cur = self._conn.cursor()
+            cur.execute(
+                "INSERT INTO warm_events (event_id, kind, payload, trace_id) VALUES (%s,%s,%s,%s) ON CONFLICT (event_id) DO NOTHING",
+                (event_id, kind, json.dumps(payload, default=str), trace_id)
+            )
+            cur.close()
+            return True
+        except Exception:
+            return False
+
+    def save_state(self, key: str, data: dict) -> bool:
+        if not self._available: return False
+        try:
+            import json
+            cur = self._conn.cursor()
+            cur.execute(
+                "INSERT INTO cold_store (key, data, updated_at) VALUES (%s,%s,NOW()) ON CONFLICT (key) DO UPDATE SET data=%s, updated_at=NOW()",
+                (key, json.dumps(data, default=str), json.dumps(data, default=str))
+            )
+            cur.close()
+            return True
+        except Exception:
+            return False
+
+    def load_state(self, key: str) -> Optional[dict]:
+        if not self._available: return None
+        try:
+            import json
+            cur = self._conn.cursor()
+            cur.execute("SELECT data FROM cold_store WHERE key=%s", (key,))
+            row = cur.fetchone()
+            cur.close()
+            return json.loads(row[0]) if row else None
+        except Exception:
+            return None
+
+    def query_events(self, kind: str = None, limit: int = 50) -> list:
+        if not self._available: return []
+        try:
+            cur = self._conn.cursor()
+            if kind:
+                cur.execute("SELECT event_id, kind, payload, created_at FROM warm_events WHERE kind=%s ORDER BY created_at DESC LIMIT %s", (kind, limit))
+            else:
+                cur.execute("SELECT event_id, kind, payload, created_at FROM warm_events ORDER BY created_at DESC LIMIT %s", (limit,))
+            rows = cur.fetchall()
+            cur.close()
+            return [{"event_id": r[0], "kind": r[1], "payload": r[2], "created_at": str(r[3])} for r in rows]
+        except Exception:
+            return []
+
+    def close(self):
+        if self._conn:
+            try: self._conn.close()
+            except: pass
+            self._available = False
+
+
+# ═══════════════════════════════════════════════════════════
 #  ACID transactions (SQLite-based)
 # ═══════════════════════════════════════════════════════════
 
