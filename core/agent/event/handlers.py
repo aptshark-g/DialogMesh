@@ -41,7 +41,8 @@ def register_all_handlers(engine, tracer=None):
         text = ctx.get("text", "")
         if pcr and text and hasattr(pcr, 'route'):
             result = pcr.route(text)
-            engine._last_pcr = result  # persist for v6 API
+            # Always store PCR zone info even if route returns None
+            engine._last_pcr = result if result is not None else {"zone": "MIXED", "source": "mock"}
             return {
                 "zone": getattr(result, 'zone', 'MIXED'),
                 "cognitive_level": getattr(result, 'cognitive_level', 'moderate'),
@@ -58,7 +59,7 @@ def register_all_handlers(engine, tracer=None):
         if parser and text:
             try:
                 result = parser.parse(user_input=text)
-                engine._last_intent = result  # persist for v6 API
+                engine._last_intent = result if result is not None else {"intent": "general", "confidence": 0.5, "source": "mock"}
                 return {
                     "category": str(getattr(getattr(result, 'intent', None), 'category', 'general')),
                     "confidence": getattr(result, 'confidence', 0.5),
@@ -66,6 +67,8 @@ def register_all_handlers(engine, tracer=None):
                 }
             except:
                 pass
+        # Fallback for no parser (mock mode)
+        engine._last_intent = {"intent": "general", "confidence": 0.5, "source": "fallback"}
         return {"category": "general", "confidence": 0.5}
     sm.register_handler(PipelinePhase.INTENT, lambda ctx: _trace("intent", handle_intent, ctx))
 
