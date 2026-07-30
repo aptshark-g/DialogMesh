@@ -221,8 +221,9 @@ class CognitiveRuntimeEngine:
         from core.agent.state.global_decider import GlobalDecider, Command, EventType
         self._decider = GlobalDecider()
         from core.agent.api.api_event_log import EventLog
-        from core.agent.events.event_bus import EventBus, Event, EventType as ET
+        from core.agent.events.event_bus import EventBus, EventType as ET
         self._event_log = EventLog()
+        self._event_log.open()  # must open before use
         self._event_bus = EventBus()
         from core.agent.meta.meta_subscriber import MetaSubscriber
         self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
@@ -494,7 +495,6 @@ class CognitiveRuntimeEngine:
             auto_save=True,
         )
         self._causal_substrate_adapter = CausalSubstrateAdapter(
-            name="causal_substrate",
             params={"min_chain": 10},
         )
         self._event_log = V4EventLog(EventLogConfig())

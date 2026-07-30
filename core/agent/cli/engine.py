@@ -85,6 +85,15 @@ def _create_engine_instance(provider_type: str = None):
         provider = MockProvider("mock", {})
     from core.agent.runtime.engine import CognitiveRuntimeEngine
     engine = CognitiveRuntimeEngine(llm_provider=provider)
+    # Ensure EventLog is created and opened (normally done by engine.start())
+    if getattr(engine, '_event_log', None) is None:
+        try:
+            from core.agent.api.api_event_log import EventLog
+            import os as _os
+            _db = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))), "data", "event_log.db")
+            engine._event_log = EventLog(db_path=_db)
+            engine._event_log.open()
+        except: pass
     # Wire components (per-engine isolation)
     try:
         from core.agent.event.storage import StorageLayer
@@ -110,7 +119,7 @@ def _create_engine_instance(provider_type: str = None):
     except: pass
     # ToolRegistry: auto-register builtin tools
     try:
-        import core.agent.tools.builtin  # module-level registration
+        import core.agent.tools.builtin
     except: pass
     # Cognitive loop: behavior learn + meta review
     try:
@@ -173,6 +182,17 @@ def start_engine(provider_type: str = None, api_key: str = None,
         _engine._registry = registry
         for name, instance in loaded.items():
             setattr(_engine, f"_{name}", instance)
+
+        # Ensure EventLog is created with correct path (registry may set wrong path)
+        from core.agent.api.api_event_log import EventLog
+        import os as _os
+        _db = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))), "data", "event_log.db")
+        old = getattr(_engine, '_event_log', None)
+        if old and hasattr(old, 'close'):
+            try: old.close()
+            except: pass
+        _engine._event_log = EventLog(db_path=_db)
+        _engine._event_log.open()
 
         _engine._running = True
         _engine._session_active = True

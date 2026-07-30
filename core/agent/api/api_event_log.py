@@ -78,7 +78,13 @@ class EventLog:
         return True
 
     def record_event(self, *args, **kwargs):
-        """Alias for put_event (engine compatibility)."""
+        """Alias for put_event. Handles both EventIR objects and raw args."""
+        if len(args) == 1 and hasattr(args[0], 'id') and hasattr(args[0], 'kind'):
+            # EventIR object → unpack
+            evt = args[0]
+            payload = evt.payload if hasattr(evt, 'payload') else {}
+            trace_id = kwargs.get('trace_id', getattr(evt, 'trace_id', '') if hasattr(evt, 'trace_id') else '')
+            return self.put_event(event_id=evt.id, kind=evt.kind, payload=dict(payload), trace_id=trace_id)
         return self.put_event(*args, **kwargs)
 
     def replay_unconsumed(self, limit: int = 100) -> List[Dict[str, Any]]:
