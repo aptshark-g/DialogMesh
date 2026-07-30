@@ -31,8 +31,21 @@ def register_all_handlers(engine, tracer=None):
                         existing = [existing]
             except: pass
         existing.append(data)
+        # Keep last 50 entries
+        trimmed = existing[-50:]
         with open(fpath, 'w', encoding='utf-8') as f:
-            _json.dump(existing[-50:], f, indent=2, ensure_ascii=False)  # keep last 50
+            _json.dump(trimmed, f, indent=2, ensure_ascii=False)
+        # Auto-populate HotStore cache
+        _cache_hot(path, trimmed)
+
+    def _cache_hot(rel_path: str, data):
+        """Write to HotStore memory cache so CLI _disk() hits immediately."""
+        try:
+            store = getattr(engine, '_storage', None)
+            if store and hasattr(store, 'hot'):
+                store.hot.set(f"disk:{rel_path}", data)
+        except:
+            pass
     sm = getattr(engine, '_state_machine', None)
     if not sm:
         sm = DeciderStateMachine()
