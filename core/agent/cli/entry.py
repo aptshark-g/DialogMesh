@@ -326,13 +326,17 @@ def _dispatch_p3(args):
         cmd_behavior_show, cmd_behavior_predict,
         cmd_meta_show, cmd_meta_review,
         cmd_assoc_show, cmd_assoc_trace,
-        cmd_obs_show, cmd_obs_query,
+        cmd_obs_show, cmd_obs_query, cmd_obs_stats, cmd_obs_list, cmd_obs_clear,
+        cmd_obs_filter, cmd_obs_mark, cmd_obs_reset,
     )
     map = {
         ("behavior","show"): cmd_behavior_show, ("behavior","predict"): cmd_behavior_predict,
         ("meta","show"): cmd_meta_show, ("meta","review"): cmd_meta_review,
         ("assoc","show"): cmd_assoc_show, ("assoc","trace"): cmd_assoc_trace,
         ("obs","show"): cmd_obs_show, ("obs","query"): cmd_obs_query,
+        ("obs","stats"): cmd_obs_stats, ("obs","list"): cmd_obs_list,
+        ("obs","clear"): cmd_obs_clear, ("obs","filter"): cmd_obs_filter,
+        ("obs","mark"): cmd_obs_mark, ("obs","reset"): cmd_obs_reset,
     }
     map.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 

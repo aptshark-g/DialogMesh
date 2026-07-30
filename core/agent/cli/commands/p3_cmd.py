@@ -95,6 +95,65 @@ def cmd_obs_query(args):
         print(json.dumps({"error": "ObservationPool not available"}, ensure_ascii=False))
 
 
+def cmd_obs_stats(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool and hasattr(pool, 'stats'):
+        print(json.dumps(pool.stats(), indent=2, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"error": "No pool"}, ensure_ascii=False))
+
+
+def cmd_obs_list(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool and hasattr(pool, 'get'):
+        items = pool.get() or []
+        print(json.dumps({"count": len(items) if isinstance(items, list) else 0}, ensure_ascii=False))
+    else:
+        print(json.dumps({"count": 0}, ensure_ascii=False))
+
+
+def cmd_obs_clear(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool:
+        pool.clear()
+        print(json.dumps({"status": "cleared"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"error": "No pool"}, ensure_ascii=False))
+
+
+def cmd_obs_filter(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool:
+        r = pool.get_by_domain(args.domain)
+        print(json.dumps({"domain": args.domain, "count": len(r) if isinstance(r, list) else 0}, ensure_ascii=False))
+    else:
+        print(json.dumps({"count": 0}, ensure_ascii=False))
+
+
+def cmd_obs_mark(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool:
+        pool.mark_consumed(args.event_id)
+        print(json.dumps({"status": "marked", "event_id": args.event_id}, ensure_ascii=False))
+    else:
+        print(json.dumps({"error": "No pool"}, ensure_ascii=False))
+
+
+def cmd_obs_reset(args):
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool:
+        pool.reset()
+        print(json.dumps({"status": "reset"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"error": "No pool"}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     # Behavior
     p = subparsers.add_parser("behavior", help="Behavior chain operations")
@@ -121,3 +180,11 @@ def register_cmds(subparsers):
     sp.add_parser("show")
     q = sp.add_parser("query")
     q.add_argument("domain")
+    sp.add_parser("stats")
+    sp.add_parser("list")
+    sp.add_parser("clear")
+    f = sp.add_parser("filter")
+    f.add_argument("domain")
+    m = sp.add_parser("mark")
+    m.add_argument("event_id")
+    sp.add_parser("reset")
