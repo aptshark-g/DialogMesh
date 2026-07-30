@@ -92,6 +92,45 @@ async def v6_health():
 async def v6_status():
     return {"status": "running", "version": "6.0.0", "endpoints": len(_loaded) + 3}
 
+@app.get("/v6/pcr")
+async def v6_pcr_summary():
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        pcr = getattr(e, '_pcr_router', None)
+        last = getattr(e, '_last_pcr', None)
+    except: pcr = last = None
+    return {"active": pcr is not None, "last_zone": getattr(last,'expectation','none') if last else 'none',
+            "last_complexity": getattr(last,'complexity_level',0) if last else 0}
+
+@app.get("/v6/intent")
+async def v6_intent_summary():
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        last = getattr(e, '_last_intent', None)
+    except: last = None
+    return {"last_intent": getattr(last,'intent','unknown') if last else 'unknown',
+            "confidence": getattr(last,'confidence',0) if last else 0}
+
+@app.get("/v6/meta")
+async def v6_meta_summary():
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        mc = getattr(e, '_meta_cognition', None)
+    except: mc = None
+    return {"reviewed": mc is not None, "handler": "active" if mc else "dormant"}
+
+@app.get("/v6/feedback")
+async def v6_feedback_summary():
+    import os, json
+    fb_path = "data/feedback.json"
+    if os.path.exists(fb_path):
+        with open(fb_path, encoding="utf-8") as f:
+            return json.load(f)
+    return {"feedback": [], "total": 0}
+
 
 # ═══ Startup ═══
 @app.on_event("startup")
