@@ -495,7 +495,8 @@ class CognitiveRuntimeEngine:
             auto_save=True,
         )
         self._causal_substrate_adapter = CausalSubstrateAdapter(
-            params={"min_chain": 10},
+            behavior_adapter=self._behavior_graph_adapter,
+            min_chain_length=10,
         )
         self._event_log = V4EventLog(EventLogConfig())
 

@@ -277,6 +277,36 @@ def start_engine(provider_type: str = None, api_key: str = None,
             _engine._credibility_eval = CredibilityEvaluator()
         except: pass
 
+        # Deep engine objects (DESIGN_RUNTIME_KERNEL §3 — normally in engine.start())
+        try:
+            from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst
+            _engine._ocean_analyst = OCEANProfileAnalyst(_provider)
+        except: pass
+        try:
+            from core.agent.v4.cognitive.metacognition import MetaCognition
+            _engine._meta_cognition = MetaCognition(llm_provider=_provider, vcs=None)
+        except: pass
+        try:
+            from core.agent.v4.cognitive.inertia_graph import InertiaWeightGraph
+            _engine._inertia_graph = InertiaWeightGraph()
+        except: pass
+        try:
+            from core.agent.v4.cognitive.behavior_discovery import BehaviorDiscovery
+            _engine._behavior_discovery = BehaviorDiscovery()
+        except: pass
+        try:
+            from core.agent.engineering.knowledge_graph import KnowledgeGraph
+            _engine._engineering_knowledge = KnowledgeGraph()
+        except: pass
+        try:
+            from core.agent.v4.cognitive.abc_orchestrator import ABCOrchestrator
+            _engine._abc = ABCOrchestrator(llm_provider=_provider, enable_b=True, enable_c=True)
+        except: pass
+        try:
+            from core.agent.v4.cognitive.mind import Mind
+            _engine._mind = Mind(persist_dir="data")
+        except: pass
+
         # Wire cross-deps
         event_log = loaded.get("event_log")
         event_bus = loaded.get("event_bus")
