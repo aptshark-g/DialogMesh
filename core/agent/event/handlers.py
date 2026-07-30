@@ -14,6 +14,25 @@ def register_all_handlers(engine, tracer=None):
     Each handler returns a result dict that feeds into the next phase.
     """
     from core.agent.event.statemachine import DeciderStateMachine, PipelinePhase
+    import os as _os
+
+    def _persist_disk_file(path: str, data: dict):
+        """Append data to a disk file (list of entries). Persist data dir from project root."""
+        import json as _json
+        root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+        fpath = _os.path.join(root, path)
+        _os.makedirs(_os.path.dirname(fpath), exist_ok=True)
+        existing = []
+        if _os.path.exists(fpath):
+            try:
+                with open(fpath, encoding='utf-8') as f:
+                    existing = _json.load(f)
+                    if not isinstance(existing, list):
+                        existing = [existing]
+            except: pass
+        existing.append(data)
+        with open(fpath, 'w', encoding='utf-8') as f:
+            _json.dump(existing[-50:], f, indent=2, ensure_ascii=False)  # keep last 50
     sm = getattr(engine, '_state_machine', None)
     if not sm:
         sm = DeciderStateMachine()
@@ -174,13 +193,47 @@ def register_all_handlers(engine, tracer=None):
 
     # ── PERSIST — Save to disk ──
     def handle_persist(ctx):
+        results = {"persisted": False, "trace": False}
+        # Save engine state
         if hasattr(engine, '_persist_state'):
             try:
                 engine._persist_state()
-                return {"persisted": True}
+                results["persisted"] = True
             except:
                 pass
-        return {"persisted": False}
+        # Save trace from pipeline results
+        tracer = getattr(engine, '_tracer', None)
+        if tracer and ctx:
+            try:
+                tracer.record("pipeline", "complete", True, 0, {"phases": str(ctx)[:200]})
+                results["trace"] = True
+            except:
+                pass
+        # Persist annotations from meta feedback
+        mc = getattr(engine, '_meta_cognition', None)
+        if mc and hasattr(mc, 'self_audit'):
+            try:
+                audit = mc.self_audit()
+                if audit:
+                    _persist_disk_file("data/annotations.json", {"audit": str(audit)[:500], "ts": time.time()})
+                    results["annotations"] = True
+            except:
+                pass
+        # Persist corrections from behavior
+        bg = getattr(engine, '_behavior_graph_adapter', None)
+        if bg and hasattr(bg, 'stats'):
+            try:
+                s = bg.stats()
+                _persist_disk_file("data/corrections.json", {"stats": s, "ts": time.time()})
+                results["corrections"] = True
+            except:
+                pass
+        # Persist feedback from pipeline errors
+        errors = {k: v for k, v in ctx.items() if 'error' in str(k).lower() or 'error' in str(v).lower()}
+        if errors:
+            _persist_disk_file("data/feedback.json", {"errors": errors, "ts": time.time()})
+            results["feedback"] = True
+        return results
     sm.register_handler(PipelinePhase.PERSIST, lambda ctx: _trace("persist", handle_persist, ctx))
 
     # ── ASSOCIATION — L1 + L2.5 chain ──
