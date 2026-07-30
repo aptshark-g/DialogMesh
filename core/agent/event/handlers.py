@@ -41,6 +41,7 @@ def register_all_handlers(engine, tracer=None):
         text = ctx.get("text", "")
         if pcr and text and hasattr(pcr, 'route'):
             result = pcr.route(text)
+            engine._last_pcr = result  # persist for v6 API
             return {
                 "zone": getattr(result, 'zone', 'MIXED'),
                 "cognitive_level": getattr(result, 'cognitive_level', 'moderate'),
@@ -57,6 +58,7 @@ def register_all_handlers(engine, tracer=None):
         if parser and text:
             try:
                 result = parser.parse(user_input=text)
+                engine._last_intent = result  # persist for v6 API
                 return {
                     "category": str(getattr(getattr(result, 'intent', None), 'category', 'general')),
                     "confidence": getattr(result, 'confidence', 0.5),
@@ -83,7 +85,7 @@ def register_all_handlers(engine, tracer=None):
 
     # ── BEHAVIOR — BehaviorGraph record ──
     def handle_behavior(ctx):
-        bg = getattr(engine, '_behavior_graph', None)
+        bg = getattr(engine, '_behavior_graph_adapter', None) or getattr(engine, '_behavior_graph', None)
         text = ctx.get("text", "")
         if bg and text:
             try:
