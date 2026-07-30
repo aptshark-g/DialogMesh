@@ -92,14 +92,41 @@ def cmd_search(args):
 def cmd_stats(args):
     e = get_engine()
     dt = getattr(e, '_discourse_tree', None)
-    if not dt: return print(json.dumps({"error": "not loaded"}, ensure_ascii=False))
-    sid = get_session(getattr(args, 'sid', None))
-    tree = dt.get_tree(sid)
-    rel = dt.get_block_relations(sid)
+    sid = getattr(args, 'sid', None)
+    if not sid:
+        # Use engine's current session or last saved
+        sid = get_session(None)
+    
+    # Try engine's in-memory tree first
+    blocks_count = 0; relations_count = 0; max_depth = 0
+    if dt:
+        tree = dt.get_tree(sid)
+        if tree and tree.blocks:
+            rel = dt.get_block_relations(sid)
+            blocks_count = len(rel.get("blocks", {}))
+            relations_count = len(rel.get("relations", []))
+            max_depth = max((getattr(b, 'depth', 0) for b in tree.blocks.values()), default=0)
+    
+    # Fallback: read from persisted discourse_state.json
+    if blocks_count == 0:
+        import os as _os
+        root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
+        ds_path = _os.path.join(root, "data", "discourse_state.json")
+        if _os.path.exists(ds_path):
+            try:
+                saved = json.load(open(ds_path, encoding="utf-8"))
+                blocks_count = len(saved.get("blocks", {}))
+                relations_count = len(saved.get("relations", []))
+            except: pass
+    
+    # List all available sessions
+    sessions_available = []
+    if dt and hasattr(dt, '_trees'):
+        sessions_available = list(dt._trees.keys())
+    
     print(json.dumps({
-        "blocks": len(rel.get("blocks", {})),
-        "relations": len(rel.get("relations", [])),
-        "max_depth": max((getattr(b, 'depth', 0) for b in (tree.blocks.values() if tree else {})), default=0),
+        "blocks": blocks_count, "relations": relations_count, "max_depth": max_depth,
+        "session_id": sid, "sessions_available": sessions_available[:10],
     }, ensure_ascii=False))
 
 
@@ -183,7 +210,8 @@ def register_cmds(subparsers):
     f.add_argument("text", nargs="+")
     s = sp.add_parser("search")
     s.add_argument("keyword")
-    sp.add_parser("stats")
+    st = sp.add_parser("stats")
+    st.add_argument("--sid", type=str, default=None)
     sp.add_parser("compress")
     sp.add_parser("topics")
     sp.add_parser("topic-tree")
