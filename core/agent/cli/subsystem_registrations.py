@@ -41,6 +41,23 @@ _registry.register("ocean_analyst", "core.agent.v4.cognitive.ocean_profile:OCEAN
                    init_order=20, required=False, factory=True,
                    description="OCEAN 10-dimension personality profiling")
 
+# ── Missing from factory but should be registered ──
+_registry.register("tool_registry", "core.agent.tool_registry.registry:ToolRegistry",
+                   init_order=20, required=False, description="L1/L2/L3 autonomous tool discovery")
+
+_registry.register("content_fetcher", "core.agent.learning.content_fetcher:ContentFetcher",
+                   init_order=35, required=False, description="Content fetching engine")
+
+_registry.register("credibility_eval", "core.agent.learning.credibility:CredibilityEvaluator",
+                   init_order=35, required=False, description="Content credibility evaluator")
+
+_registry.register("cascade_detector", "core.agent.event.closure:CascadeDetector",
+                   init_order=40, required=False,
+                   description="Cascade failure detector")
+
+_registry.register("hot_reloader", "core.agent.event.closure:HotReloader",
+                   init_order=40, required=False, description="Hot reload engine")
+
 _registry.register("meta_cognition", "core.agent.metacognition:MetaCognitionAdapter",
                    init_order=20, required=False, description="Metacognitive review + audit")
 

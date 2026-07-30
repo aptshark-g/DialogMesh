@@ -148,11 +148,16 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.cli.subsystem_registrations import _registry
         results = _registry.resolve_all()
         engine._registry = _registry
+        # Name mappings: registry name → engine attr (some differ)
+        _name_map = {"behavior_graph": "_behavior_graph_adapter",
+                     "cascade_detector": "_cascade"}
         for name, result in results.items():
             if result.loaded and result.instance is not None:
-                setattr(engine, f"_{name}", result.instance)
+                attr_name = _name_map.get(name, f"_{name}")
+                if not hasattr(engine, attr_name):
+                    setattr(engine, attr_name, result.instance)
     except Exception:
-        pass
+        pass  # registry is optional — manual DI handles required ones
 
     return engine
 
