@@ -112,6 +112,11 @@ def _create_engine_instance(provider_type: str = None):
     try:
         import core.agent.tools.builtin  # module-level registration
     except: pass
+    # Cognitive loop: behavior learn + meta review
+    try:
+        from core.agent.event.cognitive_loop import wire_cognitive_loop
+        wire_cognitive_loop(engine, interval_turns=5)
+    except: pass
     return engine
 
 
