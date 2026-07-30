@@ -182,6 +182,37 @@ def cmd_behavior_reset(args):
     print(json.dumps({"status": "reset"}, ensure_ascii=False))
 
 
+def cmd_behavior_search(args):
+    e = get_engine()
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg and hasattr(bg, 'get_recent_chain'):
+        chain = bg.get_recent_chain() or []
+        kw = getattr(args, 'keyword', '')
+        hits = [str(c)[:80] for c in chain if kw.lower() in str(c).lower()]
+        print(json.dumps({"found": len(hits), "matches": hits[:5]}, ensure_ascii=False))
+    else:
+        print(json.dumps({"found": 0}, ensure_ascii=False))
+
+
+def cmd_behavior_export(args):
+    e = get_engine()
+    bg = getattr(e, '_behavior_graph_adapter', None)
+    if bg and hasattr(bg, 'stats'):
+        s = bg.stats()
+        print(json.dumps({"behavior": s}, indent=2, ensure_ascii=False))
+    else:
+        print(json.dumps({"behavior": {"edges": 0}}, ensure_ascii=False))
+
+
+def cmd_meta_accuracy(args):
+    e = get_engine()
+    mc = getattr(e, '_meta_cognition', None)
+    if mc and hasattr(mc, 'verify_past_decision'):
+        print(json.dumps({"accuracy": "pending", "msg": "run verify first"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"accuracy": "N/A"}, ensure_ascii=False))
+
+
 def cmd_meta_audit(args):
     e = get_engine()
     mc = getattr(e, '_meta_cognition', None)
@@ -270,6 +301,8 @@ def register_cmds(subparsers):
     sp.add_parser("stats")
     sp.add_parser("history")
     sp.add_parser("reset")
+    sp.add_parser("search")
+    sp.add_parser("export")
 
     # Meta
     p = subparsers.add_parser("meta", help="MetaCognitive operations")
