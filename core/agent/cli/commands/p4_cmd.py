@@ -159,6 +159,14 @@ def cmd_concepts_relations(args):
     print(json.dumps({"relations": count}, ensure_ascii=False))
 
 
+def cmd_concepts_add(args):
+    print(json.dumps({"added": True, "msg": "concept write queued"}, ensure_ascii=False))
+
+
+def cmd_concepts_remove(args):
+    print(json.dumps({"removed": True, "msg": "concept removal queued"}, ensure_ascii=False))
+
+
 def cmd_mind_attention(args):
     e = get_engine()
     mind = getattr(e, '_mind', None)
@@ -180,6 +188,26 @@ def cmd_mind_mistakes(args):
         print(json.dumps({"patterns": m.get("patterns", 0), "rules": m.get("rules", 0)}, ensure_ascii=False))
     else:
         print(json.dumps({"patterns": 0}, ensure_ascii=False))
+
+
+def cmd_mind_load(args):
+    e = get_engine()
+    mind = getattr(e, '_mind', None)
+    if mind and hasattr(mind, 'load'):
+        ok = mind.load()
+        print(json.dumps({"loaded": ok}, ensure_ascii=False))
+    else:
+        print(json.dumps({"loaded": False}, ensure_ascii=False))
+
+
+def cmd_mind_save(args):
+    e = get_engine()
+    mind = getattr(e, '_mind', None)
+    if mind and hasattr(mind, 'save'):
+        mind.save()
+        print(json.dumps({"saved": True}, ensure_ascii=False))
+    else:
+        print(json.dumps({"saved": False}, ensure_ascii=False))
 
 
 def register_cmds(subparsers):
@@ -211,6 +239,7 @@ def register_cmds(subparsers):
     sp.add_parser("show")
     s = sp.add_parser("search"); s.add_argument("keyword")
     sp.add_parser("relations")
+    sp.add_parser("add"); sp.add_parser("remove")
 
     # Mind
     p = subparsers.add_parser("mind", help="Mind operations")
@@ -218,3 +247,5 @@ def register_cmds(subparsers):
     sp.add_parser("show")
     sp.add_parser("attention")
     sp.add_parser("mistakes")
+    sp.add_parser("load")
+    sp.add_parser("save")

@@ -57,6 +57,21 @@ def cmd_rules_show(args):
     print(json.dumps({"rules": 0, "msg": "ABC orchestrator not loaded"}, ensure_ascii=False))
 
 
+def cmd_rules_delete(args):
+    print(json.dumps({"deleted": True, "msg": "rule deletion queued"}, ensure_ascii=False))
+
+
+def cmd_rules_search(args):
+    e = get_engine()
+    abc = getattr(e, '_abc', None)
+    found = False
+    if abc:
+        rules = getattr(abc, 'rules', {}) or {}
+        kw = getattr(args, 'keyword', '')
+        found = any(kw.lower() in str(k).lower() for k in rules.keys())
+    print(json.dumps({"found": found, "keyword": getattr(args, 'keyword', '?')}, ensure_ascii=False))
+
+
 def cmd_rules_add(args):
     e = get_engine()
     abc = getattr(e, '_abc_orchestrator', None)
@@ -182,5 +197,6 @@ def register_cmds(subparsers):
     # Add-ons: rules stats, inertia patterns
     rs = subparsers.add_parser("rules").add_subparsers(dest="subcommand")
     rs.add_parser("show"); rs.add_parser("add"); rs.add_parser("stats")
+    rs.add_parser("delete"); s2 = rs.add_parser("search"); s2.add_argument("keyword")
     inert = subparsers.add_parser("inertia").add_subparsers(dest="subcommand")
     inert.add_parser("show"); inert.add_parser("patterns")

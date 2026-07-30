@@ -212,6 +212,25 @@ def cmd_meta_stats(args):
         print(json.dumps({"msg": "No meta cognition"}, ensure_ascii=False))
 
 
+def cmd_meta_queue(args):
+    e = get_engine()
+    mc = getattr(e, '_meta_cognition', None)
+    if mc and hasattr(mc, 'process_queue'):
+        print(json.dumps({"queue": "ready" if mc else "dormant"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"queue": "dormant"}, ensure_ascii=False))
+
+
+def cmd_meta_decisions(args):
+    e = get_engine()
+    gd = getattr(e, '_decider', None)
+    if gd and hasattr(gd, 'stats'):
+        s = gd.stats()
+        print(json.dumps({"decisions": s.get("tick", 0), "state": s.get("state", "idle")}, ensure_ascii=False))
+    else:
+        print(json.dumps({"decisions": 0}, ensure_ascii=False))
+
+
 def cmd_assoc_funnel(args):
     e = get_engine()
     l1 = getattr(e, '_l1_modifier', None)
@@ -260,6 +279,8 @@ def register_cmds(subparsers):
     sp.add_parser("audit")
     sp.add_parser("verify")
     sp.add_parser("stats")
+    sp.add_parser("queue")
+    sp.add_parser("decisions")
 
     # Association
     p = subparsers.add_parser("assoc", help="Association chain operations")

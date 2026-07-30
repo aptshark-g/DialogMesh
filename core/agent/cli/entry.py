@@ -357,6 +357,7 @@ def _dispatch_p3(args):
         cmd_behavior_stats, cmd_behavior_history, cmd_behavior_reset,
         cmd_meta_show, cmd_meta_review,
         cmd_meta_audit, cmd_meta_verify, cmd_meta_stats,
+        cmd_meta_queue, cmd_meta_decisions,
         cmd_assoc_show, cmd_assoc_trace,
         cmd_assoc_funnel, cmd_assoc_stats, cmd_assoc_filter,
         cmd_obs_show, cmd_obs_query, cmd_obs_stats, cmd_obs_list, cmd_obs_clear,
@@ -373,6 +374,7 @@ def _dispatch_p3(args):
         ("meta","show"): cmd_meta_show, ("meta","review"): cmd_meta_review,
         ("meta","audit"): cmd_meta_audit, ("meta","verify"): cmd_meta_verify,
         ("meta","stats"): cmd_meta_stats,
+        ("meta","queue"): cmd_meta_queue, ("meta","decisions"): cmd_meta_decisions,
         ("assoc","show"): cmd_assoc_show, ("assoc","trace"): cmd_assoc_trace,
         ("assoc","funnel"): cmd_assoc_funnel, ("assoc","stats"): cmd_assoc_stats,
         ("assoc","filter"): cmd_assoc_filter,
@@ -398,7 +400,9 @@ def _dispatch_p4(args):
         cmd_profile_export, cmd_profile_import,
         cmd_engineering_show, cmd_engineering_modules, cmd_engineering_constraints, cmd_engineering_antipatterns,
         cmd_concepts_show, cmd_concepts_search, cmd_concepts_relations,
+        cmd_concepts_add, cmd_concepts_remove,
         cmd_mind_show, cmd_mind_attention, cmd_mind_mistakes,
+        cmd_mind_load, cmd_mind_save,
     )
     m = {
         ("profile","show"): cmd_profile_show, ("profile","edit"): cmd_profile_edit,
@@ -411,8 +415,10 @@ def _dispatch_p4(args):
         ("engineering","anti-patterns"): cmd_engineering_antipatterns,
         ("concepts","show"): cmd_concepts_show,
         ("concepts","search"): cmd_concepts_search, ("concepts","relations"): cmd_concepts_relations,
+        ("concepts","add"): cmd_concepts_add, ("concepts","remove"): cmd_concepts_remove,
         ("mind","show"): cmd_mind_show,
         ("mind","attention"): cmd_mind_attention, ("mind","mistakes"): cmd_mind_mistakes,
+        ("mind","load"): cmd_mind_load, ("mind","save"): cmd_mind_save,
     }
     m.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
@@ -422,7 +428,8 @@ def _dispatch_p5(args):
     about = getattr(args, "subcommand", "")
     cmd = args.command
     from core.agent.cli.commands.p5_cmd import (
-        cmd_rules_show, cmd_rules_add, cmd_rules_stats, cmd_abc_show,
+        cmd_rules_show, cmd_rules_add, cmd_rules_stats,
+        cmd_rules_delete, cmd_rules_search, cmd_abc_show,
         cmd_annotations_show, cmd_annotations_recent, cmd_annotations_export,
         cmd_corrections_show, cmd_feedback_show,
         cmd_inertia_show, cmd_inertia_patterns, cmd_versions_show, cmd_metrics_show,
@@ -430,6 +437,7 @@ def _dispatch_p5(args):
     m = {
         ("rules","show"): cmd_rules_show, ("rules","add"): cmd_rules_add,
         ("rules","stats"): cmd_rules_stats,
+        ("rules","delete"): cmd_rules_delete, ("rules","search"): cmd_rules_search,
         ("abc","show"): cmd_abc_show,
         ("annotations","show"): cmd_annotations_show,
         ("annotations","recent"): cmd_annotations_recent,
