@@ -35,3 +35,5 @@ def register_pcr(name, cls):
 
 
 __all__ = ["RuleBasedPCR", "register_pcr"]
+
+ExpectationIdentifier = str  # backward compat alias
