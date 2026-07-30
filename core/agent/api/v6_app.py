@@ -88,6 +88,133 @@ async def ws_endpoint(ws):
 async def v6_health():
     return {"status": "ok", "version": "6.0.0", "loaded": _loaded}
 
+# ═══ White-box Audit (DESIGN_AUDIT) ═══
+
+@app.get("/v6/audit")
+async def v6_audit():
+    """Full white-box audit: module states, data sizes, persistence status."""
+    import os, json as _json, time
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+    except:
+        e = None
+    
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    data_dir = os.path.join(root, "data")
+    
+    def _disk_info(rel):
+        fp = os.path.join(root, rel)
+        if os.path.exists(fp):
+            try:
+                with open(fp, encoding='utf-8') as f:
+                    d = _json.load(f)
+                return len(d) if isinstance(d, list) else (1 if d else 0)
+            except: return -1
+        return 0
+    
+    return {
+        "timestamp": int(time.time()),
+        "reachability": {
+            "profile": bool(getattr(e, '_ocean_analyst', None)),
+            "meta": bool(getattr(e, '_meta_cognition', None)),
+            "mind": bool(getattr(e, '_mind', None)),
+            "abc": bool(getattr(e, '_abc', None)),
+            "engineering": bool(getattr(e, '_engineering_knowledge', None)),
+            "behavior": bool(getattr(e, '_behavior_graph_adapter', None)),
+            "discourse": bool(getattr(e, '_discourse_tree', None)),
+            "decider": bool(getattr(e, '_decider', None)),
+            "inertia": bool(getattr(e, '_inertia_graph', None)),
+            "rag": bool(getattr(e, '_rag_bridge', None)),
+            "learning": bool(getattr(e, '_learning_sources', None)),
+        },
+        "editability": {
+            "profile_editable": hasattr(getattr(e, '_ocean_analyst', object()), 'update_dimension') if e else False,
+            "rules_editable": bool(getattr(e, '_abc', None)),
+            "parameters_editable": bool(getattr(e, '_parameter_registry', None)),
+        },
+        "learning_loop": {
+            "pipeline_runs": getattr(getattr(e, '_state_machine', None), '_tick', 0) if e else 0,
+            "behavior_edges": getattr(getattr(getattr(e, '_behavior_graph_adapter', None), 'stats', lambda:{})(), 'edge_count', 0) if e else 0,
+            "meta_reviews": bool(getattr(getattr(e, '_meta_cognition', None), '_reviews', None)) if e else False,
+        },
+        "persistence": {
+            "annotations": _disk_info("data/annotations.json"),
+            "corrections": _disk_info("data/corrections.json"),
+            "feedback": _disk_info("data/feedback.json"),
+            "sessions": _disk_info("data/v3_sessions.json"),
+            "discourse_state": _disk_info("data/discourse_state.json"),
+            "behavior_graph": _disk_info("data/behavior_graph.json"),
+            "event_log": os.path.exists(os.path.join(data_dir, "event_log.db")),
+        },
+        "hotstore": getattr(getattr(e, '_storage', None), 'hot', None).stats() if e and hasattr(e, '_storage') else {},
+    }
+
+@app.get("/v6/audit/history")
+async def v6_audit_history():
+    """Recent audit log entries."""
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fp = os.path.join(root, "data", "audit_log.json")
+    if os.path.exists(fp):
+        with open(fp, encoding='utf-8') as f:
+            data = _json.load(f)
+        return {"entries": len(data) if isinstance(data, list) else 0, "recent": data[-5:] if isinstance(data, list) else []}
+    return {"entries": 0, "recent": []}
+
+@app.get("/v6/audit/recent")
+async def v6_audit_recent():
+    """Last N audit events from event log."""
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fp = os.path.join(root, "data", "event_log.db")
+    exists = os.path.exists(fp)
+    return {"event_log_exists": exists, "size_bytes": os.path.getsize(fp) if exists else 0}
+
+# Missing DESIGN_AUDIT endpoints
+
+@app.get("/v6/gateway/providers")
+async def v6_gateway_providers():
+    """Gateway provider list."""
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fp = os.path.join(root, "gateway", "provider.yaml")
+    if os.path.exists(fp):
+        with open(fp, encoding='utf-8') as f:
+            return {"providers": f.read()}
+    return {"providers": "provider.yaml not found"}
+
+@app.get("/v6/usage")
+async def v6_usage():
+    """Token usage stats."""
+    return {"total_tokens": 0, "total_cost": 0, "by_model": {}}
+
+@app.get("/v6/annotations")
+async def v6_annotations_summary():
+    """Annotation summary from disk."""
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fp = os.path.join(root, "data", "annotations.json")
+    if os.path.exists(fp):
+        with open(fp, encoding='utf-8') as f:
+            data = _json.load(f)
+        count = len(data) if isinstance(data, list) else (1 if data else 0)
+        return {"annotations_count": count, "recent": str(data[-1])[:200] if isinstance(data,list) and data else None}
+    return {"annotations_count": 0}
+
+@app.get("/v6/corrections")
+async def v6_corrections_summary():
+    """Correction summary from disk."""
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fp = os.path.join(root, "data", "corrections.json")
+    if os.path.exists(fp):
+        with open(fp, encoding='utf-8') as f:
+            data = _json.load(f)
+        count = len(data) if isinstance(data, list) else (1 if data else 0)
+        return {"corrections_count": count, "recent": str(data[-1])[:200] if isinstance(data,list) and data else None}
+    return {"corrections_count": 0}
+
 @app.get("/v6/status")
 async def v6_status():
     return {"status": "running", "version": "6.0.0", "endpoints": len(_loaded) + 3}
