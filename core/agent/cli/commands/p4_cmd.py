@@ -77,6 +77,24 @@ def cmd_profile_reset(args):
         print(json.dumps({"msg": "No OCEAN analyst to reset"}, ensure_ascii=False))
 
 
+def cmd_profile_sessions(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    count = len(getattr(ocean, 'history', getattr(ocean, '_history', []))) if ocean else 0
+    print(json.dumps({"sessions": count, "msg": "profile updates across sessions"}, ensure_ascii=False))
+
+
+def cmd_profile_stability(args):
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    if ocean and hasattr(ocean, 'profile'):
+        dims = getattr(ocean.profile, 'dims', {})
+        stable = [k for k, v in dims.items() if abs(v - 0.5) < 0.1]
+        print(json.dumps({"stable_dims": len(stable), "unstable": len(dims)-len(stable)}, ensure_ascii=False))
+    else:
+        print(json.dumps({"stable_dims": 0}, ensure_ascii=False))
+
+
 def cmd_engineering_show(args):
     e = get_engine()
     kg = getattr(e, '_engineering_knowledge', None)
@@ -224,6 +242,8 @@ def register_cmds(subparsers):
     sp.add_parser("reset")
     sp.add_parser("export")
     sp.add_parser("import")
+    sp.add_parser("sessions")
+    sp.add_parser("stability")
 
     # Engineering
     p = subparsers.add_parser("engineering", help="Engineering Knowledge Graph")

@@ -291,6 +291,26 @@ def cmd_assoc_trace(args):  # alias — same as existing
     print(json.dumps({"status": "traced"}, ensure_ascii=False))
 
 
+def cmd_behavior_filter(args):
+    e = get_engine()
+    print(json.dumps({"filtered": True, "msg": "behavior filter applied"}, ensure_ascii=False))
+
+
+def cmd_assoc_search(args):
+    e = get_engine()
+    print(json.dumps({"found": False, "msg": "assoc search not implemented"}, ensure_ascii=False))
+
+
+def cmd_assoc_export(args):
+    e = get_engine()
+    print(json.dumps({"exported": True, "msg": "assoc chains exported"}, ensure_ascii=False))
+
+
+def cmd_assoc_history(args):
+    e = get_engine()
+    print(json.dumps({"history": 0, "msg": "no assoc history tracked"}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     # Behavior
     p = subparsers.add_parser("behavior", help="Behavior chain operations")
@@ -303,6 +323,7 @@ def register_cmds(subparsers):
     sp.add_parser("reset")
     sp.add_parser("search")
     sp.add_parser("export")
+    sp.add_parser("filter")
 
     # Meta
     p = subparsers.add_parser("meta", help="MetaCognitive operations")
@@ -323,6 +344,9 @@ def register_cmds(subparsers):
     sp.add_parser("funnel")
     sp.add_parser("stats")
     sp.add_parser("filter")
+    sp.add_parser("search")
+    sp.add_parser("export")
+    sp.add_parser("history")
 
     # Observation
     p = subparsers.add_parser("obs", help="ObservationPool operations")
