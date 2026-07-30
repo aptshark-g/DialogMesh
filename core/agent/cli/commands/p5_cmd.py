@@ -45,17 +45,16 @@ def _disk(key: str, rel_path: str):
 
 def cmd_rules_show(args):
     e = get_engine()
-    abc = getattr(e, '_abc_orchestrator', None)
+    abc = getattr(e, '_abc', None)
     if abc:
-        rules = getattr(abc, 'rules', None)
+        rules = getattr(abc, 'rules', None) or getattr(abc, '_rules', None)
         if isinstance(rules, dict):
-            print(json.dumps({"rules": len(rules), "keys": list(rules.keys())[:20]}, ensure_ascii=False))
+            print(json.dumps({"rules": len(rules), "recent": list(rules.keys())[:10]}, ensure_ascii=False))
+            return
         elif isinstance(rules, list):
             print(json.dumps({"rules": len(rules)}, ensure_ascii=False))
-        else:
-            print(json.dumps({"rules": 0}, ensure_ascii=False))
-    else:
-        print(json.dumps({"error": "ABC orchestrator not loaded"}, ensure_ascii=False))
+            return
+    print(json.dumps({"rules": 0, "msg": "ABC orchestrator not loaded"}, ensure_ascii=False))
 
 
 def cmd_rules_add(args):
