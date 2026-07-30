@@ -80,8 +80,15 @@ try:
     from core.agent.v4.api_gateway import router as gateway_router, init as gateway_init
 except ImportError:
     gateway_router = None; gateway_init = lambda: None
-from core.agent.v4.api_viz_edit import router as viz_edit_router, init as viz_edit_init
-from core.agent.v4.api_annotate import router as annotate_router, init as annotate_init
+try:
+    from core.agent.v4.api_viz_edit import router as viz_edit_router, init as viz_edit_init
+except ImportError:
+    viz_edit_router = None
+    viz_edit_init = lambda: None
+try:
+    from core.agent.v4.api_annotate import router as annotate_router, init as annotate_init
+except ImportError:
+    annotate_router = None; annotate_init = lambda: None
 
 logger = logging.getLogger(__name__)
 
@@ -1467,6 +1474,57 @@ def serve(host: str = "0.0.0.0", port: int = 8000, db_path: str = "data/event_lo
 
 
 # ══════════ v6 Meta-Cognition + Version Control APIs ══════════
+
+@app.get("/v6/meta")
+async def v6_meta():
+    """Meta-cognition summary."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        mc = getattr(e, '_meta_cognition', None)
+    except:
+        mc = None
+    return {"reviewed": mc is not None, "handler": "active" if mc else "dormant"}
+
+@app.get("/v6/pcr")
+async def v6_pcr():
+    """PCR router summary."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        pcr = getattr(e, '_pcr_router', None)
+        last = getattr(e, '_last_pcr', None)
+    except:
+        pcr = last = None
+    return {
+        "active": pcr is not None,
+        "last_zone": getattr(last, 'expectation', 'none') if last else 'none',
+        "last_complexity": getattr(last, 'complexity_level', 0) if last else 0,
+    }
+
+@app.get("/v6/intent")
+async def v6_intent():
+    """Intent parser summary."""
+    try:
+        from core.agent.cli.engine import get_engine
+        e = get_engine()
+        last = getattr(e, '_last_intent', None)
+    except:
+        last = None
+    return {
+        "last_intent": getattr(last, 'intent', 'unknown') if last else 'unknown',
+        "confidence": getattr(last, 'confidence', 0) if last else 0,
+    }
+
+@app.get("/v6/feedback")
+async def v6_feedback():
+    """Feedback collected from corrections."""
+    import os, json
+    fb_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "feedback.json")
+    if os.path.exists(fb_path):
+        with open(fb_path, encoding="utf-8") as f:
+            return json.load(f)
+    return {"feedback": [], "total": 0}
 
 @app.get("/v6/meta/stats")
 async def v6_meta_stats():
