@@ -84,7 +84,21 @@ def _create_engine_instance(provider_type: str = None):
         from core.agent.llm_providers.mock_provider import MockProvider
         provider = MockProvider("mock", {})
     from core.agent.runtime.engine import CognitiveRuntimeEngine
-    return CognitiveRuntimeEngine(llm_provider=provider)
+    engine = CognitiveRuntimeEngine(llm_provider=provider)
+    # Wire components (per-engine isolation)
+    try:
+        from core.agent.event.storage import StorageLayer
+        engine._storage = StorageLayer()
+    except: pass
+    try:
+        from core.agent.event.tracer import PipelineTracer
+        engine._tracer = PipelineTracer()
+    except: pass
+    try:
+        from core.agent.event.nats_bridge import wire_hybrid_bus
+        wire_hybrid_bus(engine)
+    except: pass
+    return engine
 
 
 def start_engine(provider_type: str = None, api_key: str = None,
@@ -157,6 +171,13 @@ def start_engine(provider_type: str = None, api_key: str = None,
             _engine._cascade = CascadeDetector(_engine._rate_guard)
             _engine._cap_guard = CapabilityGuard()
             _engine._hot_reloader = HotReloader()
+        except: pass
+
+        # Week 2: NATS hybrid bus (graceful fallback to memory)
+        try:
+            from core.agent.event.nats_bridge import wire_hybrid_bus
+            nats_ok = wire_hybrid_bus(_engine)
+            logger.info("NATS hybrid bus: %s", "active" if nats_ok else "memory fallback")
         except: pass
 
         # P2: State Machine Engine
