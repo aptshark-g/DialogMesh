@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 core/agent/observability/metrics.py
 ─────────────────────────────────
@@ -10,7 +11,6 @@ Metrics aggregation for session quality and performance.
   - 内存占用 < 10MB（滑动窗口限制）
 """
 
-from __future__ import annotations
 
 import time
 from collections import deque
@@ -207,7 +207,6 @@ DiscourseBlockTree Metrics (added in v0.2.0):
 - discourse_summary_v3_triggered_total
 """
 
-from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
