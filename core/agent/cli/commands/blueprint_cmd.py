@@ -96,6 +96,11 @@ def register_cmds(subparsers):
     bh = sp.add_parser("build-hybrid"); bh.add_argument("text", nargs="+")
     bl = sp.add_parser("build-llm"); bl.add_argument("text", nargs="+")
     sp.add_parser("history")
+    sp.add_parser("analyze")
+    sp.add_parser("template-list")
+    sp.add_parser("clear")
+    sp.add_parser("diff")
+    sp.add_parser("optimize")
 
     p = subparsers.add_parser("decider", help="Decider operations")
     sp = p.add_subparsers(dest="subcommand")
