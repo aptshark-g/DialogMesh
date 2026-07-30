@@ -309,10 +309,50 @@ un_use/
 ### 恢复
 
 ```
-grep "关键词" un_use/ → 找原文
 git show <commit>:engine.py → 完整恢复
 ```
-下一步: 修理 P0 (双轨+start+死import)
-        然后 P1 (engine拆分+端点补齐+文档校对)
-        最后 P2 (测试+CI/CD)
-```
+
+---
+
+## 十一、实施策略 — 先覆盖,后迁移
+
+### 原则
+
+迁移前必须确保新代码完全覆盖旧代码。先验证 → 再路由 → 再归档。
+
+### 阶段 A: 覆盖验证 (审计)
+
+| 步骤 | 内容 | 产出 |
+|:----:|------|------|
+| A1 | 审计 `on_event()` 做什么 | coverage_map.md |
+| A2 | 审计 `on_event_sm()` handler 覆盖 | gap_list.md |
+| A3 | 标注 gap | 待修复清单 |
+
+### 阶段 B: 补缺口
+
+| 步骤 | 内容 | 文件 |
+|:----:|------|------|
+| B1 | 补齐缺失 handler | handlers.py |
+| B2 | on_event → passthrough to on_event_sm | engine.py |
+| B3 | 全量测试验证 | pytest 78/78 |
+
+### 阶段 C: 归档
+
+| 步骤 | 内容 |
+|:----:|------|
+| C1 | 创建 un_use/engine_legacy/ |
+| C2 | on_event/start 移入 legacy 文件 |
+| C3 | engine.py 瘦身 ~200行 |
+| C4 | 清理 api.py 死 import |
+
+### 阶段 D: 验证
+
+| 步骤 | 内容 |
+|:----:|------|
+| D1 | 重启后端,验证 v6 端点 |
+| D2 | 3轮对话验证管线持久化 |
+| D3 | git tag pre-archive + post-migrate |
+
+### 回退
+
+任何阶段失败: `git checkout engine.py api.py` → 恢复 → 重新开始
