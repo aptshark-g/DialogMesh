@@ -1033,8 +1033,8 @@ def main():
             _dispatch_p9(args)
     elif args.command == "blueprint":
         about = getattr(args, "subcommand", "")
-        from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb
-        {"show": bs, "build": bb}.get(about, lambda a: print("dm blueprint <show|build>"))(args)
+        from core.agent.cli.commands.blueprint_cmd import cmd_blueprint_show as bs, cmd_blueprint_build as bb, cmd_blueprint_validate as bv, cmd_blueprint_export as bex
+        {"show": bs, "build": bb, "validate": bv, "export": bex}.get(about, lambda a: print("Usage: dm blueprint <show|build|validate|export>"))(args)
     elif args.command == "decider":
         about = getattr(args, "subcommand", "")
         from core.agent.cli.commands.blueprint_cmd import cmd_decider_show as ds, cmd_decider_chains as dc, cmd_decider_execute as dx
