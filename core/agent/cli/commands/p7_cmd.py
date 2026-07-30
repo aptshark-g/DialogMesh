@@ -126,6 +126,22 @@ def cmd_task_edge_remove(args):
     print(json.dumps({"status": "removed", "from": args.from_, "to": args.to_}, ensure_ascii=False))
 
 
+def cmd_task_stats(args):
+    import os, json as _json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    tg_path = os.path.join(root, "data", "task_graphs")
+    files = os.listdir(tg_path) if os.path.isdir(tg_path) else []
+    nodes = edges = 0
+    for f in files:
+        try:
+            d = _json.load(open(os.path.join(tg_path, f)))
+            if isinstance(d, dict):
+                nodes += len(d.get("nodes", []))
+                edges += len(d.get("edges", []))
+        except: pass
+    print(json.dumps({"graphs": len(files), "total_nodes": nodes, "total_edges": edges}, ensure_ascii=False))
+
+
 def register_cmds(subparsers):
     # Don't create a new 'discourse' parser — add subcommands to existing
     pass  # dispatch handled via entry.py directly

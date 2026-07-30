@@ -364,6 +364,7 @@ def _dispatch_p3(args):
     )
     from core.agent.cli.commands.knowledge_cmd import (
         cmd_knowledge_query, cmd_knowledge_sources, cmd_knowledge_import,
+        cmd_knowledge_stats, cmd_knowledge_search,
     )
     map = {
         ("behavior","show"): cmd_behavior_show, ("behavior","predict"): cmd_behavior_predict,
@@ -382,6 +383,7 @@ def _dispatch_p3(args):
         ("obs","subscribe"): cmd_obs_subscribe,
         ("knowledge","query"): cmd_knowledge_query, ("knowledge","sources"): cmd_knowledge_sources,
         ("knowledge","import"): cmd_knowledge_import,
+        ("knowledge","stats"): cmd_knowledge_stats, ("knowledge","search"): cmd_knowledge_search,
     }
     map.get((cmd, about), lambda a: print(f"dm {cmd} <show|...>"))(args)
 
@@ -418,7 +420,8 @@ def _dispatch_p5(args):
     cmd = args.command
     from core.agent.cli.commands.p5_cmd import (
         cmd_rules_show, cmd_rules_add, cmd_rules_stats, cmd_abc_show,
-        cmd_annotations_show, cmd_corrections_show, cmd_feedback_show,
+        cmd_annotations_show, cmd_annotations_recent, cmd_annotations_export,
+        cmd_corrections_show, cmd_feedback_show,
         cmd_inertia_show, cmd_inertia_patterns, cmd_versions_show, cmd_metrics_show,
     )
     m = {
@@ -426,6 +429,8 @@ def _dispatch_p5(args):
         ("rules","stats"): cmd_rules_stats,
         ("abc","show"): cmd_abc_show,
         ("annotations","show"): cmd_annotations_show,
+        ("annotations","recent"): cmd_annotations_recent,
+        ("annotations","export"): cmd_annotations_export,
         ("corrections","show"): cmd_corrections_show,
         ("feedback","show"): cmd_feedback_show,
         ("inertia","show"): cmd_inertia_show, ("inertia","patterns"): cmd_inertia_patterns,
@@ -698,7 +703,7 @@ def _dispatch_task_ops(args):
     """Dispatch task node/edge operations."""
     from core.agent.cli.commands.p7_cmd import (
         cmd_task_node_add, cmd_task_node_edit, cmd_task_node_remove,
-        cmd_task_edge_add, cmd_task_edge_remove,
+        cmd_task_edge_add, cmd_task_edge_remove, cmd_task_stats,
     )
     node_op = getattr(args, "node_op", getattr(args, "edge_op", ""))
     cmd = getattr(args, "subcommand", "")
@@ -706,6 +711,7 @@ def _dispatch_task_ops(args):
         ("node", "add"): cmd_task_node_add, ("node", "edit"): cmd_task_node_edit,
         ("node", "remove"): cmd_task_node_remove,
         ("edge", "add"): cmd_task_edge_add, ("edge", "remove"): cmd_task_edge_remove,
+        ("task", "stats"): cmd_task_stats,
     }
     m.get((cmd, node_op), lambda a: print("dm task node <add|edit|remove> | dm task edge <add|remove>"))(args)
 
