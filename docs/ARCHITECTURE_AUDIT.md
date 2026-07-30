@@ -257,8 +257,61 @@ DialogMesh v6 是一个野心勃勃的项目。
   - Mock 模式: ✅ 能跑
   - DeepSeek 模式: ⚠️ Gateway 需要健康
   - 高并发: ❌ 无 EnginePool 集成
-  - 长时间运行: ⚠️ 内存泄漏未测(EventLog 无限增长)
+  - 长时间运行: ⚠️ EventLog 无限增长未设上限
+```
 
+
+---
+
+## 十、归档策略 — un_use/ (不删除,安全退回)
+
+### 原则
+
+**不删除危险代码——归档到 `un_use/` 目录。**
+- git log 永远可恢复
+- `un_use/` 全文搜索快
+- 出问题 → 10 秒找到原文
+
+### engine.py 归档 (~3500 行移出)
+
+```
+保留 (~200 行):
+  on_event_sm()              唯一入口
+  _create_engine_instance()  统一初始化
+  stop() / status()
+
+移入 un_use/engine_legacy/:
+  on_event()                      → legacy_on_event.py      (~3500 行)
+  start()                         → legacy_start.py         (~660 行)
+  _feed_profile / _retrospect     → legacy_cognitive.py
+  _validate_* / _diff_*           → legacy_validation.py
+```
+
+### api.py 清理
+
+```
+删除 4 个 try/except ImportError 死 import
+每个标注 git SHA 可恢复
+```
+
+### un_use/ 目录
+
+```
+un_use/
+  ├── engine_legacy/
+  │   ├── legacy_on_event.py
+  │   ├── legacy_start.py
+  │   ├── legacy_cognitive.py
+  │   └── legacy_validation.py
+  └── README.md  归档原因+恢复方法
+```
+
+### 恢复
+
+```
+grep "关键词" un_use/ → 找原文
+git show <commit>:engine.py → 完整恢复
+```
 下一步: 修理 P0 (双轨+start+死import)
         然后 P1 (engine拆分+端点补齐+文档校对)
         最后 P2 (测试+CI/CD)
