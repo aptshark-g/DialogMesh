@@ -1,0 +1,3733 @@
+"""CognitiveRuntimeEngine: orchestrates v4 modules across four paths.
+
+Integrates ``PathAwareScheduler`` for path-aware scheduling,
+configuration-driven triggers, and per-path state tracking.
+"""
+from __future__ import annotations
+import time, re
+import importlib
+import time
+import logging
+import threading
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from core.agent.events.event_ir import EventIR
+from core.agent.runtime.adapter import (
+    RuntimeAdapter, RuntimeContext, AdapterResult,
+)
+from core.agent.runtime.config import (
+    RuntimeConfig, ModuleConfig, PathConfig, load_runtime_config, build_default_config,
+)
+from core.agent.world.params import WorldParams, get_world_params
+from core.agent.context.assembler import ContextAssembler
+from core.agent.context.source import (
+    SkillSource, WorldSource,
+)
+from core.agent.context.topic_tree_source import TopicTreeContextSource
+from core.agent.compiler.content_index import ContentIndex
+from core.agent.compiler.index_source import IndexSource
+from core.agent.conversation.tracker import ConversationTracker
+from core.agent.compiler.discourse_block_tree import DiscourseBlockTreeManager
+from core.agent.causal.planner import CausalPlanner, CausalContextSource
+from core.agent.context.domain_selector import DomainSelector
+from core.agent.context.cross_domain_ir import CrossDomainContextIR
+from core.agent.compiler.perspective_planner import PerspectivePlanner, Perspective
+from core.agent.v4.cognitive_scheduler.path_scheduler import PathAwareScheduler
+from core.agent.v4.cognitive_scheduler.path_models import PathType, PathState
+from core.agent.v4.cognitive_scheduler.path_trigger_policy import (
+    ConfigDrivenTriggerPolicy, EventCounter, PathStateMachine,
+)
+from core.agent.v4.cognitive_scheduler.tasks import (
+    ObservationTask, HypothesisTask, KnowledgeTask, SkillTask,
+)
+
+from core.agent.behavior.adapter import BehaviorGraphAdapter, BehaviorGraphState
+from core.agent.causal_substrate.adapter import CausalSubstrateAdapter, CausalContextEntry
+from core.agent.runtime.event_log_adapter import V4EventLog, EventLogConfig
+
+from core.agent.optimizer.signals import FeedbackSignal
+from core.agent.optimizer.optimizer import BayesianOptimizer
+from core.agent.llm_providers.base import LLMProvider, GenerateRequest, GenerateResult
+from core.agent.llm_providers.provider_factory import ProviderFactory
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PathStats:
+    """Runtime statistics for a single path."""
+    path_name: str
+    trigger_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    total_latency_ms: float = 0.0
+    last_triggered_at: float = 0.0
+
+
+
+def _feed_discourse(engine, ctx):
+    """Helper for state machine: feed discourse tree."""
+    text = ctx.get("text", "")
+    sid = ctx.get("session_id", "default")
+    if hasattr(engine, '_discourse_tree') and engine._discourse_tree:
+        engine._discourse_tree.feed(text, sid)
+        return {"blocks": len(engine._discourse_tree.get_block_relations(sid).get("blocks", {}))}
+    return {}
+
+def _record_behavior(engine, ctx):
+    """Helper for state machine: record behavior edge."""
+    bg = getattr(engine, '_behavior_graph', None)
+    if bg and hasattr(bg, 'load'):
+        bg.load()
+        return {"recorded": True}
+    return {}
+
+class CognitiveRuntimeEngine:
+    """Orchestrates v4 cognitive modules across Fast/Async/Slow/Deep paths.
+
+    Path data flow::
+
+        Async: Event -> ObservationCompiler -> ObservationPool
+        Slow:  ObservationPool -> HypothesisEngine -> Knowledge
+        Deep:  Patterns -> SkillDistiller -> Skill
+
+    Scheduling integration::
+
+        - PathAwareScheduler tracks per-path state machines (idle → running → backlogged → idle)
+        - EventCounter auto-triggers Slow Path after configurable threshold (default 50)
+        - Deep Path triggers only when pattern_count >= threshold AND success_rate >= threshold
+        - Bayesian Optimizer runs on configurable interval (from WorldParams or default 3)
+        - All trigger parameters read from runtime.yaml and WorldParams, no hard-coding
+        - LLM Provider: compiles CrossDomainContextIR → prompt → LLM → response
+
+    Usage::
+
+        engine = CognitiveRuntimeEngine()
+        engine.start()
+
+        # On each user event:
+        response = engine.on_event(event_ir)  # Returns LLM response string
+
+        # Or manually trigger checkpoint:
+        engine.trigger_checkpoint()
+
+        # On session end:
+        engine.on_session_end()
+    """
+
+    def __init__(self, config_path: str = None, world_params: WorldParams = None,
+                 llm_provider: Optional[LLMProvider] = None):
+        if config_path:
+            self._config = load_runtime_config(config_path)
+        else:
+            self._config = build_default_config()
+
+        self._world_params = world_params or get_world_params()
+        self._world_objects: Dict[str, Any] = {}  # P0: SemanticObject store (lazy init)
+        self._adapters: Dict[str, RuntimeAdapter] = {}
+        self._stats: Dict[str, PathStats] = {}
+        self._event_buffer: List[EventIR] = []
+        self._running = False
+        self._checkpoint_timer: Optional[threading.Timer] = None
+        self._session_active = False
+        self._last_event_time = 0.0
+
+        # Observation pool for path-to-path data flow
+        self._observation_pool = None
+        self._context_assembler: Optional[ContextAssembler] = None
+        self._domain_selector: Optional[DomainSelector] = None
+        self._perspective_planner: Optional[PerspectivePlanner] = None
+        self._last_context: Optional[CrossDomainContextIR] = None
+
+        # v3_2 adapters (BehaviorGraph, CausalSubstrate, EventLog)
+        self._behavior_graph_adapter: Optional[BehaviorGraphAdapter] = None
+        self._causal_substrate_adapter: Optional[CausalSubstrateAdapter] = None
+        self._event_log: Optional[V4EventLog] = None
+
+        # CausalPlanner: unified v4 adapter for v3_2 BehaviorGraph + CausalSubstrate
+        self._causal_planner: Optional[CausalPlanner] = None
+
+        # ConversationTracker: multi-dimensional follow-up disambiguation
+        self._conversation_tracker = ConversationTracker()
+        # DiscourseBlockTree: conversation-to-tree compiler
+        self._discourse_tree = DiscourseBlockTreeManager()
+        # Granularity regulator: BDI+BOR adaptive split/merge
+        from core.agent.compiler.discourse_block_tree import DiscourseBlockGranularityRegulator
+        self._granularity_regulator = DiscourseBlockGranularityRegulator()
+        self._turn_counter = 0
+
+        # User cognitive profile (dual-track: Track A dynamics + Track B tags)
+        self._cognitive_profile: Optional[object] = None  # CognitiveProfileV2
+
+        # Extraction orchestration (regex / LMStudio / DeepSeek with fallback)
+        self._extraction_orchestrator = None  # ExtractionOrchestrator set in start()
+
+        # Cognitive Runtime (Phase 2): LLM-driven reasoning loop
+        self._use_cognitive_runtime = False
+
+        # Internal Simulation Engine: LLM simulates user cognitive state
+        self._simulation_engine = None  # Initialized in start()
+        self._last_simulation: Optional[object] = None  # SimulationResult from previous turn
+        self._simulation_stats = {"matches": 0, "total": 0}
+        self._cognitive_observer = None  # Observer set when enabled
+        self._cognitive_trace: Optional[object] = None  # ExecutionTrace for last run
+
+        # v6: State evolution tracking (ExecutionTraceV3)
+        self._trace_v3: Optional[object] = None  # ExecutionTraceV3 per session
+
+        # Behavior tracking: record user navigation edges in RelationSubstrate
+        self._last_concept: Optional[str] = None
+        self._content_provider = None  # set by _create_context_assembler
+
+        # TopicTree + DiscourseBlockTree: hierarchical conversation context
+        self._topic_tree_source: Optional[TopicTreeContextSource] = None
+
+        # LLM Provider integration
+        self._llm_provider: Optional[LLMProvider] = llm_provider
+        self._last_llm_response: Optional[str] = None
+        self._pcr_router = None  # Pre-Cognitive Router — lazy init in start()
+        self._last_pcr = None    # Last PCROutput
+        self._decider = None     # GlobalDecider — state machine coordinator
+        self._event_log = None   # EventLog — SQLite append-only
+        self._event_bus = None   # EventBus — ring buffer pub/sub
+        self._meta_sub = None    # MetaSubscriber — cold path
+        self._assoc_sub = None   # AssociationSubscriber — cold path
+        self._intent_parser = None     # v3_common IntentParser — lazy init
+        self._unified_parser = None   # UnifiedParser — Tier 0→2 pipeline
+        self._router_v4 = None        # V4.0 Cognitive Coordinate Router
+        self._last_intent_context = None  # Last IntentContext
+        self._last_parse_result = None   # Last ParseResult
+        self._planner = None             # v3_0 Planner — lazy init
+        self._skill_matcher = None       # v3_0 SkillMatcher — lazy init
+        self._scheduler = None           # v4 CognitiveScheduler — lazy init
+        self._last_plan_result = None    # Last PlanResult
+        self._llm_metrics: Optional[Dict[str, Any]] = None
+
+        # Path trigger policy and state machine (from path_trigger_policy)
+        self._trigger_policy: Optional[ConfigDrivenTriggerPolicy] = None
+        self._path_state_machine: Optional[PathStateMachine] = None
+        self._event_counter: Optional[EventCounter] = None
+
+        for path_name in self._config.paths:
+            self._stats[path_name] = PathStats(path_name=path_name)
+
+    # ---- Lifecycle ----
+
+    def start(self) -> None:
+        """Start the runtime engine: instantiate adapters, pools, scheduler, and timers."""
+        self._running = True
+        self._session_active = True
+        from core.agent.state.global_decider import GlobalDecider, Command, EventType
+        self._decider = GlobalDecider()
+        from core.agent.api.api_event_log import EventLog
+        from core.agent.events.event_bus import EventBus, EventType as ET
+        self._event_log = EventLog()
+        self._event_log.open()  # must open before use
+        self._event_bus = EventBus()
+        from core.agent.meta.meta_subscriber import MetaSubscriber
+        self._meta_sub = MetaSubscriber(self._event_log, self._event_bus)
+        from core.agent.assoc_subscriber import AssociationSubscriber
+        self._assoc_sub = AssociationSubscriber(self._event_log, self._event_bus)
+        # Phase 3: unified storage layer
+        try:
+            from core.agent.event.storage import StorageLayer
+            self._storage = StorageLayer()
+            logger.info("StorageLayer wired: hot=%d warm=%s cold=%s",
+                       self._storage.hot.stats()["size"],
+                       self._storage.warm._db_path,
+                       self._storage.cold._dir)
+        except Exception:
+            self._storage = None
+        # Phase 4: PipelineTracer
+        try:
+            from core.agent.event.tracer import PipelineTracer
+            self._tracer = PipelineTracer()
+            logger.info("PipelineTracer ready: %s", self._tracer.stats())
+        except Exception:
+            self._tracer = None
+        from core.agent.topic_tree.manager import TopicTreeManager
+        self._topic_tree = TopicTreeManager()
+        logger.info('EventLog+EventBus+TopicTree ready')
+        
+        # Association Chain L1→L3 (async cold path)
+        from core.agent.association.l1_modifier import ModifierExtractor
+        from core.agent.association.l1_5_completer import CollaborativeCompleter
+        from core.agent.association.l2_5_belief import BeliefAccumulator
+        from core.agent.association.l3_intent import MultiPerspectiveValidator
+        self._l1_extractor = ModifierExtractor()
+        self._l1_5_completer = CollaborativeCompleter()
+        self._l2_5_accumulator = BeliefAccumulator()
+        self._l3_validator = MultiPerspectiveValidator()
+        logger.info('Association chain L1→L3 initialized')
+        self._init_pcr()
+        self._init_unified()
+        self._init_router_v4()
+        self._init_intent()
+        self._init_planning()
+        self._instantiate_adapters()
+        self._observation_pool = self._create_observation_pool()
+        self._context_assembler = self._create_context_assembler()
+        self._domain_selector = DomainSelector()
+        self._perspective_planner = PerspectivePlanner()
+
+        # Initialize v3_2 adapters via CausalPlanner (unified interface)
+        self._causal_planner = CausalPlanner()
+
+        # ---- Extraction Orchestrator (regex → jieba → stanza → LMStudio → DeepSeek) ----
+        self._init_extraction_orchestrator()
+
+        # ---- Internal Simulation Engine (LLM simulates user cognitive state) ----
+        try:
+            from core.agent.v4.cognitive.simulation_engine import InternalSimulationEngine
+            self._simulation_engine = InternalSimulationEngine(llm_provider=self._llm_provider)
+            logger.info("Simulation engine initialized")
+        except Exception as e:
+            logger.debug("Simulation engine skipped: %s", e)
+
+        # ---- v6 State Evolution Tracking ----
+        try:
+            from core.agent.state.execution_trace import ExecutionTraceV3
+            self._trace_v3 = ExecutionTraceV3(session_id=str(time.time()))
+            logger.info("ExecutionTraceV3 initialized")
+        except Exception as e:
+            logger.debug("ExecutionTraceV3 skipped: %s", e)
+
+        # ---- v6 Contextual Strategy Learning ----
+        try:
+            from core.agent.v4.cognitive.contextual_strategy import ContextualStrategyEngine
+            self._strategy_engine = ContextualStrategyEngine()
+            logger.info("ContextualStrategy engine initialized")
+        except Exception as e:
+            self._strategy_engine = None
+            logger.debug("ContextualStrategy skipped: %s", e)
+
+        # ---- v6 Meta-Cognition Consumer (closes the learning loop) ----
+        try:
+            from core.agent.v4.cognitive.meta_consumer import MetaConsumer
+            from core.agent.v4.cognitive.reasoning_policy import PolicyGenerator
+            self._meta_consumer = MetaConsumer(strategy_engine=self._strategy_engine)
+            self._policy_generator = PolicyGenerator()
+            try:
+                from core.agent.v4.cognitive.policy_prompt import LLMPolicyGenerator
+                self._llm_policy_generator = LLMPolicyGenerator(llm_provider=self._llm_provider)
+            except Exception:
+                self._llm_policy_generator = None
+            self._active_policy: Optional[object] = None
+            logger.info("MetaConsumer + PolicyGenerator initialized")
+        except Exception as e:
+            self._meta_consumer = None
+            self._policy_generator = None
+            logger.debug("MetaConsumer skipped: %s", e)
+
+        # ---- v6 Mind: unified cognitive structure ----
+        try:
+            from core.agent.v4.cognitive.mind import Mind
+            self._mind = Mind(persist_dir="data")
+            if self._mind.load():
+                logger.info("Mind loaded: %s", self._mind.stats())
+            else:
+                # ---- Build InteractionGraph from RelationSubstrate if available ----
+                # NOTE: _interaction_graph is created later in start() — use getattr
+                # to avoid AttributeError aborting the whole Mind/init try-block.
+                _ig = getattr(self, '_interaction_graph', None)
+                if _ig and hasattr(self, '_world_provider') and self._world_provider:
+                    try:
+                        rs = getattr(self._world_provider, 'relation_substrate', None)
+                        if rs:
+                            n = self._interaction_graph.build_from_substrate(rs)
+                            if n > 0: logger.info("InteractionGraph: %d dynamic edges", n)
+                    except Exception as e:
+                        logger.debug("Dynamic graph skipped: %s", e)
+
+            # P1/P2 scheduler subsystems must start regardless of Mind persistence state
+            # (previously trapped inside the Mind-load else-branch → permanent 503)
+            # P1: EventScheduler + CausalTracker + GradedDegradation + MetaSelfRepair
+            try:
+                from core.agent.scheduler.p1_runtime import (
+                    EventScheduler, CausalTracker, GradedDegradation, MetaSelfRepair
+                )
+                self._event_scheduler = EventScheduler()
+                self._causal_tracker = CausalTracker()
+                self._degradation = GradedDegradation()
+                self._meta_repair = MetaSelfRepair()
+                self._event_scheduler.auto_schedule_checkpoint()
+                self._event_scheduler.auto_schedule_scans()
+            except Exception:
+                self._event_scheduler = None
+                self._causal_tracker = None
+                self._degradation = None
+                self._meta_repair = None
+
+            # P2: CausalPromoter + TTLManager + SubgraphCache
+            try:
+                from core.agent.v4.cognitive.p2_advanced import (
+                    CausalPromoter, TTLManager, SubgraphCache
+                )
+                self._causal_promoter = CausalPromoter()
+                self._ttl_manager = TTLManager()
+                self._subgraph_cache = SubgraphCache()
+            except Exception:
+                self._causal_promoter = None
+                self._ttl_manager = None
+                self._subgraph_cache = None
+
+            # v8/v9 GUI-facing cognitive subsystems — the /v6/meta|inertia|behavior|
+            # belief|recursive-map endpoints read these engine attributes; without
+            # instantiation they 503 permanently.
+            try:
+                from core.agent.v4.cognitive.metacognition import MetaCognition
+                from core.agent.v4.cognitive.inertia_graph import InertiaWeightGraph
+                from core.agent.v4.cognitive.behavior_discovery import BehaviorDiscovery
+                from core.agent.v4.cognitive.belief_map import BeliefAccumulator, RecursiveMap
+                from core.agent.v4.cognitive.version_control import GlobalVersionControl
+                from core.agent.v4.cognitive.subgraph_compiler import SubgraphCompiler
+                from core.agent.compiler.parameter_registry import ParameterRegistry
+                self._vcs = GlobalVersionControl()
+                self._meta = MetaCognition(llm_provider=getattr(self, '_llm_provider', None),
+                                           vcs=self._vcs)
+                self._inertia = InertiaWeightGraph()
+                self._behavior_discovery = BehaviorDiscovery(
+                    parameter_registry=getattr(self, '_parameter_registry', None),
+                    meta_cognition=self._meta,
+                )
+                self._belief_accumulator = BeliefAccumulator()
+                self._recursive_map = RecursiveMap()
+                self._subgraph = SubgraphCompiler(engine=self)
+                self._parameter_registry = ParameterRegistry()
+            except Exception as e:
+                logger.warning("v8/v9 cognitive subsystems partial init: %s", e)
+                for attr in ('_meta', '_inertia', '_behavior_discovery',
+                             '_belief_accumulator', '_recursive_map', '_vcs',
+                             '_subgraph', '_parameter_registry'):
+                    if not hasattr(self, attr):
+                        setattr(self, attr, None)
+
+            # v3.2 engineering knowledge graph (for /v6/engineering/modules)
+            try:
+                from core.agent.engineering.knowledge_graph import KnowledgeGraph
+                self._engineering_knowledge = KnowledgeGraph()
+            except Exception:
+                self._engineering_knowledge = None
+
+            logger.info("Engine started")
+        except Exception as e:
+            self._mind = None
+            logger.debug("Mind skipped: %s", e)
+
+        # ---- P1: wire remaining islands ----
+        try:
+            from core.agent.runtime.p1_resolver import wire_p1
+            p1_count = wire_p1(self)
+            logger.info("P1 islands: %d modules wired", p1_count)
+        except Exception as e:
+            logger.debug("P1 wiring skipped: %s", e)
+
+        # ---- v6 ABC: neuro-symbolic orchestration (L3→L2→L1) ----
+        try:
+            from core.agent.v4.cognitive.abc_orchestrator import ABCOrchestrator
+            self._abc = ABCOrchestrator(llm_provider=self._llm_provider, enable_b=True, enable_c=True)
+            logger.info("ABC orchestrator: C(symbolic) + B(LLM) + A(config) active")
+        except Exception as e:
+            self._abc = None
+            logger.debug("ABC orchestrator skipped: %s", e)
+
+        # ---- P2: unified persistence layer ----
+        try:
+            from core.agent.persistence import PersistenceWiring
+            p2_status = PersistenceWiring.wire(self)
+            logger.info("P2 persistence: %s", p2_status)
+        except Exception as e:
+            logger.debug("P2 persistence skipped: %s", e)
+
+        # ---- Cross-session: load OCEAN profile from prior session ----
+        if not hasattr(self, '_ocean_analyst'):
+            from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst, OCEANProfile
+            self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
+        try:
+            loaded = OCEANProfile.load("data/profile/ocean_profile.json")
+            if loaded.turn_count > 0:
+                self._ocean_analyst.profile = loaded
+                logger.info("OCEAN loaded: %s (%d turns)", loaded.to_mbti(), loaded.turn_count)
+        except Exception:
+            pass
+        # ---- P3: v3 legacy modules via v4 wrappers ----
+        try:
+            from core.agent.runtime.p3_resolver import P3Resolver
+            p3_status = P3Resolver.wire(self)
+            logger.info("P3 legacy: %s", p3_status)
+        except Exception as e:
+            logger.debug("P3 legacy skipped: %s", e)
+
+        # ---- v6 Internal State Monitor
+        # ---- v6 Interaction Graph (dynamic state propagation) ----
+        try:
+            from core.agent.state.interaction_graph import InteractionGraph, InteractionType
+            self._interaction_graph = InteractionGraph()
+            # Seed core architectural edges
+            self._interaction_graph.add_edge("EventIR", "Observer", InteractionType.DEPENDS_ON, 0.8)
+            self._interaction_graph.add_edge("Observer", "Workspace", InteractionType.CAUSAL, 0.7)
+            self._interaction_graph.add_edge("Workspace", "ReasoningTree", InteractionType.CONTAINS, 0.9)
+            self._interaction_graph.add_edge("ReasoningTree", "Hypothesis", InteractionType.SUPPORTS, 0.6)
+            self._interaction_graph.add_edge("Hypothesis", "Conflict", InteractionType.CONTRADICTS, 0.4)
+            self._interaction_graph.add_edge("Reflection", "Hypothesis", InteractionType.STRENGTHEN, 0.7)
+            logger.info("InteractionGraph initialized (%d seed edges)", self._interaction_graph._edge_count)
+        except Exception as e:
+            self._interaction_graph = None
+            logger.debug("InteractionGraph skipped: %s", e)
+
+        # ---- v6 Mind workspace initialization ----
+        if self._mind:
+            try:
+                self._mind.initialize_workspace(self)
+            except Exception as e:
+                logger.debug("Mind workspace init skipped: %s", e)
+
+        # ---- v6 Internal State Monitor (backpropagation-style debugging) ----
+        try:
+            from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
+            self._monitor = InternalStateMonitor(session_id=str(int(time.time())))
+        except Exception:
+            self._monitor = None
+
+        self._behavior_graph_adapter = BehaviorGraphAdapter(
+            graph_path="data/behavior_graph.json",
+            auto_save=True,
+        )
+        self._causal_substrate_adapter = CausalSubstrateAdapter(
+            behavior_adapter=self._behavior_graph_adapter,
+            min_chain_length=10,
+        )
+        self._event_log = V4EventLog(EventLogConfig())
+
+        # Initialize trigger policy from config + world params
+        self._trigger_policy = ConfigDrivenTriggerPolicy(
+            config=self._config,
+            world_params=self._world_params,
+        )
+        self._path_state_machine = PathStateMachine()
+
+        # Event counter for Slow Path auto-trigger (from ParameterRegistry, velocity-adjusted)
+        slow_event_threshold = self._get_slow_threshold()
+        self._event_counter = EventCounter(threshold=slow_event_threshold)
+        self._slow_threshold_base = slow_event_threshold
+        self._last_threshold_adjust = time.time()
+
+        # Use PathAwareScheduler for task scheduling (backward-compatible with legacy CognitiveScheduler)
+        self._scheduler = PathAwareScheduler(
+            config=self._config,
+            world_params=self._world_params,
+        )
+
+        self._optimizer = BayesianOptimizer(bounds={})
+        self._feedback_signal = FeedbackSignal()
+        self._checkpoint_count = 0
+
+        # LLM Provider: from config or default to Mock for safety
+        self._init_llm_provider()
+
+        # Optimizer interval from WorldParams or default
+        self._optimizer_interval = getattr(self._world_params, "optimizer_interval", 3)
+
+        self._start_checkpoint_timer()
+        logger.info(
+            "CognitiveRuntimeEngine started — %d adapters + Pool + Context + "
+            "PathAwareScheduler + Optimizer(interval=%d) + EventCounter(threshold=%d) + "
+            "LLM=%s + EventLog=%s",
+            len(self._adapters),
+            self._optimizer_interval,
+            slow_event_threshold,
+            self._llm_provider.name if self._llm_provider else "None",
+            "active" if self._event_log and self._event_log.is_open else "inactive",
+        )
+
+    def stop(self) -> None:
+        """Stop the runtime engine and release all resources."""
+        self._running = False
+        self._session_active = False
+        self._cancel_checkpoint_timer()
+        self._adapters.clear()
+        self._event_buffer.clear()
+        self._observation_pool = None
+        self._context_assembler = None
+        self._domain_selector = None
+        self._last_context = None
+        self._llm_provider = None
+        self._last_llm_response = None
+        self._llm_metrics = None
+        self._trigger_policy = None
+        self._path_state_machine = None
+        self._event_counter = None
+        # Close v3_2 adapters
+        if self._event_log is not None:
+            self._event_log.close()
+            self._event_log = None
+        self._behavior_graph_adapter = None
+        self._causal_substrate_adapter = None
+        self._causal_planner = None
+        if self._scheduler:
+            self._scheduler.stop()
+            self._scheduler = None
+        self._optimizer = None
+        self._feedback_signal = None
+        logger.info("CognitiveRuntimeEngine stopped")
+
+    # ---- Event-driven triggers ----
+
+
+    # ── Engineering CRUD (CLI support) ──
+    def check_constraints(self):
+        self._constraints = getattr(self, "_constraints", [])
+        return {"constraints": self._constraints, "violations": 0, "status": "ok"}
+
+    def add_constraint(self, constraint_type: str, target: str, spec: str = ""):
+        self._constraints = getattr(self, "_constraints", [])
+        self._constraints.append({"id": str(len(self._constraints)), "type": constraint_type,
+                                   "target": target, "spec": spec})
+        return {"status": "added", "id": str(len(self._constraints) - 1)}
+
+    def remove_constraint(self, constraint_id: str):
+        self._constraints = getattr(self, "_constraints", [])
+        idx = int(constraint_id) if constraint_id.isdigit() else -1
+        if 0 <= idx < len(self._constraints):
+            self._constraints.pop(idx)
+            return {"status": "removed"}
+        return {"status": "not_found"}
+
+    def list_constraints(self):
+        self._constraints = getattr(self, "_constraints", [])
+        return {"constraints": self._constraints, "total": len(self._constraints)}
+
+    def propagate_changes(self):
+        return {"status": "propagated", "affected": 0}
+
+    def analyze_impact(self, change: str = ""):
+        return {"change": change, "impact": "low", "affected_modules": []}
+
+    def _persist_state(self):
+        """Save state to unified storage (Phase 3)."""
+        store = getattr(self, '_storage', None)
+        if not store:
+            return self._persist_state_legacy()
+        sid = getattr(self, '_session_id', 'default')
+
+        # Discourse tree → cold
+        if hasattr(self, '_discourse_tree') and self._discourse_tree:
+            try:
+                rel = self._discourse_tree.get_block_relations(sid)
+                store.cold.save("discourse_state.json", rel)
+            except: pass
+
+        # Behavior → warm (SQLite) + cold
+        if hasattr(self, '_behavior_graph_adapter') and self._behavior_graph_adapter:
+            try:
+                chain = self._behavior_graph_adapter.get_recent_chain(10)
+                store.cold.save("behavior_state.json", {
+                    "edges": len(getattr(chain, 'steps', [])),
+                    "ts": time.time()
+                })
+            except: pass
+
+        # Profile → cold
+        if hasattr(self, '_ocean_analyst') and self._ocean_analyst:
+            try:
+                    dims = getattr(getattr(self._ocean_analyst, 'profile', None), 'dims', {})
+                    # Don't overwrite if file already has keyword-analyzed dims
+                    existing_data = store.cold.load("profile_state.json", {})
+                    existing_dims = existing_data.get("dims", {})
+                    if any(abs(v - 0.5) > 0.01 for v in existing_dims.values()):
+                        dims = {**dict(dims), **existing_dims}  # merge, existing wins
+                    store.cold.save("profile_state.json", {
+                        "dims": dict(dims) if dims else {},
+                        "turn_count": getattr(self, '_turn_counter', 0),
+                    })
+            except: pass
+
+        # Meta + session → hot
+        store.hot.set("last_turn", getattr(self, '_turn_counter', 0), ttl_sec=300)
+        store.cold.save("meta_state.json", {
+            "turn_count": getattr(self, '_turn_counter', 0),
+            "decider_tick": getattr(getattr(self, '_decider', None), '_tick', 0)
+        })
+
+    def _persist_state_legacy(self):
+        """Fallback when StorageLayer not available."""
+        import json, os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(root, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        if hasattr(self, '_discourse_tree') and self._discourse_tree:
+            try:
+                sid = getattr(self, '_session_id', 'default')
+                rel = self._discourse_tree.get_block_relations(sid)
+                with open(os.path.join(data_dir, "discourse_state.json"), "w", encoding="utf-8") as f:
+                    json.dump(rel, f, indent=2, ensure_ascii=False, default=str)
+            except: pass
+
+    def on_event(self, event: EventIR) -> Optional[str]:
+        """Process a single user event through the Async Path.
+
+        Uses GlobalDecider: Command → Event → evolve State.
+        Each tick produces ONE event. Chains communicate via event log, not direct push.
+        """
+        if not self._running or not self._session_active:
+            return None
+
+        # ---- Global State Machine: Tick ----
+        if self._decider:
+            from core.agent.state.global_decider import Command
+            self._decider._tick += 1
+            cmd = Command(type="user_message", payload={"text": text if 'text' in dir() else ""})
+            self._decider.evolve(self._decider.decide(cmd))
+
+        self._event_buffer.append(event)
+        self._last_event_time = time.time()
+        self._stats["async"].trigger_count += 1
+        self._stats["async"].last_triggered_at = self._last_event_time
+
+        # ---- ConversationTracker: record turn for follow-up disambiguation ----
+        text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+        concepts = []
+        if text:
+            # Extract concepts from text for content-overlap scoring
+            concepts = self._extract_concepts_from_text(text)
+            self._conversation_tracker.add_turn(text, concepts=concepts)
+
+            # Feed DiscourseBlockTree for conversation tree structure
+            sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
+            self._discourse_tree.feed(text, sid, history=None)
+
+            # Granularity regulation: BDI+BOR adaptive split/merge
+            self._turn_counter += 1
+            if hasattr(self, '_granularity_regulator'):
+                tree = self._discourse_tree._trees.get(sid)
+                if tree:
+                    self._granularity_regulator.regulate(tree, self._turn_counter)
+
+            # Record behavior edge: user navigated from previous concept
+            # Semantic filter: only record if concept exists in world model
+            if self._content_provider and concepts:
+                curr = concepts[0] if concepts else None
+                objects = getattr(self, '_world_objects', {})
+                # Filter: keep only concepts that match objects in store
+                valid = [c for c in concepts if c in objects]
+                if curr and self._last_concept and valid:
+                    self._content_provider.add_behavior_edge(
+                        self._last_concept, valid[0])
+                # Also check case-insensitive match
+                if not valid and objects:
+                    for obj_name in objects:
+                        if obj_name.lower() == curr.lower():
+                            valid.append(obj_name)
+                            break
+                self._last_concept = valid[0] if valid else (curr if curr else None)
+
+        # ---- EventLog persistence ----
+        if self._event_log is not None:
+            try:
+                self._event_log.record_event(event)
+                logger.debug("Event persisted to EventLog: %s", event.id)
+            except Exception as e:
+                logger.warning("EventLog record failed: %s", e)
+
+        # Update path state machine: async -> RUNNING
+        if self._path_state_machine is not None:
+            self._path_state_machine.transition("async", PathState.RUNNING)
+
+        path_config = self._config.get_path("async")
+        if not path_config:
+            return None
+
+        ctx = RuntimeContext(event=event)
+        for module_config in path_config.modules:
+            adapter = self._adapters.get(module_config.name)
+            if adapter is None:
+                continue
+
+            start = time.time()
+            result = adapter.timed_execute(ctx)
+            elapsed = (time.time() - start) * 1000
+
+            pas = self._stats["async"]
+            pas.total_latency_ms += elapsed
+            if result.ok:
+                pas.success_count += 1
+                # ---- Observation Pool integration ----
+                if result.data is not None and self._observation_pool is not None:
+                    try:
+                        self._observation_pool.put(result.data)
+                    except (TypeError, AttributeError):
+                        # If result.data is not an ObservationBundle, skip
+                        pass
+                    logger.debug("Observation written to pool: %s", event.id)
+
+                # Feed observation into context for downstream modules
+                ctx.observations.append(result.data)
+            else:
+                pas.failure_count += 1
+
+        # ---- Topic Tree: record fact + update heat ----
+        if text and self._topic_tree:
+            self._topic_tree.touch(
+                message_id=f"msg_{int(time.time()*1000)}",
+                content=text,
+                entities=re.findall(r'0x[0-9a-fA-F]+|[A-Z]{2,}', text) if 're' in dir() else []
+            )
+
+        # ---- DiscourseBlockTree: 3-stage compile (HeaderInjector→SyntacticDecomposer→BlockTree) ----
+        if text and self._discourse_tree:
+            try:
+                session_id = getattr(event, 'session_id', 'default')
+                history = self._event_buffer[-3:] if hasattr(self, '_event_buffer') else None
+                route = self._discourse_tree.feed(text, session_id, history)
+                logger.debug('Discourse: %s blocks, route=%s',
+                           len(self._discourse_tree.get_tree(session_id).blocks if self._discourse_tree.get_tree(session_id) else []),
+                           route.decision.value if route else 'none')
+            except Exception as e:
+                logger.debug('Discourse feed skipped: %s', e)
+        
+        # ---- PCR: Pre-Cognitive Router (Layer 0) ----
+        pcr_output = None
+        if self._pcr_router is not None and text:
+            try:
+                pcr_result = self._pcr_router.route(text)
+                class _PCRCompat:
+                    __slots__ = ('r',)
+                    def __init__(self, r): self.r = r
+                    @property
+                    def expectation(self): return self.r.zone
+                    @property
+                    def complexity_level(self): return {"light":0.3,"moderate":0.6,"heavy":0.9}.get(self.r.cognitive_level,0.5)
+                    @property
+                    def cognitive_profile(self): return None
+                    @property
+                    def execution_mode(self): return self.r.execution_mode
+                    @property
+                    def prompt_style(self): return self.r.prompt_style
+                pcr_output = _PCRCompat(pcr_result)
+                self._last_pcr = pcr_output
+                self._publish("pcr_computed", {"expectation": pcr_result.zone})
+                if self._decider:
+                    from core.agent.state.global_decider import Command, EventType
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="pcr", payload={"expectation": getattr(pcr_output, 'expectation', 'UNKNOWN')})
+                    ))
+
+            except Exception as e:
+                logger.warning('PCR evaluate failed: %s', e)
+
+        # Continue pipeline via extracted method
+        self._on_event_continue(event, pcr_output=pcr_output, parse_result=None, unified_result=None, text=text)
+
+    # ── on_event_sm: StateMachine-based alternative (parallel path) ──
+    def on_event_sm(self, event: EventIR, start_phase: str = "pcr") -> Optional[str]:
+        """Process event through StateMachine pipeline (new path).
+        
+        Kept alongside on_event() for A/B comparison. Config switch:
+          engine.use_state_machine = True → on_event delegates to on_event_sm
+        Original on_event() is NEVER modified — both paths coexist.
+        """
+        from core.agent.event.statemachine import PipelinePhase
+        sm = getattr(self, '_state_machine', None)
+        if not sm:
+            logger.warning("on_event_sm: no StateMachine, falling back to on_event")
+            return self.on_event(event)
+
+        phase_map = {
+            "pcr": PipelinePhase.PCR, "intent": PipelinePhase.INTENT,
+            "discourse": PipelinePhase.DISCOURSE, "behavior": PipelinePhase.BEHAVIOR,
+            "meta": PipelinePhase.META, "profile": PipelinePhase.PROFILE,
+            "persist": PipelinePhase.PERSIST,
+        }
+        phase = phase_map.get(start_phase, PipelinePhase.PCR)
+
+        # ── Coverage gap: ConversationTracker + Granularity (legacy on_event) ──
+        _raw = event.payload.get("text", "") if hasattr(event, "payload") else str(event)
+        _concepts = self._extract_concepts_from_text(_raw) if _raw else []
+        if _raw and getattr(self, '_conversation_tracker', None):
+            self._conversation_tracker.add_turn(_raw, concepts=_concepts)
+        self._turn_counter += 1
+        if getattr(self, '_granularity_regulator', None) and self._discourse_tree:
+            _sid = event.payload.get("session_id", "default") if hasattr(event, "payload") else "default"
+            _tree = getattr(self._discourse_tree, "_trees", {}).get(_sid) if hasattr(self._discourse_tree, "_trees") else None
+            if _tree:
+                self._granularity_regulator.regulate(_tree, self._turn_counter)
+
+        text = event.payload.get("text", "") if hasattr(event, "payload") else str(event)
+        ctx = {
+            "text": text,
+            "reply": event.payload.get("reply", "") if hasattr(event, "payload") else "",
+            "session_id": getattr(event, "session_id", "default"),
+        }
+
+        try:
+            result = sm.run_pipeline(phase, ctx)
+            phases = result.get("phases", [])
+            logger.info("on_event_sm: %d phases completed", len(phases))
+            # Return last phase's output as response
+            for phase_result in reversed(result.get("results", {}).values()):
+                if isinstance(phase_result, str) and len(phase_result) > 10:
+                    return phase_result
+            return None
+        except Exception as e:
+            logger.warning("on_event_sm failed: %s, falling back to on_event", e)
+            return self.on_event(event)
+
+    def _publish(self, event_type, payload=None):
+        """Fire-and-forget publish. Priority-scheduled with tracing."""
+        kind = event_type.value if hasattr(event_type, 'value') else str(event_type)
+        payload = payload or {}
+        tracer = getattr(self, '_tracer', None)
+        start = time.time()
+        success = True
+        try:
+            if self._event_bus:
+                try: self._event_bus.publish(kind, payload)
+                except: pass
+            subs = getattr(self, '_event_subscribers', {})
+            if subs:
+                try:
+                    from core.agent.event.scheduler import DeciderScheduler, create_scheduled_task
+                    sched = getattr(self, '_scheduler', None)
+                    if sched is None:
+                        sched = DeciderScheduler()
+                        self._scheduler = sched
+                    for name, sub in subs.items():
+                        sched.submit(create_scheduled_task(name, sub.handle, kind, payload))
+                    sched.run_batch()
+                except Exception:
+                    for name, sub in subs.items():
+                        try: sub.handle(kind, payload)
+                        except: pass
+        except Exception:
+            success = False
+            raise
+        finally:
+            if tracer:
+                latency = (time.time() - start) * 1000
+                tracer.record("publish", kind, success, latency)
+
+    def _on_event_continue(self, event, pcr_output=None, parse_result=None, unified_result=None, text=""):
+        """Phase 2 of on_event — V4 Router after PCR."""
+        # ---- V4.0 Cognitive Coordinate Router ----
+        route = None
+        if self._router_v4 is not None and text:
+            try:
+                result, route = self._router_v4.route(text, pcr_output=pcr_output)
+                logger.debug('RouterV4: zone=%s cost=%dms', route.zone, route.cost_ms)
+                self._publish("route_generated", {"zone": route.zone, "strategy": route.strategy})
+                if self._decider:
+                    from core.agent.state.global_decider import Command
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="routing", payload={"zone": route.zone, "strategy": route.strategy})
+                    ))
+            except Exception as e:
+                logger.debug('RouterV4 failed: %s', e)
+
+        # ---- Intent Parser (Layer 1) ----
+        parse_result = None
+        intent_context = None
+        if self._intent_parser is not None and text:
+            try:
+                # Build IntentContext from PCR output
+                if pcr_output:
+                    from core.agent.v3_common.models import IntentContext
+                    intent_context = IntentContext.from_pcr_output(pcr_output)
+                else:
+                    intent_context = IntentContext()
+
+                parse_result = self._intent_parser.parse(
+                    user_input=text,
+                    intent_context=intent_context,
+                    parse_context=self._build_parse_context(),
+                )
+                self._last_intent_context = intent_context
+                self._last_parse_result = parse_result
+                cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
+                self._publish("intent_parsed", {"category": cat})
+                if self._decider and parse_result:
+                    from core.agent.state.global_decider import Command
+                    cat = str(getattr(parse_result.intent, 'category', 'UNKNOWN')) if hasattr(parse_result, 'intent') else 'UNKNOWN'
+                    self._decider.evolve(self._decider.decide(
+                        Command(type="intent", payload={"category": cat})
+                    ))
+            except Exception as e:
+                logger.warning('IntentParser failed: %s', e)
+
+        # ---- Planning (Layer 1.5) ----
+        plan_result = None
+        if self._planner is not None and parse_result:
+            try:
+                intent = parse_result.intent if hasattr(parse_result, 'intent') else None
+                if intent:
+                    from core.agent.v3_legacy.data_models import IntentContext_v3
+                    from core.agent.planner.skill_registry import SkillRegistry
+                    plan_ctx = IntentContext_v3()
+                    if pcr_output:
+                        plan_ctx.expectation = getattr(pcr_output, 'expectation', None)
+                        plan_ctx.complexity = getattr(pcr_output, 'complexity_level', 0.5)
+                        plan_ctx.cognitive_profile = getattr(pcr_output, 'cognitive_profile', None)
+
+                    # Skill matching
+                    blueprint = None
+                    if self._skill_matcher:
+                        try:
+                            intent_str = str(getattr(intent, 'category', intent))
+                            blueprint = self._skill_matcher.match(intent_str)
+                        except: pass
+
+                    # Run async plan() in executor
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    try:
+                        plan_result = loop.run_until_complete(
+                            self._planner.plan(
+                                intent=intent,
+                                intent_context=plan_ctx,
+                                blueprint=blueprint,
+                            )
+                        )
+                    finally:
+                        loop.close()
+                    self._last_plan_result = plan_result
+                    self._publish("plan_generated")
+                    if self._decider and plan_result:
+                        from core.agent.state.global_decider import Command
+                        tg = getattr(plan_result, 'task_graph', None)
+                        task_count = len(getattr(tg, 'nodes', [])) if tg else 0
+                        self._decider.evolve(self._decider.decide(
+                            Command(type="planning", payload={"task_count": task_count})
+                        ))
+
+                    # Submit TaskGraph to scheduler
+                    if self._scheduler and hasattr(plan_result, 'task_graph') and plan_result.task_graph:
+                        try:
+                            self._scheduler.submit(plan_result.task_graph)
+                        except: pass
+            except Exception as e:
+                logger.warning('Planning failed: %s', e)
+
+        # ---- Context Engineering: compile CrossDomainContextIR ----
+        self._compile_context(event, pcr_output=pcr_output, parse_result=parse_result, unified_result=unified_result)
+        
+        # ---- DiscourseBlockTree context injection (3-paradigm compass) ----
+        if self._discourse_tree and self._last_context:
+            try:
+                session_id = getattr(event, 'session_id', 'default')
+                tree = self._discourse_tree._trees.get(session_id)
+                if tree and tree.blocks:
+                    from core.agent.compiler.three_paradigm_context import ThreeParadigmContext
+                    compass = ThreeParadigmContext(topic_tree=self._topic_tree)
+                    block_list = list(tree.blocks.values())[:8]
+                    discourse_ctx = compass.build(block_list, current_text=text,
+                                                 max_tokens=2000)
+                    if discourse_ctx:
+                        from core.agent.context.cross_domain_ir import ContextEntry
+                        entry = ContextEntry(
+                            source="discourse_tree",
+                            content=discourse_ctx,
+                            relevance=0.7,
+                        )
+                        self._last_context.entries.append(entry)
+                        logger.debug('Compass context injected: %s chars', len(discourse_ctx))
+            except Exception as e:
+                logger.debug('Discourse context injection skipped: %s', e)
+
+        # ---- Association Chain L1→L2.5 (cold path, parallel to hot path) ----
+        if text and self._l1_extractor:
+            try:
+                self._run_association_chain(event, text, pcr_output)
+            except Exception as e:
+                logger.debug('Association chain skipped: %s', e)
+
+        # ---- BehaviorGraph: record event as step ----
+        if self._causal_planner is not None:
+            try:
+                edge_id = self._causal_planner.record_step(
+                    event, success=True, correction=False,
+                )
+                if edge_id:
+                    logger.debug("CausalPlanner edge recorded: %s", edge_id)
+            except Exception as e:
+                logger.warning("CausalPlanner record_step failed: %s", e)
+        # Legacy fallback via BehaviorGraphAdapter
+        elif self._behavior_graph_adapter is not None:
+            try:
+                step_id = self._behavior_graph_adapter.record_event(event, success=True)
+                if step_id:
+                    logger.debug("BehaviorGraphAdapter step recorded: %s", step_id)
+            except Exception as e:
+                logger.warning("BehaviorGraphAdapter record failed: %s", e)
+
+        # ---- CausalPlanner: trigger causal processing if chain long enough ----
+        if self._causal_planner is not None:
+            try:
+                recent = self._causal_planner.get_recent_chain(max_steps=10)
+                if len(recent) > CausalPlanner.MIN_CHAIN_LEN:
+                    chain_result = self._causal_planner.process_chain()
+                    if chain_result.triggered and chain_result.edge_updates:
+                        logger.info(
+                            "CausalPlanner triggered: %d priors updated from chain of %d",
+                            len(chain_result.edge_updates), len(recent),
+                        )
+            except Exception as e:
+                logger.debug("CausalPlanner trigger failed: %s", e)
+        # Legacy fallback via CausalSubstrateAdapter
+        elif self._causal_substrate_adapter is not None and self._behavior_graph_adapter is not None:
+            try:
+                recent = self._behavior_graph_adapter.get_recent_chain(n_steps=10)
+                chain_len = len(recent.steps) if recent else 0
+                if self._causal_substrate_adapter.should_trigger(chain_len):
+                    ctx.world_graph = self._behavior_graph_adapter.graph
+                    result = self._causal_substrate_adapter.execute(ctx)
+                    if result.ok and result.data.get("triggered"):
+                        logger.info(
+                            "CausalSubstrate triggered: %d priors updated from chain of %d",
+                            result.data.get("entry_count", 0), chain_len,
+                        )
+            except Exception as e:
+                logger.debug("CausalSubstrate trigger failed: %s", e)
+
+        # ---- LLM Generation: compile context → prompt → LLM → response ----
+
+        # v6 Trace: snapshot state before reasoning
+        pre_state = None
+        if self._trace_v3:
+            from core.agent.state.state_object import StateObject, TransitionReason, StateDelta
+            pre_state = StateObject(data={
+                "turn": self._turn_counter,
+                "user_text": text[:200],
+            })
+            pre_state = self._trace_v3.snapshot(pre_state)
+
+            # OBSERVE: concepts extracted, tree updated
+            self._trace_v3.record_transition(
+                reason=TransitionReason.OBSERVE,
+                from_state=pre_state, to_state=pre_state,
+                evidence=[f"Concepts: {concepts[:5] if concepts else []}", f"Text: {text[:60]}"],
+                effects=[StateDelta(key="concept_count", operation="set", value=len(concepts))],
+                confidence=0.85,
+            )
+            # Monitor
+            if self._monitor:
+                self._monitor.record_transition(self._turn_counter, "observe",
+                    text[:60],
+                    [{"concepts": concepts[:3] if concepts else []}])
+
+            # REJECT: detect if user input signals rejection of previous answer
+            reject_signals = ['wrong', 'incorrect', 're-read', 'you are wrong', "you're wrong",
+                            'still wrong', 'not correct', 'no,', 'try again']
+            if text and any(s in text.lower() for s in reject_signals):
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.REJECT,
+                    from_state=pre_state, to_state=pre_state,
+                    evidence=[f"User rejected: {text[:60]}"],
+                    effects=[StateDelta(key="reject_count", operation="inc", value=1)],
+                    confidence=0.85,
+                )
+                if self._monitor:
+                    self._monitor.record_transition(self._turn_counter, "reject",
+                        f"User rejected: {text[:50]}", [])
+
+            # ACTIVATE: DiscourseTree block activated
+            sid = (event.refs.get('session_id') if hasattr(event,'refs') and event.refs.get('session_id') else event.payload.get('session_id', 'default')) if hasattr(event, 'payload') else 'default'
+            tree = self._discourse_tree._trees.get(sid) if hasattr(self._discourse_tree, '_trees') else None
+            if tree:
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.ACTIVATE,
+                    from_state=pre_state, to_state=pre_state,
+                    evidence=[f"Blocks: {len(tree.blocks)}", f"Active: {len(tree.active_blocks())}"],
+                    effects=[StateDelta(key="tree.block_count", operation="set", value=len(tree.blocks))],
+                    confidence=0.75,
+                )
+                # Monitor ACTIVATE
+                if self._monitor:
+                    self._monitor.record_tree(self._turn_counter, len(tree.blocks),
+                        len(tree.active_blocks()), len(tree.blocks) - 1)
+
+        llm_response = self._call_llm(event, pcr_output=pcr_output, parse_result=parse_result, plan_result=plan_result, unified_result=unified_result)
+        if llm_response:
+            self._last_llm_response = llm_response
+
+        # ---- Multi-hop subgraph refinement ----
+        # If LLM response indicates missing context (asks about specific concepts),
+        # expand subgraph for those concepts and re-call LLM. Max 3 rounds.
+        llm_response = self._multi_hop_refine(event, llm_response, max_hops=3)
+        if llm_response:
+            self._last_llm_response = llm_response
+
+        # ---- Memory Point extraction (dialogue tree → capacitor model) ----
+        # ---- Feed cognitive profile from current turn ----
+        self._feed_profile(text, llm_response)
+        self._feed_trackb(text)  # TrackB: accumulate tags from user input
+
+                # ---- Internal Simulation: evaluate last prediction, simulate next ----
+        if self._simulation_engine:
+            try:
+                if self._last_simulation and text:
+                    feedback = self._simulation_engine.evaluate(self._last_simulation, text)
+                    if feedback.matched:
+                        self._simulation_stats["matches"] += 1
+                    self._simulation_stats["total"] += 1
+                    self._simulation_engine.learn(feedback)
+                    if self._monitor:
+                        self._monitor.record_simulation(self._turn_counter,
+                            feedback.predicted_question, text, feedback.matched, feedback.similarity)
+            except Exception as e:
+                logger.debug("Sim evaluation skipped: %s", e)
+
+            try:
+                if llm_response and self._last_simulation:
+                    user_understanding = ""
+                    if self._conversation_tracker:
+                        topics = self._conversation_tracker.recent_topics(3)
+                        user_understanding = "; ".join(topics) if topics else ""
+                    profile_summary = str(self._cognitive_profile.track_b)[:200] if self._cognitive_profile else ""
+                    self._last_simulation = self._simulation_engine.simulate(
+                        last_answer=llm_response,
+                        user_understanding=user_understanding,
+                        user_profile=profile_summary,
+                    )
+            except Exception as e:
+                logger.debug("Sim generation skipped: %s", e)
+
+        # ---- v6 Trace: record post-reasoning transition ----
+        post_state = None
+        if self._trace_v3 and llm_response and pre_state:
+            from core.agent.state.state_object import Transition, TransitionReason, StateDelta, StateObject
+            # INFER: LLM reasoning result
+            post_state = self._trace_v3.states[-1] if self._trace_v3.states else StateObject()
+            # Dynamic confidence from response quality
+            dyn_conf = 0.7
+            if len(llm_response) < 30 and any(w in llm_response.lower() for w in ['unsure','guessing','not sure']):
+                dyn_conf = 0.35
+            elif len(llm_response) < 50:
+                dyn_conf = 0.55
+            elif len(llm_response) > 500:
+                dyn_conf = 0.80
+            self._trace_v3.record_transition(
+                reason=TransitionReason.INFER,
+                from_state=pre_state, to_state=post_state,
+                evidence=[f"Answer: {llm_response[:80]}"],
+                effects=[
+                    StateDelta(key="turn", operation="inc", value=1),
+                    StateDelta(key="response_length", operation="set", value=len(llm_response)),
+                ],
+                confidence=dyn_conf,
+            )
+
+            # Monitor: record INFER transition
+            if self._monitor:
+                self._monitor.record_transition(self._turn_counter, "infer",
+                    f"Answer: {llm_response[:60]}",
+                    [{"response_len": len(llm_response)}])
+
+        # ---- v6 Trace: reflect after profile update ----
+        if self._trace_v3 and llm_response and pre_state:
+            ta = getattr(getattr(self, '_cognitive_profile', None), 'track_a', None)
+            if ta:
+                self._trace_v3.record_transition(
+                    reason=TransitionReason.REFLECT,
+                    from_state=pre_state, to_state=post_state or pre_state,
+                    evidence=[f"Profile updated: inertia={getattr(ta,'cognitive_inertia',0):.2f}"],
+                    effects=[
+                        StateDelta(key="profile.trust", operation="set", value=getattr(ta,'trust_score',0)),
+                    ],
+                    confidence=0.6,
+                )
+
+            # ---- v6 Contextual Strategy: record what worked ----
+            if hasattr(self, '_strategy_engine') and self._strategy_engine:
+                from core.agent.v4.cognitive.contextual_strategy import StrategyContext
+                ctx = StrategyContext.from_engine(self)
+                # Record the explanation strategy effectiveness (inferred from profile delta)
+                trust_delta = getattr(ta, 'trust_score', 0.5) - 0.5
+                self._strategy_engine.record(
+                    "explain_answer",
+                    ctx,
+                    effectiveness=0.5 + trust_delta * 0.5,
+                    confidence_gain=trust_delta,
+                )
+
+            # STRENGTHEN: confidence changed — record direction and magnitude
+            if self._trace_v3 and ta and abs(trust_delta) > 0.01:
+                reason = TransitionReason.STRENGTHEN if trust_delta > 0 else TransitionReason.WEAKEN
+                self._trace_v3.record_transition(
+                    reason=reason,
+                    from_state=pre_state, to_state=post_state or pre_state,
+                    evidence=[f"Trust delta: {trust_delta:+.3f}"],
+                    effects=[StateDelta(key="trust", operation="set", value=getattr(ta,'trust_score',0.5))],
+                    confidence=0.65,
+                )
+            # Monitor profile
+            if self._monitor and ta:
+                self._monitor.record_profile(self._turn_counter, ta,
+                    {k: v.get('confidence', 0.5) if isinstance(v, dict) else getattr(v, 'value', 0.5)
+                     for k, v in getattr(self._cognitive_profile, 'track_b', {}).items()})
+
+            # ---- v6 InteractionGraph: propagate state through architecture ----
+            if hasattr(self, '_interaction_graph') and self._interaction_graph and ta:
+                trust = getattr(ta, 'trust_score', 0.5)
+                deltas = self._interaction_graph.propagate(
+                    "Observer",
+                    {"confidence": trust, "attention": 0.5 + trust * 0.3},
+                )
+                if deltas:
+                    logger.debug("InteractionGraph: %d deltas from Observer propagation", len(deltas))
+
+        # ---- Behavior chain: feed conversation patterns to CausalPlanner ----
+        if self._causal_planner is not None and text:
+            try:
+                pattern = self._conversation_tracker.behavior_pattern
+                topic = self._conversation_tracker.get_current_topic()
+                action_type = pattern[-1] if pattern else "unknown"
+                action_summary = text[:120]
+                if topic and action_type == "drill_down":
+                    action_summary = f"[follow-up on: {topic[:60]}] {text[:60]}"
+                self._causal_planner.record_step(
+                    EventIR(id=f"behavior_{event.id}", kind="conversation.pattern",
+                           payload={"text": text, "pattern": action_type, "topic": topic}),
+                    success=True, correction=False,
+                )
+                logger.debug("Behavior chain fed: pattern=%s topic=%s", action_type, topic[:40] if topic else None)
+            except Exception as e:
+                logger.debug("CausalPlanner behavior feed skipped: %s", e)
+
+        # ---- Feedback collection ----
+        if self._feedback_signal and pas.success_count > 0:
+            self._feedback_signal.with_implicit(accepted=(pas.failure_count == 0))
+
+        # ---- Event counter and Slow Path auto-trigger ----
+        if self._event_counter is not None:
+            threshold_reached = self._event_counter.increment(n=1)
+            if threshold_reached:
+                logger.info(
+                    "Event threshold reached (%d/%d), triggering Slow Path",
+                    self._event_counter.count,
+                    self._event_counter.threshold,
+                )
+                self.trigger_checkpoint()
+                self._event_counter.reset()
+                # Semantic extraction on Slow Path
+                self._slow_extract()
+
+        # ---- Path state: async -> IDLE (or BACKLOGGED if queue pressure) ----
+        if self._path_state_machine is not None:
+            if self._scheduler is not None and self._scheduler.get_queue(PathType.ASYNC):
+                self._path_state_machine.transition("async", PathState.BACKLOGGED)
+            else:
+                self._path_state_machine.mark_success("async")
+
+        # ---- Feed discourse tree compiler for hierarchical topic tracking ----
+        if self._topic_tree_source is not None and text:
+            try:
+                turn_num = self._stats.get('async', PathStats('async')).trigger_count
+                self._topic_tree_source.feed_turn(turn_index=int(turn_num), text=text)
+            except Exception as e:
+                logger.debug('TopicTree feed skipped: %s', e)
+
+        # ---- v6 MetaConsumer: close the learning loop (every 5 turns) ----
+        if self._meta_consumer and self._trace_v3 and self._turn_counter % 5 == 0:
+            advice = self._meta_consumer.consume(self._trace_v3, self._turn_counter)
+            if advice.get("adjust"):
+                logger.info(
+                    "Meta: %d warnings — %s",
+                    len(advice.get("warnings", [])),
+                    "; ".join(advice.get("suggestions", [])[:2]),
+                )
+                # Generate structured ReasoningPolicy (LLM-driven or rule fallback)
+                if self._policy_generator:
+                    # Use LLM-driven generator if available
+                    if hasattr(self, '_llm_policy_generator') and self._llm_policy_generator:
+                        trace_text = self._trace_v3.reasoning_path if self._trace_v3 else ""
+                        self._active_policy = self._llm_policy_generator.generate(
+                            advice, trace_summary=trace_text, turn_count=self._turn_counter
+                        )
+                    else:
+                        self._active_policy = self._policy_generator.generate(advice)
+                    # Monitor policy
+                    if self._monitor and self._active_policy:
+                        self._monitor.record_policy(self._turn_counter, self._active_policy)
+                    # Persist learned patterns
+                    if self._policy_generator:
+                        self._policy_generator._pattern_learner.save()
+                    # Mind: learn from trace, profile, and MetaConsumer warnings
+                    if self._mind:
+                        self._mind.learn(self)
+                    logger.info(
+                        "Policy: perspective=%s mode=%s depth=%d",
+                        self._active_policy.perspective or '-',
+                        self._active_policy.explanation_mode or '-',
+                        self._active_policy.depth_adjust,
+                    )
+
+        return llm_response
+
+    def on_session_end(self) -> None:
+        """Trigger checkpoint on session end."""
+        if not self._running:
+            return
+        self._session_active = False
+
+        # Persist memory points (capacitor model survives across sessions)
+        if self._memory_manager is not None and self._profile_store is not None:
+            try:
+                self._memory_manager.persist(self._profile_store)
+                logger.info("Memory points persisted (%d points)",
+                           len(self._cognitive_profile.memory_points))
+            except Exception as e:
+                logger.warning("Memory persist skipped: %s", e)
+
+        logger.info("Session ended, triggering checkpoint")
+        self.trigger_checkpoint()
+
+    def _build_parse_context(self):
+        try:
+            from core.agent.v3_common.models import ParseContext
+            ctx = ParseContext()
+            if self._last_context:
+                ctx.history = list(self._last_context.entries[:10])
+            return ctx
+        except Exception:
+            return None
+
+    def _update_profile_from_trace(self, pcr_output, response, metrics):
+        track_a = getattr(self._cognitive_profile, 'track_a', None)
+        if track_a is None:
+            return
+
+        # TrackA: PCR fast profile → EMA
+        alpha = 0.3
+        if pcr_output and getattr(pcr_output, 'cognitive_profile', None):
+            fast = pcr_output.cognitive_profile
+            for attr in ('cognitive_level', 'expertise_level', 'preferred_detail'):
+                if hasattr(fast, attr):
+                    current = getattr(track_a, attr, 0.5) if hasattr(track_a, attr) else 0.5
+                    setattr(track_a, attr, alpha * getattr(fast, attr) + 0.7 * current)
+
+        # Trust from LLM metrics
+        if metrics and metrics.get('success'):
+            track_a.trust = min(1.0, getattr(track_a, 'trust', 0.5) + 0.02)
+        elif metrics and not metrics.get('success'):
+            track_a.trust = max(0.0, getattr(track_a, 'trust', 0.5) - 0.05)
+
+        # TrackB: infer tags from trace (lazy, only every 5 turns)
+        if self._turn_counter % 5 == 0:
+            try:
+                from core.agent.v4.cognitive.tag_layer import TagLayer
+                tag_layer = TagLayer()
+                tag_layer.infer_from_trace(self._trace_v3, self._cognitive_profile)
+            except Exception as e:
+                logger.debug('TagLayer skipped: %s', e)
+
+        # OCEAN mapping (lazy, every 10 turns)
+        if self._turn_counter % 10 == 0:
+            try:
+                self._ocean_analyst.update(self._cognitive_profile)
+            except Exception as e:
+                logger.debug('OCEAN skipped: %s', e)
+
+        # Convergence update
+        if self._turn_counter % 3 == 0 and hasattr(self, '_convergence_engine') and self._convergence_engine:
+            try:
+                self._convergence_engine.update(track_a)
+            except: pass
+
+    def trigger_checkpoint(self) -> List[AdapterResult]:
+        """Run the Slow Path (checkpoint) with ObservationPool data.
+
+        Resets the event counter since we're doing a manual checkpoint.
+        """
+        if self._event_counter is not None:
+            self._event_counter.reset()
+        return self._run_path("slow")
+
+    def trigger_deep(self) -> List[AdapterResult]:
+        """Run the Deep Path."""
+        return self._run_path("deep")
+
+    # ---- Internal ----
+
+    # ---- Context Engineering ----
+
+    def _compile_context(self, event: EventIR, pcr_output=None, parse_result=None, unified_result=None) -> None:
+        """Compile CrossDomainContextIR from current cognitive state.
+
+        Conversation memory: prior turns are injected as context entries
+        and used to enrich retrieval queries for follow-up questions.
+
+        v4.1: PerspectivePlanner decides HOW to observe (strategy, horizon,
+        domain allocation) before the assembler runs. This replaces the
+        flat domain matrix with perspective-aware context compilation.
+        """
+        if self._context_assembler is None or self._domain_selector is None:
+            return
+
+        text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # ---- Enrich query with conversation history ----
+        enriched_text = self._enrich_query_with_history(text)
+
+        # ---- Perspective: decide how to observe ----
+        token_budget = self._world_params.compiler_token_budget
+        # Infer expectation type from query + conversation context
+        expectation = pcr_output.expectation if pcr_output else self._infer_expectation(text)
+        perspectives = self._perspective_planner.plan_multi(
+            enriched_text, token_budget=token_budget,
+            expectation=expectation)
+        perspective = perspectives[0]  # primary for pipeline
+        self._last_perspective = perspective  # expose for logging
+
+        # Perspective-aware domain boosts override default matrix
+        domain_boosts = self._get_domain_boosts(event)
+        for domain, weight in perspective.domains.items():
+            domain_boosts[domain] = domain_boosts.get(domain, 0) + weight * 0.5
+
+        try:
+            self._last_context = self._context_assembler.assemble_ir(
+                enriched_text,
+                token_budget=token_budget,
+                domain_boosts=domain_boosts,
+            )
+        except Exception as e:
+            logger.warning("Context compilation failed: %s", e)
+            return
+
+        # ---- Inject cognitive profile (always, regardless of domain allocation) ----
+        self._inject_cognitive_profile()
+
+        # ---- Inject conversation history as context entries ----
+        self._inject_conversation_history(event)
+
+        # ---- Inject topic tree context (hierarchical discourse, backtracking) ----
+        self._inject_topic_tree_context(event, pcr_output)
+
+        # ---- Inject CausalPlanner context (unified BehaviorGraph + CausalSubstrate) ----
+        if self._causal_planner is not None and self._last_context is not None:
+            try:
+                from core.agent.context.cross_domain_ir import IREntry
+
+                # Inject recent behavior steps
+                recent_steps = self._causal_planner.get_recent_chain(max_steps=5)
+                for step in recent_steps:
+                    self._last_context.add_entry(
+                        domain="B",
+                        entry=IREntry(
+                            domain="B",
+                            type="behavior_step",
+                            content=f"[{step.action_type}] {step.action_summary}",
+                            confidence=0.5,
+                            estimated_tokens=(len(step.action_summary) + 20) // 4,
+                            metadata={"step_id": step.step_id, "event_id": step.event_id},
+                        ),
+                    )
+
+                # Inject causal edges if query hints at causality
+                causal_keywords = {"why", "because", "cause", "lead", "result", "trigger"}
+                if any(kw in text.lower() for kw in causal_keywords):
+                    chain = self._causal_planner.get_chain(
+                        start_event_id=recent_steps[-1].event_id if recent_steps else "",
+                        max_depth=3,
+                    )
+                    for step_ir, edge_ir in chain:
+                        self._last_context.add_entry(
+                            domain="K",
+                            entry=IREntry(
+                                domain="K",
+                                type="causal_prior",
+                                content=(
+                                    f"Causal: {edge_ir.from_step_id} -> {edge_ir.to_step_id} "
+                                    f"(prior={edge_ir.structural_prior:.2f})"
+                                ),
+                                confidence=edge_ir.structural_prior,
+                                estimated_tokens=30,
+                                metadata={
+                                    "edge_id": edge_ir.edge_id,
+                                    "structural_prior": edge_ir.structural_prior,
+                                    "weight": edge_ir.weight,
+                                },
+                            ),
+                        )
+            except Exception as e:
+                logger.debug("CausalPlanner context injection failed: %s", e)
+
+            # ---- Context Compression (incremental) ----
+            if self._last_context and self._last_context.entries:
+                try:
+                    from core.agent.window.context_window_manager import ContextWindowManager
+                    cwm = ContextWindowManager(max_tokens=self._world_params.compiler_token_budget)
+                    compressed = cwm.compress(self._last_context)
+                    if compressed:
+                        self._last_context = compressed
+                except Exception as e:
+                    logger.debug('Context compression skipped: %s', e)
+
+            # ---- Pruner ----
+            if self._last_context and self._last_context.entries:
+                try:
+                    from core.agent.context.pruner import Pruner
+                    pruner = Pruner()
+                    self._last_context = pruner.prune(self._last_context, max_entries=50)
+                except Exception as e:
+                    logger.debug('Pruner skipped: %s', e)
+
+            # ---- Semantic World Model additional context ----
+            self._inject_semantic_world(event, text, perspectives)
+            # Context TTL decay
+            if self._last_context:
+                try:
+                    import time
+                    now = time.time()
+                    if not hasattr(self, '_context_created_at'):
+                        self._context_created_at = now
+                    age = now - self._context_created_at
+                    if age > 300:  # 5min TTL
+                        for e in self._last_context.entries:
+                            e.confidence *= max(0.1, 1.0 - (age - 300) / 3600)
+                except: pass
+
+            # P3: v3 legacy module injection
+            try:
+                from core.agent.runtime.p3_resolver import P3Resolver
+                P3Resolver.inject_in_context(self, event)
+            except Exception:
+                pass
+            # P1: SubgraphCompiler water-wave expansion from targets
+            # (also triggered by PCR LOGICAL_LEAP)
+            force_expand = False
+            if pcr_output and hasattr(pcr_output, 'noise_assessment') and pcr_output.noise_assessment:
+                for span in getattr(pcr_output.noise_assessment, 'spans', []):
+                    if getattr(span, 'noise_type', None) == 'logical_leap':
+                        force_expand = True
+                        break
+            if self._world_objects and self._world_provider:
+                try:
+                    from core.agent.compiler.subgraph_compiler import SubgraphCompiler
+                    compiler = SubgraphCompiler(graph=getattr(self._world_provider,'graph',None),
+                                               semantic_index=getattr(self._world_provider,'index',None))
+                    targets = self._find_targets_semantic(text, self._world_objects)
+                    if force_expand and not targets:
+                        targets = set(self._world_objects.keys()[:5])
+                    if targets:
+                        subgraph = compiler.expand(list(targets)[:3], max_depth=2, max_nodes=50)
+                        if subgraph:
+                            from core.agent.context.cross_domain_ir import IREntry
+                            for node in subgraph[:5]:
+                                self._last_context.add_entry(domain="G", entry=IREntry(
+                                    domain="G", type="subgraph_node",
+                                    content=f"[CONCEPT] {node}"[:300], confidence=0.6))
+                except Exception as e:
+                    logger.debug("SubgraphCompiler skipped: %s", e)
+
+        elif self._behavior_graph_adapter is not None and self._last_context is not None:
+            try:
+                from core.agent.context.cross_domain_ir import IREntry
+
+                recent = self._behavior_graph_adapter.get_recent_chain(n_steps=5)
+                for step in recent.steps:
+                    self._last_context.add_entry(
+                        domain="B",
+                        entry=IREntry(
+                            domain="B",
+                            type="behavior_step",
+                            content=f"[{step.action_type}] {step.action_summary}",
+                            confidence=step.edge_weight,
+                            estimated_tokens=(len(step.action_summary) + 20) // 4,
+                            metadata={"step_id": step.step_id},
+                        ),
+                    )
+
+                # Inject causal edges if query hints at causality
+                causal_keywords = {"why", "because", "cause", "lead", "result", "trigger"}
+                if any(kw in text.lower() for kw in causal_keywords):
+                    for edge in recent.edges:
+                        prior = edge.get("structural_prior", 0.0)
+                        if prior > 0.0:
+                            self._last_context.add_entry(
+                                domain="K",
+                                entry=IREntry(
+                                    domain="K",
+                                    type="causal_prior",
+                                    content=(
+                                        f"Causal: {edge.get('from_step_id', '')} -> "
+                                        f"{edge.get('to_step_id', '')} (prior={prior:.2f})"
+                                    ),
+                                    confidence=prior,
+                                    estimated_tokens=30,
+                                    metadata={"edge_id": edge.get("edge_id", ""), "structural_prior": prior},
+                                ),
+                            )
+            except Exception as e:
+                logger.debug("BehaviorGraph context injection failed: %s", e)
+
+        # ---- Inject EventLog replay context ----
+        if self._event_log is not None and self._last_context is not None:
+            try:
+                from core.agent.context.cross_domain_ir import IREntry
+
+                replay_events = self._event_log.replay_unconsumed(limit=5)
+                for ev in replay_events:
+                    ev_text = ev.payload.get("text", "") if hasattr(ev, "payload") else ""
+                    if not ev_text:
+                        continue
+                    self._last_context.add_entry(
+                        domain="C",
+                        entry=IREntry(
+                            domain="C",
+                            type="event_log_replay",
+                            content=ev_text,
+                            confidence=0.4,
+                            estimated_tokens=len(ev_text) // 4,
+                            metadata={"event_id": ev.id, "kind": ev.kind},
+                        ),
+                    )
+                # Mark replayed events as consumed to avoid duplication
+                for ev in replay_events:
+                    self._event_log.ack_event(ev.id)
+            except Exception as e:
+                logger.debug("EventLog replay injection failed: %s", e)
+
+        # Recalculate totals after injection
+        if self._last_context is not None:
+            self._last_context.recalc_total()
+            logger.debug(
+                "Context compiled: %d entries, %d tokens (with v3_2 injection)",
+                len(self._last_context.entries),
+                self._last_context.total_estimated_tokens,
+            )
+
+    def _enrich_query_with_history(self, current_text: str) -> str:
+        """Multi-dimensional follow-up disambiguation via ConversationTracker.
+
+        Uses temporal proximity, content overlap, and behavior patterns
+        to resolve follow-ups to the correct prior topic. Much smarter than
+        just prepending the prior turn.
+        """
+        return self._conversation_tracker.enrich(current_text)
+
+    def _inject_conversation_history(self, current_event: EventIR) -> None:
+        """Hierarchical context: flat history -> DiscourseTree -> persistent sessions."""
+        if self._last_context is None:
+            return
+        from core.agent.context.cross_domain_ir import IREntry
+
+        # Layer 1: Flat recent history
+        history = self._conversation_tracker.get_history_entries(
+            max_entries=self._get_param("conversation.max_history_entries", 10))
+        for entry in history:
+            ct = entry if isinstance(entry, str) else f"[User T{entry.get('turn','?')}] {entry.get('text','')}"
+            self._last_context.add_entry("C", IREntry(domain="C", type="conversation_history", content=ct))
+
+        # Layer 2: DiscourseTree
+        try:
+            sid = (current_event.refs.get('session_id') if hasattr(current_event,'refs') and current_event.refs.get('session_id') else current_event.payload.get('session_id','default')) if hasattr(current_event,'payload') else 'default'
+            tree = self._discourse_tree._trees.get(sid)
+            if tree:
+                for blk in tree.active_blocks()[:5]:
+                    if blk.block_id == tree.current_branch: continue
+                    ct = blk.serialize_edus_summary()
+                    if ct:
+                        self._last_context.add_entry("C", IREntry(domain="C", type="tree_block",
+                            content=f"[Block {blk.block_id[:8]} ({blk.temperature})] {ct[:200]}"))
+                for blk in [b for b in tree.blocks.values() if b.temperature=="cold"][:3]:
+                    ct = blk.serialize_edus_summary()[:100]
+                    if ct:
+                        self._last_context.add_entry("C", IREntry(domain="C", type="tree_block_summary",
+                            content=f"[Cold:{blk.block_id[:8]}] {ct}"))
+        except Exception: pass
+
+        # Layer 3: BGE persistent session search
+        try:
+            text = current_event.payload.get('text','') if hasattr(current_event,'payload') else ''
+            if text:
+                import glob, json, os
+                for sf in sorted(glob.glob("data/chat_session_*.jsonl"),key=os.path.getmtime,reverse=True)[:2]:
+                    with open(sf,'r',encoding='utf-8') as f:
+                        for line in f:
+                            try:
+                                rec=json.loads(line)
+                                if rec.get("event_type")=="user_input":
+                                    ut=rec.get("text","")
+                                    from core.agent.compiler.semantic_encoder import SemanticEncoder
+                                    import numpy as np
+                                    bge=SemanticEncoder(); qv=bge.encode(text); cv=bge.encode(ut)
+                                    if float(np.dot(qv,cv)/(np.linalg.norm(qv)*np.linalg.norm(cv)+1e-8))>0.5:
+                                        self._last_context.add_entry("C", IREntry(domain="C", type="past_session",
+                                            content=f"[Past {rec.get('timestamp','')[:10]}] {ut[:120]}"))
+                                    break
+                            except: pass
+        except Exception: pass
+
+    def _inject_topic_tree_context(self, current_event: EventIR, pcr_output=None) -> None:
+        if self._last_context is None:
+            return
+        from core.agent.context.cross_domain_ir import IREntry
+
+        # DiscourseBlockTree: conversation tree structure
+        try:
+            session_id = getattr(current_event, 'session_id', 'default')
+            tree_ctx = self._discourse_tree.build_context(session_id)
+            if tree_ctx:
+                self._last_context.add_entry(domain='C', entry=IREntry(
+                    domain='C', type='discourse_tree',
+                    content=f"[Conversation Tree]\n{tree_ctx}",
+                    confidence=0.7, estimated_tokens=len(tree_ctx) // 4,
+                ))
+        except Exception as e:
+            logger.debug("DiscourseBlockTree injection skipped: %s", e)
+
+        # Legacy TopicTree
+        if self._topic_tree_source and self._topic_tree_source.has_context():
+            try:
+                text = current_event.payload.get('text', '') if hasattr(current_event, 'payload') else ''
+                items = self._topic_tree_source.retrieve(text, top_k=3, expand_macro=True)
+                for item in items:
+                    self._last_context.add_entry(domain='C', entry=IREntry(
+                        domain='C', type=item.metadata.get('type', 'discourse'),
+                        content=item.text, confidence=item.relevance,
+                        estimated_tokens=len(item.text) // 4,
+                    ))
+            except Exception as e:
+                logger.debug("TopicTree context injection skipped: %s", e)
+        self._last_context.recalc_total()
+
+    @staticmethod
+    def _extract_concepts_from_text(text: str) -> List[str]:
+        """Extract concept names using JiebaRelationParser entity detection.
+
+        No stop words. No regex segmentation. Just entity extraction.
+        Only records concepts that appear in SemanticObject store.
+        """
+        try:
+            from core.agent.tiered.jieba_parser import JiebaRelationParser
+            jrp = JiebaRelationParser()
+            tuples = jrp.extract(text)
+            entities = set()
+            for t in tuples:
+                entities.add(t["subject"])
+                obj = t.get("object", "")
+                if obj and len(obj) >= 2:
+                    entities.add(obj)
+            # Also grab CamelCase from raw text
+            import re
+            for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', text):
+                if len(m.group()) >= 4:
+                    entities.add(m.group())
+            return list(entities)[:5]
+        except Exception:
+            import re
+            return [m.group() for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', text)][:5]
+
+    # ---- Expectation inference ----
+
+    @staticmethod
+    def _cognitive_perspective(self, text: str):
+        """Use Cognitive Runtime observer for perspective selection.
+
+        When Cognitive Runtime is enabled, Observer identity drives perspective
+        selection — not keyword matching. The Observer knows whether it's
+        representing system self-reflection or user analysis.
+
+        Returns: (strategy, horizon_depth, domains_dict) or None for fallback
+        """
+        if not self._use_cognitive_runtime or self._cognitive_observer is None:
+            return None
+
+        from core.agent.v4.cognitive.metacognition import MetaCognition
+        from core.agent.v4.cognitive.workspace import CognitiveWorkspace
+
+        obs = self._cognitive_observer
+
+        # Ensure workspace exists
+        if obs.workspace is None:
+            obs._workspace = CognitiveWorkspace(id=f"ws_{obs.id}", goal=text)
+
+        obs.workspace.goal = text
+        obs.workspace.active_objects = getattr(obs.workspace, 'active_objects', []) or []
+
+        # MetaCognition decides based on workspace state + observer identity
+        try:
+            mc = MetaCognition(llm_provider=self._llm_provider)
+            reflection = mc.reflect(obs.workspace)
+
+            # Map reflection to perspective strategy
+            strategy_map = {
+                "RETRIEVE": "architecture",
+                "EXPAND": "engineering",
+                "REASON": "evolution",
+                "COMMIT": "execution",
+            }
+            strategy = strategy_map.get(reflection.next_action, "architecture")
+
+            # Domains from self-assessment
+            domains = {"K": 0.4, "C": 0.25, "P": 0.15, "E": 0.1, "B": 0.1}
+            if reflection.confidence_self < 0.4:
+                domains = {"K": 0.3, "P": 0.35, "C": 0.25, "E": 0.05, "B": 0.05}
+
+            logger.info("Cognitive Perspective: strategy=%s (via MetaCognition: %s)", 
+                        strategy, reflection.next_action)
+            return (strategy, 2, domains)
+        except Exception as e:
+            logger.debug("MetaCognition perspective failed: %s, using fallback", e)
+            return None
+
+    def _infer_expectation(self, text: str) -> dict:
+        """Delegate to PCR V2 — zero hardcoded keywords."""
+        try:
+            from core.agent.pcr_router_v2 import PCRRouterV2
+            result = PCRRouterV2.route(text)
+            return result.zone  # zone maps to TOOL/ADVISOR/COMPANION/PRECISION/EXPLORE
+        except Exception:
+            return "ADVISOR"
+
+    def _infer_profile_snapshot(self, text: str, response: str) -> dict:
+        """Infer profile signals using BGE semantic similarity.
+
+        Replaces pure text statistics with semantic personality trait inference.
+        """
+        # Fallback: fast stats when BGE unavailable
+        import re
+        tech_terms = len(re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', text))
+        expertise = min(1.0, tech_terms / max(1, len(text) / 20))
+        sentences = re.split(r'[。！？.!?\n]', text)
+        lens = [len(s) for s in sentences if len(s) > 3]
+        divergence = 0.3 if len(lens) < 2 else min(1.0, max(lens) / max(1, sum(lens) / len(lens)) / 3)
+        # Style inferred from PCR zone, not hardcoded keywords
+        zone = self._infer_expectation(text)
+        style_map = {"ATOMIC": "neutral", "PRECISION": "analytical", "EXPLORE": "exploratory",
+                     "PSYCHE": "social", "MIXED": "neutral"}
+        style = style_map.get(zone, "neutral")
+
+        # BGE semantic enhancement
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            import numpy as np
+            bge = SemanticEncoder()
+            tv = bge.encode(text[:500])
+
+            traits = {
+                "introvert": "prefer working alone, deep thinking, solitude, internal focus, quiet analysis",
+                "extrovert": "team collaboration, social energy, presenting, brainstorming, group discussion",
+                "analytical": "logical reasoning, data-driven, systematic thinking, precise measurement, evidence-based",
+                "emotional": "feel strongly, ethical concern, harmony, people-focused, intuitive feeling",
+                "confident": "certain, definitive, clear answer, direct statement, strong conviction",
+                "uncertain": "maybe, possibly, not sure, could be, considering alternatives",
+            }
+            scores = {}
+            for trait, desc in traits.items():
+                dv = bge.encode(desc)
+                # Flatten: sentence-transformers returns (1,512) → (512,)
+                a = tv.flatten() if len(tv.shape) > 1 else tv
+                b = dv.flatten() if len(dv.shape) > 1 else dv
+                scores[trait] = float(np.dot(a, b) / (np.linalg.norm(a)*np.linalg.norm(b)+1e-8))
+
+            # BGE-enriched profile values
+            intro_bias = scores.get("introvert", scores.get("extravert", 0.5))
+            extra_bias = scores.get("extrovert", scores.get("extravert", 0.5))
+            if isinstance(extra_bias, (int, float)) and isinstance(intro_bias, (int, float)):
+                extra_diff = (extra_bias - intro_bias) * 0.3
+            else:
+                extra_diff = 0.0
+            cognitive_inertia = 0.5 + (scores.get("introvert", 0.5) - scores.get("extrovert", 0.5)) * 0.2
+
+            return {
+                "expertise": expertise,
+                "divergence": divergence,
+                "stability": 0.5,
+                "style": style,
+                "cognitive_inertia": max(0.1, min(0.9, cognitive_inertia)),
+                "emotional_entropy": 0.5 + (scores["emotional"] - scores["analytical"]) * 0.2,
+                "trust_score": 0.5 + (scores["confident"] - scores["uncertain"]) * 0.2,
+                "extraversion_bias": max(0.1, min(0.9, 0.5 + extra_diff)),
+            }
+        except Exception:
+            return {"expertise": expertise, "divergence": divergence, "stability": 0.5, "style": style}
+    def _feed_trackb(self, text: str):
+        """Feed TrackB tags from user input using TagAcquisitionEngine."""
+        if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
+            return
+        try:
+            from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
+            engine = TagAcquisitionEngine()
+            # Use acquire_all for full L1+L2 tag acquisition
+            result = engine.acquire_all(text)
+            tag_dict = result[0] if isinstance(result, tuple) and len(result) == 2 else result
+            tags = list(tag_dict.values()) if isinstance(tag_dict, dict) else []
+            for tag in tags:
+                tag_name = getattr(tag, 'name', str(tag))
+                self._cognitive_profile.track_b[tag_name] = tag
+            if tags:
+                stored = 0
+                for tag in tags[:10]:
+                    try:
+                        tag_name = getattr(tag, 'name', getattr(tag, 'key', str(tag)))[:40]
+                        self._cognitive_profile.track_b[tag_name] = tag
+                        stored += 1
+                    except Exception:
+                        pass
+                if stored:
+                    logger.info("TrackB: %d tags stored", stored)
+            else:
+                logger.debug("TrackB: no tags from text[:50]=%r", text[:50])
+        except Exception as e:
+            logger.info("TrackB feed failed: %s", e)
+
+    def _feed_profile(self, text: str, response: str):
+        """LLM-coordinated ProfileSignalFilter. Falls back to Trace signals."""
+        # P1: Scheduler tick + degradation
+        if hasattr(self, '_event_scheduler') and self._event_scheduler:
+            try:
+                self._event_scheduler.tick(is_silent=not text)
+            except Exception: pass
+        if hasattr(self, '_degradation') and self._degradation:
+            try:
+                pending = getattr(getattr(self, '_async_dispatch', None), 'pending', lambda: 0)()
+                self._degradation.assess(pending)
+            except Exception: pass
+
+        if not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None:
+            return
+        if not hasattr(self, '_convergence_engine') or self._convergence_engine is None:
+            return
+
+        try:
+            from core.agent.v4.cognitive.signal_filter import ProfileSignalFilter
+            filt = ProfileSignalFilter(llm_provider=self._llm_provider)
+            result = filt.analyze(text, self._cognitive_profile)
+            eng = self._convergence_engine
+            if result.signal_strength > 0.3:
+                if result.update_track_a and result.track_a_updates:
+                    for dim, val in result.track_a_updates.items():
+                        eng.update(dim, float(val), session_weight=0.3)
+                if result.update_track_b and result.track_b_tags:
+                    from core.agent.v4.cognitive.models import UserTag
+                    for td in result.track_b_tags:
+                        tag = UserTag(name=td.get("name","x"), value=td.get("value",""),
+                                     confidence=td.get("confidence",0.5), source="LLM_filter")
+                        self._cognitive_profile.track_b[tag.name] = tag
+            else:
+                snap = self._infer_profile_snapshot(text, response)
+                if snap:
+                    for dim in ('cognitive_inertia','emotional_entropy','trust_score'):
+                        if dim in snap:
+                            eng.update(dim, snap[dim], session_weight=0.3)
+        except Exception as e:
+            logger.debug("Profile feed skipped: %s", e)
+
+        # BFI-10 calibrated OCEAN: literature-anchored personality
+        if hasattr(self, '_llm_provider') and self._llm_provider:
+            try:
+                if not hasattr(self, '_bfi_calibrator'):
+                    from core.agent.v4.cognitive.bfi_calibrator import BFICalibrator
+                    from core.agent.v4.cognitive.ocean_profile import OCEANProfileAnalyst
+                    self._bfi_calibrator = BFICalibrator(self._llm_provider)
+                    self._ocean_analyst = OCEANProfileAnalyst(self._llm_provider)
+
+                # BFI-10 calibrated rating + OCEAN with BFI override
+                calibrated = self._bfi_calibrator.calibrate(self, text, response)
+                bfi_scores = calibrated.get("bfi10_scores", {})
+                ocean_result = self._ocean_analyst.analyze_with_bfi_override(
+                    self, text, response, bfi_scores) if bfi_scores else self._ocean_analyst.analyze(self, text, response)
+
+                # Store: BFI serves as anchor, OCEAN as tracking
+                self._cognitive_profile.track_b["_ocean"] = {
+                    "calibrated": calibrated.get("calibrated_ocean", {}),
+                    "direct": {k: round(v,2) for k,v in ocean_result.get("dimensions",{}).items()},
+                    "bfi10_scores": calibrated.get("bfi10_scores", {}),
+                    "divergence": calibrated.get("divergence", {}),
+                    "mbti_lit": calibrated.get("mbti_literature", ""),
+                    "source": "BFI10_calibrated",
+                }
+                # Inject subgraph
+                subgraph = self._ocean_analyst.get_subgraph()
+                if calibrated.get("divergence", {}).get("diverging_factors"):
+                    subgraph.append(f"[CALI] LLM OCEAN diverges from BFI-10: "
+                        f"{len(calibrated['divergence']['diverging_factors'])} factors")
+                if subgraph and self._last_context:
+                    from core.agent.context.cross_domain_ir import IREntry
+                    for i, node in enumerate(subgraph[:6]):
+                        self._last_context.add_entry(domain="F", entry=IREntry(
+                            domain="F", type="ocean_node",
+                            content=node[:300], confidence=0.7))
+            except Exception as e:
+                logger.debug("BFI/OCEAN skipped: %s", e)
+
+        # P2: wire orphan modules — causal promotion, behavior to meta, TTL, self-repair
+        if hasattr(self, '_causal_promoter') and self._causal_promoter:
+            try:
+                for pk, p in getattr(getattr(self, '_behavior_discovery', None), '_patterns', {}).items():
+                    parts = pk.split("→")
+                    if len(parts) == 2 and getattr(p, 'confidence', 0) > 0.7:
+                        self._causal_promoter.record_pair(parts[0], parts[1], time.time())
+                        self._causal_promoter.assess(pk, parts[0], parts[1],
+                            getattr(p, 'confidence', 0), getattr(p, 'support', 0))
+            except Exception: pass
+
+        if hasattr(self, '_behavior_discovery') and self._behavior_discovery:
+            try:
+                for p in getattr(self._behavior_discovery, 'pending_review', lambda: [])():
+                    if hasattr(self, '_meta') and self._meta:
+                        self._behavior_discovery.submit_to_meta(p)
+            except Exception: pass
+
+        if hasattr(self, '_ttl_manager') and self._ttl_manager:
+            try:
+                self._ttl_manager.tick()
+            except Exception: pass
+
+        if hasattr(self, '_meta_repair') and self._meta_repair and hasattr(self, '_meta') and self._meta:
+            try:
+                audit = self._meta.self_audit()
+                self._meta_repair.record_accuracy(audit.get("accuracy", 0))
+            except Exception: pass
+
+    def _inject_cognitive_profile(self):
+        """Inject user profile as P domain context entries."""
+        if (not hasattr(self, '_cognitive_profile') or self._cognitive_profile is None
+                or self._last_context is None):
+            return
+        from core.agent.v4.cognitive.fusion import FusionContext
+        from core.agent.context.cross_domain_ir import IREntry
+
+        p = self._cognitive_profile
+        engine = getattr(self, '_convergence_engine', None)
+        text = FusionContext().render(p, engine)
+        if text:
+            self._last_context.add_entry(domain="P", entry=IREntry(
+                domain="P", type="cognitive_profile",
+                content=text, confidence=0.6,
+                estimated_tokens=len(text) // 4,
+            ))
+
+
+    def _init_extraction_orchestrator(self):
+        try:
+            from core.agent.compiler.extraction_blueprint import (
+                ExtractionOrchestrator, ExtractionBlueprint,
+                RegexExtractionProvider, StanzaExtractionProvider,
+                LMStudioExtractionProvider, DeepSeekExtractionProvider,
+            )
+            self._extraction_orchestrator = ExtractionOrchestrator()
+            self._extraction_orchestrator.register(ExtractionBlueprint(
+                "regex", RegexExtractionProvider()))
+            self._extraction_orchestrator.register(ExtractionBlueprint(
+                "stanza", StanzaExtractionProvider()))
+            self._extraction_orchestrator.register(ExtractionBlueprint(
+                "lmstudio", LMStudioExtractionProvider()))
+            self._extraction_orchestrator.register(ExtractionBlueprint(
+                "deepseek", DeepSeekExtractionProvider()))
+            logger.info("ExtractionOrchestrator ready: deepseek=%s lmstudio=%s",
+                        DeepSeekExtractionProvider().available(),
+                        LMStudioExtractionProvider().available())
+        except Exception as e:
+            logger.warning("ExtractionOrchestrator init failed: %s", e)
+
+    def _get_param(self, key: str, default):
+        """Read a parameter from ParameterRegistry with fallback."""
+        try:
+            from core.agent.compiler.parameter_registry import ParameterRegistry
+            val = ParameterRegistry().get(key)
+            return val if val is not None else default
+        except Exception:
+            return default
+
+    def _get_slow_threshold(self) -> int:
+        try:
+            from core.agent.compiler.parameter_registry import ParameterRegistry
+            return ParameterRegistry().get_int("slow_path.event_threshold", 5)
+        except Exception:
+            return 5
+
+    def _adjust_slow_threshold(self):
+        now = time.time()
+        if now - self._last_threshold_adjust < 10:
+            return
+        self._last_threshold_adjust = now
+        if self._event_counter is None:
+            return
+        velocity = self._event_counter.count / max(1, now - self._last_threshold_adjust)
+        base = self._slow_threshold_base
+        if velocity > 0.3:
+            new_threshold = max(2, base - 2)
+        elif velocity < 0.1:
+            new_threshold = min(50, base + 5)
+        else:
+            new_threshold = base
+        if new_threshold != self._event_counter.threshold:
+            self._event_counter.threshold = new_threshold
+            logger.debug("Slow Path threshold adjusted: %d -> %d (velocity=%.2f)", base, new_threshold, velocity)
+
+    def _slow_extract(self):
+        if self._extraction_orchestrator is None or not self._observation_pool:
+            return
+        concepts = list(getattr(self, "_world_objects", {}).keys())[:10]
+        if not concepts:
+            try:
+                from core.agent.tiered.jieba_parser import JiebaRelationParser
+                jrp = JiebaRelationParser()
+                sample_texts = []
+                for domain in self._observation_pool.stats().get("by_domain", {}):
+                    for bundle in self._observation_pool.get_by_domain(domain)[:3]:
+                        for obs in getattr(bundle, "domain_observations", {}).values():
+                            for ip in getattr(obs, "interpretations", [])[:2]:
+                                s = ip.get("summary","") if isinstance(ip,dict) else getattr(ip,"summary","")
+                                if s: sample_texts.append(s)
+                for st in sample_texts[:5]:
+                    for tup in jrp.extract(st):
+                        concepts.append(tup["subject"]); concepts.append(tup["object"])
+                concepts = list(dict.fromkeys(concepts))[:10]
+            except Exception:
+                pass
+        if not concepts:
+            return
+        min_text_len = 30
+        try:
+            from core.agent.compiler.parameter_registry import ParameterRegistry
+            min_text_len = ParameterRegistry().get_int("slow_path.min_text_length", 30)
+        except Exception:
+            pass
+        processed = 0
+        import re
+        camel_re = re.compile(r'[A-Z][a-z]+(?:[A-Z][a-z]+)+')
+        for domain in self._observation_pool.stats().get("by_domain", {}):
+            for bundle in self._observation_pool.get_by_domain(domain):
+                for obs in getattr(bundle, "domain_observations", {}).values():
+                    text = " ".join(
+                        i.get("summary","") if isinstance(i,dict) else getattr(i,"summary","")
+                        for i in getattr(obs,"interpretations",[])
+                    )
+                    effective_min = min_text_len // 2 if camel_re.search(text) else min_text_len
+                    if len(text) < effective_min:
+                        continue
+                    result = self._extraction_orchestrator.extract(text, concepts)
+                    logger.info("Slow Path extract: text_len=%d concepts=%d tuples=%d",
+                               len(text), len(concepts), len(result) if isinstance(result, list) else 0)
+                    self._apply_extraction(result)
+                    processed += 1
+                    if processed >= 3:
+                        break
+                if processed >= 3:
+                    break
+            if processed >= 3:
+                break
+
+    def _feed_extractions_to_substrate(self):
+        """Feed jieba extraction results into RelationSubstrate at build time."""
+        if not self._content_provider or not self._observation_pool:
+            return
+        rs = getattr(self._content_provider, '_relation_substrate', None)
+        if not rs:
+            return
+        try:
+            from core.agent.tiered.jieba_parser import JiebaRelationParser
+            jrp = JiebaRelationParser()
+            extractions = []
+            for domain in self._observation_pool.stats().get("by_domain", {}):
+                for bundle in self._observation_pool.get_by_domain(domain)[:3]:
+                    for obs in getattr(bundle, "domain_observations", {}).values():
+                        for ip in getattr(obs, "interpretations", []):
+                            summary = ip.get("summary", "") if isinstance(ip, dict) else getattr(ip, "summary", "")
+                            if len(summary) > 30:
+                                extractions.extend(jrp.extract(summary))
+                            if len(extractions) > 50:
+                                break
+                        if len(extractions) > 50:
+                            break
+                    if len(extractions) > 50:
+                        break
+                if extractions:
+                    break
+            if extractions:
+                count = rs.build_from_extractions(extractions)
+                logger.info("Build-time extraction: %d edges from %d extractions", count, len(extractions))
+        except Exception as e:
+            logger.debug("Build-time extraction skipped: %s", e)
+
+    def _apply_extraction(self, result):
+        from core.agent.compiler.relation_substrate import RelationEdge, Evidence
+        prov = getattr(self, "_content_provider", None)
+        if not prov:
+            logger.debug("Slow Path writeback: no content provider")
+            return
+
+        # Write relations to RelationSubstrate
+        written = 0
+        rels = getattr(result, 'relations', [])
+        logger.info("Slow Path writeback: %d candidate relations", len(rels))
+        for r in rels:
+            if not r.source or not r.target:
+                continue
+            eid = f"ext:{r.source}\u2192{r.target}:{r.predicate}"
+            edge = RelationEdge(
+                identity=eid, source=r.source, target=r.target,
+                relation_kind="structural", semantic_strength="dependency",
+                predicate=r.predicate, inverse=f"inv_{r.predicate}",
+                confidence=r.confidence,
+                evidence=[Evidence(
+                    evidence_id=eid, source=result.provider,
+                    claim=f"{r.source} {r.predicate} {r.target}",
+                    confidence=r.confidence, predicate=r.predicate,
+                )],
+            )
+            if hasattr(prov, "_relation_substrate") and prov._relation_substrate:
+                prov._relation_substrate.add(edge)
+                written += 1
+
+        if written > 0:
+            logger.info("Slow Path writeback: %d edges -> RelationSubstrate", written)
+        else:
+            logger.info("Slow Path writeback: 0 edges (no valid source/target in %d relations)", len(rels))
+
+        # Write definitions to SemanticObject if store is available
+        objects = getattr(self, '_world_objects', {})
+        for d in result.definitions:
+            obj = objects.get(d.subject)
+            if obj and d.text:
+                # Add definition to the object's semantic_path for richer rendering
+                if not hasattr(obj, '_extracted_defs'):
+                    obj._extracted_defs = []
+                obj._extracted_defs.append(d.text[:500])
+
+    def enable_cognitive_runtime(self):
+        """Enable LLM-driven cognitive runtime (Phase 2).
+
+        Replaces the linear Pipeline with a MetaCognition-driven loop:
+        PERCEIVE -> [REASON -> REFLECT -> 决策 -> RETRIEVE/EXPAND] -> COMMIT
+        """
+        from core.agent.v4.cognitive.scheduler import Observer
+        self._use_cognitive_runtime = True
+        self._cognitive_observer = Observer(id=f"obs_{int(time.time())}")
+        logger.info("Cognitive Runtime enabled")
+
+
+    def run_cognitive(self, question: str, max_iterations: int = 5) -> str:
+        """Run the full cognitive loop for a single question.
+
+        Returns LLM response string.
+        """
+        if not self._use_cognitive_runtime or self._cognitive_observer is None:
+            return self.on_event(self._make_event(question))
+
+        from core.agent.v4.cognitive.metacognition import MetaCognition
+        from core.agent.v4.cognitive.scheduler import CognitiveScheduler
+        from core.agent.v4.cognitive.runtime import run_cognitive_loop
+
+        mc = MetaCognition(llm_provider=self._llm_provider)
+        scheduler = CognitiveScheduler(metacognition=mc)
+        obs = self._cognitive_observer
+        obs.token_budget = 4000
+        obs.token_used = 0
+
+        self._cognitive_trace = run_cognitive_loop(
+            observer=obs,
+            scheduler=scheduler,
+            engine=self,
+            question=question,
+            max_iterations=max_iterations,
+        )
+
+        # Return best candidate answer
+        if obs.workspace and obs.workspace.candidate_answers:
+            return obs.workspace.candidate_answers[-1].get("content", "")
+        return self._cognitive_trace.final_answer if self._cognitive_trace else ""
+
+
+    def cognitive_status(self) -> dict:
+        """Return cognitive runtime status for inspection."""
+        if not self._cognitive_observer:
+            return {"enabled": False}
+        obs = self._cognitive_observer
+        ws = obs.workspace
+        trace = self._cognitive_trace
+        return {
+            "enabled": True,
+            "observer": obs.snapshot(),
+            "workspace_state": ws.state if ws else "none",
+            "confidence": ws.confidence if ws else 0,
+            "hypotheses": len(ws.hypotheses) if ws else 0,
+            "trace": trace.summary() if trace else "none",
+            "trace_steps": len(trace.steps) if trace else 0,
+        }
+
+
+    def _make_event(self, text: str) -> object:
+        from core.agent.events.event_ir import DialogAdapter
+        return DialogAdapter().adapt(text, session_id="cog_session", turn_number=1)
+
+
+    def set_object_store(self, objects: dict, runtime, provider):
+        """Inject SemanticObject store + ObjectRuntime + ContentProvider for world rendering."""
+        self._world_objects = objects
+        self._object_runtime = runtime
+        self._world_provider = provider
+        self._bge_index = None  # invalidate BGE cache on new objects
+
+    def _bge_retrieve(self, text: str, objects: dict, candidate_set: set = None) -> set:
+        """Build BGE index once, reuse for all queries.
+        
+        If candidate_set provided, only score those objects (LSH-pruned subset).
+        """
+        if not hasattr(self, '_bge_index') or self._bge_index is None:
+            self._build_bge_index(objects)
+        if self._bge_index is None or not self._bge_index.get('vectors'):
+            return set()
+        import numpy as np
+        from core.agent.compiler.semantic_encoder import SemanticEncoder
+        enc = SemanticEncoder()
+        q_vec = enc.encode(text)
+        vecs = self._bge_index['vectors']
+        names = self._bge_index['names']
+        # If LSH provided a candidate subset, only score those
+        if candidate_set:
+            indices = [i for i, n in enumerate(names) if n in candidate_set]
+            if not indices:
+                return set()
+            cvecs = vecs[indices]
+            cnames = [names[i] for i in indices]
+            sims = np.dot(cvecs, q_vec)
+            top_k = min(5, len(sims))
+            top_idx = np.argpartition(sims, -top_k)[-top_k:]
+            top_idx = top_idx[np.argsort(sims[top_idx])[::-1]]
+            results = set()
+            for idx in top_idx:
+                if sims[idx] > 0.30:
+                    results.add(cnames[idx])
+            return results
+        # Full search (fallback for small graphs)
+        sims = np.dot(vecs, q_vec)
+        top_k = min(5, len(sims))
+        top_idx = np.argpartition(sims, -top_k)[-top_k:]
+        top_idx = top_idx[np.argsort(sims[top_idx])[::-1]]
+        results = set()
+        for idx in top_idx:
+            if sims[idx] > 0.30:
+                results.add(names[idx])
+        return results
+
+    def _auto_build_objects(self):
+        """P1: build SemanticObject graph from pool + graph + index."""
+        try:
+            pool = getattr(self, '_observation_pool', None)
+            if pool is None:
+                return
+            if hasattr(self, '_object_runtime') and self._object_runtime is not None:
+                return  # already built
+            # Try to get graph and index from content provider
+            graph = None
+            idx = None
+            if hasattr(self, '_world_provider') and self._world_provider:
+                graph = getattr(self._world_provider, 'graph', None)
+                idx = getattr(self._world_provider, 'index', None)
+            if graph is None or idx is None:
+                return
+            from core.agent.compiler.object_builder import build_object_graph
+            from core.agent.compiler.object_runtime import ObjectRuntime
+            objects = build_object_graph(pool, graph, idx)
+            if objects:
+                ort = ObjectRuntime(provider=self._world_provider)
+                ort.set_store(objects)
+                self._object_runtime = ort
+                self._world_objects = objects
+                self._bge_index = None  # invalidate BGE cache
+                logger.info("Auto-built: %d SemanticObjects from pool", len(objects))
+        except Exception as e:
+            logger.debug("Auto-build objects skipped: %s", e)
+
+    def _build_bge_index(self, objects: dict):
+        import numpy as np
+        cache_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "vectors")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, "bge_index.npz")
+        names_path = os.path.join(cache_dir, "bge_names.json")
+
+        # Try loading from cache
+        try:
+            if os.path.exists(cache_path) and os.path.exists(names_path):
+                import json
+                cached = np.load(cache_path)
+                self._bge_index = {'vectors': cached['vectors'], 'names': json.load(open(names_path))}
+                if len(self._bge_index['names']) == len(objects):
+                    logger.info("BGE index loaded from cache: %d vectors (skip re-encode)", 
+                               len(self._bge_index['names']))
+                    return
+        except Exception as e:
+            logger.debug("BGE cache load skip: %s", e)
+
+        # Build from scratch
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            enc = SemanticEncoder()
+            names = list(objects.keys())
+            vecs = enc.encode(names)
+            self._bge_index = {'vectors': np.array(vecs), 'names': names}
+            logger.info("BGE index built: %d vectors", len(names))
+
+            # Save to cache
+            np.savez_compressed(cache_path, vectors=np.array(vecs))
+            import json
+            json.dump(names, open(names_path, 'w'))
+            logger.info("BGE index cached: %s (%d KB)", cache_path, os.path.getsize(cache_path)//1024)
+        except Exception as e:
+            logger.warning("BGE index build failed: %s", e)
+            self._bge_index = None
+
+    def _llm_review_bge(self, query: str, candidates: list) -> list:
+        """LLM filters BGE candidates for relevance. Slow but accurate."""
+        if self._llm_provider is None:
+            return []
+        try:
+            cand_list = ", ".join([name for name, _ in candidates[:8]])
+            prompt = (
+                f"User query: {query}\n\n"
+                f"BGE found these candidate concepts: {cand_list}\n\n"
+                f"Which 3 are MOST relevant to the query? Return ONLY a JSON array of names.\n"
+                f'Example: ["ConceptA", "ConceptB"]'
+            )
+            from core.agent.llm_providers.base import GenerateRequest
+            result = self._llm_provider.generate(GenerateRequest(prompt=prompt, max_tokens=150, temperature=0.1))
+            text = result.text if hasattr(result, 'text') else str(result)
+            import json, re
+            match = re.search(r'\[[\s\S]*?\]', text)
+            if match:
+                names = json.loads(match.group())
+                logger.info("LLM BGE review: %d candidates → %s", len(candidates), names)
+                return names[:5]
+        except Exception as e:
+            logger.debug("LLM BGE review failed: %s", e)
+        return []
+
+    def _find_targets_semantic(self, text: str, objects: dict) -> list:
+        """BGE semantic retrieval + jieba heading backtracking + LSH pruning.
+
+        Hybrid: LSH candidate pruning → BGE cosine similarity → jieba heading lookup.
+        LSH reduces search space from O(N) to O(k×bands) when N > 1000.
+        """
+        targets = set()
+
+        # ---- Tier 0: LSH candidate pruning (large graph) ----
+        candidate_set = None  # None = all objects, set = pruned
+        if len(objects) > 1000:
+            try:
+                import numpy as np
+                from core.agent.compiler.lsh_index import LSHIndex
+                lsh = LSHIndex()
+                for name in objects:
+                    lsh.insert(name, name)
+                lsh_candidates = lsh.query(text, top_k=100)
+                candidate_set = set(lsh_candidates) if lsh_candidates else None
+                logger.debug("LSH pruned %d→%d candidates", len(objects), len(candidate_set) if candidate_set else len(objects))
+            except Exception as e:
+                logger.debug("LSH pruning skipped: %s", e)
+
+        # ---- BGE semantic retrieval (cross-language) ----
+        try:
+            import numpy as np
+            targets |= self._bge_retrieve(text, objects, candidate_set)
+        except Exception as e:
+            logger.debug("BGE retrieval skipped: %s", e)
+
+        # ---- jieba keyword → heading match (fast path) ----
+        try:
+            import jieba
+            keywords = set(w for w in jieba.cut(text) if len(w) >= 2)
+            # Also add JiebaRelationParser entities
+            try:
+                from core.agent.tiered.jieba_parser import JiebaRelationParser
+                for t in JiebaRelationParser().extract(text):
+                    keywords.add(t["subject"]); keywords.add(t["object"])
+            except Exception:
+                pass
+
+            # Fast scan: object name + heading_path match
+            for name, obj in objects.items():
+                if any(kw.lower() in name.lower() for kw in keywords):
+                    targets.add(name)
+                else:
+                    path = getattr(obj, 'semantic_path', []) or getattr(obj, 'heading_path', [])
+                    path_str = " ".join(str(p) for p in path).lower()
+                    if any(kw.lower() in path_str for kw in keywords):
+                        targets.add(name)
+                if len(targets) >= 10:
+                    break
+        except Exception as e:
+            logger.debug("Jieba match skipped: %s", e)
+
+        # ---- BGE fallback: semantic similarity when jieba misses ----
+        if len(targets) < 3:
+            try:
+                from core.agent.compiler.semantic_encoder import SemanticEncoder
+                import numpy as np
+                bge = SemanticEncoder()
+                query_vec = bge.encode(text)
+                scored = []
+                for name in objects:
+                    if name in targets: continue
+                    nv = bge.encode(name)
+                    cos = float(np.dot(query_vec, nv) / (np.linalg.norm(query_vec) * np.linalg.norm(nv) + 1e-8))
+                    scored.append((name, cos))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                # Take top-10 BGE candidates for LLM review
+                bge_candidates = scored[:10]
+                if bge_candidates and len(targets) < 3:
+                    # LLM review: filter BGE results for relevance
+                    by_llm = self._llm_review_bge(text, bge_candidates[:8])
+                    for name in by_llm:
+                        targets.add(name)
+                else:
+                    # High confidence (>0.6) auto-accept
+                    for name, cos in scored:
+                        if cos > 0.6 and len(targets) < 8:
+                            targets.add(name)
+            except Exception as e:
+                logger.debug("BGE fallback skip: %s", e)
+
+        # ---- Final fallback: substring scan (original logic) ----
+        if not targets:
+            text_lower = text.lower()
+            for name in objects:
+                if name.lower() in text_lower:
+                    targets.add(name)
+                    if len(targets) >= 3:
+                        break
+
+        return list(targets)[:5]
+
+    def _inject_semantic_world(self, event, text: str, perspectives):
+        """Render multi-perspective world view."""
+        if not (hasattr(self, '_world_objects') and self._world_objects
+                and self._last_context is not None):
+            return
+
+        from core.agent.context.cross_domain_ir import IREntry
+        from core.agent.compiler.semantic_object import LOD as LODObj
+        objects = self._world_objects
+        runtime = getattr(self, '_object_runtime', None)
+        provider = getattr(self, '_world_provider', None)
+
+        if not runtime or not provider:
+            return
+
+        # Find targets from primary perspective or semantic retrieval
+        primary = perspectives[0] if perspectives else None
+        if not primary:
+            return
+
+        targets = getattr(primary, 'targets', [])
+        if not targets:
+            targets = self._find_targets_semantic(text, objects)
+
+        for target in targets[:5]:
+            obj = objects.get(target)
+            if not obj:
+                continue
+
+            # ── Primary perspective (full depth) ──
+            try:
+                primary = perspectives[0]
+                lod = LODObj(level=float(getattr(primary.horizon, 'depth', 2)))
+                view = runtime.render(obj, lod, primary)
+                design = view.get('design', '') if isinstance(view, dict) else ''
+                if design:
+                    self._last_context.add_entry(domain="K", entry=IREntry(
+                        domain="K", type=f"world_view_{primary.strategy}",
+                        content=f"[{primary.strategy.upper()}] {obj.name}\n{design[:500]}",
+                    ))
+            except Exception as e:
+                logger.debug("Primary render failed %s: %s", obj.name, e)
+
+        # ── Secondary perspective: DIFFERENT targets, shallow depth ──
+        if len(perspectives) > 1:
+            secondary = perspectives[1]
+            secondary_targets = targets[2:5] if len(targets) > 2 else targets[1:2]
+            for target in secondary_targets:
+                obj = objects.get(target)
+                if not obj: continue
+                try:
+                    lod = LODObj(level=1.0)
+                    view = runtime.render(obj, lod, secondary)
+                    design = view.get('design', '') if isinstance(view, dict) else ''
+                    if design:
+                        self._last_context.add_entry(domain="K", entry=IREntry(
+                            domain="K", type="world_view_aux",
+                            content=f"[{secondary.strategy.upper()}] {obj.name}\n{design[:300]}",
+                        ))
+                except Exception as e:
+                    logger.debug("Secondary render failed %s: %s", obj.name, e)
+
+        # ── Relations (only for primary perspective) ──
+        for target in targets[:3]:
+            obj = objects.get(target)
+            if obj and provider:
+                    edges = provider.relation_query(source=obj.identity, min_confidence=0.3)[:5]
+                    if edges:
+                        rel_lines = [f"  {obj.name} {e.predicate} {e.target} ({e.relation_kind})" for e in edges]
+                        self._last_context.add_entry(domain="K", entry=IREntry(
+                            domain="K", type="world_relation",
+                            content=f"[RELATIONS]\n" + "\n".join(rel_lines),
+                        ))
+
+        logger.debug("Semantic world injected: %d objects x %d perspectives", len(targets), len(perspectives))
+
+        # Fallback: if no world_view entries were produced (e.g. evolution on empty design),
+        # try architecture rendering to ensure at least some world content
+        has_world = any('world_view' in getattr(e, 'type', '') for e in self._last_context.entries)
+        if not has_world and targets:
+            arch_persp = perspectives[0]
+            arch_persp.strategy = "architecture"
+            for target in targets[:3]:
+                obj = objects.get(target)
+                if not obj: continue
+                try:
+                    lod = LODObj(level=2.0)
+                    view = runtime.render(obj, lod, arch_persp)
+                    design = view.get('design', '') if isinstance(view, dict) else ''
+                    if design:
+                        self._last_context.add_entry(domain="K", entry=IREntry(
+                            domain="K", type="world_view_architecture",
+                            content=f"[ARCHITECTURE] {obj.name}\n{design[:600]}",
+                        ))
+                        has_world = True
+                except Exception:
+                    pass
+
+        # Remove static graph entries when world views present
+        has_world = any('world_view' in getattr(e, 'type', '') for e in self._last_context.entries)
+        if has_world:
+            self._last_context.entries = [
+                e for e in self._last_context.entries
+                if getattr(e, 'type', '') != 'graph'
+            ]
+
+    def _call_llm(self, event: EventIR, pcr_output=None, parse_result=None, plan_result=None, unified_result=None) -> Optional[str]:
+        """Compile context IR to prompt, call LLM, return response text.
+
+        Args:
+            event: The current user event (for extracting user text).
+
+        Returns:
+            LLM response text, or None if no provider or compilation failed.
+        """
+        if self._llm_provider is None:
+            logger.warning("[_call_llm] No LLM provider — skip")
+            return None
+        if self._last_context is None:
+            logger.warning("[_call_llm] No compiled context — skip")
+            return None
+
+        # Build system instruction from world params
+        system_instruction = self._build_system_instruction()
+
+        # Inject ContextualStrategy recommendation
+        if hasattr(self, '_strategy_engine') and self._strategy_engine:
+            from core.agent.v4.cognitive.contextual_strategy import StrategyContext
+            ctx = StrategyContext.from_engine(self)
+            best_name, best_score = self._strategy_engine.best_for(ctx)
+            if best_name and best_score > 0.5:
+                system_instruction += (
+                    f"\n[Strategy Hint] Preferred explanation style: {best_name} "
+                    f"(effectiveness: {best_score:.2f} in this context)"
+                )
+
+        # Apply ReasoningPolicy to system instruction
+        if hasattr(self, '_active_policy') and self._active_policy:
+            policy = self._active_policy
+            system_instruction = policy.apply_to_prompt(system_instruction)
+            # Apply depth to token budget
+            if policy.depth_adjust:
+                budget = getattr(self._world_params, 'compiler_token_budget', 2048)
+                self._world_params.compiler_token_budget = max(
+                    512, budget + policy.depth_adjust * 512
+                )
+            # Reset policy after consumption
+            self._active_policy = None
+
+        # Serialize IR to prompt
+        prompt = self._last_context.to_prompt(
+            system_instruction=system_instruction,
+            max_tokens=self._world_params.compiler_token_budget,
+        )
+
+        # User query FIRST (LLMs attend more to beginning)
+        user_text = event.payload.get("text", "") if hasattr(event, "payload") else ""
+
+        # V4.0 Route zone → system instruction
+        if route:
+            zone_str = f' [Zone: {route.zone}]'
+            if route.zone == 'ATOMIC':
+                system_instruction += f'{zone_str} (fast, cache/rule)'
+            elif route.zone == 'PSYCHE':
+                system_instruction += f'{zone_str} (empathetic, brief)'
+            elif route.zone == 'EXPLORE':
+                system_instruction += f'{zone_str} (exploratory, temp={route.temperature})'
+            elif route.zone == 'PRECISION':
+                system_instruction += f'{zone_str} (precise, structured output)'
+            elif route.zone == 'ABYSS':
+                system_instruction += f'{zone_str} (deep reasoning, recursion={route.max_recursion})'
+
+        # Unified behavior label
+        if unified_result and unified_result.behavior_label:
+            system_instruction += f' [Context: {unified_result.behavior_label}]'
+
+        # Unified entities → context boost
+        if unified_result and unified_result.entities:
+            ent_str = ', '.join(unified_result.entities[:5])
+            system_instruction += f' [Entities: {ent_str}]'
+
+        # Unified causal closure
+        if unified_result and unified_result.causal_closure:
+            system_instruction += f' [Causal: {unified_result.causal_closure[:100]}]'
+
+        # Plan-driven system instruction (TaskGraph)
+        if plan_result and hasattr(plan_result, 'task_graph'):
+            tg = plan_result.task_graph
+            node_count = len(getattr(tg, 'nodes', []))
+            if node_count > 0:
+                steps = [f'{n.action or n.name}' for n in tg.nodes[:5] 
+                        if hasattr(n, 'action') or hasattr(n, 'name')]
+                if steps:
+                    system_instruction += f' [Plan: {node_count} steps — {" → ".join(steps)}]'
+
+        # Intent-driven system instruction
+        if parse_result and parse_result.intent:
+            intent_cat = getattr(parse_result.intent, 'category', None) or str(parse_result.intent)
+            if 'EXPLAIN' in str(intent_cat):
+                system_instruction += ' [Intent: EXPLAIN — be educational]'
+            elif 'ANALYZE' in str(intent_cat):
+                system_instruction += ' [Intent: ANALYZE — be analytical]'
+            elif 'C' in str(intent_cat) and 'COMMAND' in str(intent_cat).upper():
+                system_instruction += ' [Intent: COMMAND — execute directly]'
+            elif 'CLARIFY' in str(intent_cat):
+                system_instruction += ' [Intent: CLARIFY — ask clarifying questions]'
+
+        # PCR-driven strategy modulation
+        if pcr_output:
+            if pcr_output.expectation == "TOOL":
+                system_instruction += " [PCR: TOOL mode — direct response]"
+            elif pcr_output.expectation == "COMPANION":
+                system_instruction += " [PCR: COMPANION mode — conversational]"
+            if getattr(pcr_output, "prompt_style", "") == "BRIEF":
+                system_instruction += " [PCR: BRIEF — one paragraph]"
+            elif getattr(pcr_output, "prompt_style", "") == "TUTORIAL":
+                system_instruction += " [PCR: TUTORIAL — step by step]"
+        if user_text:
+            prompt = f"[User]\n{user_text}\n\n{system_instruction}\n{prompt}"
+
+        # Call LLM — with ReasoningPolicy temperature modulation
+        try:
+            temperature = 0.7
+            # Apply Policy temperature mod if active
+            if hasattr(self, '_active_policy') and self._active_policy:
+                policy = self._active_policy
+                if policy.temperature_mod:
+                    temperature = max(0.3, min(1.0, 0.7 + policy.temperature_mod))
+
+            request = GenerateRequest(
+                prompt=prompt,
+                system_prompt=system_instruction,
+                max_tokens=max(self._world_params.compiler_token_budget // 2, 2048),
+                temperature=temperature,
+                timeout_ms=30000,
+            )
+            # Generate via provider (GatewayLLMProvider — tested, reliable)
+            result: GenerateResult = self._llm_provider.generate(request)
+            if not result.metrics.success:
+                logger.warning("Provider failed (%s), trying direct gateway...",
+                             result.metrics.error_type)
+                result = self._direct_llm_call(
+                    user_text=user_text,
+                    system_instruction=system_instruction,
+                    context_entries=[]
+                )
+            self._llm_metrics = {
+                "latency_ms": result.metrics.latency_ms,
+                "input_tokens": result.metrics.input_tokens,
+                "output_tokens": result.metrics.output_tokens,
+                "success": result.metrics.success,
+                "provider": result.metrics.provider_name,
+                "model": result.metrics.model_id,
+                "error": result.metrics.error_type,
+            }
+            if result.metrics.success:
+                logger.debug(
+                    "LLM response received: %d chars, latency=%.0fms",
+                    len(result.text), result.metrics.latency_ms,
+                )
+                return result.text
+            else:
+                logger.warning(
+                    "LLM call failed: %s (provider=%s)",
+                    result.metrics.error_type, result.metrics.provider_name,
+                )
+                return None
+        except Exception as e:
+            logger.warning("LLM generation error: %s", e)
+            return None
+
+    def _direct_llm_call(self, user_text: str, system_instruction: str, context_entries: list) -> GenerateResult:
+        """Gateway call — clean user message + optional relevant context."""
+        import urllib.request, time, json
+        from core.agent.llm_providers.base import GenerateResult, LLMCallMetrics
+        start = time.time() * 1000
+        try:
+            clean_system = (
+                "You are a helpful AI assistant. Answer the user's question directly. "
+                "Use the provided context only if it is clearly relevant to the question."
+            )
+            messages = [{"role": "system", "content": clean_system}]
+            # Add minimal relevant context if available
+            if context_entries:
+                ctx_text = "\n".join(f"- {e}" for e in context_entries[:5])
+                messages.append({"role": "system", "content": f"Relevant context:\n{ctx_text}"})
+            messages.append({"role": "user", "content": user_text[:4000]})
+            data = json.dumps({
+                "model": "deepseek-v4-flash",
+                "messages": messages,
+                "max_tokens": 1000,
+            })
+            req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data.encode(),
+                {"Content-Type": "application/json", "Authorization": "Bearer not-needed"}
+            )
+            r = urllib.request.urlopen(req, timeout=30)
+            body = json.loads(r.read())
+            content = body["choices"][0]["message"].get("content", "")
+            latency = (time.time() * 1000) - start
+            return GenerateResult(
+                text=content,
+                metrics=LLMCallMetrics(
+                    provider_name="direct-gateway",
+                    latency_ms=latency,
+                    input_tokens=body.get("usage", {}).get("prompt_tokens", 0),
+                    output_tokens=body.get("usage", {}).get("completion_tokens", 0),
+                    success=True, model_id="deepseek-v4-flash",
+                )
+            )
+        except Exception as e:
+            latency = (time.time() * 1000) - start
+            return GenerateResult(
+                text="",
+                metrics=LLMCallMetrics(
+                    provider_name="direct-gateway",
+                    latency_ms=latency, success=False, error_type=str(e)[:50],
+                )
+            )
+
+    def _build_system_instruction(self) -> str:
+        """Build system prompt from world params and engine state."""
+        lines = [
+            "You are DialogMesh, a context-aware AI assistant.",
+            "You receive structured context from multiple knowledge domains.",
+            "Prioritize the provided context when it contains relevant information.",
+            "When context lacks information on a general topic (e.g. AST trees, compilation)",
+            "use your own training knowledge to answer directly.",
+            "Only say the context is insufficient for DialogMesh-specific concepts",
+            "(DomainSelector, BudgetAllocator, CrossDomainContextIR, etc.) —",
+            "the system will fetch more details. For those, use phrases like:",
+            "'需要了解 DomainSelector 的选择矩阵' to trigger subgraph expansion.",
+        ]
+        # Add engine state hints
+        if self._last_context and self._last_context.primary_domain():
+            lines.append(f"Primary context domain: {self._last_context.primary_domain()}")
+        return "\n".join(lines)
+
+    # ---- Multi-hop subgraph refinement ----
+
+    def _multi_hop_refine(self, event: EventIR, response: str, max_hops: int = 3) -> str:
+        """If LLM asks for more details, expand subgraph and re-call LLM.
+
+        Detects patterns like:
+          - "需要了解 [ConceptName] 的..."
+          - "请问 [ConceptName] 是什么..."
+          - "[ConceptName] 的具体细节..."
+        Then does BFS expansion for those concepts and re-calls the LLM.
+        """
+        if not response:
+            return response
+        if self._last_context is None:
+            return response
+
+        import re
+        prev_missing = set()
+        for hop in range(max_hops):
+            # Detect if we need a "zoom out" — LLM stuck in narrow cluster
+            overview_injected = False
+            if self._needs_overview(response, hop, max_hops):
+                logger.info("Multi-hop %d: injecting architecture overview", hop+1)
+                self._inject_overview()
+                overview_injected = True
+            
+            missing = self._detect_missing_concepts(response)
+            # Filter out concepts already expanded in previous hops
+            missing = [c for c in missing if c not in prev_missing]
+            prev_missing.update(missing)
+
+            # If overview was injected but no specific concepts to expand,
+            # re-call LLM with the enriched context
+            if overview_injected and not missing:
+                new_response = self._call_llm(event)
+                if new_response:
+                    response = new_response
+                continue
+            
+            if not missing:
+                break
+
+            logger.info("Multi-hop %d/%d: expanding for %s", hop+1, max_hops, missing)
+            self._expand_subgraph_for(missing)
+
+            # Re-call LLM with enriched context
+            new_response = self._call_llm(event)
+            if new_response:
+                response = new_response
+            else:
+                break
+
+        return response
+
+    def _detect_missing_concepts(self, response: str) -> list:
+        """Detect if LLM response indicates it needs more info about specific concepts.
+
+        Matches CamelCase identifiers that LLM explicitly asks about:
+          "需要了解 DomainSelector 的选择矩阵"
+          "BudgetAllocator 的具体分配策略是什么"
+          "请问 CrossDomainContextIR 的..."
+        """
+        import re
+        concepts = []
+        patterns = [
+            r'(?:需要|缺少|没有|不足).*?(?:了解|知道|信息|细节|内容).*?([A-Z][a-zA-Z]{2,}(?:[A-Z][a-zA-Z]+)*)',
+            r'(?:请问|询问|想知道).*?([A-Z][a-zA-Z]{2,}(?:[A-Z][a-zA-Z]+)*)',
+            r'([A-Z][a-zA-Z]{2,}(?:[A-Z][a-zA-Z]+)*)(?:的|是|指).*?(?:什么|怎么|如何|具体)',
+        ]
+        for p in patterns:
+            for m in re.finditer(p, response):
+                c = m.group(1)
+                if len(c) >= 4:  # skip short acronyms
+                    concepts.append(c)
+        return list(dict.fromkeys(concepts))  # deduplicate, preserve order
+
+    def _expand_subgraph_for(self, concepts: list) -> None:
+        """Expand subgraph for specific concepts and inject into context."""
+        if not self._last_context:
+            return
+        from core.agent.context.cross_domain_ir import IREntry
+
+        # Find graph source
+        graph_src = None
+        for s in getattr(self._context_assembler, '_sources', []):
+            if hasattr(s, '_graph') and getattr(getattr(s, '_graph', None), '_built', False):
+                graph_src = s
+                break
+
+        if graph_src is None:
+            return
+
+        for concept in concepts:
+            items = graph_src._graph.compile_context(concept, top_k=3, max_hops=1, max_nodes=10)
+            for item in items:
+                self._last_context.add_entry(
+                    domain="K",
+                    entry=IREntry(
+                        domain="K", type="subgraph_expand",
+                        content=item.text,
+                        confidence=item.relevance,
+                        estimated_tokens=len(item.text) // 4,
+                    ),
+                )
+        self._last_context.recalc_total()
+
+    def _needs_overview(self, response: str, hop: int, max_hops: int) -> bool:
+        """Detect if LLM needs the architecture overview.
+
+        Triggers when LLM asks for big-picture structure or appears stuck:
+        - "宏观" / "整体架构" / "全景" / "全貌"
+        - "架构图" / "层级关系" / "分层"
+        - Hop 2+ and same concepts repeatedly
+        """
+        overview_keywords = ['宏观', '整体架构', '全景', '全貌', '架构图', '层级关系',
+                            '分层', '系统蓝图', '完整的系统', 'L0', 'Layer']
+        resp_lower = response.lower()
+        if any(kw in resp_lower for kw in overview_keywords):
+            return True
+        # Hop 2+: if we're still expanding, the LLM likely needs the big picture
+        if hop >= 2:
+            return True
+        return False
+
+    def _inject_overview(self) -> None:
+        """Inject architecture overview from the merged design docs."""
+        if not self._last_context:
+            return
+        from core.agent.context.cross_domain_ir import IREntry
+        import os
+
+        # Try to load the architecture overview from merge docs
+        overview_paths = [
+            "docs/merge/DESIGN_00_OVERVIEW.md",
+            os.path.join(os.path.dirname(__file__),
+                        "..", "..", "..", "..", "docs", "merge", "DESIGN_00_OVERVIEW.md"),
+        ]
+        overview_text = ""
+        for p in overview_paths:
+            try:
+                if os.path.exists(p):
+                    with open(p, 'r', encoding='utf-8') as f:
+                        overview_text = f.read()
+                    break
+            except Exception:
+                continue
+
+        if overview_text:
+            # Extract key sections: architecture layers, data contracts, data flow
+            sections = []
+            for section_start in ['## 3. 架构分层全', '## 4. 核心数据契约', '## 5. 数据流全']:
+                idx = overview_text.find(section_start)
+                if idx >= 0:
+                    end = overview_text.find('\n## ', idx + len(section_start))
+                    if end < 0:
+                        end = min(idx + 3000, len(overview_text))
+                    sections.append(overview_text[idx:end].strip())
+
+            for i, section in enumerate(sections[:3]):
+                self._last_context.add_entry(
+                    domain="K",
+                    entry=IREntry(
+                        domain="K", type="architecture_overview",
+                        content=section[:1500],
+                        confidence=0.95,
+                        estimated_tokens=len(section[:1500]) // 4,
+                    ),
+                )
+            logger.info("Injected %d architecture overview sections", len(sections[:3]))
+        else:
+            # Fallback: inject minimal architecture hint
+            self._last_context.add_entry(
+                domain="K",
+                entry=IREntry(
+                    domain="K", type="architecture_hint",
+                    content=(
+                        "DialogMesh 架构分为 4 层: L0 PCR(前置路由) -> L1 IntentParser(意图解析) -> "
+                        "L1.5 PlanningSkill Layer(规划技能) → L2 对话管理与状态层 → L3 服务接口层。"
+                        "横切关注点: 认知画像系统、记忆系统、可观测性。"
+                        "核心数据契约: EventIR → ObservationBundle → HypothesisNode → KnowledgeNode → CrossDomainContextIR。"
+                    ),
+                ),
+            )
+
+    def _init_llm_provider(self) -> None:
+        """Initialize LLM provider from config or environment.
+
+        Priority:
+          1. Already injected via constructor (self._llm_provider)
+          2. runtime.yaml llm_provider config
+          3. Environment variable DIALOGMESH_LLM_PROVIDER
+          4. Default MockProvider (safe fallback)
+        """
+        if self._llm_provider is not None:
+            return
+
+        # Try config
+        llm_config = self._config.metadata.get("llm_provider") if hasattr(self._config, "metadata") else None
+        if llm_config:
+            try:
+                self._llm_provider = ProviderFactory.from_config(llm_config)
+                logger.info("LLM provider loaded from config: %s", self._llm_provider.name)
+                return
+            except Exception as e:
+                logger.warning("Failed to load LLM from config: %s", e)
+
+        # Try environment
+        env_provider = __import__("os").environ.get("DIALOGMESH_LLM_PROVIDER", "")
+        if env_provider:
+            try:
+                if env_provider == "openai":
+                    from core.agent.llm_providers.openai_provider import OpenAIProvider
+                    self._llm_provider = OpenAIProvider("env-openai", {
+                        "api_key": __import__("os").environ.get("OPENAI_API_KEY", ""),
+                        "model": __import__("os").environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                    })
+                elif env_provider == "local":
+                    from core.agent.llm_providers.local_provider import LocalProvider
+                    self._llm_provider = LocalProvider("env-local", {
+                        "backend": "ollama",
+                        "model_path": __import__("os").environ.get("OLLAMA_MODEL", "qwen2.5:1.5b"),
+                    })
+                elif env_provider == "mock":
+                    from core.agent.llm_providers.mock_provider import MockProvider
+                    self._llm_provider = MockProvider("env-mock", {"response_text": "[Mock response]"})
+                logger.info("LLM provider loaded from env: %s", env_provider)
+                return
+            except Exception as e:
+                logger.warning("Failed to load LLM from env: %s", e)
+
+        # Default: MockProvider (safe, no network)
+        from core.agent.llm_providers.mock_provider import MockProvider
+        self._llm_provider = MockProvider("default-mock", {
+            "response_text": "[DialogMesh v4: LLM not configured. Set DIALOGMESH_LLM_PROVIDER or runtime.yaml llm_provider.]",
+        })
+        logger.info("LLM provider defaulted to Mock (safe fallback)")
+
+    def _create_context_assembler(self) -> ContextAssembler:
+        """Build ContextAssembler with unified ContentIndex pipeline.
+
+        Design: ContentIndex → IndexSource → ContextAssembler.
+        ContentIndex wraps concept graph + document pool into a single
+        retrieval hub. IndexSource exposes it as a ContextSource for
+        the assembler. This replaces the previous scatter of
+        ObservationSource + ConceptGraphSource + DocumentSource.
+        """
+        sources = []
+        if self._observation_pool is not None:
+            # ContentIndex: unified retrieval hub
+            self._content_index = ContentIndex(self._observation_pool)
+            embedder = self._load_embedder()
+            if embedder:
+                self._content_index._graph._embedder = embedder
+            self._content_index.build()
+            sources.append(IndexSource(self._content_index))
+            logger.info("ContentIndex + IndexSource added (%s)", self._content_index.graph_stats)
+
+        sources.append(SkillSource())
+        sources.append(WorldSource())
+
+
+        # CausalPlanner integration (preferred)
+        if self._causal_planner is not None:
+            sources.append(CausalContextSource(self._causal_planner))
+            logger.info("CausalContextSource (via CausalPlanner) added to ContextAssembler")
+        # ---- Legacy fallback: direct v3_2 adapters ----
+        elif self._behavior_graph_adapter is not None and self._causal_substrate_adapter is not None:
+            try:
+                from core.agent.context.source import CausalSource, CausalSubstrateAdapter as CausalSubstrateInit
+                graph = self._behavior_graph_adapter.graph
+                if graph is not None:
+                    init = CausalSubstrateInit(graph)
+                    substrate = init.substrate
+                    if substrate is not None:
+                        sources.append(CausalSource(
+                            behavior_graph=graph,
+                            causal_substrate=substrate,
+                            max_chain_depth=5,
+                        ))
+                        logger.info("Legacy CausalSource added to ContextAssembler")
+            except Exception as e:
+                logger.warning("Legacy CausalSource init skipped: %s", e)
+
+        # ---- Topic + Behavior domain adapters (v4 design: C and B domains) ----
+        from core.agent.compiler.domain_adapters import TopicContextSource, BehaviorContextSource
+        if self._conversation_tracker is not None:
+            sources.append(TopicContextSource(self._conversation_tracker))
+            sources.append(BehaviorContextSource(self._conversation_tracker))
+            logger.info("TopicContextSource + BehaviorContextSource added")
+
+        # ---- TopicTree + DiscourseBlockTree: hierarchical conversation context ----
+        try:
+            from core.agent.topic_tree.manager import TopicTreeManager
+            from core.agent.discourse_block_tree.manager import DiscourseBlockTreeManager
+            from core.agent.context.topic_tree_source import TopicTreeContextSource
+            topic_tree = TopicTreeManager()
+            discourse = DiscourseBlockTreeManager()
+            self._topic_tree_source = TopicTreeContextSource(
+                topic_tree=topic_tree, discourse_manager=discourse,
+            )
+            sources.append(self._topic_tree_source)
+            logger.info("TopicTree + DiscourseBlockTree added to ContextAssembler")
+        except Exception as e:
+            logger.warning("TopicTree/DiscourseBlockTree init skipped: %s", e)
+            self._topic_tree_source = None
+
+        # ---- User Profile V2 (P domain) ----
+        from core.agent.compiler.profile_source import ProfileContextSource
+        from core.agent.v4.cognitive.models import CognitiveProfileV2
+        from core.agent.v4.cognitive.convergence import ConvergenceEngine, ProfileStore
+        profile_v2 = CognitiveProfileV2(user_id="default", session_id=getattr(self, '_session_id', '') or "")
+        self._convergence_engine = ConvergenceEngine(profile_v2.track_a)
+        self._profile_store = ProfileStore()
+        self._profile_store.open()
+        pcs = ProfileContextSource(profile_v2)
+        pcs.set_engine(self._convergence_engine)
+        sources.append(pcs)
+        self._cognitive_profile = profile_v2
+        logger.info("ProfileContextSource (CognitiveProfileV2) added")
+
+        # MemoryManager: extracts MemoryPoints from turns, feeds capacitor model
+        from core.agent.v4.cognitive.memory_extractor import MemoryManager
+        self._memory_manager = MemoryManager(profile_v2)
+        logger.info("MemoryManager initialized (capacitor model)")
+
+        return ContextAssembler(sources)
+
+    @staticmethod
+    def _load_embedder():
+        """Load semantic embedder (BGE-small-zh) if available. Returns None gracefully."""
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            enc = SemanticEncoder()
+            # Quick smoke test
+            _ = enc.encode("test")
+            logger.info("SemanticEncoder (BGE) loaded for Tier2 concept matching")
+            return enc
+        except Exception as e:
+            logger.info("SemanticEncoder not available (Tier2 disabled): %s", e)
+            return None
+
+    def set_observation_pool(self, pool) -> None:
+        """Replace the ObservationPool and rebuild ContextAssembler."""
+        self._observation_pool = pool
+        self._context_assembler = self._create_context_assembler()
+        # P1: Auto-build SemanticObject graph from pool + graph
+        self._auto_build_objects()
+        logger.info(
+            "ObservationPool replaced + ContextAssembler rebuilt — pool: %s, sources: %d",
+            pool.stats() if pool else "None",
+            self._context_assembler.source_count,
+        )
+
+    def set_content_provider(self, provider):
+        self._content_provider = provider
+        self._feed_extractions_to_substrate()
+
+    def _get_domain_boosts(self, event: EventIR) -> dict:
+        """Adjust domain weights based on event type."""
+        kind = event.kind if hasattr(event, "kind") else ""
+        if kind == "dialog.message":
+            return {"knowledge": 1.5}
+        elif kind in ("ui.drag", "ui.drop", "tool.call"):
+            return {"engineering": 2.0}
+        elif kind == "git.commit":
+            return {"engineering": 1.5, "world": 1.5}
+        return {}
+
+    @property
+    def last_context(self) -> Optional[CrossDomainContextIR]:
+        return self._last_context
+
+    @property
+    def last_llm_response(self) -> Optional[str]:
+        return self._last_llm_response
+
+    @property
+    def llm_metrics(self) -> Optional[Dict[str, Any]]:
+        return self._llm_metrics
+
+    def _run_path(self, path_name: str) -> List[AdapterResult]:
+        """Execute all modules in a named path, updating state machines and stats.
+
+        Args:
+            path_name: One of "async", "slow", "deep".
+
+        Returns:
+            List of AdapterResult from each module in the path.
+        """
+        if not self._running:
+            return []
+
+        path_config = self._config.get_path(path_name)
+        if not path_config:
+            return []
+
+        self._stats[path_name].trigger_count += 1
+        self._stats[path_name].last_triggered_at = time.time()
+
+        # Update path state machine: path -> RUNNING
+        if self._path_state_machine is not None:
+            self._path_state_machine.transition(path_name, PathState.RUNNING)
+
+        # Build context from ObservationPool (if available)
+        ctx = RuntimeContext()
+        if self._observation_pool is not None and path_name == "slow":
+            # Read all observations from pool (all domains, since last checkpoint)
+            raw_obs = self._observation_pool.get_by_domain("all")
+            ctx.observations = list(raw_obs) if raw_obs else []
+        elif path_name == "slow":
+            # Fallback: use event buffer
+            ctx.observations = list(self._event_buffer)
+
+        results = []
+        for module_config in path_config.modules:
+            adapter = self._adapters.get(module_config.name)
+            if adapter is None:
+                continue
+
+            start = time.time()
+            result = adapter.timed_execute(ctx)
+            elapsed = (time.time() - start) * 1000
+
+            stats = self._stats[path_name]
+            stats.total_latency_ms += elapsed
+            if result.ok:
+                stats.success_count += 1
+            else:
+                stats.failure_count += 1
+
+            results.append(result)
+
+        # Clear buffer after checkpoint
+        if path_name == "slow":
+            self._event_buffer.clear()
+            self._checkpoint_count += 1
+
+        # ---- Deep Path trigger evaluation ----
+        # Only evaluate after Slow Path produces successful results
+        if path_name == "slow" and results and any(r.ok for r in results):
+            if self._trigger_policy is not None:
+                # Gather stats for trigger evaluation
+                async_stats = self._stats.get("async")
+                success_count = async_stats.success_count if async_stats else 0
+                failure_count = async_stats.failure_count if async_stats else 0
+                total = success_count + failure_count
+                success_rate = success_count / total if total > 0 else 0.0
+
+                should_trigger_deep = self._trigger_policy.should_trigger(
+                    "deep",
+                    pattern_count=success_count,
+                    success_count=success_count,
+                    failure_count=failure_count,
+                )
+                if should_trigger_deep:
+                    logger.info(
+                        "Deep Path trigger condition met (pattern_count >= %d, "
+                        "success_rate >= %.2f) — triggering Deep Path",
+                        self._trigger_policy.get_trigger_config("deep").get("pattern_count", 5),
+                        self._trigger_policy.get_trigger_config("deep").get("success_rate", 0.9),
+                    )
+                    self.trigger_deep()
+                else:
+                    logger.debug(
+                        "Deep Path trigger conditions not met "
+                        "(pattern_count=%d, success_rate=%.2f)",
+                        success_count,
+                        success_rate,
+                    )
+
+        # ---- Bayesian Optimizer step ----
+        # Runs on configurable interval (from WorldParams or default 3)
+        if path_name == "slow" and self._optimizer and self._feedback_signal:
+            if self._optimizer_interval > 0 and self._checkpoint_count % self._optimizer_interval == 0:
+                try:
+                    reward = self._feedback_signal.composite_reward()
+                    # Collect current top params
+                    current_params = {
+                        "min_support": self._world_params.backbone_weights.get("min_support", 8),
+                        "community_resolution": self._world_params.community_resolution,
+                        "compiler_max_nodes": self._world_params.compiler_max_nodes,
+                    }
+                    suggestion = self._optimizer.suggest()
+                    if suggestion:
+                        logger.info("Optimizer suggests: %s", suggestion)
+                except Exception as e:
+                    logger.debug("Optimizer step skipped: %s", e)
+
+        # Update path state machine: path -> IDLE (or BACKLOGGED on failure)
+        if self._path_state_machine is not None:
+            path_success = any(r.ok for r in results) if results else False
+            if path_success:
+                self._path_state_machine.mark_success(path_name)
+            else:
+                self._path_state_machine.mark_failure(path_name)
+
+        return results
+
+    def _start_checkpoint_timer(self) -> None:
+        """Start a timer that triggers checkpoint periodically."""
+        slow_path = self._config.get_path("slow")
+        if not slow_path or not slow_path.modules:
+            return
+
+        for mc in slow_path.modules:
+            if mc.trigger == "checkpoint":
+                time_minutes = mc.trigger_config.get("time_minutes", 30)
+                interval_sec = time_minutes * 60
+                self._schedule_checkpoint_timer(interval_sec)
+                break
+
+    def _schedule_checkpoint_timer(self, interval_sec: float) -> None:
+        """Schedule the next checkpoint timer tick."""
+        if not self._running:
+            return
+
+        def _tick():
+            if not self._running:
+                return
+            elapsed_since_last = time.time() - self._last_event_time
+            if self._session_active and elapsed_since_last < interval_sec * 1.5:
+                logger.info("Time-based checkpoint triggered")
+                self.trigger_checkpoint()
+            self._schedule_checkpoint_timer(interval_sec)
+
+        self._checkpoint_timer = threading.Timer(interval_sec, _tick)
+        self._checkpoint_timer.daemon = True
+        self._checkpoint_timer.start()
+
+    def _cancel_checkpoint_timer(self) -> None:
+        if self._checkpoint_timer is not None:
+            self._checkpoint_timer.cancel()
+            self._checkpoint_timer = None
+
+    def _init_pcr(self):
+        try:
+            import os as _os
+            _os.environ.setdefault("PYTHONPATH", "")
+            from core.agent.pcr_router_v2 import PCRRouterV2
+            self._pcr_router = PCRRouterV2
+            logger.info('PCR V2 ready (zero hardcoded)')
+        except Exception as e:
+            logger.warning('PCR V2 init failed: %s, trying legacy', e)
+            try:
+                from core.agent.pcr.lifecycle import PCRLifecycleManager
+                self._pcr_lifecycle = PCRLifecycleManager()
+                self._pcr_lifecycle.initialize({})
+                self._pcr_router = self._pcr_lifecycle._primary
+            except Exception as e2:
+                logger.warning('Legacy PCR also failed: %s', e2)
+                self._pcr_router = None
+
+    def _init_planning(self):
+        try:
+            from core.agent.planner.planner import PlanningSkill
+            from core.agent.planner.skill_matcher import SkillMatcher
+            from core.agent.planner.skill_registry import SkillRegistry
+            self._planner = PlanningSkill(llm_provider=self._llm_provider)
+            self._skill_matcher = SkillMatcher()
+            # Load predefined blueprints
+            self._skill_registry = SkillRegistry()
+            try:
+                from core.agent.v3_common.blueprints import DEFAULT_BLUEPRINTS
+                for bp in DEFAULT_BLUEPRINTS:
+                    self._skill_registry.register(bp)
+            except: pass
+            logger.info('Planning: Planner + SkillMatcher + %d blueprints ready',
+                       len(getattr(self._skill_registry, '_skills', {})))
+        except Exception as e:
+            logger.warning('Planning init failed (degraded): %s', e)
+            self._planner = None
+            self._skill_matcher = None
+            self._skill_registry = None
+        try:
+            from core.agent.v4.cognitive_scheduler.scheduler import CognitiveScheduler
+            self._scheduler = CognitiveScheduler()
+            logger.info('CognitiveScheduler ready')
+        except Exception as e:
+            logger.warning('Scheduler init failed: %s', e)
+            self._scheduler = None
+
+    def _init_unified(self):
+        try:
+            from core.agent.v4.unified_parser import UnifiedParser
+            self._unified_parser = UnifiedParser(llm_provider=self._llm_provider)
+            logger.info('UnifiedParser ready (Intent+Association, 3-Tier)')
+        except Exception as e:
+            logger.warning('UnifiedParser init failed: %s', e)
+            self._unified_parser = None
+
+    def _init_router_v4(self):
+        try:
+            from core.agent.router.router_v4 import RouterV4
+            self._router_v4 = RouterV4()
+            logger.info('RouterV4 ready (StructuralFeatures+Y, BGE mood+Z, 6-zone)')
+        except Exception as e:
+            logger.warning('RouterV4 init failed: %s', e)
+            self._router_v4 = None
+
+    def _init_intent(self):
+        try:
+            from core.agent.v3_common.intent_parser import IntentParser
+            self._intent_parser = IntentParser(llm_provider=self._llm_provider)
+            logger.info('IntentParser ready')
+        except Exception as e:
+            logger.warning('IntentParser init failed (degraded): %s', e)
+            self._intent_parser = None
+
+    def _create_observation_pool(self):
+        """Create the ObservationPool for path-to-path data flow."""
+        try:
+            from core.agent.observation.pool import ObservationPool
+            return ObservationPool()
+        except Exception as e:
+            logger.warning("Cannot create ObservationPool: %s", e)
+            return None
+
+    def _instantiate_adapters(self) -> None:
+        for path_config in self._config.paths.values():
+            for module_config in path_config.modules:
+                adapter_cls = self._import_class(module_config.adapter)
+                if adapter_cls is None:
+                    logger.error("Cannot import adapter: %s", module_config.adapter)
+                    continue
+
+                merged_params = dict(self._world_params.__dict__)
+                merged_params.update(module_config.params)
+
+                try:
+                    adapter = adapter_cls(
+                        name=module_config.name,
+                        timeout_ms=module_config.timeout_ms,
+                        retry=module_config.retry,
+                        params=merged_params,
+                    )
+                    self._adapters[module_config.name] = adapter
+                except Exception as e:
+                    logger.error("Failed to instantiate adapter %s: %s", module_config.name, e)
+
+    @staticmethod
+    def _import_class(full_path: str):
+        try:
+            parts = full_path.rsplit(".", 1)
+            module = importlib.import_module(parts[0])
+            return getattr(module, parts[1])
+        except Exception:
+            return None
+
+    # ---- Accessors ----
+
+    @property
+    def stats(self) -> Dict[str, PathStats]:
+        return dict(self._stats)
+
+    @property
+    def config(self) -> RuntimeConfig:
+        return self._config
+
+    @property
+    def adapter_count(self) -> int:
+        return len(self._adapters)
+
+    @property
+    def observation_pool(self):
+        return self._observation_pool
+
+    @property
+    def scheduler(self) -> Optional[PathAwareScheduler]:
+        """Access the underlying PathAwareScheduler (for diagnostics)."""
+        return getattr(self, "_scheduler", None)
+
+    @property
+    def path_states(self) -> Optional[Dict[str, str]]:
+        """Return current state of all paths as a read-only snapshot.
+
+        Returns:
+            Mapping of path_name -> state string ("idle" | "running" | "backlogged").
+        """
+        if self._path_state_machine is None:
+            return None
+        return {
+            name: state.value
+            for name, state in self._path_state_machine.all_states().items()
+        }
+
+    @property
+    def event_counter(self) -> Optional[int]:
+        """Current event counter value, or None if not initialized."""
+        if self._event_counter is None:
+            return None
+        return self._event_counter.count
+
+    @property
+    def event_log(self) -> Optional[V4EventLog]:
+        """Access the underlying EventLog adapter (for diagnostics / replay)."""
+        return self._event_log
+
+    @property
+    def event_log_stats(self) -> Optional[Dict[str, int]]:
+        """Return EventLog stats, or None if not initialized."""
+        if self._event_log is None:
+            return None
+        return self._event_log.stats
+
+    def replay_unconsumed_events(self, limit: int = 100, auto_ack: bool = True) -> Dict[str, int]:
+        """Replay unconsumed events from EventLog back into the engine.
+
+        Args:
+            limit: Max events to replay.
+            auto_ack: If True, ack each event after successful on_event().
+
+        Returns:
+            {"replayed": int, "failed": int, "remaining": int}
+        """
+        if self._event_log is None or not self._event_log.is_open:
+            logger.warning("EventLog replay not available")
+            return {"replayed": 0, "failed": 0, "remaining": 0}
+
+        events = self._event_log.replay_unconsumed(limit=limit)
+        replayed = 0
+        failed = 0
+
+        for event in events:
+            try:
+                self.on_event(event)
+                replayed += 1
+                if auto_ack:
+                    self._event_log.ack_event(event.id)
+            except Exception as e:
+                logger.warning("Replay failed for %s: %s", event.id, e)
+                failed += 1
+
+        remaining = self._event_log.stats.get("unconsumed", 0)
+        logger.info(
+            "Replay complete: %d replayed, %d failed, %d remaining",
+            replayed, failed, remaining,
+        )
+        return {"replayed": replayed, "failed": failed, "remaining": remaining}
+
+    def _run_association_chain(self, event, text: str, pcr_output):
+        """Run L1→L2.5 association chain as cold path."""
+        # L1: extract modifiers
+        l1_modifiers = {}
+        try:
+            import stanza
+            doc = self._nlp(text) if hasattr(self, '_nlp') else None
+            if doc:
+                l1_modifiers, l1_core = self._l1_extractor.extract(doc)
+        except Exception:
+            pass
+        
+        # Build modifier context
+        modifier_ctx = " ".join(
+            f"[{m.role}]{m.text}→{m.head_word}"
+            for h, ml in l1_modifiers.items() for m in ml
+        )
+        
+        # L1.5: complete implicit entities (uses L2 entity clusters from substrate)
+        entity_clusters = {}
+        if hasattr(self, '_substrate'):
+            for eid, entity in self._substrate._entities.items():
+                entity_clusters.setdefault(entity.cluster_id or "default", {
+                    "entities": [], "last_seen": 0
+                })
+                entity_clusters[entity.cluster_id or "default"]["entities"].append(entity.name)
+        
+        l1_5_result = self._l1_5_completer.complete(
+            text=text, modifier_context=modifier_ctx,
+            entity_clusters=entity_clusters
+        )
+        
+        # L2.5: ingest evidence from L1.5 completion
+        if l1_5_result.candidates:
+            from core.agent.association.l2_5_belief import Evidence as BeliefEvidence
+            for c in l1_5_result.candidates[:3]:
+                ev = BeliefEvidence(
+                    entity_id=c.cluster_id,
+                    entity_name=c.entity,
+                    relation_type="co_occurrence",
+                    confidence=c.confidence,
+                    turn_num=getattr(event, 'turn', 1),
+                    source="l1_5_completer"
+                )
+                self._l2_5_accumulator.ingest(ev)
+        
+        logger.debug('Association chain L1→L2.5: modifiers=%d, completed=%s, belief_entropy=%.2f',
+                    len(l1_modifiers), l1_5_result.completed_text[:50] if l1_5_result.completed_text else 'none',
+                    self._l2_5_accumulator.bayesian.entropy(self._l2_5_accumulator.priors))
+
+    def cleanup_event_log(self) -> int:
+        """Delete old consumed events from EventLog."""
+        if self._event_log is None:
+            return 0
+        # ── Persist engine state after each event ──
+        try:
+            self._persist_state()
+        except Exception as _pe:
+            logger.debug("State persistence skipped: %s", _pe)
+
+        return self._event_log.cleanup()

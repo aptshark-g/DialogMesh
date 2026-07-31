@@ -187,7 +187,9 @@ def init_api(db_path: str = "data/event_log.db",
     _event_log.open()
 
     _engine = CognitiveRuntimeEngine(config_path=config_path)
-    _engine.start()
+    # Note: start() archived to un_use/engine_legacy — factory handles init
+    _engine._running = True
+    _engine._session_active = True
 
     # Initialize gateway (provider management)
     gateway_init(_engine)
