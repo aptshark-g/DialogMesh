@@ -793,3 +793,85 @@ Phase 2: AssociationChain 前置 (调整管线顺序,加代词解析)
 Phase 3: RelationGraph + 检索融合 (依赖 Phase 1+2 的输出)
 ```
 
+---
+
+## 十三、开源设计学习 — OpenWorker (Andrew Ng, ⭐11K, 2026-07)
+
+### 来源
+
+- Blog: https://www.yesmiracle.net/post/20260728-openworker-andrew-ng/
+- Code: https://github.com/andrewyng/openworker
+
+### 核心架构
+
+```
+Desktop App (Electron)
+  └── Engine (TurnEngine)
+        ├── Agent Registry
+        ├── Connector Registry (25+)
+        └── Provider (aisuite)
+```
+
+### 三个可借鉴模式
+
+**1. Connector 抽象 — 对标我们的 ToolRegistry**
+
+```
+OpenWorker:                          DialogMesh:
+  Connector.connect()                  Tool.connect()
+  Connector.execute()                  Tool.execute()
+  Connector.disconnect()               Tool.cleanup()
+  
+  差异: OpenWorker 的 Connector 有完整的生命周期管理
+        (连接→执行→清理), 我们的 Tool 只有 execute()
+        
+  可改进: ToolRegistry 加入 connect/disconnect 生命周期
+```
+
+**2. TurnEngine 异步循环 — 对标我们的 StateMachine**
+
+```
+OpenWorker:                          DialogMesh:
+  async TurnEngine.run()              on_event_sm() → run_pipeline()
+  per-turn context window              per-turn context assembly
+  agent → tool_call → result           8 phases: PCR→Intent→...→Persist
+  
+  差异: OpenWorker 用 async/await, 我们用同步管线
+        两种都可行, 但 async 更适合 I/O 密集场景
+        
+  可改进: StateMachine 的 LLM phase 可受益于 async
+```
+
+**3. 审批门控 — 对标我们的 Write Operations**
+
+```
+OpenWorker:                          DialogMesh:
+  ASK / ALWAYS_ALLOW / ALWAYS_DENY    discourse undo / corrections journal
+  每次写操作检查权限                    事后修复 (undo + journal)
+  
+  差异: OpenWorker 做前置检查, 我们做事后修复
+        
+  可改进: 为 discourse split/merge 加前置审批
+          不替代 undo, 而是减少需要 undo 的情况
+```
+
+### 对 DialogMesh 的影响评估
+
+| 模式 | 影响模块 | 优先级 | 原因 |
+|------|---------|:---:|------|
+| Connector 生命周期 | ToolRegistry | P2 | 当前 Tool 够用,接入不急 |
+| async TurnEngine | StateMachine | P2 | LLM call 可受益,但架构改动大 |
+| 审批门控 | Discourse write ops | P1 | `dm discourse undo` 已做,前置审批锦上添花 |
+
+### 不做的事情
+
+```
+❌ 不照搬 OpenWorker — 它是桌面应用,我们是认知引擎
+❌ 不改成 async — 当前同步管线满足需求
+❌ 不重写 ToolRegistry — Connector 模式太早引入会过度设计
+
+✅ 审批门控可以加到 Phase 1 (ChunkStore 写操作安全检查)
+✅ Connector 模式留到 ToolRegistry v2 (P2)
+```
+```
+
