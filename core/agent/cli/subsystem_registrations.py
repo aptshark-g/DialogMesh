@@ -52,7 +52,7 @@ _registry.register("credibility_eval", "core.agent.learning.credibility:Credibil
                    init_order=35, required=False, description="Content credibility evaluator")
 
 _registry.register("cascade_detector", "core.agent.event.closure:CascadeDetector",
-                   init_order=40, required=False,
+                   init_order=45, required=False, deps=["rate_guard"],
                    description="Cascade failure detector")
 
 _registry.register("hot_reloader", "core.agent.event.closure:HotReloader",
@@ -92,7 +92,7 @@ _registry.register("learning_sources", "core.agent.learning.sources:ArxivSource"
 
 # ── Tier 4: Guards + Bridges ──
 _registry.register("rate_guard", "core.agent.event.closure:RateGuard",
-                   init_order=40, required=False, description="Rate limiter guard")
+                   init_order=35, required=False, description="Rate limiter guard")
 
 _registry.register("capability_guard", "core.agent.event.closure:CapabilityGuard",
                    init_order=40, required=False, description="Capability/permission guard")
@@ -134,3 +134,9 @@ _registry.register("context_window", "core.agent.storage.context_window:ContextW
 
 _registry.register("write_gate", "core.agent.storage.context_window:WriteGate",
                    init_order=5, required=False, description="Pre-write approval gate")
+
+_registry.register("relation_graph", "core.agent.storage.relation_graph:RelationGraph",
+                   init_order=6, required=False, description="Entity-relationship graph (pandas+nx)")
+
+_registry.register("block_meta", "core.agent.storage.block_meta:BlockMetaStore",
+                   init_order=6, required=False, description="Block metadata store (clustering)")

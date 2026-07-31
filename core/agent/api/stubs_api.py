@@ -395,21 +395,71 @@ async def get_engineering_modules():
 # ═══════════════════════════════════════════════════════
 @router.get("/pipeline")
 async def get_pipeline_status():
-    return {}
+    """Pipeline status — StateMachine snapshot + recent phase results."""
+    e = _get_engine()
+    sm = getattr(e, '_state_machine', None)
+    if not sm:
+        return {"running": False, "phases": [], "current_phase": "idle"}
+    try:
+        snap = sm.snapshot()
+        return {
+            "running": True,
+            "current_phase": snap.phase.value if hasattr(snap.phase, 'value') else str(snap.phase),
+            "turn_count": snap.turn_count,
+            "confidence": snap.confidence,
+            "errors_in_phase": snap.errors_in_phase,
+            "total_latency_ms": round(snap.total_latency_ms, 1),
+            "chain_results": {k: str(v)[:80] for k, v in snap.chain_results.items()},
+            "phases": [p.value for p in sm._phase_handlers.keys()],
+        }
+    except Exception as ex:
+        return {"running": False, "error": str(ex)[:100], "phases": []}
 
 # ═══════════════════════════════════════════════════════
 # Extraction — V6ExtractionResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/extraction")
 async def get_extraction():
-    return {}
+    """Entity extraction status — EntityExtractor + HybridCoref stats."""
+    e = _get_engine()
+    result = {
+        "entities": [],
+        "coref_pairs": 0,
+        "stats": {"rounds": 0, "gleaned": 0},
+    }
+    if not e:
+        return result
+    ext = getattr(e, '_entity_extractor', None)
+    if ext:
+        s = ext.stats()
+        result["stats"] = {"rounds": s.get("total_rounds", 0), "gleaned": s.get("total_gleaned", 0)}
+    coref = getattr(e, '_hybrid_coref', None)
+    if coref:
+        t3 = coref.t3
+        result["coref_pairs"] = t3.metrics.total_pairs if hasattr(t3, 'metrics') else 0
+    return result
 
 # ═══════════════════════════════════════════════════════
 # Perspectives — V6PerspectivesResponse
 # ═══════════════════════════════════════════════════════
 @router.get("/perspectives")
 async def get_perspectives():
-    return {}
+    """Perspectives — context window stats + block references."""
+    e = _get_engine()
+    if not e:
+        return {"perspectives": [], "total": 0}
+    cw = getattr(e, '_context_window', None)
+    if not cw:
+        return {"perspectives": [], "total": 0}
+    s = cw.stats()
+    return {
+        "perspectives": [
+            {"type": "context_window", "items": s.get("items", 0),
+             "tokens": s.get("tokens", 0), "max_tokens": s.get("max_tokens", 4096),
+             "block_ids": s.get("block_ids", 0)}
+        ],
+        "total": 1,
+    }
 
 # ═══════════════════════════════════════════════════════
 # Parameters — V6ParameterItem wrapper
@@ -430,7 +480,37 @@ async def get_context():
 # ═══════════════════════════════════════════════════════
 @router.get("/subgraph")
 async def get_subgraph():
-    return {}
+    """Subgraph — RelationGraph entity clusters (V6SubgraphResponse schema)."""
+    e = _get_engine()
+    empty = {"perspective": "default", "domains": {}, "entries": [], "total_tokens": 0, "budget": 0}
+    if not e:
+        return empty
+    rg = getattr(e, '_relation_graph', None)
+    if not rg:
+        return empty
+    try:
+        s = rg.stats()
+        domains = {}
+        entries = []
+        # Group entities by type → domain counts
+        df = rg._backend.entities if hasattr(rg, '_backend') else None
+        if df is not None and len(df) > 0:
+            for etype, count in df["type"].value_counts().items():
+                domains[str(etype)] = int(count)
+            for _, row in df.head(20).iterrows():
+                entries.append({
+                    "domain": str(row.get("type", "entity")),
+                    "content": str(row.get("description", row.get("id", "")))[:100],
+                })
+        return {
+            "perspective": "relation_graph",
+            "domains": domains,
+            "entries": entries,
+            "total_tokens": s.get("entities", 0) + s.get("relationships", 0),
+            "budget": 5000,
+        }
+    except Exception as ex:
+        return {**empty, "error": str(ex)[:80]}
 
 @router.get("/subgraph/cache")
 async def get_subgraph_cache():
@@ -531,7 +611,50 @@ async def get_sessions():
 
 @router.get("/versions")
 async def get_versions():
-    return {}
+    """Versions — recent events as commits (V6VersionsResponse schema)."""
+    e = _get_engine()
+    empty = {"target": "6.0.0", "commits": []}
+    if not e:
+        return empty
+    el = getattr(e, '_event_log', None)
+    commits = []
+    if el and hasattr(el, 'get_recent_events'):
+        try:
+            events = el.get_recent_events(20)
+            for ev in events:
+                commits.append({
+                    "id": getattr(ev, 'id', f"ev_{len(commits)}")[:16],
+                    "ts": int(getattr(ev, 'timestamp', 0) or 0),
+                    "author": "engine",
+                    "before": "",
+                    "after": getattr(ev, 'kind', 'event')[:40],
+                    "reason": "pipeline",
+                    "verify": "pending",
+                })
+        except Exception:
+            pass
+    # Merge corrections journal (persisted state changes)
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    cf = os.path.join(root, "data", "corrections.json")
+    if os.path.exists(cf):
+        try:
+            with open(cf, encoding='utf-8') as f:
+                corrections = json.load(f)
+            for c in corrections[-10:]:
+                commits.append({
+                    "id": str(c.get("id", c.get("ts", "")))[:16],
+                    "ts": int(c.get("ts", 0)),
+                    "author": "correction",
+                    "before": str(c.get("before", ""))[:40],
+                    "after": str(c.get("after", ""))[:40],
+                    "reason": c.get("reason", c.get("type", "correction")),
+                    "verify": str(c.get("verify", "pending"))[:20],
+                })
+        except Exception:
+            pass
+    commits.sort(key=lambda c: c["ts"], reverse=True)
+    return {"target": "6.0.0", "commits": commits[:30]}
 
 @router.get("/versions/profile")
 async def get_versions_profile():
