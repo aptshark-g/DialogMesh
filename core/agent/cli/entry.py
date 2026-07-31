@@ -491,6 +491,11 @@ def _dispatch_p8(args):
         cmd_data_list, cmd_data_clean, cmd_registry,
     )
     from core.agent.cli.commands.p7_cmd import cmd_discourse_undo
+    from core.agent.cli.commands.storage_cmd import (
+        cmd_chunk_stats, cmd_chunk_search, cmd_chunk_add,
+        cmd_graph_entities, cmd_graph_traverse,
+        cmd_meta_show, cmd_meta_tag, cmd_meta_cluster,
+    )
     cmd = args.command
     op = getattr(args, "d_op", getattr(args, "k_op", getattr(args, "subcommand", "")))
     m = {
@@ -505,12 +510,17 @@ def _dispatch_p8(args):
         ("annotations-add",""): cmd_annotations_add, ("corrections-add",""): cmd_corrections_add,
         ("feedback-add",""): cmd_feedback_add, ("data","list"): cmd_data_list,
         ("data","clean"): cmd_data_clean, ("registry",""): cmd_registry,
-        ("chunk","stats"): None, ("chunk","search"): None, ("chunk","add"): None,
-        ("graph","entities"): None, ("graph","traverse"): None,
-        ("meta","show"): None, ("meta","tag"): None, ("meta","cluster"): None,
+        ("chunk","stats"): cmd_chunk_stats, ("chunk","search"): cmd_chunk_search,
+        ("chunk","add"): cmd_chunk_add,
+        ("rgraph","entities"): cmd_graph_entities, ("rgraph","traverse"): cmd_graph_traverse,
+        ("blockmeta","show"): cmd_meta_show, ("blockmeta","tag"): cmd_meta_tag,
+        ("blockmeta","cluster"): cmd_meta_cluster,
     }
     key = (cmd, op)
-    if key in m: m[key](args)
+    if key in m:
+        result = m[key](args)
+        if result:
+            print(result)
     else: print(f"P8 dispatch miss: {key}. Available: {list(m)}")
 
 
@@ -1184,7 +1194,8 @@ def main():
         _dispatch_task_ops(args)
     elif args.command in ("d", "obs-put", "knowledge", "event-log", "profile-set",
                           "rules-delete", "annotations-add", "corrections-add",
-                          "feedback-add", "registry"):
+                          "feedback-add", "registry",
+                          "chunk", "rgraph", "blockmeta"):
         _dispatch_p8(args)
     elif hasattr(args, "d_op"):
         _dispatch_p8(args)

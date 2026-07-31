@@ -150,10 +150,14 @@ def cmd_metrics_show(args):
 
 
 def register_cmds(subparsers):
-    # Rules
+    # Rules (single registration — show/add/stats/delete/search)
     p = subparsers.add_parser("rules", help="ABC rule operations")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    sp.add_parser("stats")
+    sp.add_parser("delete")
+    s_search = sp.add_parser("search")
+    s_search.add_argument("keyword")
     a = sp.add_parser("add")
     a.add_argument("antecedent")
     a.add_argument("behavior")
@@ -179,10 +183,11 @@ def register_cmds(subparsers):
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
 
-    # Inertia
+    # Inertia (single registration — show/patterns)
     p = subparsers.add_parser("inertia", help="Inertia weight graph")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    sp.add_parser("patterns")
 
     # Versions
     p = subparsers.add_parser("versions", help="Version control")
@@ -194,9 +199,5 @@ def register_cmds(subparsers):
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
 
-    # Add-ons: rules stats, inertia patterns
-    rs = subparsers.add_parser("rules").add_subparsers(dest="subcommand")
-    rs.add_parser("show"); rs.add_parser("add"); rs.add_parser("stats")
-    rs.add_parser("delete"); s2 = rs.add_parser("search"); s2.add_argument("keyword")
-    inert = subparsers.add_parser("inertia").add_subparsers(dest="subcommand")
-    inert.add_parser("show"); inert.add_parser("patterns")
+    # Add-ons: (inertia already registered above)
+    return

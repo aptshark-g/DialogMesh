@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 STATE_FILE = Path.home() / ".dialogmesh" / "state.json"
 
 _engine = None
+_ENGINE_SENTINEL = object()  # recursion breaker for get_engine()
 _provider = None
 _state: Dict[str, Any] = {}
 
@@ -46,14 +47,16 @@ def get_engine():
     global _engine
     if _engine is None or not getattr(_engine, '_running', False):
         # Avoid recursion — set _engine to a sentinel first
-        _engine = object()  # sentinel to break loops
+        _engine = _ENGINE_SENTINEL
         try:
             from core.agent.cli.engine import start_engine as _start
             _start()
         except Exception:
             _engine = None
             raise
-    return _engine if not isinstance(_engine, object) else None
+    if _engine is _ENGINE_SENTINEL or _engine is None:
+        return None
+    return _engine
 
 
 def get_pool_engine():

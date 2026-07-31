@@ -33,7 +33,7 @@ class Atom:
 class ChunkStore:
     """Semantic atom store with ChromaDB backend and hash-based dedup."""
 
-    def __init__(self, backend: str = "chromadb", collection: str = "discourse_atoms"):
+    def __init__(self, backend: str = "in_memory", collection: str = "discourse_atoms"):
         self._atoms: List[Atom] = []
         self._store = None
         self._backend = backend
@@ -106,10 +106,8 @@ class ChunkStore:
 
     def _try_chromadb_add(self, atom: Atom) -> None:
         """Best-effort ChromaDB write. Falls back to in-memory only."""
-        if self._store is None:
-            self._init_chromadb()
-        if self._store is None:
-            return
+        if self._backend != "chromadb" or self._store is None:
+            return  # in-memory mode — no model download
         try:
             self._store.add(
                 ids=[atom.atom_id],
