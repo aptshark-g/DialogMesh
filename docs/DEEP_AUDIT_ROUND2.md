@@ -36,6 +36,7 @@
 | Batch 2 | 84 | 0 | 5→0 | 5 存根已补真实实现 |
 | Batch 3 | 22 | 0 | 0 | inspect.py 遮蔽修复后全通 |
 | Batch 4 | 37 | 32 | 3→0 | 引擎启动态, 3 命令崩溃已修 |
+| Batch 5 | 5 | 4 | 1→0 | 存储层, 2 深层修复 (registry 缺注册 + 搜索) |
 
 ---
 
@@ -252,3 +253,37 @@ SKIP api_parameters, api_context, api_pipeline, api_metrics,
 - [ ] 未实现的函数体 (pass/NotImplementedError)
 - [ ] 假数据 (mock 返回但没标注)
 - [ ] 重复实现 (两处代码做同一件事)
+
+---
+
+## Batch 5 — 存储层深度核查
+
+### 关键发现
+
+**1. `build_dialogmesh_registry` 缺 Phase 1-3 注册 (已修复)**
+```
+start_engine() 用 build_dialogmesh_registry (registry.py)
+_create_engine_instance() 用 subsystem_registrations._registry
+→ 两个 registry 不同步 — Phase 1-3 组件只在后者
+→ CLI (start_engine 路径) 永远拿不到 _chunk_store 等
+
+修复: build_dialogmesh_registry 补 12 个注册 (Tier 9)
+验证: start_engine → 49/49 loaded, 12/12 组件 attach
+```
+
+**2. ChunkStore 搜索多词失败 (已修复)**
+```
+search("auth 认证") → 0 hits (旧: 整串 substring 检查)
+修复: 多词 OR 匹配 (任一 term 命中即返回)
+验证: auth→b1, 认证→b1, "token 刷新"→b2, 不存在→[]
+```
+
+### 验证结果
+
+```
+✅ ChunkStore      add/dedup/search 全工作 (in_memory, 3 atoms)
+✅ SemanticSplitter 切分 + non-chunkable (code block → 1 chunk, chunkable=False)
+✅ ContextWindow   5 items, 62 tokens, FIFO
+✅ RelationGraph   entities+rels, orphan 清理 (1 removed), BFS traverse
+✅ BlockMeta       tags/cluster/non-chunkable 元信息操作
+```
