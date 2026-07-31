@@ -38,19 +38,56 @@
 
 ---
 
-## Batch 2 — v6 API 深度核查
+## Batch 3 — CLI 深度核查
 
 ### 方法
 
-启动后端 (scripts/start_server.py) → 逐端点 curl → 检查返回真实数据
+逐命令调用 `python core/agent/cli/entry.py <cmd>` → 检查真实行为
+
+### 发现的问题 (全部修复)
+
+1. **get_engine() sentinel bug** — `isinstance(_engine, object)` 永远 True
+   → get_engine 永远返回 None → 所有 CLI 命令假阴性
+   → 修复: 模块级 `_ENGINE_SENTINEL` + identity 比较
+
+2. **5 个 dispatch 函数缺失** (entry.py 引用但模块无定义):
+   - p3_cmd: cmd_obs_reset
+   - p4_cmd: cmd_profile_export, cmd_profile_import
+   - knowledge_cmd: cmd_knowledge_stats, cmd_knowledge_search
+
+3. **argparse 冲突 (subparser 重复注册)**:
+   - rules ×2 (p5_cmd 内部) → 合并
+   - inertia ×2 (p5_cmd 内部) → 合并
+   - meta (p3_cmd vs storage_cmd) → storage 改名 blockmeta
+   - graph (entry main vs storage_cmd) → storage 改名 rgraph
+   - knowledge (entry main vs knowledge_cmd) → main 独占, knowledge_cmd skip
+
+4. **k_op vs subcommand 字段不匹配** — knowledge 用 k_op, dispatch 取 subcommand
+   → _dispatch_p3 兼容两者
+
+5. **cmd_metrics_show 无 None 防御** — 引擎未启动时崩溃
+   → 加 get_engine None 检查
 
 ### 结果
 
 ```
-总端点: 89 (v6_app 挂载 5 个 router + legacy v3/v4)
-✅ 200+真实数据: 66 (74%)
-⚠️ 200+空数据:   7
-❌ 错误:         16 (其中 14 个是 422 = 测试脚本没带 body, 非端点问题)
+25 条命令验证: 20 ✅ 5 ⚠️ 0 ❌
+
+✅ 真实数据: session list (真实4轮), annotations recent/export (33条),
+             session new, task show
+✅ 诚实空:   engine off 时 chunk/rgraph/blockmeta/metrics/knowledge
+             → 明确报 "not available"/"engine not running" (非存根)
+⚠️ 空 dict:  behavior/meta/assoc/profile show + engine chains
+             → 引擎未启动返回 {}, 可优化为显式 "not running"
+
+28 tests green
+```
+
+### 结论
+
+- "192 命令" 此前是虚数 — 多个 dispatch 指向不存在函数或 None
+- 本轮让 P3/P4/P5/P8/storage 命令真实可执行
+- 28 个 CLI 测试只覆盖入口, 不覆盖命令真实执行路径 → 需要本核查
 ```
 
 ### 真实数据端点 (示例)
