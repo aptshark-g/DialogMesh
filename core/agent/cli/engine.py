@@ -124,6 +124,24 @@ def _create_engine_instance(provider_config=None) -> CognitiveRuntimeEngine:
     engine._provider = None
     engine._provider_type = provider_config.get("type", "mock") if provider_config else "mock"
 
+    # ── Phase 1+2 backward-compat wiring ──
+    for name, cls_path in [
+        ("_chunk_store", "core.agent.storage.chunk_store:ChunkStore"),
+        ("_semantic_splitter", "core.agent.storage.semantic_splitter:SemanticSplitter"),
+        ("_context_window", "core.agent.storage.context_window:ContextWindow"),
+        ("_write_gate", "core.agent.storage.context_window:WriteGate"),
+        ("_pronoun_resolver", "core.agent.association.pronoun_resolver:StanzaCorefResolver"),
+        ("_context_qualifier", "core.agent.association.context_qualifier:ContextQualifier"),
+        ("_semantic_coref", "core.agent.association.semantic_coref:SemanticCorefScorer"),
+        ("_hybrid_coref", "core.agent.association.hybrid_coref:HybridCorefResolver"),
+    ]:
+        try:
+            mod_path, cls_name = cls_path.split(":")
+            mod = __import__(mod_path, fromlist=[cls_name])
+            setattr(engine, name, getattr(mod, cls_name)())
+        except Exception:
+            pass
+
     return engine
 
 def start_engine(provider_type: str = None, api_key: str = None,
