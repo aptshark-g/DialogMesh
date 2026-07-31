@@ -121,3 +121,16 @@ _registry.register("l2_5_belief", "core.agent.association.l2_5_belief:BeliefAccu
 _registry.register("l3_validator", "core.agent.association.l3_intent:MultiPerspectiveValidator",
                    init_order=25, required=False, deps=["l2_5_belief"],
                    description="L3: Multi-perspective validation")
+
+# ── Phase 1: Storage layer (ChunkStore, Splitter, Context) ──
+_registry.register("chunk_store", "core.agent.storage.chunk_store:ChunkStore",
+                   init_order=5, required=False, description="Semantic atom vector store (ChromaDB)")
+
+_registry.register("semantic_splitter", "core.agent.storage.semantic_splitter:SemanticSplitter",
+                   init_order=5, required=False, description="Recursive splitter with overlap + non-chunkable detection")
+
+_registry.register("context_window", "core.agent.storage.context_window:ContextWindow",
+                   init_order=5, required=False, description="Per-turn token budget context window")
+
+_registry.register("write_gate", "core.agent.storage.context_window:WriteGate",
+                   init_order=5, required=False, description="Pre-write approval gate")
