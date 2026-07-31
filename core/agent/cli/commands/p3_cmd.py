@@ -46,11 +46,17 @@ def cmd_meta_show(args):
 def cmd_meta_review(args):
     e = get_engine()
     mc = getattr(e, '_meta_cognition', None)
-    if mc and hasattr(mc, 'review'):
-        result = mc.review()
-        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
-    else:
+    if not mc:
         print(json.dumps({"error": "MetaCognition not available"}, ensure_ascii=False))
+        return
+    # Review requires a real item — without one, report queue state
+    queue = getattr(mc, '_queue', None) or getattr(mc, '_pending', None)
+    if queue is not None:
+        n = len(queue) if hasattr(queue, '__len__') else 0
+        print(json.dumps({"pending": n, "msg": "no item to review — feed events first"},
+                         ensure_ascii=False))
+        return
+    print(json.dumps({"error": "no review queue"}, ensure_ascii=False))
 
 
 def cmd_assoc_show(args):
@@ -107,9 +113,10 @@ def cmd_obs_stats(args):
 def cmd_obs_list(args):
     e = get_engine()
     pool = getattr(e, '_observation_pool', None)
-    if pool and hasattr(pool, 'get'):
-        items = pool.get() or []
-        print(json.dumps({"count": len(items) if isinstance(items, list) else 0}, ensure_ascii=False))
+    if pool and hasattr(pool, 'get_by_domain'):
+        items = pool.get_by_domain("all") or []
+        print(json.dumps({"count": len(items) if isinstance(items, list) else 0,
+                          "bundles": [str(b)[:40] for b in items[:10]]}, ensure_ascii=False))
     else:
         print(json.dumps({"count": 0}, ensure_ascii=False))
 
@@ -169,6 +176,9 @@ def cmd_behavior_history(args):
     bg = getattr(e, '_behavior_graph_adapter', None)
     if bg and hasattr(bg, 'get_recent_chain'):
         chain = bg.get_recent_chain() or []
+        # chain may be a single object or a list — normalize
+        if not isinstance(chain, (list, tuple)):
+            chain = [chain]
         print(json.dumps({"chain": [str(c)[:60] for c in chain[-20:]]}, ensure_ascii=False))
     else:
         print(json.dumps({"chain": []}, ensure_ascii=False))
