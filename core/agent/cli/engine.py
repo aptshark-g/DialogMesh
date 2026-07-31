@@ -45,9 +45,15 @@ _state = _load_state()
 def get_engine():
     global _engine
     if _engine is None or not getattr(_engine, '_running', False):
-        # Auto-start with saved config
-        result = start_engine()
-    return _engine
+        # Avoid recursion — set _engine to a sentinel first
+        _engine = object()  # sentinel to break loops
+        try:
+            from core.agent.cli.engine import start_engine as _start
+            _start()
+        except Exception:
+            _engine = None
+            raise
+    return _engine if not isinstance(_engine, object) else None
 
 
 def get_pool_engine():
