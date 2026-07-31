@@ -263,7 +263,62 @@ DialogMesh v6 是一个野心勃勃的项目。
 
 ---
 
-## 十、归档策略 — un_use/ (不删除,安全退回)
+## 十、归档策略 — un_use/
+
+
+---
+
+## 十-B、注册表设计债 — SubsystemRegistry 从未接入
+
+### 状态
+
+```
+SubsystemRegistry: 0 registered entries
+代码库子系统级类: 295 个
+引擎工厂: 手动 from X import Y; self._y = Y() (绕过 registry)
+
+根因: 
+  SubsystemRegistry 在 cli/registry.py 设计好了(拓扑排序、依赖注入)
+  但 engine.py 的 _create_engine_instance() 从未调用 registry
+  所有对象都是手动 import + 构造
+
+  这个设计是对的——registry 不应该被滥用。
+  不是每个类都需要注册,只有"跨模块依赖的核心子系统"才需要。
+```
+
+### 当前 DI 方式 (保留)
+
+```python
+# cli/engine.py — _create_engine_instance()
+_engine._ocean_analyst = create_ocean_analyst()   # 手动构造
+_engine._meta_cognition = MetaCognition()           # 手动构造
+_engine._mind = Mind()                              # 手动构造
+# ... 17 个对象,全部手动
+```
+
+### 何时接入 registry
+
+```
+P2 — 当子系统超过 30 个且跨模块依赖复杂时:
+  1. 将 17 个核心对象注册到 registry
+  2. factory 改为 registry.resolve() 链
+  3. 测试改为 get_engine() 读取
+
+当前手动 DI 对 17 个对象足够,registry 过度设计不必要。
+```
+
+### 历史上下文
+
+```
+SubsystemRegistry 在 v4 时期设计(当时有 40+ 子系统需要拓扑排序)
+v6 精简到 17 个核心对象后,手动 DI 更简单
+保留 registry.py 但不强制使用——设计 doc 标注即可
+```
+
+
+---
+
+## 十、归档策略 — un_use/ (续) (不删除,安全退回)
 
 ### 原则
 
@@ -356,3 +411,96 @@ git show <commit>:engine.py → 完整恢复
 ### 回退
 
 任何阶段失败: `git checkout engine.py api.py` → 恢复 → 重新开始
+
+
+---
+
+## 十二、持久化存储架构设计 (2026-07-31 讨论)
+
+### 当前问题
+
+```
+GranularityRegulator: 5 regex patterns 纯结构切分
+  → 代码块/JSON/结构化数据被强行切碎
+  → 无 "non-chunkable" 标记
+
+AssociationChain: 事后处理已切好的块
+  → 无法否决切分决策
+  → 无法说"这块不该切"
+
+检索: ContextAssembly 拿整块对话
+  → 子图自己过滤,无索引加速
+```
+
+### 双层存储方案 (借鉴 Graph RAG)
+
+```
+写入层:
+
+  raw conversation
+        │
+   ┌────┼────┐
+   ▼    ▼    ▼
+  DiscourseTree    ChunkStore (vector)    RelationGraph (association)
+  (完整块+摘要)     (语义切分原子)         (实体+关系)
+   block_id          atom_id              entity_id
+   summary           embedding            edge
+   parent/child      chunkable: T/F       strength
+   heat              block_id ←──→        block_id
+
+  非摘要化标记:
+    code_block / exact_quote / config → chunkable=False
+    → 不入 ChunkStore
+    → 仅存 block_id 引用
+    → 检索时直接返回 block_id → DiscourseTree 取全文
+
+检索层:
+
+  1. 向量搜索 → top-k atoms (细粒度,快速定位)
+  2. atom.block_id → 图遍历找关联 entities
+  3. entity → 找到所有关联 atoms (展开)
+  4. block_id → DiscourseTree.get_context(block_id)
+     → 返回完整对话块 + 关联摘要 (粗粒度,保结构)
+
+  子图消费:
+    - 需要摘要 → 拿 DiscourseTree block summary
+    - 需要扩展 → 拿 ChunkStore atoms + RelationGraph edges
+    - 需要全文 → 拿 DiscourseTree block raw text
+```
+
+### 元信息驱动的聚类压缩
+
+**不重新切分内容——调整元信息。**
+
+```python
+class BlockMeta:
+    block_id: str
+    summary: str          # 摘要 (可调整)
+    tags: List[str]       # 标签 (可调整)
+    priority: float       # 优先级 (可调整)
+    chunkable: bool       # 是否可切分 (可调整)
+    cluster_id: str       # 聚类归属 (可调整)
+    # ← 内容不变,只有这些元信息可调整
+
+# 聚类压缩流程:
+clusters = group_by_cluster_id(blocks)       # 按 cluster_id 分组
+for cluster in clusters:
+    summary = llm_summarize(cluster)          # 只读元信息
+    update_meta(cluster, summary=summary)     # 写入元信息
+    # ← 不碰原始 block 内容
+```
+
+**优势:**
+- 每次调整只改元信息 (bytes,不是 KB)
+- 内容不可变 = 安全 (聚类错误可随时回退)
+- 多一次跳转 (元信息 → 内容, ~0.1ms) — 可忽略
+
+**代价:**
+- 元信息量表会增长 (~100B/block, 10K blocks = 1MB)
+- 需要同步机制 (HotStore 缓存 + disk 持久化)
+
+**设计对应已有基础设施:**
+- HotStore → 元信息内存缓存
+- ColdStore → 元信息 JSON 持久化
+- BlockTree → 内容不可变存储
+
