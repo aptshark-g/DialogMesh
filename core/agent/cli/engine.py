@@ -134,6 +134,7 @@ def _create_engine_instance(provider_config=None) -> CognitiveRuntimeEngine:
         ("_context_qualifier", "core.agent.association.context_qualifier:ContextQualifier"),
         ("_semantic_coref", "core.agent.association.semantic_coref:SemanticCorefScorer"),
         ("_hybrid_coref", "core.agent.association.hybrid_coref:HybridCorefResolver"),
+        ("_entity_extractor", "core.agent.association.entity_extractor:EntityExtractor"),
     ]:
         try:
             mod_path, cls_name = cls_path.split(":")
