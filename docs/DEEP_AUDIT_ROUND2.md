@@ -127,7 +127,26 @@ API 基础可用, 5 个存根已补
 
 前端绑定判断: ✅ 可绑定 (5 存根已补真实实现)
   剩余待查: /v6/providers active 空 (gateway 配置)
-            14 个 POST 422 (测试方法, 非端点问题)
+          14 个 POST 422 (测试方法, 非端点问题)
+
+### 新发现 (2026-08-01 补充)
+
+**10 个 api_* 模块死引用** — `_try_include` 尝试加载但不存在:
+```
+SKIP api_parameters, api_context, api_pipeline, api_metrics,
+     api_persistence, api_meta, api_abc, api_mind,
+     api_versions, api_subgraph
+```
+→ 这些路径设计时计划拆分, 但从未创建模块
+→ 实际由 stubs_api.py (prefix /v6) 提供全部端点
+→ 真实存在的 api_* 模块: 仅 4 个 (annotate/event_log/gateway/viz_edit)
+→ 不是 bug, 但说明"路由分层"设计未落地 — 记录为 P2 设计债
+
+**RelationGraph 纯 Python 化** — 移除 pandas 硬依赖:
+- list[dict] 替代 DataFrame (entities/relationships)
+- pandas → 可选 (to_dataframe() 视图)
+- networkx → 可选 (try_build_graph())
+- 修复 /v6/subgraph 端点适配 list backend
 ```
 
 ---
