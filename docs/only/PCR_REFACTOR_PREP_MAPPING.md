@@ -2,6 +2,7 @@
 
 > 2026-08-01 · 依据: DESIGN_PCR_DRAFT.md §14 拍板决策 + 当前代码核查
 > 目的: 改造前先扯清"改哪些文件才有效"
+> 核查注记: 2026-08-01 复核 — 已修正 2 处遗漏 (见 §三.0)
 
 ---
 
@@ -51,6 +52,30 @@
 ---
 
 ## 三、有效修改文件清单（按优先级）
+
+### 三.0 核查修正 (2026-08-01 复核)
+
+**遗漏 1 — 双 registry 问题 (关键!)**
+```
+引擎有两个创建路径, 各用不同 registry:
+  A. start_engine()           → build_dialogmesh_registry (registry.py:260)
+     → _pcr_factory → PCRLLM (挂错实现)
+  B. _create_engine_instance() → subsystem_registrations._registry
+     → 完全没有 pcr 注册 → _pcr_router = None (PCR 不执行)
+
+改造 _pcr_factory 时两处都要改:
+  A: registry.py:260    _pcr_factory → PCRRouterV2
+  B: subsystem_registrations.py  补注册 pcr_router (factory 或类)
+否则只改 A, B 路径仍无 PCR — handlers 仍走 fallback MIXED
+```
+
+**遗漏 2 — RuleBasedPCR 类型错配**
+```
+RuleBasedPCR.evaluate(query: str) — 签名是 str
+旧契约消费方传 PCRInput_v1 对象 (gates.py:190 / cognitive_tools.py:105)
+→ 类型不匹配: str vs PCRInput_v1
+→ 不只是"适配", 是"类型错配" — 旧消费方即使 import 成功也拿不到预期
+```
 
 ### P0 — 接线修复 (让 PCR 首次真正进入生产路径)
 
