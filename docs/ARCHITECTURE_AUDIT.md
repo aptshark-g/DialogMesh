@@ -981,7 +981,7 @@ Phase 3 — 图存储:
   ✅ BlockMeta (metadata-driven clustering)
 
 已知 gap:
-  ❌ gleaning 迭代精炼 — 嵌入 AssociationChain L1.5
+  ✅ gleaning 迭代精炼 — EntityExtractor (gleaning loop + rule-based fallback)
   ⚠️ 模型未下载 — stanza zh + sentence-transformers
   ⚠️ 性能未实测 — 预估 1-2s/turn
 ```
