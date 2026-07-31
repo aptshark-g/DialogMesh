@@ -945,6 +945,33 @@ ContextWindow(max_tokens=4096):
 纳入 Phase 1: StateMachine LLM phase 加入 token budget
 ```
 
+### 当前实现状态 (2026-08-01 审计)
+
+```
+Phase 1 (存储层):  4/6  实现
+Phase 2 (前置富化): 0/5  零代码
+Phase 3 (图存储):   0/4  零代码
+
+Phase 2 审计 — 5个需求全部未实现:
+
+  1. L1 代词→实体映射 ❌
+     association/l1_modifier.py: 只提取形容词短语,无 pronoun 处理
+     _extract_concepts (engine.py): 只匹配 [A-Z] 英文,无中文
+
+  2. L1 上下文窗口 ⚠️
+     _last_concept 只存最后1个 entity,无 N 轮窗口
+
+  3. L2 depends_on 注入 ❌
+     l2_5_belief.py: depends_on 是硬编码静态 dict,不是 LLM 动态输出
+
+  4. AssociationChain 前置 ❌
+     handlers.py: handle_assoc 在 PERSIST 之后运行 (事后处理)
+
+  5. 中文实体识别 ❌
+     当前只有 re.findall(r'[A-Z][a-z]+|[A-Z]{2,}', text) — 英文 only
+```
+```
+
 ### Phase 1 追加内容
 
 | 来源 | 加到哪 | 成本 |
