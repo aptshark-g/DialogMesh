@@ -90,9 +90,32 @@
 ### 简化检测
 
 - [x] /v6/abc: 曾有字段错位 (修复)
-- [ ] /v6/pipeline, /v6/extraction, /v6/perspectives, /v6/subgraph: 返回 {} — 待查是否纯存根
-- [ ] /v6/providers: active 全空 — 待查 gateway 初始化
+- [x] **5 个纯存根端点 (实锤)** — `return {}`:
+  - /v6/pipeline → `return {}` (注释 V6PipelineResponse, 模型不存在)
+  - /v6/extraction → `return {}`
+  - /v6/perspectives → `return {}`
+  - /v6/subgraph → `return {}`
+  - /v6/versions → `return {}`
+  → 这些不是"真实空数据"——是根本没有实现。前端调用会收到 `{}`。
+  → 修复策略: 需要设计文档定义响应结构 (V6*Response 类不存在), 再接入真实数据源。
+
+- [ ] /v6/providers: active 全空 — 待查 gateway 初始化 (api_gateway 模块存在?)
 - [ ] 14 个 POST 422 — 测试方法问题, 非端点问题 (已确认 schema)
+- [x] /v6/parameters, /v6/context: stubs 是回退, 真实实现在 pipeline_api.py ✅
+
+### Batch 2 结论
+
+```
+66/89 真实数据 (74%)
+5 个纯存根 (需要设计文档 + 真实实现)
++18 端点来自真实 router 模块
+API 基础可用, 但存根端点不能让前端绑定
+
+前端绑定判断: ⚠️ 尚不可绑定
+  - 5 个存根端点返回 {} — 前端会拿到空
+  - 需要先补 V6*Response 模型 + 真实数据源
+  - 否则前端绑定后无法展示 pipeline/extraction/perspectives
+```
 
 ---
 
