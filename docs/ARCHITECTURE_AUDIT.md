@@ -543,3 +543,58 @@ def should_process(text: str) -> bool:
     return True
 ```
 
+### AssociationChain 重新定位 — 前置富化器 (2026-07-31 讨论)
+
+**问题:** 当前 AssociationChain 在切分后运行,只能修碎片内部,无法恢复切分丢失的上下文。
+
+**修正:** AssociationChain 作为 GranularityRegulator 的**前置处理器**——在切分前完成代词解析和上下文限定。
+
+```
+当前 (错误):
+  raw → cut() → fragments → extract()
+        ↑ 代词未解析          ↑ 事后补
+
+修正:
+  raw → resolve() → enriched → cut() → self-contained chunks
+        ↑ L1 代词→对象  ↑ L2 加限定
+```
+
+**变换示例:**
+
+```
+输入: "auth模块要重构。它用JWT。token过期后需要刷新。"
+
+阶段1 — 代词解析 (L1 Modifier):
+  → "auth模块要重构。[auth模块]用JWT。[JWT token]过期后需要刷新。"
+
+阶段2 — 上下文限定 (L2 Belief):
+  → "auth模块要重构。[auth模块,依赖JWT]用JWT。[JWT token,需刷新机制]过期后需要刷新。"
+
+阶段3 — 切分:
+  chunk_1: "auth模块要重构。[auth模块,依赖JWT]用JWT。"
+  chunk_2: "[JWT token,需刷新机制]过期后需要刷新。"
+  → 每个 chunk 自包含,不丢信息
+```
+
+**对应已有基础设施:**
+
+```
+L1 ModifierExtractor → resolve_pronouns(text, context_window)
+  - 已有: _last_concept + _conversation_tracker 跟踪上下文
+  - 需加: pronoun→entity 映射表
+
+L2 BeliefAccumulator → qualify(text, belief_graph)
+  - 已有: evidence ingestion + confidence
+  - 需加: dependency 注入 [entity, depends_on=X, confidence=Y%]
+
+L3 Validator → cross_check(enriched_text, context)
+  - 已有: multi-perspective validation
+  - 需加: 限定质量检查 (过度限定? 限定正确?)
+```
+
+**收益:**
+- 切分不丢信息 (代词已还原)
+- chunk 可独立消费 (不需原始上下文)
+- 聚类压缩直接用丰富文本 (不需回查)
+- 非摘要化内容不受影响 (chunkable=False 跳过)
+
