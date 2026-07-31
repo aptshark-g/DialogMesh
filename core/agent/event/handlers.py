@@ -262,14 +262,39 @@ def register_all_handlers(engine, tracer=None):
         return results
     sm.register_handler(PipelinePhase.PERSIST, lambda ctx: _trace("persist", handle_persist, ctx))
 
-    # ── ASSOCIATION — L1 + L2.5 chain ──
+    # ── ASSOCIATION — Phase 2: Pre-processor (resolve → qualify) ──
     def handle_association(ctx):
+        """Pre-processor: pronoun resolution + context qualification before chunking.
+        
+        Pipeline: raw → resolve() → enriched → qualify() → text forwarded to Discourse.
+        """
         text = ctx.get("text", "")
-        l1 = getattr(engine, '_l1_modifier', None)
-        l2 = getattr(engine, '_l2_5_belief', None)
+        if not text:
+            return {}
+        
+        resolver = getattr(engine, '_pronoun_resolver', None)
+        qualifier = getattr(engine, '_context_qualifier', None)
         results = {}
-        if l1 and text and hasattr(l1, 'extract'):
-            try:
+        
+        # Step 1: Resolve pronouns
+        if resolver and text:
+            entities = engine._extract_concepts_from_text(text) if hasattr(engine, '_extract_concepts_from_text') else []
+            enriched = resolver.resolve(text, entities)
+            ctx["enriched_text"] = enriched
+            results["pronouns_resolved"] = enriched != text
+            results["entities_tracked"] = len(resolver.recent_entities)
+        
+        # Step 2: Qualify with dependencies
+        if qualifier and resolver:
+            enriched_text = ctx.get("enriched_text", text)
+            recent_ents = resolver.recent_entities if resolver else []
+            qualified = qualifier.qualify(enriched_text, recent_ents)
+            ctx["qualified_text"] = qualified
+            results["deps_injected"] = qualified != enriched_text
+        
+        return results
+    sm.register_handler(PipelinePhase.ASSOCIATION, lambda ctx: _trace("association", handle_association, ctx))
+    # Register ASSOCIATION in state transitions if not present
                 mods = l1.extract(text)
                 results["modifiers"] = len(mods) if mods else 0
             except: pass
@@ -289,7 +314,6 @@ def register_all_handlers(engine, tracer=None):
                 pass
         return results
     sm.register_handler(PipelinePhase.ASSOCIATION, lambda ctx: _trace("association", handle_association, ctx))
-
     # Register ASSOCIATION in state transitions if not present
     from core.agent.event.statemachine import STATE_TRANSITIONS
     if PipelinePhase.ASSOCIATION not in STATE_TRANSITIONS.get(PipelinePhase.META, {}):
