@@ -505,6 +505,9 @@ def _dispatch_p8(args):
         ("annotations-add",""): cmd_annotations_add, ("corrections-add",""): cmd_corrections_add,
         ("feedback-add",""): cmd_feedback_add, ("data","list"): cmd_data_list,
         ("data","clean"): cmd_data_clean, ("registry",""): cmd_registry,
+        ("chunk","stats"): None, ("chunk","search"): None, ("chunk","add"): None,
+        ("graph","entities"): None, ("graph","traverse"): None,
+        ("meta","show"): None, ("meta","tag"): None, ("meta","cluster"): None,
     }
     key = (cmd, op)
     if key in m: m[key](args)
