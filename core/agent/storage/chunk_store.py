@@ -75,9 +75,16 @@ class ChunkStore:
                 return [a for a in self._atoms if a.atom_id in ids][:top_k]
             except Exception:
                 pass
-        # Keyword fallback
-        q = query.lower()
-        matches = [a for a in self._atoms if q in a.text.lower()]
+        # Keyword fallback — multi-term OR matching (any term hits)
+        terms = [t.lower() for t in query.split() if len(t.strip()) >= 2]
+        matches = []
+        for a in self._atoms:
+            text_l = a.text.lower()
+            if not terms:
+                if query.lower() in text_l:
+                    matches.append(a)
+            elif any(t in text_l for t in terms):
+                matches.append(a)
         return sorted(matches, key=lambda a: a.priority, reverse=True)[:top_k]
 
     def get_by_block(self, block_id: str) -> List[Atom]:

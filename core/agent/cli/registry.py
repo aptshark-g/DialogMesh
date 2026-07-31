@@ -73,6 +73,46 @@ class SubsystemRegistry:
         mod = importlib.import_module(mod_path)
         return getattr(mod, attr)
 
+    def _instantiate_with_deps(self, cls, name):
+        """Instantiate class, injecting already-resolved deps by param name."""
+        import inspect
+
+        try:
+            sig = inspect.signature(cls.__init__)
+        except (ValueError, TypeError):
+            return cls()
+
+        if all(
+            p.default is not inspect.Parameter.empty
+            for p in sig.parameters.values()
+            if p.name != "self"
+        ):
+            return cls()  # all params have defaults
+
+        injectable = {
+            dep: inst for dep, inst in self._instances.items()
+            if inst is not None
+        }
+        kwargs = {}
+        for pname, p in sig.parameters.items():
+            if pname == "self" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+                continue
+            if pname in injectable:
+                kwargs[pname] = injectable[pname]
+            elif pname in ("llm_provider", "provider") and "llm_provider" in injectable:
+                kwargs[pname] = injectable["llm_provider"]
+            elif pname in ("rate_guard", "guard") and "rate_guard" in injectable:
+                kwargs[pname] = injectable["rate_guard"]
+            elif pname == "engine" and "engine" in injectable:
+                kwargs[pname] = injectable["engine"]
+
+        if kwargs:
+            try:
+                return cls(**kwargs)
+            except TypeError:
+                pass
+        return cls()
+
     def resolve_one(self, name: str) -> LoadResult:
         """Resolve a single subsystem. Returns LoadResult."""
         t0 = time.time()
@@ -95,9 +135,9 @@ class SubsystemRegistry:
             else:
                 cls_or_fn = self._import_from_path(d.path)
                 if isinstance(cls_or_fn, type):
-                    instance = cls_or_fn()
+                    instance = self._instantiate_with_deps(cls_or_fn, name)
                 elif callable(cls_or_fn):
-                    instance = cls_or_fn
+                    instance = cls_or_fn()
                 else:
                     instance = cls_or_fn
             self._instances[name] = instance
@@ -331,5 +371,31 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
     r.register("semantic_pipeline", "", required=False, init_order=108,
                description="SemanticObjectPipeline (entity extraction + LLM classification)",
                deps=[], factory=lambda: __import__("core.agent.engine.semantic_pipeline", fromlist=["SemanticObjectPipeline"]).SemanticObjectPipeline())
+
+    # ── Tier 9: Phase 1-3 storage + coref (init_order 110-130) ──
+    r.register("chunk_store", "core.agent.storage.chunk_store:ChunkStore",
+               required=False, init_order=110, description="Semantic atom vector store")
+    r.register("semantic_splitter", "core.agent.storage.semantic_splitter:SemanticSplitter",
+               required=False, init_order=110, description="Recursive splitter with overlap")
+    r.register("context_window", "core.agent.storage.context_window:ContextWindow",
+               required=False, init_order=110, description="Per-turn token budget context")
+    r.register("write_gate", "core.agent.storage.context_window:WriteGate",
+               required=False, init_order=110, description="Pre-write approval gate")
+    r.register("relation_graph", "core.agent.storage.relation_graph:RelationGraph",
+               required=False, init_order=112, description="Entity-relationship graph")
+    r.register("block_meta", "core.agent.storage.block_meta:BlockMetaStore",
+               required=False, init_order=112, description="Block metadata store")
+    r.register("pronoun_resolver", "core.agent.association.pronoun_resolver:StanzaCorefResolver",
+               required=False, init_order=114, description="Coreference resolution")
+    r.register("context_qualifier", "core.agent.association.context_qualifier:ContextQualifier",
+               required=False, init_order=114, description="Dependency injection")
+    r.register("semantic_coref", "core.agent.association.semantic_coref:SemanticCorefScorer",
+               required=False, init_order=114, description="Embedding coref scoring")
+    r.register("llm_coref_verifier", "core.agent.association.llm_coref_verifier:LLMCorefVerifier",
+               required=False, init_order=114, description="LLM posterior verification")
+    r.register("hybrid_coref", "core.agent.association.hybrid_coref:HybridCorefResolver",
+               required=False, init_order=116, description="3-tier coref fusion")
+    r.register("entity_extractor", "core.agent.association.entity_extractor:EntityExtractor",
+               required=False, init_order=116, description="Gleaning entity extraction")
 
     return r
