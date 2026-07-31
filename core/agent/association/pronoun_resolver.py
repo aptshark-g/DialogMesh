@@ -5,7 +5,7 @@ Zero hardcoded pronoun word lists. Two strategies:
   2. regex structural: sentence-position-based pronoun detection when jieba unavailable
 
 Design: pronouns are structurally identifiable -- they replace noun positions in sentences.
-""
+"""
 from __future__ import annotations
 
 import re
@@ -27,8 +27,8 @@ class PronounResolver:
     # Structural regex for fallback (no word lists, pattern-based)
     # Matches: single CJK character acting as subject/object reference
     _PRONOUN_PATTERN = re.compile(
-        r'(?<=^|。|，|；)([它他她这那其此])(?=的|是|有|在|会|能|可以|需要|用于|用于|用|把|被|不)'
-        r'|(?<=\s|^)(it|this|that|these|those|they|them|he|she)(?=\s+(is|was|are|were|has|have|had|will|can|should|uses|needs|handles))',
+        r'(?:^|。|，|；)([它他她这那其此])(?=的|是|有|在|会|能|可以|需要|用于|用|把|被|不)'
+        r'|(?:\s|^)(it|this|that|these|those|they|them|he|she)(?=\s+(?:is|was|are|were|has|have|had|will|can|should|uses|needs|handles))',
         re.IGNORECASE
     )
 
