@@ -492,15 +492,15 @@ async def get_subgraph():
         s = rg.stats()
         domains = {}
         entries = []
-        # Group entities by type → domain counts
-        df = rg._backend.entities if hasattr(rg, '_backend') else None
-        if df is not None and len(df) > 0:
-            for etype, count in df["type"].value_counts().items():
-                domains[str(etype)] = int(count)
-            for _, row in df.head(20).iterrows():
+        entities = getattr(rg._backend, 'entities', None)
+        if entities:
+            for e in entities[:100]:
+                etype = str(e.get("type", "entity"))
+                domains[etype] = domains.get(etype, 0) + 1
+            for e in entities[:20]:
                 entries.append({
-                    "domain": str(row.get("type", "entity")),
-                    "content": str(row.get("description", row.get("id", "")))[:100],
+                    "domain": str(e.get("type", "entity")),
+                    "content": str(e.get("description", e.get("id", "")))[:100],
                 })
         return {
             "perspective": "relation_graph",

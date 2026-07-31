@@ -1,27 +1,31 @@
-"""RelationGraph — entity-relationship graph (pandas + networkx).
+"""RelationGraph — entity-relationship graph, pure-Python (no pandas required).
 
-Follows GraphRAG pattern: entities_df + relationships_df → networkx graph.
+Follows GraphRAG pattern: entities + relationships → graph traversal.
 Phase 3 core: stores entities extracted by AssociationChain L1.5.
+pandas optional — used only for DataFrame-style access when installed.
 
 Design: ARCHITECTURE_AUDIT §12.3, OPENSOURCE_DEEP_READ §2 (gleaning pattern).
 """
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Set, Tuple, Protocol
-
-try:
-    import pandas as pd
-except ImportError:
-    pd = None
+from typing import Dict, List, Optional, Set, Tuple, Protocol, Any
 
 logger = logging.getLogger("dm.relation_graph")
+
+# Optional pandas — for DataFrame-style access when installed
+try:
+    import pandas as pd
+    _HAS_PANDAS = True
+except ImportError:
+    pd = None
+    _HAS_PANDAS = False
 
 
 # ── Data Model ──
 
 class GraphBackend(Protocol):
-    """Pluggable graph storage — swap pandas/nx for Neo4j/Kuzu."""
+    """Pluggable graph storage — swap list-based for Neo4j/Kuzu."""
     def add_entity(self, entity_id: str, etype: str, desc: str,
                    block_id: str, confidence: float) -> None: ...
     def add_relationship(self, source: str, target: str, desc: str,
@@ -32,43 +36,70 @@ class GraphBackend(Protocol):
 
 
 class InMemoryGraphBackend:
-    """Default: pandas + networkx. Good for <50K nodes."""
+    """Default: pure-Python lists + optional networkx. Good for <50K nodes.
+
+    entities: list[dict] — id, type, description, block_id, confidence
+    relationships: list[dict] — source, target, description, weight, block_id
+    """
 
     def __init__(self):
-        if pd is None:
-            raise ImportError("pandas required for RelationGraph. Install: pip install pandas")
-        self.entities = pd.DataFrame(columns=[
-            "id", "type", "description", "block_id", "confidence"
-        ])
-        self.relationships = pd.DataFrame(columns=[
-            "source", "target", "description", "weight", "block_id"
-        ])
-        self._graph = None  # networkx cache
+        self.entities: List[dict] = []
+        self.relationships: List[dict] = []
+        self._entity_ids: Set[str] = set()  # fast dedup
+        self._graph = None  # networkx cache (optional)
+
+    # ── Write ──
 
     def add_entity(self, entity_id: str, etype: str, desc: str,
                    block_id: str = "", confidence: float = 0.5) -> None:
-        if entity_id in self.entities["id"].values:
+        if entity_id in self._entity_ids:
             return  # dedup
-        self.entities = pd.concat([self.entities, pd.DataFrame([{
+        self.entities.append({
             "id": entity_id, "type": etype, "description": desc,
-            "block_id": block_id, "confidence": confidence
-        }])], ignore_index=True)
+            "block_id": block_id, "confidence": confidence,
+        })
+        self._entity_ids.add(entity_id)
 
     def add_relationship(self, source: str, target: str, desc: str,
                          weight: float = 0.5, block_id: str = "") -> None:
-        self.relationships = pd.concat([self.relationships, pd.DataFrame([{
+        self.relationships.append({
             "source": source, "target": target, "description": desc,
-            "weight": weight, "block_id": block_id
-        }])], ignore_index=True)
+            "weight": weight, "block_id": block_id,
+        })
         self._graph = None  # invalidate cache
+
+    # ── Read ──
 
     def traverse(self, entity_id: str, depth: int = 2) -> List[str]:
         """BFS traversal up to depth hops. Returns connected entity ids."""
-        if self._graph is None:
-            self._build_graph()
-        if not self._graph or entity_id not in self._graph:
+        if entity_id not in self._entity_ids:
             return [entity_id]
+        if self._graph is not None:
+            return self._traverse_graph(entity_id, depth)
+        return self._traverse_bfs(entity_id, depth)
 
+    def _traverse_bfs(self, entity_id: str, depth: int) -> List[str]:
+        """Pure-Python BFS — no networkx needed."""
+        # Build adjacency on the fly (relationships are small)
+        adj: Dict[str, Set[str]] = {}
+        for r in self.relationships:
+            adj.setdefault(r["source"], set()).add(r["target"])
+            adj.setdefault(r["target"], set()).add(r["source"])
+
+        visited: Set[str] = {entity_id}
+        frontier: List[str] = [entity_id]
+        for _ in range(depth):
+            next_frontier: List[str] = []
+            for node in frontier:
+                for neighbor in adj.get(node, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        next_frontier.append(neighbor)
+            frontier = next_frontier
+        return list(visited)
+
+    def _traverse_graph(self, entity_id: str, depth: int) -> List[str]:
+        import networkx as nx
         visited: Set[str] = {entity_id}
         frontier: List[str] = [entity_id]
         for _ in range(depth):
@@ -81,13 +112,15 @@ class InMemoryGraphBackend:
             frontier = next_frontier
         return list(visited)
 
+    def get_entities_by_block(self, block_id: str) -> List[dict]:
+        return [e for e in self.entities if e["block_id"] == block_id]
+
     def filter_orphans(self) -> int:
-        """Remove relationships referencing non-existent entities. Returns removed count."""
-        eids = set(self.entities["id"])
+        """Remove relationships referencing non-existent entities."""
         before = len(self.relationships)
-        self.relationships = self.relationships[
-            self.relationships["source"].isin(eids) &
-            self.relationships["target"].isin(eids)
+        self.relationships = [
+            r for r in self.relationships
+            if r["source"] in self._entity_ids and r["target"] in self._entity_ids
         ]
         removed = before - len(self.relationships)
         if removed:
@@ -101,26 +134,29 @@ class InMemoryGraphBackend:
             "orphans_removed": 0,
         }
 
-    def _build_graph(self) -> None:
+    def try_build_graph(self) -> bool:
+        """Build networkx graph if available (for faster multi-hop traversal)."""
         try:
             import networkx as nx
-            self._graph = nx.from_pandas_edgelist(
-                self.relationships, "source", "target", "weight",
-                create_using=nx.DiGraph()
-            )
+            self._graph = nx.DiGraph()
+            for r in self.relationships:
+                self._graph.add_edge(r["source"], r["target"], weight=r["weight"])
+            return True
         except ImportError:
-            logger.warning("networkx not installed — graph traversal disabled")
             self._graph = None
+            return False
 
 
 # ── Public API ──
 
 class RelationGraph:
-    """Entity-relationship graph store. Backend-pluggable (pandas/nx → Neo4j/Kuzu)."""
+    """Entity-relationship graph store. Backend-pluggable (list → Neo4j/Kuzu)."""
 
     def __init__(self, backend: str = "in_memory"):
         self._backend: GraphBackend = InMemoryGraphBackend()
         self._backend_name: str = backend
+        if backend != "in_memory":
+            logger.info("RelationGraph: %s backend not implemented, using in_memory", backend)
 
     # ── Write ──
 
@@ -147,7 +183,6 @@ class RelationGraph:
                 confidence=ent.get("confidence", 0.5),
             )
             added += 1
-        # Extract relationships from same block's entities
         for i, a in enumerate(entities):
             for b in entities[i + 1:]:
                 aid = a.get("id", a.get("name", ""))
@@ -163,14 +198,21 @@ class RelationGraph:
         """Traverse graph from entity up to depth hops."""
         return self._backend.traverse(entity_id, depth)
 
-    def get_entities_by_block(self, block_id: str) -> pd.DataFrame:
+    def get_entities_by_block(self, block_id: str) -> List[dict]:
         """Get all entities from a discourse block."""
-        return self._backend.entities[
-            self._backend.entities["block_id"] == block_id
-        ]
+        return self._backend.get_entities_by_block(block_id)
 
     def filter_orphans(self) -> int:
         return self._backend.filter_orphans()
 
     def stats(self) -> dict:
         return {**self._backend.stats(), "backend": self._backend_name}
+
+    def to_dataframe(self):
+        """Optional pandas view — raises if pandas not installed."""
+        if not _HAS_PANDAS:
+            raise ImportError("pandas required for DataFrame view")
+        return (
+            pd.DataFrame(self._backend.entities),
+            pd.DataFrame(self._backend.relationships),
+        )
