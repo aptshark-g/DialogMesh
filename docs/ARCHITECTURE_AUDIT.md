@@ -945,33 +945,45 @@ ContextWindow(max_tokens=4096):
 纳入 Phase 1: StateMachine LLM phase 加入 token budget
 ```
 
-### 当前实现状态 (2026-08-01 审计)
+### 持久化实施 — 最终评估 (2026-08-01)
 
-```
-Phase 1 (存储层):  5/6  (83%)
-Phase 2 (前置富化): 4/5  (80%) — Tier 1 complete, Tier 2 pending
-Phase 3 (图存储):   0/4  (0%)
+```"
+Phase 1 (存储层):  8/8  ✅
+Phase 2 (前置富化): 6/6  ✅
+Phase 3 (图存储):   4/4  ✅
 
-Phase 2 完成:
-  1. L1 代词→实体映射 ✅ StanzaCorefResolver (neural, zero hardcoded)
-     - Stanza pretrained coref models (zh+en)
-     - Dependency parse tree for structural priors
-     - Graceful fallback when model unavailable
+设计项: 23
+已实现: 18/23 (78%)
+待激活: 4/23  (⚠️ stanza/sentence-transformers 模型下载)
+未实现: 1/23  (❌ gleaning 迭代精炼, ~20行补丁)
 
-  2. L1 上下文窗口 ⚠️ ContextWindow class exists, not wired into engine
-  
-  3. L2 depends_on 注入 ✅ ContextQualifier (dynamic, 95% decay)
-     - Replaces hardcoded static dict
-     - Entity-level dependency graph
-  
-  4. AssociationChain 前置 ✅ handle_assoc now runs before Discourse
-  
-  5. 中文实体识别 ⚠️ Stanza handles CN NER, but model not downloaded yet
+代码: 1820+行, 14类, 11文件, 0 stub methods
+测试: 28 CLI green, 1324 collected 0 errors
 
-Phase 2 待实现:
-  🔲 Tier 2: Semantic attention (sentence-transformers mention-pair scoring)
-  🔲 Tier 3: LLM posterior verification + F1 evaluation
-  🔲 Wire ContextWindow into engine factory
+Phase 1 — 存储层:
+  ✅ DiscourseTree     ✅ ChunkStore (ChromaDB)
+  ✅ SemanticSplitter   ✅ ContextWindow (token budget)
+  ✅ WriteGate          ✅ hash dedup
+  ✅ Non-chunkable      ✅ _merge_splits + overlap
+
+Phase 2 — 前置富化:
+  ✅ StanzaCorefResolver (neural, zero hardcoded)
+  ✅ ContextQualifier (dynamic depends_on)
+  ✅ SemanticCorefScorer (multilingual embedding)
+  ✅ LLMCorefVerifier (gateway posterior + F1)
+  ✅ HybridCorefResolver (3-tier fusion)
+  ✅ StateMachine ASSOC 前置 (resolve→qualify→cut)
+
+Phase 3 — 图存储:
+  ✅ RelationGraph (pandas+nx)
+  ✅ GraphBackend Protocol (InMemory/Neo4j/Kuzu)
+  ✅ RRF fusion retrieval
+  ✅ BlockMeta (metadata-driven clustering)
+
+已知 gap:
+  ❌ gleaning 迭代精炼 — 嵌入 AssociationChain L1.5
+  ⚠️ 模型未下载 — stanza zh + sentence-transformers
+  ⚠️ 性能未实测 — 预估 1-2s/turn
 ```
 ```
 
