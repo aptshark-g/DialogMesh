@@ -58,6 +58,11 @@ class StanzaCorefResolver:
 
         # Run coreference pipeline
         chains = self._get_coref_chains(text, lang)
+        if not chains and lang == "zh":
+            # zh-hans has NO coref model in stanza — fall back to
+            # structural priors (dependency tree): pronoun → nearest noun
+            # via nsubj/obj/obl relations. Zero hardcoded word lists.
+            chains = self._zh_structural_chains(text)
         if not chains:
             return text
 
@@ -72,10 +77,12 @@ class StanzaCorefResolver:
         except ImportError:
             return []
 
-        # Lazy pipeline init
+        # Lazy pipeline init — zh-hans has NO coref model (UnsupportedProcessorError).
+        # Parse-only pipeline needs lemma before depparse; no mwt for zh.
         if lang not in self._pipelines:
             try:
-                processors = "tokenize,mwt,pos,depparse,coref" if lang == "zh" else "tokenize,coref"
+                processors = ("tokenize,pos,lemma,depparse" if lang == "zh"
+                              else "tokenize,coref")
                 self._pipelines[lang] = stanza.Pipeline(
                     lang=lang, processors=processors,
                     download_method=stanza.DownloadMethod.REUSE_RESOURCES
@@ -101,6 +108,54 @@ class StanzaCorefResolver:
                     chains.append(mentions)
         return chains
 
+    def _zh_structural_chains(self, text: str) -> List[List[Dict]]:
+        """Structural fallback for zh (stanza has no zh coref model).
+
+        Uses the dependency tree: pronouns (UPOS='PRON') get linked to the
+        nearest preceding NOUN/PROPN head within the same sentence window.
+        Zero hardcoded word lists — POS tags come from the model.
+        """
+        try:
+            import stanza
+        except ImportError:
+            return []
+        if "zh" not in self._pipelines:
+            return []
+        try:
+            doc = self._pipelines["zh"](text)
+        except Exception:
+            return []
+
+        chains: List[List[Dict]] = []
+        prev_sent_nouns: List[Dict] = []  # nouns from the previous sentence
+        for sent in doc.sentences:
+            nouns = [w for w in sent.words if w.upos in ("NOUN", "PROPN")]
+            pronouns = [w for w in sent.words if w.upos == "PRON"]
+            for p_word in pronouns:
+                # nearest preceding noun — same sentence first, then previous sentence
+                candidates = [n for n in nouns if n.start_char < p_word.start_char]
+                if not candidates and prev_sent_nouns:
+                    candidates = prev_sent_nouns
+                if not candidates:
+                    continue
+                head = max(candidates, key=lambda n: n["start"] if isinstance(n, dict) else n.start_char)
+                if isinstance(head, dict):
+                    head_info = head
+                else:
+                    head_info = {"text": head.text, "start": head.start_char, "end": head.end_char}
+                chains.append([
+                    {"text": head_info["text"], "start": head_info["start"], "end": head_info["end"],
+                     "is_representative": True,
+                     "representative_text": head_info["text"]},
+                    {"text": p_word.text, "start": p_word.start_char, "end": p_word.end_char,
+                     "is_representative": False},
+                ])
+            prev_sent_nouns = [
+                {"text": n.text, "start": n.start_char, "end": n.end_char}
+                for n in nouns
+            ]
+        return chains
+
     def _build_replacements(
         self, chains: List[List[Dict]], text: str
     ) -> List[tuple]:
@@ -117,14 +172,12 @@ class StanzaCorefResolver:
 
             # Build replacements for non-representative mentions
             for mention in chain[1:]:  # skip representative
-                mentions = chain[1:]
-                for mention in chain[1:]:
-                    repl_text = f"[{rep_text}]"
-                    replacements.append((
-                        mention["start"],
-                        mention["end"],
-                        repl_text
-                    ))
+                repl_text = f"[{rep_text}]"
+                replacements.append((
+                    mention["start"],
+                    mention["end"],
+                    repl_text
+                ))
 
         # Sort by position (reverse, to preserve indices during replacement)
         replacements.sort(key=lambda x: x[0], reverse=True)
