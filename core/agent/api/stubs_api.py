@@ -96,7 +96,12 @@ async def get_abc():
         rules = rules_data
     else:
         rules = list(rules_data.values()) if rules_data else []
-    return {"rules": len(rules), "recent_rules": [r.get("antecedent","")[:50] if isinstance(r,dict) else str(r)[:50] for r in rules[-5:]]}
+    # Rule dicts use 'premise'/'conclusion' keys (neuro_symbolic_rules.json schema)
+    def _rule_summary(r):
+        if isinstance(r, dict):
+            return str(r.get("name") or r.get("premise") or "")[:50]
+        return str(r)[:50]
+    return {"rules": len(rules), "recent_rules": [_rule_summary(r) for r in rules[-5:]]}
 
 @router.get("/mind")
 async def get_mind():
