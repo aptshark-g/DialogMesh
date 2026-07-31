@@ -1,16 +1,19 @@
 # DialogMesh 深度核查 — 第二轮
 
 > 2026-08-01 · 方法: 逐批次追踪真实行为, 非数端点
-> 状态: 🔍 进行中
+> 状态: 🔍 进行中 (Batch 4 剩余命令)
 
-## 核查方法
+## 核查方法 (升级版)
 
 ```
 每批核查 = 真实调用 + 检查返回数据 + 判断是否简化/存根
-  1. 调用 CLI 命令 / API 端点
-  2. 检查返回的是真实数据还是空壳
-  3. 标记: ✅ 真实行为 / ⚠️ 部分简化 / ❌ 存根或失败
-  4. 记录证据 (命令 + 输出摘要)
+  1. 启动引擎 (mock) — 引擎未启动时命令必然 "not loaded"
+  2. 调用 CLI 命令 / API 端点
+  3. 检查返回的是真实数据还是空壳/error
+     ⚠️ rc=0 + 输出非空 ≠ 通过 — 必须检查输出内容!
+     ⚠️ {"error": ...} 是失败, 不是通过
+  4. 连锁问题找根因 — "not loaded" 可能是上游失败
+  5. 标记: ✅ 真实行为 / ⚠️ 部分简化 / ❌ 存根或失败
 ```
 
 ## 核查批次清单
@@ -18,27 +21,46 @@
 | 批次 | 范围 | 状态 |
 |------|------|:---:|
 | Batch 1 | 引擎启动 + 管线 + 持久化 | ✅ 19/19 (verify_round1.py) |
-| Batch 2 | v6 API 18 端点 | 🔍 |
-| Batch 3 | CLI 核心命令 (engine/session/discourse) | ⏳ |
-| Batch 4 | CLI 命令 (pcr/intent/behavior/meta) | ⏳ |
-| Batch 5 | CLI 命令 (assoc/profile/concepts/mind) | ⏳ |
-| Batch 6 | CLI 命令 (rules/engineering/annotations/knowledge) | ⏳ |
-| Batch 7 | CLI 命令 (task/learning/data/registry) | ⏳ |
-| Batch 8 | 存储层深度 (ChunkStore/RelationGraph/BlockMeta) | ⏳ |
-| Batch 9 | 关联链深度 (L1/L2/L3/coref) | ⏳ |
-| Batch 10 | 模型层 (stanza/st) | ⏳ |
+| Batch 2 | v6 API 89 端点 | ✅ 5 存根已补 (前端可绑定) |
+| Batch 3 | CLI 核心命令 | ✅ 根因修复 (inspect 遮蔽) |
+| Batch 4 | CLI 剩余命令 (引擎启动态) | 🔍 |
+| Batch 5 | 存储层深度 (ChunkStore/RelationGraph/BlockMeta) | ⏳ |
+| Batch 6 | 关联链深度 (L1/L2/L3/coref) | ⏳ |
+| Batch 7 | 模型层 (stanza/st) | ⏳ |
 
 ## 核查结果汇总
 
 | 批次 | ✅ | ⚠️ | ❌ | 备注 |
 |------|:--:|:--:|:--:|------|
 | Batch 1 | 19 | 0 | 0 | 引擎+管线+落盘全通 |
-| Batch 2 | | | | |
-| ... | | | | |
+| Batch 2 | 84 | 0 | 5→0 | 5 存根已补真实实现 |
+| Batch 3 | 22 | 0 | 0 | inspect.py 遮蔽修复后全通 |
+| Batch 4 | | | | 引擎启动态核查中 |
 
 ---
 
-## Batch 3 — CLI 深度核查
+## 全局深层根因 (最重要发现)
+
+**`core/agent/cli/inspect.py` 遮蔽标准库 `inspect`**
+
+```
+根因链:
+  inspect.py (业务模块) 与标准库同名
+  → python core/agent/cli/entry.py 时 sys.path[0] = cli/ 目录
+  → import inspect 解析到业务模块 (无 signature 属性)
+  → dataclasses._process_class 崩溃 (inspect.signature)
+  → engine start 失败 → 所有命令 "not loaded"
+
+修复: inspect.py → inspect_cmd.py, inspect_v3.py → inspect_v3_cmd.py
+验证: engine start → 37/37 loaded, 0 failed, 115ms
+
+教训: "not loaded" 是连锁反应 — 引擎起不来一切不工作
+      rc=0 + 输出非空 ≠ 通过 — 必须检查输出内容
+```
+
+---
+
+## Batch 2 — v6 API 深度核查
 
 ### 深层根因 (2026-08-01 复盘)
 
