@@ -287,3 +287,30 @@ search("auth 认证") → 0 hits (旧: 整串 substring 检查)
 ✅ RelationGraph   entities+rels, orphan 清理 (1 removed), BFS traverse
 ✅ BlockMeta       tags/cluster/non-chunkable 元信息操作
 ```
+
+---
+
+## Batch 6 — 关联链深度核查
+
+### 验证结果
+
+```
+✅ L2 BeliefAccumulator — Bayesian 更新真实工作
+   ingest 3 evidence → priors 0.5→0.78, best_intent=诊断
+✅ ContextQualifier — depends_on 注入
+   [auth, depends_on=JWT,confidence=86%, depends_on=database,confidence=66%]
+✅ EntityExtractor — gleaning + rule-based fallback
+   3 entities: AuthModule(class) JWT_TOKEN(constant) core.auth(module)
+✅ HybridCoref — resolve 正常 (mentions=2, pairs=1)
+✅ L3 MultiPerspectiveValidator — 存在
+
+⚠️ L1 ModifierExtractor — 遗留代码
+   契约: 接收 stanza Document (doc.sentences)
+   handlers 已改用 PronounResolver (Phase 2 新 L1)
+   → 不修, 标记遗留 (不阻塞管线)
+```
+
+### 结论
+
+关联链 Phase 2 组件全部真实工作 (L2/Qualifier/EntityExtractor/HybridCoref)。
+L1 旧实现是遗留契约 — 新 L1 (PronounResolver) 已替代。
