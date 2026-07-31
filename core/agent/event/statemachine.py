@@ -145,6 +145,7 @@ class DeciderStateMachine:
         current = start_phase
         results = {}
         self._state.chain_results = {}
+        start_turn = self._state.turn_count  # per-run baseline for max-transition guard
 
         while current != PipelinePhase.DONE:
             handler = self._phase_handlers.get(current)
@@ -160,8 +161,8 @@ class DeciderStateMachine:
             self.transition(current, result or {})
             current = next_phase
 
-            # Safety: max 20 transitions
-            if self._state.turn_count > 20:
+            # Safety: max 20 transitions per run (not cumulative)
+            if self._state.turn_count - start_turn > 20:
                 logger.warning("Pipeline exceeded max transitions, forcing DONE")
                 break
 

@@ -80,6 +80,8 @@ def register_all_handlers(engine, tracer=None):
                 "cognitive_level": getattr(result, 'cognitive_level', 'moderate'),
                 "execution_mode": getattr(result, 'execution_mode', 'auto'),
             }
+        # No router — record fallback so downstream can observe
+        engine._last_pcr = {"zone": "MIXED", "source": "fallback"}
         return {"zone": "MIXED"}
     sm.register_handler(PipelinePhase.PCR, lambda ctx: _trace("pcr", handle_pcr, ctx))
 
@@ -292,26 +294,6 @@ def register_all_handlers(engine, tracer=None):
             ctx["qualified_text"] = qualified
             results["deps_injected"] = qualified != enriched_text
         
-        return results
-    sm.register_handler(PipelinePhase.ASSOCIATION, lambda ctx: _trace("association", handle_association, ctx))
-    # Register ASSOCIATION in state transitions if not present
-                mods = l1.extract(text)
-                results["modifiers"] = len(mods) if mods else 0
-            except: pass
-        if l2 and text:
-            try:
-                from core.agent.association.l2_5_belief import Evidence
-                ev = Evidence(entity_id=f"msg_{hash(text)%10000}", entity_name=text[:40],
-                              relation_type="user_message", confidence=0.5)
-                l2.ingest(ev)
-                results["belief_updated"] = True
-            except: pass
-        # ── Coverage gap: _feed_extractions_to_substrate ──
-        if text and hasattr(engine, '_feed_extractions_to_substrate'):
-            try:
-                engine._feed_extractions_to_substrate()
-            except:
-                pass
         return results
     sm.register_handler(PipelinePhase.ASSOCIATION, lambda ctx: _trace("association", handle_association, ctx))
     # Register ASSOCIATION in state transitions if not present

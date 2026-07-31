@@ -101,6 +101,14 @@ def _create_engine_instance(provider_config=None) -> CognitiveRuntimeEngine:
     except ImportError as e:
         raise RuntimeError(f"Registry import failed: {e}")
 
+    # Provide provider for DI (before resolve_all — needed by meta_cognition etc.)
+    try:
+        from core.agent.llm_providers.mock_provider import MockProvider
+        engine._llm_provider = engine._provider = MockProvider("mock", {})
+        _registry._instances["llm_provider"] = engine._llm_provider
+    except Exception:
+        engine._llm_provider = None
+
     try:
         loaded, results = _registry.resolve_all()
         engine._registry = _registry
@@ -127,8 +135,17 @@ def _create_engine_instance(provider_config=None) -> CognitiveRuntimeEngine:
                     "Subsystem %s: %s", result.name, result.error)
 
     # ── Phase 4: Non-registry objects (LLM provider, sessions) ──
-    engine._provider = None
+    # Provider was set before resolve_all (see Phase 2) — keep it
     engine._provider_type = provider_config.get("type", "mock") if provider_config else "mock"
+
+    # ── Phase 5: Register StateMachine handlers (REQUIRED — pipeline execution) ──
+    try:
+        from core.agent.event.handlers import register_all_handlers
+        _ = register_all_handlers(engine, tracer=getattr(engine, '_tracer', None))
+    except Exception as e:
+        import logging
+        logging.getLogger("dm.engine").error("Handler registration failed: %s", e)
+        raise RuntimeError(f"Handler registration failed: {e}")
 
     # ── Phase 1+2 backward-compat wiring ──
     for name, cls_path in [
