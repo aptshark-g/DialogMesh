@@ -598,3 +598,198 @@ L3 Validator → cross_check(enriched_text, context)
 - 聚类压缩直接用丰富文本 (不需回查)
 - 非摘要化内容不受影响 (chunkable=False 跳过)
 
+### 模型分层 — 结构化抽取最佳区间 (2026-07-31)
+
+**经验结论:** 7-30B 参数模型的结构化提取能力最优。小模型 schema 不稳定,大模型"创造性"添加不存在字段。
+
+```
+模型大小    结构化能力              适合层
+─────────────────────────────────────────────
+1-7B        ❌ JSON 格式错乱       不适合任何层
+7-30B       ✅ 最佳区间             L1 代词→实体, L2 上下文限定, L1.5 关系提取
+            够推理但不编造
+            严格跟 schema
+70B+        ⚠️ 可行但过度           L3 交叉验证 (需对比判断)
+            "创造性"加字段
+            token 成本高 5-10x
+Claude/GPT  ✅ 最强但最贵           L3 复杂验证 + 摘要
+```
+
+**管线分配:**
+
+```
+raw conversation
+    │
+    ▼
+L1 代词解析 ──→ medium (7-30B, 本地 LM Studio qwen2.5-7b)
+    │            输出: {"it":"auth_module", "this":"JWT token"}
+    ▼
+L2 上下文限定 ──→ medium (同上)
+    │            输出: [{"entity":"auth_module","depends_on":"JWT","confidence":0.9}]
+    ▼
+L1.5 关系提取 ──→ medium (同上)  
+    │            输出: entities_df + relationships_df
+    ▼
+L3 交叉验证 ──→ large (70B+ / Gateway→DeepSeek)
+    │            输出: {over_qualified:[], correct:[], missing:[]}
+    ▼
+GranularityRegulator 切分 + non-chunkable 标记
+```
+
+### 实施技术细节 (2026-07-31)
+
+**1. ChunkStore 选型 → ChromaDB (已有集成)**
+
+```python
+# 选 ChromaDB — 已在 pluggable.py 集成,无需新依赖
+from core.agent.event.pluggable import ChromaBridge
+
+class ChunkStore:
+    """语义原子存储 — ChromaDB 向量检索."""
+    
+    collection_name = "discourse_atoms"
+    
+    def add(self, atoms: List[Atom]) -> None:
+        """写入原子 + embedding."""
+        for atom in atoms:
+            self.store.add(
+                ids=[atom.atom_id],
+                documents=[atom.text],
+                metadatas=[{
+                    "block_id": atom.block_id,
+                    "chunkable": atom.chunkable,
+                    "tags": ",".join(atom.tags),
+                    "priority": atom.priority,
+                }],
+            )
+    
+    def search(self, query: str, top_k: int = 10) -> List[Atom]:
+        """向量搜索 + 元信息过滤."""
+        results = self.store.query(query_texts=[query], n_results=top_k)
+        return [Atom.from_chromadb(r) for r in results]
+    
+    def mark_processed(self, text: str) -> bool:
+        """Hash-based dedup (补丁 3)."""
+        h = sha256(text.encode()).hexdigest()
+        if self.hotstore.get(f"processed:{h}"):
+            return False
+        self.hotstore.set(f"processed:{h}", True)
+        return True
+
+@dataclass
+class Atom:
+    atom_id: str
+    text: str
+    embedding: List[float]
+    block_id: str          # 回指 DiscourseTree block
+    chunkable: bool = True  # code/quote → False
+    tags: List[str] = field(default_factory=list)
+    priority: float = 0.5
+```
+
+**2. RelationGraph Schema → 复刻 GraphRAG 格式**
+
+```python
+import pandas as pd
+
+class RelationGraph:
+    """实体+关系图 — 复刻 GraphRAG entities_df + relationships_df."""
+    
+    def __init__(self):
+        self.entities = pd.DataFrame(columns=[
+            "id", "type", "description", "block_id", "confidence"
+        ])
+        self.relationships = pd.DataFrame(columns=[
+            "source", "target", "description", "weight", "block_id"
+        ])
+        self._graph = None  # networkx cache
+    
+    def add_entity(self, entity_id: str, etype: str, desc: str, 
+                   block_id: str, confidence: float = 0.5):
+        self.entities = pd.concat([self.entities, pd.DataFrame([{
+            "id": entity_id, "type": etype, "description": desc,
+            "block_id": block_id, "confidence": confidence
+        }])], ignore_index=True)
+    
+    def add_relationship(self, source: str, target: str, desc: str,
+                         weight: float = 0.5, block_id: str = ""):
+        self.relationships = pd.concat([self.relationships, pd.DataFrame([{
+            "source": source, "target": target, "description": desc,
+            "weight": weight, "block_id": block_id
+        }])], ignore_index=True)
+    
+    def filter_orphans(self):
+        """补丁 2 — 清理孤点关系."""
+        eids = set(self.entities["id"])
+        self.relationships = self.relationships[
+            self.relationships["source"].isin(eids) &
+            self.relationships["target"].isin(eids)
+        ]
+    
+    def traverse(self, entity_id: str, depth: int = 2) -> List[str]:
+        """图遍历 — 找 depth 层内所有关联 entity."""
+        if self._graph is None:
+            import networkx as nx
+            self._graph = nx.from_pandas_edgelist(
+                self.relationships, "source", "target", "weight"
+            )
+        if entity_id not in self._graph:
+            return [entity_id]
+        nodes = nx.descendants_at_distance(self._graph, entity_id, depth)
+        return list(nodes) + [entity_id]
+```
+
+**3. 检索融合算法 → 加权 Reciprocal Rank Fusion (RRF)**
+
+```python
+def fused_retrieve(query: str, top_k: int = 10) -> List[Tuple[str, float]]:
+    """向量搜索 + 图遍历 → RRF 融合."""
+    
+    # 向量搜索 (细粒度)
+    vector_results = chunkstore.search(query, top_k=20)
+    
+    # 图遍历 (粗粒度,从向量结果的 block 出发)
+    graph_results = set()
+    for atom in vector_results[:5]:
+        entities = relation_graph.traverse(atom.block_id, depth=2)
+        graph_results.update(entities)
+    
+    # RRF 融合
+    scores = {}
+    for rank, atom in enumerate(vector_results):
+        # RRF(k=60): 1/(rank + 60)
+        scores[atom.block_id] = scores.get(atom.block_id, 0) + 1/(rank + 60)
+    
+    for entity_id in graph_results:
+        # 图结果有固定基础分,但远低于向量直接命中
+        scores[entity_id] = scores.get(entity_id, 0) + 0.01
+    
+    # 按分数排序,返回 top_k
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return ranked[:top_k]
+```
+
+**性能预估:**
+
+```
+每轮对话增加:
+  L1 代词解析 (本地 qwen2.5-7b):  +200-500ms
+  L2 上下文限定 (同上):            +200-500ms  
+  L1.5 关系提取 (同上):            +500-1000ms (含 embedding)
+  ChunkStore 写入 (ChromaDB):     +50ms
+  RelationGraph 更新:             +10ms
+  ────────────────────────────────────────
+  总计:  +1-2秒/轮
+  
+  对比当前管线: ~0.5秒/轮
+  增加: 2-4x (可接受,收益是检索质量)
+```
+
+**启动顺序:**
+
+```
+Phase 1: ChunkStore + Non-chunkable 标记 (最独立,不影响现有管线)
+Phase 2: AssociationChain 前置 (调整管线顺序,加代词解析)
+Phase 3: RelationGraph + 检索融合 (依赖 Phase 1+2 的输出)
+```
+
