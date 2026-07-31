@@ -503,4 +503,43 @@ for cluster in clusters:
 - HotStore → 元信息内存缓存
 - ColdStore → 元信息 JSON 持久化
 - BlockTree → 内容不可变存储
+```
+
+### 开元项目对照 (2026-07-31 读取)
+
+**读取文件:**
+1. `langchain/text_splitters/character.py` — RecursiveCharacterTextSplitter
+2. `microsoft/graphrag/extract_graph.py` — Entity extraction
+3. `llamaindex/ingestion/pipeline.py` — IngestionPipeline
+
+**模式对照:**
+
+| 模式 | 开源实现 | DialogMesh 已有 | 缺什么 |
+|------|----------|:---:|------|
+| 递归切分 | LangChain: ["\n\n"→"\n"→" "→""] 递归降级, chunk_size+overlap, 小块合并 | GranularityRegulator (5 regex) | **递归降级 + non-chunkable 标记** |
+| 实体提取 | GraphRAG: LLM extract per unit → (entities, relations) df, max_gleanings 迭代, filter_orphans | AssociationChain L1→L3 | **orphan_relationships 清理 + max_gleanings** |
+| 管线缓存 | LlamaIndex: hash-based IngestionCache, in_place 避免拷贝, TransformComponent 链 | HotStore LRU | **hash-based dedup (避免重复处理)** |
+| 双层存储 | 无统一方案 | DiscourseTree + ChunkStore (设计阶段) | **实现向量+图双写** |
+
+**三个补丁,不改变现有架构:**
+
+```python
+# 补丁 1: 递归切分 (嵌入 GranularityRegulator)
+SEPARATORS = ["\n\n", "\n", ". ", " ", ""]  # 递归降级
+NON_CHUNKABLE_PATTERNS = [r'```[\s\S]*?```', r'> .*', r'^\s*\{.*\}\s*$']
+
+# 补丁 2: orphan 清理 (嵌入 AssociationChain)
+def filter_orphan_relationships(entities, relationships):
+    entity_ids = set(entities['id'])
+    return [r for r in relationships 
+            if r['source'] in entity_ids and r['target'] in entity_ids]
+
+# 补丁 3: hash-based dedup (嵌入 HotStore)
+def should_process(text: str) -> bool:
+    h = sha256(text.encode()).hexdigest()
+    if hotstore.get(f"processed:{h}"):
+        return False  # 已处理,跳过
+    hotstore.set(f"processed:{h}", True)
+    return True
+```
 
