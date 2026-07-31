@@ -948,27 +948,30 @@ ContextWindow(max_tokens=4096):
 ### 当前实现状态 (2026-08-01 审计)
 
 ```
-Phase 1 (存储层):  4/6  实现
-Phase 2 (前置富化): 0/5  零代码
-Phase 3 (图存储):   0/4  零代码
+Phase 1 (存储层):  5/6  (83%)
+Phase 2 (前置富化): 4/5  (80%) — Tier 1 complete, Tier 2 pending
+Phase 3 (图存储):   0/4  (0%)
 
-Phase 2 审计 — 5个需求全部未实现:
+Phase 2 完成:
+  1. L1 代词→实体映射 ✅ StanzaCorefResolver (neural, zero hardcoded)
+     - Stanza pretrained coref models (zh+en)
+     - Dependency parse tree for structural priors
+     - Graceful fallback when model unavailable
 
-  1. L1 代词→实体映射 ❌
-     association/l1_modifier.py: 只提取形容词短语,无 pronoun 处理
-     _extract_concepts (engine.py): 只匹配 [A-Z] 英文,无中文
+  2. L1 上下文窗口 ⚠️ ContextWindow class exists, not wired into engine
+  
+  3. L2 depends_on 注入 ✅ ContextQualifier (dynamic, 95% decay)
+     - Replaces hardcoded static dict
+     - Entity-level dependency graph
+  
+  4. AssociationChain 前置 ✅ handle_assoc now runs before Discourse
+  
+  5. 中文实体识别 ⚠️ Stanza handles CN NER, but model not downloaded yet
 
-  2. L1 上下文窗口 ⚠️
-     _last_concept 只存最后1个 entity,无 N 轮窗口
-
-  3. L2 depends_on 注入 ❌
-     l2_5_belief.py: depends_on 是硬编码静态 dict,不是 LLM 动态输出
-
-  4. AssociationChain 前置 ❌
-     handlers.py: handle_assoc 在 PERSIST 之后运行 (事后处理)
-
-  5. 中文实体识别 ❌
-     当前只有 re.findall(r'[A-Z][a-z]+|[A-Z]{2,}', text) — 英文 only
+Phase 2 待实现:
+  🔲 Tier 2: Semantic attention (sentence-transformers mention-pair scoring)
+  🔲 Tier 3: LLM posterior verification + F1 evaluation
+  🔲 Wire ContextWindow into engine factory
 ```
 ```
 
