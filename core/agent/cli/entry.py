@@ -349,8 +349,8 @@ def cmd_task_confirm(args):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _dispatch_p3(args):
-    """Dispatch P3 commands: behavior, meta, assoc, obs."""
-    about = getattr(args, "subcommand", "")
+    """Dispatch P3 commands: behavior, meta, assoc, obs, knowledge."""
+    about = getattr(args, "k_op", getattr(args, "subcommand", ""))
     cmd = args.command
     from core.agent.cli.commands.p3_cmd import (
         cmd_behavior_show, cmd_behavior_predict,
@@ -898,6 +898,11 @@ def main():
     pks = pk.add_subparsers(dest="k_op")
     pka = pks.add_parser("add"); pka.add_argument("name"); pka.add_argument("--type", default="concept"); pka.add_argument("--domain", default="general")
     pkr = pks.add_parser("remove"); pkr.add_argument("name")
+    pks.add_parser("stats")
+    pks.add_parser("sources")
+    pkq = pks.add_parser("query"); pkq.add_argument("keyword")
+    pksr = pks.add_parser("search"); pksr.add_argument("query", nargs="+")
+    pki = pks.add_parser("import"); pki.add_argument("file")
 
     # Event log
     pel = sub.add_parser("event-log", help="Event log tail")

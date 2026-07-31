@@ -241,6 +241,40 @@ def cmd_mind_save(args):
         print(json.dumps({"saved": False}, ensure_ascii=False))
 
 
+
+
+def cmd_profile_export(args):
+    """dm profile export — export OCEAN profile as JSON."""
+    import json
+    e = get_engine()
+    ocean = getattr(e, '_ocean_analyst', None)
+    if ocean:
+        profile = getattr(ocean, 'profile', None) or getattr(ocean, 'snapshot', None)
+        print(json.dumps(profile if profile else {}, ensure_ascii=False, default=str))
+    else:
+        print(json.dumps({"error": "OCEAN not loaded"}, ensure_ascii=False))
+
+
+def cmd_profile_import(args):
+    """dm profile import — import profile JSON (stub: reads file path)."""
+    import json
+    fp = getattr(args, 'file', '')
+    if not fp:
+        print(json.dumps({"error": "usage: dm profile import <file.json>"}, ensure_ascii=False))
+        return
+    try:
+        with open(fp, encoding='utf-8') as f:
+            data = json.load(f)
+        e = get_engine()
+        ocean = getattr(e, '_ocean_analyst', None)
+        if ocean and hasattr(ocean, 'load'):
+            ocean.load(data)
+            print(json.dumps({"status": "imported", "dims": len(data)}, ensure_ascii=False))
+        else:
+            print(json.dumps({"status": "parsed", "dims": len(data), "msg": "OCEAN not loaded"}, ensure_ascii=False))
+    except Exception as ex:
+        print(json.dumps({"error": str(ex)[:100]}, ensure_ascii=False))
+
 def register_cmds(subparsers):
     # Profile
     p = subparsers.add_parser("profile", help="OCEAN/MBTI profile operations")

@@ -139,15 +139,68 @@ def cmd_versions_show(args):
 
 def cmd_metrics_show(args):
     e = get_engine()
+    if not e:
+        print(json.dumps({"subsystems": 0, "msg": "engine not running"}, ensure_ascii=False))
+        return
     sla = getattr(e, '_sla_watchdog', None)
     sched = getattr(e, '_scheduler', None)
-    info = {"subsystems": sum(1 for _ in [e._state_machine,e._storage,e._tracer,e._event_log,e._decider] if _)}
+    info = {"subsystems": sum(1 for _ in [getattr(e,'_state_machine',None),getattr(e,'_storage',None),getattr(e,'_tracer',None),getattr(e,'_event_log',None),getattr(e,'_decider',None)] if _)}
     if sla and hasattr(sla, 'stats'):
         info["sla"] = str(sla.stats())[:80]
     if sched and hasattr(sched, 'stats'):
         info["scheduler"] = str(sched.stats())[:80]
     print(json.dumps(info, indent=2, ensure_ascii=False))
 
+
+
+
+def cmd_rules_stats(args):
+    """dm rules stats — rule statistics."""
+    e = get_engine()
+    abc = getattr(e, '_abc', None)
+    if abc:
+        rules = getattr(abc, 'rules', None) or getattr(abc, '_rules', None)
+        n = len(rules) if rules else 0
+        print(json.dumps({"total_rules": n, "source": "abc_orchestrator"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"total_rules": 0, "source": "none"}, ensure_ascii=False))
+
+
+def cmd_annotations_recent(args):
+    """dm annotations recent — recent annotations."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+    fp = os.path.join(root, "data", "annotations.json")
+    try:
+        with open(fp, encoding="utf-8") as f:
+            data = __import__("json").load(f)
+        print(__import__("json").dumps({"total": len(data), "recent": data[-5:]}, ensure_ascii=False))
+    except Exception:
+        print('{"total": 0, "recent": []}')
+
+
+def cmd_annotations_export(args):
+    """dm annotations export — export annotations to console."""
+    import os, json
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+    fp = os.path.join(root, "data", "annotations.json")
+    try:
+        with open(fp, encoding="utf-8") as f:
+            data = json.load(f)
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception:
+        print("[]")
+
+
+def cmd_inertia_patterns(args):
+    """dm inertia patterns — inertia pattern list."""
+    e = get_engine()
+    inert = getattr(e, '_inertia', None)
+    if inert:
+        pats = getattr(inert, 'patterns', None) or getattr(inert, '_patterns', None) or []
+        print(json.dumps({"patterns": pats if isinstance(pats, list) else list(pats.keys())}, ensure_ascii=False))
+    else:
+        print('{"patterns": []}')
 
 def register_cmds(subparsers):
     # Rules (single registration — show/add/stats/delete/search)
@@ -172,6 +225,8 @@ def register_cmds(subparsers):
     p = subparsers.add_parser("annotations", help="Mind annotations")
     sp = p.add_subparsers(dest="subcommand")
     sp.add_parser("show")
+    sp.add_parser("recent")
+    sp.add_parser("export")
 
     # Corrections
     p = subparsers.add_parser("corrections", help="Profile corrections")

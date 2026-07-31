@@ -41,9 +41,48 @@ def cmd_knowledge_import(args):
         print(json.dumps({"error": "RAGBridge not available"}, ensure_ascii=False))
 
 
+
+
+def cmd_knowledge_stats(args):
+    """dm knowledge stats — knowledge base statistics."""
+    import json
+    e = get_engine()
+    rb = getattr(e, '_rag_bridge', None)
+    fl = getattr(e, '_frame_library', None)
+    info = {"rag": False, "frames": 0}
+    if rb:
+        info["rag"] = True
+        if hasattr(rb, 'stats'):
+            info["rag_stats"] = str(rb.stats())[:100]
+    if fl:
+        frames = getattr(fl, '_frames', None) or getattr(fl, 'frames', None)
+        info["frames"] = len(frames) if frames else 0
+    print(json.dumps(info, ensure_ascii=False))
+
+
+def cmd_knowledge_search(args):
+    """dm knowledge search <query> — search knowledge base."""
+    import json
+    e = get_engine()
+    rb = getattr(e, '_rag_bridge', None)
+    query = getattr(args, 'query', '') or ''
+    if rb and hasattr(rb, 'search'):
+        try:
+            results = rb.search(query)
+            print(json.dumps({"query": query, "results": results}, ensure_ascii=False, default=str))
+            return
+        except Exception as ex:
+            print(json.dumps({"error": str(ex)[:100]}, ensure_ascii=False))
+            return
+    print(json.dumps({"query": query, "results": [], "msg": "RAG not loaded"}, ensure_ascii=False))
+
 def register_cmds(subparsers):
+    # knowledge registered in entry.py main() (k_op) — skip duplicate
+    return
     p = subparsers.add_parser("knowledge", help="Knowledge Graph operations")
     sp = p.add_subparsers(dest="subcommand")
     q = sp.add_parser("query"); q.add_argument("keyword")
     sp.add_parser("sources")
+    sp.add_parser("stats")
+    s = sp.add_parser("search"); s.add_argument("query", nargs="+")
     i = sp.add_parser("import"); i.add_argument("file")

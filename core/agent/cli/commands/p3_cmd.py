@@ -331,6 +331,19 @@ def cmd_assoc_history(args):
     print(json.dumps({"chain_events": events, "msg": "association atom count"}, ensure_ascii=False))
 
 
+
+
+def cmd_obs_reset(args):
+    """dm obs reset — reset observation pool."""
+    import json
+    e = get_engine()
+    pool = getattr(e, '_observation_pool', None)
+    if pool and hasattr(pool, 'clear'):
+        pool.clear()
+        print(json.dumps({"status": "cleared"}, ensure_ascii=False))
+    else:
+        print(json.dumps({"status": "no pool"}, ensure_ascii=False))
+
 def register_cmds(subparsers):
     # Behavior
     p = subparsers.add_parser("behavior", help="Behavior chain operations")
