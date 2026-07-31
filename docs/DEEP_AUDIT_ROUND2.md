@@ -40,9 +40,41 @@
 
 ## Batch 3 — CLI 深度核查
 
-### 方法
+### 深层根因 (2026-08-01 复盘)
 
-逐命令调用 `python core/agent/cli/entry.py <cmd>` → 检查真实行为
+**`core/agent/cli/inspect.py` 遮蔽标准库 `inspect`** — 本次核查最重要的发现:
+
+```
+根因链:
+  inspect.py (业务模块, CLI inspect 命令) 与标准库同名
+  → python core/agent/cli/entry.py 时 sys.path[0] = cli/ 目录
+  → import inspect 解析到业务模块 (无 signature 属性)
+  → dataclasses._process_class 调用 inspect.signature 崩溃
+  → engine start 失败 (所有 dataclass 定义崩)
+  → 所有依赖引擎的命令返回 "not loaded"
+
+修复: inspect.py → inspect_cmd.py, inspect_v3.py → inspect_v3_cmd.py
+验证: engine start → 37/37 loaded, 0 failed, 115ms
+
+教训: "not loaded" 是连锁反应 — 引擎起不来, 一切都不工作
+      表面核查 (rc=0 + 输出非空) 会误判 error 响应为通过
+```
+
+### 修复后真实状态 (引擎启动后)
+
+```
+✅ rules show       → ABC orchestrator loaded
+✅ abc show         → ABCOrchestrator
+✅ metrics show     → 5 subsystems
+✅ behavior show    → behavior_graph + discovery
+✅ meta show        → meta_subscriber + meta_cognition
+✅ assoc show       → L1 modifier loaded=True
+✅ profile show     → OCEAN 5 维真实值
+✅ profile ocean    → 完整 5 维
+✅ discourse stats  → 1 block
+✅ knowledge stats  → rag=True
+✅ event-log        → 真实 log entries
+```
 
 ### 发现的问题 (全部修复)
 
