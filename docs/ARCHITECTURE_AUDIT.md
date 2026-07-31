@@ -791,6 +791,41 @@ def fused_retrieve(query: str, top_k: int = 10) -> List[Tuple[str, float]]:
 Phase 1: ChunkStore + Non-chunkable 标记 (最独立,不影响现有管线)
 Phase 2: AssociationChain 前置 (调整管线顺序,加代词解析)
 Phase 3: RelationGraph + 检索融合 (依赖 Phase 1+2 的输出)
+
+### RelationGraph 可插拔后端
+
+**当前: pandas + networkx (内存图, ~11K 节点上限)**
+
+```python
+class GraphBackend(Protocol):
+    """Pluggable graph storage — swap pandas/nx for Neo4j/Kuzu without API change."""
+    def add_entity(self, entity_id: str, etype: str, desc: str, block_id: str, confidence: float) -> None: ...
+    def add_relationship(self, source: str, target: str, desc: str, weight: float, block_id: str) -> None: ...
+    def traverse(self, entity_id: str, depth: int) -> List[str]: ...
+    def filter_orphans(self) -> None: ...
+    def stats(self) -> Dict[str, int]: ...
+
+class InMemoryGraphBackend:
+    """Default: pandas + networkx. Good for <50K nodes."""
+    ...
+
+class Neo4jGraphBackend:
+    """Production: Neo4j via py2neo. Swap in when >50K nodes or multi-process."""
+    ...
+
+class KuzuGraphBackend:
+    """Embedded: KuzuDB. Zero-config alternative to Neo4j."""
+    ...
+```
+
+**切换方式:** 与 NATS/Redis/PG 一致——`factory(backend="neo4j")`，降级到 `in_memory`。
+
+```python
+# 配置
+relation_graph = RelationGraph(backend="in_memory")  # 默认
+relation_graph = RelationGraph(backend="neo4j")       # 生产
+relation_graph = RelationGraph(backend="kuzu")        # 嵌入式
+```
 ```
 
 ---
