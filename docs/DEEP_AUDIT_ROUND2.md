@@ -107,14 +107,27 @@
 
 ```
 66/89 真实数据 (74%)
-5 个纯存根 (需要设计文档 + 真实实现)
-+18 端点来自真实 router 模块
-API 基础可用, 但存根端点不能让前端绑定
+5 个纯存根 → 已全部替换为真实实现 (2026-08-01):
+  ✅ /v6/pipeline     → StateMachine snapshot (running/current_phase/turns/errors)
+  ✅ /v6/extraction   → EntityExtractor stats + HybridCoref metrics
+  ✅ /v6/perspectives → ContextWindow stats (items/tokens/block_ids)
+  ✅ /v6/subgraph     → RelationGraph domains/entries (V6SubgraphResponse schema)
+  ✅ /v6/versions     → EventLog + corrections journal → V6VersionCommit[]
 
-前端绑定判断: ⚠️ 尚不可绑定
-  - 5 个存根端点返回 {} — 前端会拿到空
-  - 需要先补 V6*Response 模型 + 真实数据源
-  - 否则前端绑定后无法展示 pipeline/extraction/perspectives
+  数据源对照 (来自 frontend/src/types/api.ts):
+    V6PipelineResponse:  自由结构 → state machine snapshot
+    V6ExtractionResponse:自由结构 → entity extractor stats
+    V6PerspectivesResponse: 自由结构 → context window
+    V6SubgraphResponse:  {perspective, domains, entries, total_tokens, budget}
+    V6VersionsResponse:  {target, commits: V6VersionCommit[]}
+      V6VersionCommit:   {id, ts, author, before, after, reason, verify}
+
++18 端点来自真实 router 模块
+API 基础可用, 5 个存根已补
+
+前端绑定判断: ✅ 可绑定 (5 存根已补真实实现)
+  剩余待查: /v6/providers active 空 (gateway 配置)
+            14 个 POST 422 (测试方法, 非端点问题)
 ```
 
 ---
