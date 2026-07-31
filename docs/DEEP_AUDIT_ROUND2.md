@@ -37,6 +37,8 @@
 | Batch 3 | 22 | 0 | 0 | inspect.py 遮蔽修复后全通 |
 | Batch 4 | 37 | 32 | 3→0 | 引擎启动态, 3 命令崩溃已修 |
 | Batch 5 | 5 | 4 | 1→0 | 存储层, 2 深层修复 (registry 缺注册 + 搜索) |
+| Batch 6 | 5 | 5 | 0 | 关联链, L2 Bayesian 真实 |
+| Batch 7 | 2 | 1 | 1→0 | 模型层, zh coref 结构降级 |
 
 ---
 
@@ -314,3 +316,49 @@ search("auth 认证") → 0 hits (旧: 整串 substring 检查)
 
 关联链 Phase 2 组件全部真实工作 (L2/Qualifier/EntityExtractor/HybridCoref)。
 L1 旧实现是遗留契约 — 新 L1 (PronounResolver) 已替代。
+
+---
+
+## Batch 7 — 模型层深度核查
+
+### 深层根因 (2026-08-01)
+
+**stanza 中文 coref 模型不存在** — 代码假设与现实不符:
+
+```
+根因链:
+  代码假设: zh 用 "tokenize,mwt,pos,depparse,coref"
+  现实:     stanza 1.14 zh-hans 无 coref 模型
+           (UnsupportedProcessorError) 且无 mwt
+  → pipeline 初始化异常被 except 吞掉
+  → resolve() 静默返回原文 (看起来"工作"实则失败)
+  → HybridCoref 3-tier 融合的 t1 层失效
+
+修复:
+  1. zh 用 parse-only pipeline: tokenize,pos,lemma,depparse
+     (depparse 前置需要 lemma)
+  2. 中文结构先验降级: PRON → 最近前序 NOUN/PROPN
+     同句优先 → 跨句回退 (prev_sent_nouns)
+     零硬编码词表 — POS 标签来自模型
+  3. 修复 _build_replacements 嵌套循环 bug (重复替换)
+
+验证:
+  "auth模块需要重构。它用了JWT认证。" 
+  → "auth模块需要重构。[模块]用了JWT认证。"
+  (它 → [模块] 跨句指代真实解析)
+```
+
+### 教训
+
+- **"看起来工作" ≠ 工作** — resolve 返回原文看似正常, 实际 coref 从未执行
+- **模型能力假设要验证** — stanza zh 无 coref 是文档不写明的事实
+- **except 吞错是静默死亡** — pipeline 初始化失败被吞, 上层毫无感知
+- **结构先验是零硬编码的降级** — POS 来自模型, 不是词表
+
+### 验证结果
+
+```
+✅ 中文 coref 结构降级 — 它→[模块] 跨句解析
+✅ en coref pipeline — tokenize,coref (下载中)
+✅ 28 tests green
+```
