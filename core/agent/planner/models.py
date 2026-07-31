@@ -16,4 +16,3 @@ except ImportError:
     @dataclass
     class Skill: skill_id: str = ""; status: str = "candidate"
 
-AllocationError = ValueError  # backward compat alias

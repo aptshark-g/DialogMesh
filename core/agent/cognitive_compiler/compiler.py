@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CompileInput:
+
     """Input from one LLM instance."""
     llm_instance: str          # "pcr"/"intent"/"meta"/"planning"/"answer"/"reflective"
     content: str
@@ -35,6 +36,8 @@ class CompileResult:
     nodes_archived: int = 0
     events_emitted: List[str] = field(default_factory=list)
     latency_ms: float = 0.0
+
+CompiledInput = CompileInput  # backward compat alias
 
 
 class CognitiveCompiler:

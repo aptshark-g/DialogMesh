@@ -3,3 +3,7 @@ from core.agent.topic_tree.fact_store import FactBlock, FactStore, RelationMetad
 from core.agent.topic_tree.heat_model import AdaptiveHeatModel
 from core.agent.topic_tree.context import DualPerspectiveContext, MultiPerspectiveBranchView, BehaviorDrivenRefresh
 from core.agent.topic_tree.manager import TopicTreeManager
+try:
+    from core.agent.topic_tree.manager_v2 import RoutingDecisionV2 as RoutingDecision
+except ImportError:
+    RoutingDecision = None
