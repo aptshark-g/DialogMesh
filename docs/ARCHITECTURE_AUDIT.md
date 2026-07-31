@@ -908,5 +908,50 @@ OpenWorker:                          DialogMesh:
 ✅ 审批门控可以加到 Phase 1 (ChunkStore 写操作安全检查)
 ✅ Connector 模式留到 ToolRegistry v2 (P2)
 ```
+
+
+## 十三-B、深读产出 — 执行路径级别分析
+
+详见 `docs/OPENSOURCE_DEEP_READ.md`。关键发现:
+
+### _merge_splits 算法 (LangChain)
+
+```
+split → good_splits (积累 <chunk_size 片段)
+  → 超出 chunk_size: 合并 good_splits,保留 overlap 从尾部倒序截取
+  → 继续下一轮
+
+纳入 Phase 1: GranularityRegulator 加入 overlap 参数
+  - chunk_size=500 tokens, chunk_overlap=50 tokens
+  - non_chunkable 片段不参与 overlap 计算
+```
+
+### gleaning 循环 (GraphRAG)
+
+```
+for round in range(max_gleanings):
+    missed = LLM("还有遗漏的{entity_types}吗? 已知:{previous_entities}")
+    if not missed: break
+
+纳入 Phase 2: L1.5 EntityExtractor 加入 max_gleanings=2
+```
+
+### context_window 令牌预算 (OpenWorker)
+
+```
+ContextWindow(max_tokens=4096):
+    append(item) → if token_count > max: pop(0)  # FIFO
+
+纳入 Phase 1: StateMachine LLM phase 加入 token budget
+```
+
+### Phase 1 追加内容
+
+| 来源 | 加到哪 | 成本 |
+|------|--------|:---:|
+| _merge_splits + overlap | GranularityRegulator | 30行 |
+| context_window token limit | StateMachine LLM phase | 15行 |
+| gleaning loop | L1.5 EntityExtractor | 20行 (Phase 2) |
+```
 ```
 
