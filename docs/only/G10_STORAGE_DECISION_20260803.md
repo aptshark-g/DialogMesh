@@ -9,14 +9,14 @@
 
 ```
 引用数复核 (用户): graph_store 实测 19 (我写 22) · unified_graph_store 8 (我写 10)
-faiss 状态 (双环境实测): hermes venv (3.11) + .venv 均未装 → 我清单 ❌ 正确;
-  用户"已装"为更早环境快照 → 最终结论: 阶段 1 可选 faiss (装后作 chromadb 替代), 非现状
-壳 vs 实现核查 (新增):
-  tiered_storage.py: 16 行壳 ✅ (要归)
-  unified_store.py:  21 行壳 ✅ (要归)
-  unified_graph_store.py: 148 行, 有真实 SQLite 建表逻辑 ⚠️ 半实现 (非纯壳)
-  graph_store.py: 472 行真实实现 ✅ (保留)
-  sqlite_store.py: 328 行真实实现 ✅ (保留)
+faiss 状态 (双环境核查): anaconda3 (pytest 环境) ✅ 已装 / .venv ❌ 未装 / hermes venv ❌
+  → 两环境不一致, "阶段 1 可选 faiss" 结论不变, 但原因 = 环境不一致 (非全未装)
+壳 vs 实现核查 (修正版 — 我此前把 grep -c 定义数 16/21 误当行数):
+  tiered_storage.py: 344 行, TieredStorageManager (Hot/Warm/Cold 分层迁移) ✅ 真实实现
+  unified_store.py:  248 行, UnifiedStore (BGE 向量 + LSH 剪枝) ✅ 真实实现 — 且是向量能力!
+  unified_graph_store.py: 148 行, 有真实 SQLite 建表逻辑 ⚠️ 半实现
+  graph_store.py: 472 行真实实现 ✅ / sqlite_store.py: 328 行真实实现 ✅
+  → 无"壳文件"! 之前"16/21 行壳"结论错误, 已废除
 ```
 
 ---
@@ -33,12 +33,15 @@ GraphBackend Protocol 已存在（relation_graph.py:27）——换后端是配�
 主存储:
   事实+事件 → sqlite_store (328行, 9 引用, 真实实现) ✅
   图        → graph_store (472行, 19 引用, 真实实现, SQLite 持久化) ✅
-  向量      → chromadb (已装, 79MB 模型) 或 faiss (可选装, 都满足 Protocol)
+  向量      → UnifiedStore (248行, BGE+LSH, 已存在! 轻量替代 chromadb) ✅
+              或 chromadb (已装) 或 faiss (anaconda3 有 / .venv 无)
+  分层      → TieredStorageManager (344行, Hot/Warm/Cold 迁移) ✅ 可直接启用
 归一: 收敛到 GraphBackend Protocol 之下的多个实现 — 不是"合并成 1 套"
-  保留: sqlite_store / graph_store (真实消费方)
-  归档: tiered_storage (16行壳) / unified_store (21行壳) / faiss_store / milvus_store
-        / hnsw_index / lsm_store (1-2 引用孤儿)
+  保留: sqlite_store / graph_store / unified_store / tiered_storage (全是真实实现)
+  处置: faiss_store / milvus_store / hnsw_index / lsm_store (1-2 引用孤儿) —
+        归档或吸收进 UnifiedStore 后端 (拍板)
   处置: unified_graph_store (148行半实现) — 吸收进 graph_store 或归档, 拍板
+  注: 无"壳文件" — 之前分类错误已废除; 真正的冗余是 1-2 引用的孤儿后端
 ```
 
 ### 阶段 2（数据 >100MB 或 图节点 >10K 或 图扩散深度>2 跳延迟敏感）: Kuzu
