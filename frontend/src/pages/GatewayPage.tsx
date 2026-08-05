@@ -62,7 +62,7 @@ import { useUIStore } from '../stores/uiStore';
 
 
   // ─── Provider Card (memoized — only re-renders when provider data changes) ───
-const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider }:
+const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider, onSetActive, onUpdateForm }:
     { provider: V6GatewayProvider; isExpanded: boolean; isActive: boolean; testResult: any; isTesting: boolean; isFetchingModels: boolean; form: {apiKey:string;baseUrl:string}; activeModel: string|undefined; onToggle: (n:string)=>void; onTest: (n:string)=>void; onFetchModels: (n:string)=>void; onSaveConfig: (n:string)=>void; onRemove: (n:string)=>void; saveLoading: boolean; removingProvider: string|null; onSetActive: (p:string,m:string)=>void; onUpdateForm: (p:string,f:string,v:string)=>void }) => (
       <div className={cn(
         'bg-surface-card rounded-xl border transition-colors',
@@ -265,7 +265,7 @@ export function GatewayPage() {
     usage, usageLoading,
     stats, statsLoading,
     health, healthLoading,
-    error, saveLoading, testLoading, fetchModelsLoading,
+    error, saveLoading, fetchModelsLoading,
     refresh,
     checkServices,
     configProvider,
@@ -543,10 +543,11 @@ export function GatewayPage() {
     setExpandedProvider(prev => prev === name ? null : name);
   };
 
-  const updateConfigForm = (name: string, field: 'apiKey' | 'baseUrl', value: string) => {
+  const updateConfigForm = (name: string, field: string, value: string) => {
+    const f = field as 'apiKey' | 'baseUrl';
     setConfigForms(prev => ({
       ...prev,
-      [name]: { ...(prev[name] || { apiKey: '', baseUrl: '' }), [field]: value },
+      [name]: { ...(prev[name] || { apiKey: '', baseUrl: '' }), [f]: value },
     }));
   };
 
@@ -1142,7 +1143,7 @@ export function GatewayPage() {
                     <div key={engine} className="bg-surface-sidebar rounded-lg p-3">
                       <span className="text-xs font-semibold text-text-muted">{engine}</span>
                       <div className="mt-2 space-y-1">
-                        {Object.entries(engineStatus?.[engine] ?? {} ?? {}).map(([key, value]) => (
+                        {Object.entries(engineStatus?.[engine] ?? {}).map(([key, value]) => (
                           <div key={key} className="flex items-start justify-between gap-2 text-xs">
                             <span className="text-text-muted shrink-0">{key}</span>
                             <span className="text-text-primary font-mono text-right break-all">

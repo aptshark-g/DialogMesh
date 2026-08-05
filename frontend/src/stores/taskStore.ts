@@ -5,6 +5,9 @@ import type {
   TaskGraph,
   TaskExecutionStatus,
   TaskNodeStatus,
+  TaskNode,
+  TaskNodeType,
+  TaskEdge,
 } from '../types/task';
 
 interface TaskState {
