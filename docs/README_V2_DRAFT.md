@@ -1,9 +1,13 @@
 # DialogMesh v6
 
 <p align="center">
+  <img src="assets/banner.png" alt="DialogMesh" width="100%">
+</p>
+
+<p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python"></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red" alt="中文"></a>
+  <a href="docs/INDEX.md"><img src="https://img.shields.io/badge/docs-INDEX-green" alt="Docs"></a>
 </p>
 
 **The self-growing agentic runtime.** DialogMesh is a cognitive runtime for LLM agents that doesn't just execute workflows — it **grows them**: the engine generates workflows on the fly for new tasks, executes them with real tools, and converts the ones that succeed into reusable templates. The more you use it, the more it knows how to get things done.
