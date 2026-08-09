@@ -248,6 +248,34 @@ class DeciderStateMachine:
             node = dag.get_node(nid)
             if node is None:
                 return nid, {"status": "missing"}
+            # 下游数据注入提前: 上游节点输出按 data_key 提供
+            # （subgraph 锚点节点 → tool 节点 data_key="anchors" 消费）.
+            node_ctx = dict(context)
+            node_ctx.update(results)
+            for e in dag.incoming_edges(nid):
+                if e.from_node in node_outputs:
+                    node_ctx[e.data_key] = node_outputs[e.from_node]
+            # v2.1 召回→执行层桥（RECALL_EXECUTION_BRIDGE_DESIGN §三）:
+            # subgraph 节点声明 recall_anchor → 产出候选锚点（图拓扑节点,
+            # 白盒可见）; 下游 tool 节点经 data_key="anchors" 依赖消费。
+            if node.chain == "subgraph" and node.params.get("recall_anchor"):
+                try:
+                    from core.agent.recall.recall_service import (
+                        RecallService, format_anchors)
+                    rs = RecallService()
+                    query = str(node.params.get("query")
+                                or context.get("text") or "")
+                    rr = rs.recall(query, top_k=int(
+                        node.params.get("top_k", 5)),
+                        sid=context.get("session_id") or "")
+                    anchors = format_anchors(rr, max_chars=int(
+                        node.params.get("max_chars", 1200)))
+                    hits = [h.to_dict() for h in (rr.hits or [])[:10]]
+                    return nid, {"status": "ok", "anchors": anchors,
+                                 "hits": hits, "recall": True}
+                except Exception as ex:
+                    return nid, {"status": "error",
+                                 "error": str(ex)[:200], "anchors": ""}
             # tool 链: 蓝图工具节点 → 权限门 → ToolRegistry 执行（2026-08-08）
             if node.chain == "tool":
                 try:
@@ -279,6 +307,9 @@ class DeciderStateMachine:
                             session_id=context.get("session_id", ""),
                             request_id=context.get("request_id", ""),
                             messages=context.get("messages"),
+                            anchors=self._recall_anchors(
+                                goal, context, node.params,
+                                self._extract_anchors(node_ctx)),
                         )
                         return nid, {"status": _tr.status,
                                      "task_result": _tr.to_dict()}
@@ -311,12 +342,6 @@ class DeciderStateMachine:
                     return nid, {"status": "error", "error": str(ex)[:200]}
             phase = CHAIN_TO_PHASE.get(node.chain)
             handler = self._phase_handlers.get(phase) if phase else None
-            # 下游数据注入: 上游节点输出按 data_key 提供（只读已完成集合）
-            node_ctx = dict(context)
-            node_ctx.update(results)
-            for e in dag.incoming_edges(nid):
-                if e.from_node in node_outputs:
-                    node_ctx[e.data_key] = node_outputs[e.from_node]
             if handler:
                 try:
                     out = handler(node_ctx)
@@ -382,6 +407,36 @@ class DeciderStateMachine:
 
         return {"phases": order, "results": results,
                 "strategy": getattr(dag, "strategy", "TEMPLATE")}
+
+    @staticmethod
+    def _recall_anchors(goal: str, context: dict, params: dict,
+                        injected: str = "") -> str:
+        """v2.1 召回→执行层桥:
+        ① 优先图拓扑注入（上游 subgraph 锚点节点 data_key=anchors）;
+        ② 否则节点声明 recall_anchor=True 时节点内自召回;
+        ③ 失败静默降级（A16 快反馈, 不阻塞执行）。"""
+        if injected:
+            return injected
+        if not params.get("recall_anchor"):
+            return ""
+        try:
+            from core.agent.recall.recall_service import (
+                RecallService, format_anchors)
+            rs = RecallService()
+            query = str(context.get("text") or goal)
+            rr = rs.recall(query, top_k=5,
+                           sid=context.get("session_id") or "")
+            return format_anchors(rr, max_chars=1200)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _extract_anchors(node_ctx: dict) -> str:
+        """从 node_ctx 解包图拓扑注入的锚点（上游 subgraph 节点输出）。"""
+        val = node_ctx.get("anchors")
+        if isinstance(val, dict):
+            return str(val.get("anchors") or "")
+        return str(val or "")
 
     def replay(self, from_checkpoint: str) -> Optional[StateSnapshot]:
         """Replay from a checkpoint (for recovery)."""

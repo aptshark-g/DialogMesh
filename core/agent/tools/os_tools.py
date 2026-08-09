@@ -415,6 +415,19 @@ def register_os_tools() -> None:
         ))
     except Exception:
         pass
+    # 别名: LLM 常用 read_file → 指向 builtin file_read（v2.1 实测 LLM 首选 read_file）
+    try:
+        from core.agent.tools.builtin import _file_read
+        ToolRegistry.register(ToolAdapter(
+            name="read_file",
+            description="读取文件内容（别名, 同 file_read）。参数: path。",
+            keywords_zh=["读文件", "读取", "查看", "内容"],
+            input_schema={"path": "文件路径(必填)"},
+            category="file",
+            handler=_file_read,
+        ))
+    except Exception:
+        pass
 
 
 # 模块导入即注册（与 builtin.py 同约定）

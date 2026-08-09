@@ -442,6 +442,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     pass
                 _dbus2 = None
                 _mf2 = None
+                _eng2 = None
                 try:
                     from core.agent.cli.engine import get_engine as _ge2
                     _eng2 = _ge2()
@@ -455,13 +456,25 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 _runner = TaskRunner(decision_bus=_dbus2,
                                      meta_feedback=_mf2,
                                      model=req.model or "deepseek-v4-flash")
+                # v2.1 召回→执行层桥: 编码/施工类请求先粗召回当前目标,
+                # 结果作为候选锚点注入执行上下文（精确查阅由执行层工具完成）。
+                anchors = ""
+                try:
+                    from core.agent.recall.recall_service import (
+                        RecallService, format_anchors)
+                    _rs = RecallService(engine=_eng2)
+                    _rr = _rs.recall(req.content, top_k=5, sid=session_id)
+                    anchors = format_anchors(_rr, max_chars=1200)
+                except Exception:
+                    anchors = ""
                 _tr = _runner.run(
                     goal=req.content,
                     constraint=TaskConstraint(
                         goal=req.content, scope=scope,
                         max_rounds=6, timeout_s=120, max_replans=1),
                     node_id="root_task", session_id=session_id,
-                    request_id=msg_id, messages=all_messages)
+                    request_id=msg_id, messages=all_messages,
+                    anchors=anchors)
                 tool_loop_used = True
                 content = _tr.content or ""
                 if _tr.tool_calls or _tr.verdict != "continue":

@@ -81,6 +81,8 @@ vendor/
 test_*.py
 !tests/
 !core/**/tests/
+!tests/test_*.py
+!core/**/tests/test_*.py
 complex_test.py
 interactive_test.py
 stress_test.py

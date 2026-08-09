@@ -112,6 +112,28 @@ class RecallResult:
         }
 
 
+def format_anchors(result: "RecallResult", max_chars: int = 1200,
+                   max_hits: int = 5) -> str:
+    """召回结果 → 执行层锚点文本（system 注入, 供精确查阅定位）。
+
+    设计: RECALL_EXECUTION_BRIDGE_DESIGN_20260809 §三 层1→层2:
+    粗召回只给"候选锚点"（来源/置信度/片段摘要）, 真实内容由执行层
+    用 dir_list/grep/file_read 顺文件树精确查阅, 不把大段原文塞上下文。
+    """
+    if not result or not result.hits:
+        return ""
+    parts = ["## 候选锚点（粗召回, 供精确查阅定位; 真实内容请用工具读取）"]
+    used = len(parts[0])
+    for h in result.hits[:max_hits]:
+        text = (h.text or "").strip().replace("\n", " ")[:160]
+        line = f"- [{h.source} {h.fused():.2f}] {text}"
+        used += len(line) + 1
+        if used > max_chars:
+            break
+        parts.append(line)
+    return "\n".join(parts)
+
+
 class RecallService:
     """统一召回能力底座。"""
 

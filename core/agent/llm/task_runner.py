@@ -135,7 +135,8 @@ class TaskRunner:
     def run(self, goal: str, context: Optional[Dict[str, Any]] = None,
             constraint: Optional[TaskConstraint] = None, node_id: str = "",
             session_id: str = "", request_id: str = "", turn: int = 0,
-            messages: Optional[List[Dict]] = None) -> TaskResult:
+            messages: Optional[List[Dict]] = None,
+            anchors: Optional[str] = None) -> TaskResult:
         """执行一个蓝图节点。返回 TaskResult（含监控裁决 + 决策事件）。"""
         t0 = time.time()
         constraint = constraint or TaskConstraint(goal=goal)
@@ -146,6 +147,10 @@ class TaskRunner:
             msgs.insert(0, {"role": "system",
                             "content": "你是 DialogMesh 执行层 agent。"})
         inject = self.build_inject(constraint)
+        # v2.1 召回→执行层桥（RECALL_EXECUTION_BRIDGE_DESIGN）:
+        # 粗召回锚点作为候选注入, LLM 用文件工具精确查阅真实内容。
+        if anchors:
+            inject = inject + "\n\n" + anchors
         budget_time = (constraint.budget_time_s or constraint.timeout_s
                        or 0.0)
         result = TaskResult(node_id=node_id)
@@ -220,6 +225,8 @@ class TaskRunner:
             cur = new_constraint
             result.replans += 1
             inject = self.build_inject(cur)
+            if anchors:
+                inject = inject + "\n\n" + anchors
             logger.info("TaskRunner replan #%d: %s → %s (reason: %s)",
                         result.replans, goal, cur.goal, verdict.reason)
         else:
