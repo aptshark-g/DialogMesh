@@ -78,3 +78,17 @@
 ### P0 方案（写即索引）
 write_file 成功后 → 文件内容进 chunk_store（向量+文本块）→
 "产出内容可召回"的记忆闭环。
+
+### P0 施工完成（2026-08-09 深夜）
+- write_file 产出内容进 chunk_store（produced 标签, >20 字符）
+- recall 冷路径合并 produced 块（atoms_by_tag + _ensure_global_blocks）
+- **G0 记忆闭环**: produced 块向量现算一次 → _index_cache →
+  _save_index_cache("global") 落盘 data/recall_index/ → 重启恢复
+  （_load_index_cache）——跨重启记忆, 零新依赖（复用 G0 持久化）
+- 实证: 语义特征词"混合锚点 RRF 融合"召回到文稿原文
+- 测试: write_index 4 项（含向量持久化+二次加载恢复）+
+  recall 18 回归全绿
+
+### 待办（环境/完备性, 独立任务）
+- chromadb 环境修复（.venv numpy 正常 + clash → pip 装 chromadb,
+  切 unified 后端持久向量库）——存储层完备性, 不阻塞 G0 闭环

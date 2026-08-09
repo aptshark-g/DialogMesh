@@ -44,3 +44,32 @@ def test_recall_global_pool_merges_produced_blocks(tmp_path):
     # 真召回: query 命中产出块
     res = svc.recall("混合锚点 RRF 融合", top_k=5)
     assert any(h.id.startswith("file:") for h in res.hits)
+
+
+def test_produced_vector_persisted_via_g0(monkeypatch, tmp_path):
+    """G0 记忆闭环: produced 块向量落盘 global.json, 二次加载恢复。"""
+    import os
+    from core.agent.recall.recall_service import RecallService
+    cs = ChunkStore(backend="in_memory")
+    ToolRegistry.set_config({"chunk_store": cs})
+    content = "产出记忆: 混合锚点 BGE+BM25+SPO, RRF 融合, 时序约束。"
+    from core.agent.tools.builtin import _file_write
+    _file_write(str(tmp_path / "m.md"), content)
+    svc = RecallService(engine=None, chunk_store=cs, discourse=None, llm=None)
+    monkeypatch.setattr(
+        svc, "_embed", lambda text: [0.1] * 32)
+    blocks = svc._ensure_global_blocks()
+    produced = [b for b in blocks if b["id"].startswith("file:")]
+    assert produced[0]["vector"] is not None
+    # 落盘
+    import json
+    path = svc._index_path("global")
+    assert os.path.exists(path)
+    data = json.load(open(path, encoding="utf-8"))
+    bid = produced[0]["id"]
+    assert bid in data.get("blocks", {})
+    assert data["blocks"][bid].get("vector") is not None
+    # 二次实例加载恢复（模拟重启）
+    svc2 = RecallService(engine=None, chunk_store=cs, discourse=None, llm=None)
+    svc2._load_index_cache("global")
+    assert svc2._index_cache.get(bid, {}).get("vector") is not None

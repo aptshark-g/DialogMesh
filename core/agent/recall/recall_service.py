@@ -315,6 +315,14 @@ class RecallService:
                     bid = atom.block_id
                     if any(b["id"] == bid for b in blocks):
                         continue
+                    cached = self._index_cache.get(bid) or {}
+                    vec = cached.get("vector")
+                    if vec is None:
+                        # G0 记忆闭环: 产出块向量现算一次并落盘
+                        # （_save_index_cache("global") → 重启后恢复）
+                        vec = self._embed(text)
+                        if vec is not None:
+                            self._index_cache.setdefault(bid, {})["vector"] = vec
                     blocks.append({
                         "id": bid,
                         "text": text,
@@ -322,7 +330,7 @@ class RecallService:
                         "children": [],
                         "temperature": "active",
                         "spo": self._extract_spo(text),
-                        "vector": None,
+                        "vector": vec,
                         "path": [str(bid).replace("file:", "", 1)],
                     })
             except Exception as e:
