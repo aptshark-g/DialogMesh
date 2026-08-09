@@ -281,29 +281,52 @@ class RecallService:
         if self._global_block_list:
             return self._global_block_list
         tm = self._discourse
-        if tm is None or not getattr(tm, "blocks", None):
-            return []
-        self._load_index_cache("global")
         blocks = []
-        for bid, b in tm.blocks.items():
-            text = (
-                getattr(b, "_raw_text", "") or " ".join(
-                    getattr(u, "raw_text", "") for u in getattr(b, "atomic_units", [])
-                )
-            ).strip()
-            if not text:
-                continue
-            cached = self._index_cache.get(bid) or {}
-            blocks.append({
-                "id": bid,
-                "text": text,
-                "parent": getattr(b, "parent_id", None),
-                "children": list(getattr(b, "child_ids", [])),
-                "temperature": getattr(b, "status", "active"),
-                "spo": cached.get("spo") or self._extract_spo(text),
-                "vector": cached.get("vector"),
-                "session": getattr(b, "_session_id", ""),
-            })
+        if tm is not None and getattr(tm, "blocks", None):
+            self._load_index_cache("global")
+            for bid, b in tm.blocks.items():
+                text = (
+                    getattr(b, "_raw_text", "") or " ".join(
+                        getattr(u, "raw_text", "") for u in getattr(b, "atomic_units", [])
+                    )
+                ).strip()
+                if not text:
+                    continue
+                cached = self._index_cache.get(bid) or {}
+                blocks.append({
+                    "id": bid,
+                    "text": text,
+                    "parent": getattr(b, "parent_id", None),
+                    "children": list(getattr(b, "child_ids", [])),
+                    "temperature": getattr(b, "status", "active"),
+                    "spo": cached.get("spo") or self._extract_spo(text),
+                    "vector": cached.get("vector"),
+                    "session": getattr(b, "_session_id", ""),
+                })
+        # P0 写即索引（RECALL_SUBGRAPH_BRIDGE §六）: 合并产出内容块
+        # （write_file 索引进 chunk_store 的 produced 原子）——刚写的
+        # 文件内容进 recall 冷路径, "产出内容可召回"闭环。
+        if self._chunk is not None:
+            try:
+                for atom in self._chunk.atoms_by_tag("produced"):
+                    text = (atom.text or "").strip()
+                    if not text:
+                        continue
+                    bid = atom.block_id
+                    if any(b["id"] == bid for b in blocks):
+                        continue
+                    blocks.append({
+                        "id": bid,
+                        "text": text,
+                        "parent": None,
+                        "children": [],
+                        "temperature": "active",
+                        "spo": self._extract_spo(text),
+                        "vector": None,
+                        "path": [str(bid).replace("file:", "", 1)],
+                    })
+            except Exception as e:
+                logger.debug("produced-block merge failed: %s", e)
         self._global_block_list = blocks
         self._index_cache_file = "global"
         self._save_index_cache("global")

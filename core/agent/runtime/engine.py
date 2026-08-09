@@ -409,6 +409,13 @@ class CognitiveRuntimeEngine:
                         bge = None
                 self._chunk_store = ChunkStore(backend=chunk_backend, bge_model=bge)
                 self._chunk_backend = chunk_backend
+            # P0 写即索引（RECALL_SUBGRAPH_BRIDGE §六）: 工具侧经
+            # ToolRegistry 配置拿到 chunk_store, write_file 产出内容入库。
+            try:
+                from core.agent.tools.registry import ToolRegistry
+                ToolRegistry.set_config({"chunk_store": self._chunk_store})
+            except Exception:
+                pass
         except Exception:
             pass
 

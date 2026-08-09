@@ -98,6 +98,19 @@ def _file_write(path: str = "", content: str = "", **kwargs) -> ToolResult:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
+        # P0 写即索引（RECALL_SUBGRAPH_BRIDGE §六）: 产出内容进 chunk_store,
+        # 让刚写的文件可被召回（记忆闭环: 产出 → 索引 → 可查）。
+        try:
+            from core.agent.tools.registry import ToolRegistry
+            cs = ToolRegistry._config.get("chunk_store")
+            if cs is not None and content and len(content) > 20:
+                cs.add_text(
+                    content[:2000],
+                    block_id=f"file:{path}",
+                    chunkable=True,
+                    tags=["produced", "file_write"])
+        except Exception:
+            pass
         return ToolResult("file_write", True, data={"path": path, "bytes": len(content)})
     except Exception as e:
         return ToolResult("file_write", False, error=str(e))

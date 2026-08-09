@@ -86,7 +86,7 @@ class TaskRunner:
     def __init__(self, decision_bus: Any = None, monitor: Any = None,
                  intervention: Any = None, replanner: Optional[Callable] = None,
                  meta_feedback: Any = None, llm_loop: Optional[Callable] = None,
-                 model: str = ""):
+                 model: str = "", trace_store: Any = None):
         # 默认内存空总线（不触发 get_engine, 单元测试零启动成本）。
         # 生产接线（v3_session_api / statemachine）显式传 engine 总线,
         # 或调用 attach_engine_bus() 让事件进 /v6/changelog。
@@ -102,6 +102,7 @@ class TaskRunner:
         self._meta_feedback = meta_feedback  # 复盘回流（A6）: consume(ExecutionAudit)
         self._llm_loop = llm_loop or _default_llm_loop
         self._model = model
+        self._trace_store = trace_store
 
     def attach_engine_bus(self) -> bool:
         """绑定引擎的决策事件总线（changelog 同源, 回看可见）。"""
@@ -248,6 +249,23 @@ class TaskRunner:
     def _writeback(self, result: TaskResult, node_id: str,
                    request_id: str = ""):
         """执行成败 → ExecutionAudit → MetaFeedback（A6 修正回流）。"""
+        # 生产轨迹（情景再现的"写的代码"支线）: 工具序列写入 trace_store
+        if self._trace_store is not None:
+            try:
+                from core.agent.blueprint.learning_bridge import ExecutionTrace
+                seq = [str(tc.get("name", "?"))
+                       for tc in (result.tool_calls or [])]
+                if seq:
+                    self._trace_store.add(ExecutionTrace(
+                        request_id=request_id or "task_runner",
+                        intent=node_id or "task_node",
+                        tool_sequence=seq,
+                        strategy="EXECUTION",
+                        success=result.status == "ok",
+                        source_dag_id=request_id or "",
+                    ))
+            except Exception as e:
+                logger.debug("trace_store write failed: %s", e)
         if self._meta_feedback is None:
             return
         try:

@@ -209,6 +209,29 @@ class EventLog:
         ).fetchone()
         return row[0] if row else None
 
+    def get_event(self, event_id: str) -> Optional[Dict[str, Any]]:
+        """按 event_id 直接查询（情景溯源 RECALL_SUBGRAPH_BRIDGE 用）。
+
+        不依赖"未消费"水位线（replay_unconsumed 只扫 consumed=0 且
+        ASC 排序会截断最新事件——溯源需直查）。
+        """
+        if not self._conn:
+            return None
+        row = self._conn.execute(
+            "SELECT event_id, kind, payload, trace_id, created_at "
+            "FROM event_log WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "event_id": row[0],
+            "kind": row[1],
+            "payload": json.loads(row[2]) if row[2] else {},
+            "trace_id": row[3],
+            "created_at": row[4],
+        }
+
     def ack_consumer(self, consumer_id: str, seq: int) -> bool:
         """per-subscriber 水位线前进（单调，只前进不回退）。"""
         if not self._conn:

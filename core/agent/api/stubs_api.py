@@ -171,6 +171,59 @@ async def recall(query: str = Query(default=""),
     return kernel_recall(query, top_k=top_k, sid=sid)
 
 
+@router.post("/recall/reconstruct")
+async def recall_reconstruct(body: dict = Body(default={})):
+    """白盒: 情景再现视图（recall→subgraph 桥, 2026-08-09）。
+
+    概念召回 → 锚点 → 子图编译（事件溯源=会话要求 + 代码轨迹=写的代码
+    + 图扩展=关联内容）。验证"情景再现"完整性的同时是产品白盒能力。
+    """
+    from core.agent.cli.engine import get_engine
+    eng = get_engine()
+    query = str(body.get("query", ""))
+    sid = str(body.get("session_id", "") or "")
+    event_id = str(body.get("event_id", "") or "")
+    top_k = int(body.get("top_k", 5))
+    if not query:
+        return {"ok": False, "error": "query required"}
+    if eng is None:
+        return {"ok": False, "error": "engine unavailable"}
+    from core.agent.recall.recall_service import (
+        RecallService, format_anchors)
+    rs = RecallService(engine=eng)
+    rr = rs.recall(query, top_k=top_k, sid=sid)
+    anchors_text = format_anchors(rr, max_chars=1200)
+    # 诊断: produced 块是否在池 + chunk_store 原子数
+    diag = {"chunk_has_store": rs._chunk is not None}
+    try:
+        global_blocks = rs._ensure_global_blocks()
+        diag["global_blocks"] = len(global_blocks)
+        diag["produced_in_pool"] = sum(
+            1 for b in global_blocks if str(b.get("id", "")).startswith("file:"))
+        diag["produced_atoms"] = (
+            len(rs._chunk.atoms_by_tag("produced"))
+            if rs._chunk is not None else -1)
+    except Exception as e:
+        diag["error"] = str(e)[:200]
+    from core.agent.v4.cognitive.subgraph_compiler import SubgraphCompiler
+    sc = SubgraphCompiler(engine=eng)
+    ctx = sc.compile_from_anchors(rr.hits, event_id=event_id)
+    domains = {}
+    for e in ctx.entries:
+        domains.setdefault(e.domain, []).append(e.content[:120])
+    return {
+        "ok": True,
+        "query": query,
+        "hit_count": len(rr.hits),
+        "anchors": anchors_text,
+        "subgraph_entries": len(ctx.entries),
+        "domains": domains,
+        "prompt": sc.assemble_prompt(ctx),
+        "event_id_used": event_id,
+        "diag": diag,
+    }
+
+
 @router.post("/task/{sid}/execute")
 async def execute_task(sid: str, body: dict = Body(default={})):
     """执行已确认任务图（蓝图 tool 节点 → Decider → 权限门）。

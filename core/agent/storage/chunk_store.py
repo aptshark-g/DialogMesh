@@ -80,6 +80,10 @@ class ChunkStore:
             self._try_chromadb_add(atom)
         return atom
 
+    def atoms_by_tag(self, tag: str) -> List[Atom]:
+        """按标签取原子（P0 写即索引: recall 冷路径合并 produced 块）。"""
+        return [a for a in self._atoms if tag in (a.tags or [])]
+
     # ── Read ──
 
     def search(self, query: str, top_k: int = 10) -> List[Atom]:

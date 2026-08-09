@@ -57,3 +57,24 @@
 - trace_id 跨模块传播（§11.2）——溯源完整性的前置
 - 执行迹（/v6/execution）与子图上下文联动展示（前端阶段 B）
 - compile_from_anchors 的预算裁剪策略细化（当前条目数有限, 天然可控）
+
+## 六、端到端验证 + 质量审计（2026-08-09 晚）
+
+### 实证（真实 LLM 会话, 非 mock）
+- 会话: "写一份关于统一召回方案的简短设计文档, 保存到 data/demo_recall_doc.md"
+  → LLM 自主 write_file（1.1-1.7KB 落盘）
+- reconstruct 三支核查: 概念(R) 5 锚点 ✅ / 会话要求(Q) user_message
+  事件原文 ✅ / 代码轨迹(T) write_file 序列 ✅ —— **三支全通**
+- 修复链: trace_store 写入（TaskRunner）→ EventLog.get_event 直查（新方法,
+  replay_unconsumed ASC 截断 bug）→ 显式 msg_id 事件（v3）
+
+### 质量审计（诚实, 3 缺口）
+| 缺口 | 现象 | 优先级 |
+|---|---|---|
+| 产出内容未索引 | write_file 的文件不在语料库, 召回锚点是对话请求而非文稿内容 | 🔴 P0 写即索引 |
+| 代码轨迹无内容详情 | trace 只有工具名（write_file）, 无 path/bytes/摘要 | 🟡 P1 并执行迹 |
+| 图扩展无数据源 | 引擎未装 ConceptGraph（content_index 未接线）, G 支线空 | 🟡 P2 装配 |
+
+### P0 方案（写即索引）
+write_file 成功后 → 文件内容进 chunk_store（向量+文本块）→
+"产出内容可召回"的记忆闭环。

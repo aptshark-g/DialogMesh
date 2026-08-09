@@ -443,6 +443,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 _dbus2 = None
                 _mf2 = None
                 _eng2 = None
+                _ts2 = None
                 try:
                     from core.agent.cli.engine import get_engine as _ge2
                     _eng2 = _ge2()
@@ -450,11 +451,17 @@ async def send_message(session_id: str, req: SendMessageRequest):
                               if _eng2 is not None else None)
                     _mf2 = (getattr(_eng2, "_meta_feedback", None)
                             if _eng2 is not None else None)
+                    _lb2 = (getattr(_eng2, "_learning_bridge", None)
+                            if _eng2 is not None else None)
+                    _ts2 = (getattr(_lb2, "trace_store", None)
+                            if _lb2 is not None else None)
                 except Exception:
                     _dbus2 = None
                     _mf2 = None
+                    _ts2 = None
                 _runner = TaskRunner(decision_bus=_dbus2,
                                      meta_feedback=_mf2,
+                                     trace_store=_ts2,
                                      model=req.model or "deepseek-v4-flash")
                 # v2.1 召回→执行层桥: 编码/施工类请求先粗召回当前目标,
                 # 结果作为候选锚点注入执行上下文（精确查阅由执行层工具完成）。
@@ -566,6 +573,21 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         wire_subscribers(eng)
                     except: pass
                 eng._publish("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id})
+                # 情景溯源（RECALL_SUBGRAPH_BRIDGE §三）: 显式写带 msg_id
+                # 的事件（事件 id + trace_id = msg_id）, 让 _expand_from_event
+                # 能按 msg_id 反查"会话要求"支线。跨模块 trace 传播（§11.2）
+                # 仍是基建待办, 目前至少 user_message 事件可命中。
+                try:
+                    _el = getattr(eng, "_event_log", None)
+                    if _el is not None and hasattr(_el, "put_event"):
+                        _el.put_event(
+                            event_id=msg_id, kind="user_message",
+                            payload={"text": req.content,
+                                     "reply": content[:500],
+                                     "session_id": session_id},
+                            trace_id=msg_id)
+                except Exception:
+                    pass
         except Exception as _ep:
             logger.debug("Post-LLM pipeline skipped: %s", _ep)
 
