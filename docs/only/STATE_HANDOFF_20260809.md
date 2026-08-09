@@ -85,6 +85,49 @@
 - 事件进 engine 决策总线 → /v6/changelog 可回看可介入（approve/reject）
 - 遗留: Warm 单次 LLM 评估（P2）; 前端执行迹展示（阶段 B）
 
+## 七、召回体系完成态（2026-08-09 深夜追加）
+
+### 完成（全部实测）
+1. **量化评测体系**: docs/test/recall_queries.json（50 人工查询, 8 域）+
+   scripts/doc_recall_bench.py（分级/漂移/四路/粗筛/时序）+
+   GPU torch（2.6.0+cu124, RTX3080, 2444 块编码 8.3s）+
+   首轮基线: bm25 28% → linear 38% → linear+时序 44% top1（MRR 0.534）
+2. **时序约束**（评测驱动发现）: time_half_life_days + 块 created_at,
+   cross 0%→25%
+3. **recall→subgraph 桥**: compile_from_anchors（锚点 seed + 事件溯源 +
+   代码轨迹 + 图扩展）
+4. **情景再现端到端**（真实 LLM 非 mock）: 写文稿 → recall →
+   reconstruct 三支全通（概念 R / 会话要求 Q / 代码轨迹 T）
+5. **写即索引 + G0 记忆闭环**: write_file 产出 → chunk_store(produced) →
+   recall 冷路径合并 → 向量落盘 data/recall_index/ → 跨重启可召回
+6. **修复链**: TaskRunner→trace_store / v3 显式 msg_id 事件 /
+   EventLog.get_event（replay_unconsumed ASC 截断 bug）/
+   ChunkStore.atoms_by_tag
+
+### 测试
+write_index 4 + subgraph_anchors 6 + event_log_get 2 + recall 18 +
+task_runner 7 + 回归 47+ 全绿
+
+### 提交线（本地未推）
+67d6abe(v1 已推) → dd1ef66(v2.1) → 88e32f1(评测+时序) →
+4e05c30(subgraph 桥) → d47be27(情景再现闭环) → 35a96f2(G0 记忆闭环)
+
+### 待办（记录不施工/独立任务）
+- chromadb 环境修复（.venv numpy 正常 + clash → 装, 切 unified 持久后端）
+- 博客 chapter4（素材齐: 定位/分层/时序/情景再现/量化数据）
+- 前端 B（执行迹/情景视图展示）
+- 层3 变体评测 / 跨域召回(25%) / 文档-代码同步审计 / BEIR 公开基准
+- trace_id 跨模块传播（§11.2）; G 支线 ConceptGraph 数据源
+
+### 环境
+8000(新代码)/8080 在跑; .venv torch GPU; anaconda numpy 坏（测试用 anaconda,
+向量/评测用 .venv）; clash 7877 可出网
+
+### 恢复三步
+1. 读本文档（§七 完成态 + 待办）
+2. 读 RECOVERY_PLAN（顶部已指向）
+3. 下一步候选: 博客 chapter4 / 前端 B / chromadb 环境修复 / 跨域召回
+
 ## 五、关键文档索引
 - 第一版核对: docs/only/V1_FUNCTION_CHECKLIST_20260808.md
 - 执行层架构: docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md
