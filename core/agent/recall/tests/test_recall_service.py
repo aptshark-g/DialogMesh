@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+import time
+
 from core.agent.recall.recall_service import (
     RecallService, RecallHit, RecallResult, format_anchors)
 
@@ -44,7 +46,8 @@ class TestFormatAnchors:
     def test_formats_hits_with_source_and_score(self):
         rr = RecallResult(query="q", hits=[
             RecallHit(id="h1", text="AES 密钥安全存储",
-                      source="bm25", score=0.8, confidence=0.9),
+                      source="bm25", score=0.8, confidence=0.9,
+                      path=["docs/only/recall/DESIGN.md", "§五"]),
             RecallHit(id="h2", text="多行\n文本折叠",
                       source="vector", score=0.6, confidence=0.8),
         ])
@@ -53,6 +56,8 @@ class TestFormatAnchors:
         assert "[bm25" in out and "0.72" in out  # 0.8×0.9
         assert "多行 文本折叠" in out  # 换行折叠
         assert "精确查阅" in out
+        # 索引语义: 锚点携带源文档路径（执行层 file_read 精确查阅用）
+        assert "docs/only/recall/DESIGN.md" in out
 
     def test_truncates_long_hits(self):
         long_text = "x" * 300
@@ -69,6 +74,52 @@ class TestFormatAnchors:
                       score=0.5, confidence=0.5) for i in range(8)])
         out = format_anchors(rr, max_hits=3)
         assert out.count("- [bm25") == 3
+
+
+class TestTemporalConstraint:
+    """时序约束（2026-08-09）: 块 created_at → 排序因子, 旧文档降权。"""
+
+    def _svc(self, blocks, half_life=60.0):
+        svc = _svc(blocks)
+        svc.time_half_life_days = half_life
+        return svc
+
+    def test_factor_neutral_when_disabled(self):
+        svc = _svc(BLOCKS)
+        hit = RecallHit(id="h", text="t", source="bm25")
+        assert svc._temporal_factor(hit) == 1.0  # 半衰期 0 = 关
+
+    def test_factor_neutral_without_timestamp(self):
+        svc = self._svc(BLOCKS)
+        hit = RecallHit(id="h", text="t", source="bm25", created_at=0.0)
+        assert svc._temporal_factor(hit) == 1.0
+
+    def test_old_doc_decays_to_floor(self):
+        svc = self._svc(BLOCKS, half_life=30.0)
+        hit = RecallHit(id="h", text="t", source="bm25",
+                        created_at=time.time() - 360 * 86400)  # 360 天前
+        f = svc._temporal_factor(hit)
+        assert f == 0.3  # 下限
+
+    def test_recent_doc_factor_high(self):
+        svc = self._svc(BLOCKS, half_life=30.0)
+        hit = RecallHit(id="h", text="t", source="bm25",
+                        created_at=time.time() - 5 * 86400)  # 5 天前
+        f = svc._temporal_factor(hit)
+        assert 0.3 < f <= 1.0
+
+    def test_temporal_reranks_newer_first(self):
+        """同相关度时新文档排在旧文档前（排序 key 融合时序因子）。"""
+        now = time.time()
+        old = RecallHit(id="old", text="旧版交接文档", source="bm25",
+                        score=0.9, confidence=1.0,
+                        created_at=now - 300 * 86400)
+        new = RecallHit(id="new", text="新版交接文档", source="bm25",
+                        score=0.8, confidence=1.0, created_at=now - 2 * 86400)
+        svc = self._svc(BLOCKS, half_life=60.0)
+        # fused: old=0.9, new=0.8; 时序后: old 0.9×0.3=0.27, new 0.8×~0.98
+        assert (new.fused() * svc._temporal_factor(new)
+                > old.fused() * svc._temporal_factor(old))
 
 
 def test_recall_returns_fused_hits():

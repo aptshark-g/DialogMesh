@@ -76,6 +76,8 @@ config/user_config.yaml
 tmp/
 temp/
 vendor/
+scripts/.recall_vec_cache.json
+scripts/.recall_term_index.json
 
 # ── 临时测试脚本（开发用，不提交）──
 test_*.py

@@ -122,11 +122,14 @@ def format_anchors(result: "RecallResult", max_chars: int = 1200,
     """
     if not result or not result.hits:
         return ""
-    parts = ["## 候选锚点（粗召回, 供精确查阅定位; 真实内容请用工具读取）"]
+    parts = ["## 候选锚点（粗召回, 供精确查阅定位; 真实内容请用工具按路径读取）"]
     used = len(parts[0])
     for h in result.hits[:max_hits]:
         text = (h.text or "").strip().replace("\n", " ")[:160]
-        line = f"- [{h.source} {h.fused():.2f}] {text}"
+        loc = ""
+        if h.path:
+            loc = " <" + ",".join(str(p) for p in h.path[:3]) + ">"
+        line = f"- [{h.source} {h.fused():.2f}]{loc} {text}"
         used += len(line) + 1
         if used > max_chars:
             break
@@ -161,6 +164,10 @@ class RecallService:
         self._index_cache_file = "default"
         self._global_block_list: List[dict] = []
         self.fuse_mode = "linear"   # linear | rrf | norm（RRF 融合 / 规则增强）
+        # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
+        # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
+        # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
+        self.time_half_life_days = 0.0
 
     def _norm(self, w: str) -> str:
         """同义归一（规则增强 SPO-A）: 谓词/主宾比较前归一。"""
@@ -358,6 +365,23 @@ class RecallService:
         except Exception:
             return 0.0
 
+    def _temporal_factor(self, hit) -> float:
+        """时序约束因子: 排序分 = fused() × 2^(-age_days / half_life)。
+
+        无时间戳 / 半衰期关闭 → 1.0（不改变既有行为）;
+        旧文档衰减到下限 0.3（同相关度时新文档优先）。
+        """
+        hl = getattr(self, "time_half_life_days", 0.0) or 0.0
+        if hl <= 0:
+            return 1.0
+        ts = getattr(hit, "created_at", None) or 0.0
+        if ts <= 0:
+            return 1.0
+        age_days = (time.time() - ts) / 86400.0
+        if age_days <= 0:
+            return 1.0
+        return max(0.3, 2.0 ** (-age_days / hl))
+
     def _embed(self, text: str) -> Optional[List[float]]:
         try:
             from core.infrastructure.model_service import encode_text
@@ -403,6 +427,8 @@ class RecallService:
                         id=b["id"], text=b["text"][:200], source="vector",
                         score=sim, confidence=self._confidence("vector"),
                         temperature=b["temperature"],
+                        path=b.get("path") or [],
+                        created_at=b.get("created_at"),
                     ))
             return hits
         # 兜底: ChunkStore（关键词或 unified 后端）
@@ -448,6 +474,8 @@ class RecallService:
                 id=b["id"], text=b["text"][:200], source="bm25",
                 score=s / max_s, confidence=self._confidence("bm25"),
                 temperature=b["temperature"],
+                path=b.get("path") or [],
+                created_at=b.get("created_at"),
             )
             for s, b in scored[:top_k]
         ]
@@ -511,6 +539,8 @@ class RecallService:
                 id=b["id"], text=b["text"][:200], source="spo",
                 score=s, confidence=self._confidence("spo"),
                 temperature=b["temperature"], spo=(b.get("spo") or [{}])[0],
+                path=b.get("path") or [],
+                created_at=b.get("created_at"),
             )
             for s, b in scored[:top_k]
         ]
@@ -618,7 +648,8 @@ class RecallService:
                         score=a.score * (0.8 ** hop),
                         confidence=a.confidence * 0.9,
                         temperature=nb_info["temperature"],
-                        hops=hop, path=[a.id, nb],
+                        hops=hop,
+                        path=nb_info.get("path") or [a.id, nb],
                     ))
                     frontier.append((nb, hop))
         return out
@@ -732,13 +763,19 @@ class RecallService:
                 if h.id in rrf_scores:
                     h.score = rrf_scores[h.id]
                 best[h.id] = h
-            ordered = sorted(best.values(), key=lambda h: h.score, reverse=True)
+            ordered = sorted(
+                best.values(),
+                key=lambda h: h.score * self._temporal_factor(h),
+                reverse=True)
         else:
             for h in hits:
                 cur = best.get(h.id)
                 if cur is None or h.fused() > cur.fused():
                     best[h.id] = h
-            ordered = sorted(best.values(), key=lambda h: h.fused(), reverse=True)
+            ordered = sorted(
+                best.values(),
+                key=lambda h: h.fused() * self._temporal_factor(h),
+                reverse=True)
         result = RecallResult(
             query=query,
             hits=ordered[:top_k],
