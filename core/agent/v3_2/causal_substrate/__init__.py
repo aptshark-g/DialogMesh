@@ -1,3 +1,5 @@
-"""v3.2 causal_substrate → merged to core.agent.causal_substrate"""
-from core.agent.causal_substrate.adapter import CausalSubstrate
-from core.agent.causal_substrate.models import MetaRole, SkeletonMatch, CausalConstraints
+"""v3.2 causal_substrate → merged to core.agent.association (canonical implementation)."""
+from core.agent.association.causal_substrate import CausalSubstrate
+from core.agent.association.models import MetaRole, SkeletonMatch, CausalConstraints
+
+__all__ = ["CausalSubstrate", "MetaRole", "SkeletonMatch", "CausalConstraints"]

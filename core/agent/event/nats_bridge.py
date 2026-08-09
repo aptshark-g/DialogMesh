@@ -38,13 +38,50 @@ class NATSPublisher:
         return self._connected
 
     def connect(self, timeout: float = 2.0) -> bool:
+        # X2 (2026-08-07): 先做 TCP 预探测 —— NATS 不可达时直接短路返回,
+        # 不进入 nats-py 客户端。否则无服务器时 connect() 内部协程在
+        # wait_for 超时后被取消但残留, 事件循环关闭时报
+        # "coroutine was never awaited" RuntimeWarning。
+        try:
+            import socket as _socket
+            from urllib.parse import urlparse
+            parts = urlparse(self._server_url if "://" in self._server_url
+                             else "nats://" + self._server_url)
+            host = parts.hostname or "localhost"
+            port = parts.port or 4222
+            with _socket.create_connection((host, port), timeout=timeout):
+                pass  # TCP 可达, 继续走 nats 客户端
+        except Exception:
+            self._connected = False
+            self._stats["fallbacks"] += 1
+            logger.debug("NATS TCP probe failed (%s) — memory fallback",
+                         self._server_url)
+            return False
         try:
             from nats.aio.client import Client as NATS
             async def _connect():
                 nc = NATS()
-                await nc.connect(self._server_url, connect_timeout=timeout)
+                # No-reconnect connect: nats-py defaults to 60 reconnect
+                # attempts with 2s backoff — with no NATS server this stalls
+                # engine startup for minutes. Fail fast and fall back to the
+                # in-memory EventBus (graceful degradation, DESIGN_DISTRIBUTED
+                # §2.2). connect_timeout bounds only the single TCP handshake.
+                # X1 (2026-08-04): nats-py connect_timeout 在 Windows 下不生效，
+                # 无服务器时 connect() 无限阻塞（DNS/发现阶段）。外层 wait_for
+                # 硬超时兜底，超时即内存 fallback。
+                await nc.connect(
+                    self._server_url,
+                    connect_timeout=timeout,
+                    allow_reconnect=False,
+                    max_reconnect_attempts=0,
+                )
                 return nc
-            self._nc = asyncio.run(_connect())
+            try:
+                self._nc = asyncio.run(_connect())
+            except asyncio.TimeoutError:
+                logger.debug("NATS connect timed out (%s) — memory fallback", self._server_url)
+                self._connected = False
+                return False
             self._connected = True
             logger.info("NATS connected: %s", self._server_url)
             return True
@@ -108,7 +145,7 @@ class HybridEventBus:
     Publishes to NATS when available; always publishes to memory subscribers.
     This ensures zero message loss during NATS downtime."""
 
-    def __init__(self, engine, nats_url: str = "nats://localhost:4222"):
+    def __init__(self, engine=None, nats_url: str = "nats://localhost:4222"):
         self._engine = engine
         self._nats = NATSPublisher(nats_url)
         self._memory_subscribers: Dict[str, Callable] = {}

@@ -8,14 +8,14 @@ sys.path.insert(0, '.')
 os.environ['DIALOGMESH_MONITOR'] = '1'
 
 from core.agent.runtime.engine import CognitiveRuntimeEngine
-from core.agent.llm_providers.openai_provider import OpenAIProvider
-from core.agent.llm_providers.switch_provider import SwitchGatewayProvider
+from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
 from core.agent.events.event_ir import DialogAdapter
 from core.agent.v4.cognitive.tag_layer import TagAcquisitionEngine
 from core.agent.v4.cognitive.monitor_report import MonitorReport
 from core.agent.v4.cognitive.ocean_profile import DIMENSIONS
 
-KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
+# B8-4 (2026-08-04): key 移出 git — 环境变量读取
+KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
 def run_chat_test(turns: int = 10):
     ts = int(time.time())
@@ -27,16 +27,24 @@ def run_chat_test(turns: int = 10):
     print(f"Log: {log_path}")
     print("=" * 70)
 
-    # Try switch gateway first, fallback to direct DeepSeek
+    # B8-4: 主路径 = switch 网关；离线降级直连（需 DEEPSEEK_API_KEY）
     prov = None
-    if SwitchGatewayProvider.health():
+    gw = GatewayLLMProvider(base_url=os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080"))
+    if gw.health_check():
         print("Using switch gateway (:8080)")
-        prov = SwitchGatewayProvider.create(model="deepseek-chat")
+        prov = gw
     else:
-        print("switch gateway unavailable — using direct DeepSeek")
-        prov = OpenAIProvider("deepseek", {
-            "api_key": KEY, "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
-        })
+        if KEY:
+            print("switch gateway unavailable — using direct DeepSeek")
+            from core.agent.llm_providers.openai_provider import OpenAIProvider
+            prov = OpenAIProvider("deepseek", {
+                "api_key": KEY, "base_url": "https://api.deepseek.com/v1",
+                "model": "deepseek-chat",
+            })
+        else:
+            print("switch gateway unavailable & no DEEPSEEK_API_KEY — using mock")
+            from core.agent.llm_providers.mock_provider import MockProvider
+            prov = MockProvider("mock", {})
     eng = CognitiveRuntimeEngine(llm_provider=prov)
     eng.start()
     ad = DialogAdapter()

@@ -731,7 +731,13 @@ class CognitiveProfile:
 
     @classmethod
     def from_pcr_profile(cls, profile) -> "CognitiveProfile":
-        """Build from PCR datacontract CognitiveProfile_v1."""
+        """Build from PCR datacontract CognitiveProfile_v1.
+
+        profile may be None (legacy PCR adapters do not map cognitive
+        profile) ? degrade to defaults instead of crashing the caller.
+        """
+        if profile is None:
+            return cls()
         return cls(
             metacognition=profile.metacognition,
             divergence=profile.divergence,

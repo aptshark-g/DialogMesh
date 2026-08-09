@@ -23,6 +23,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useHealth } from '../hooks/useHealth.ts';
+import { DockPicker } from './dock/DockPicker';
 
 interface NavItem {
   to: string;
@@ -196,6 +197,9 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        {/* 内容坞选择器 — 中间/右边显示（B5） */}
+        <DockPicker />
 
         {/* Bottom: Health & Collapse */}
         <div className="border-t border-subtle p-3 space-y-2 shrink-0">

@@ -22,7 +22,8 @@ def _ensure_runtime_config():
     global RuntimeConfig, load_runtime_config, build_default_config
     if RuntimeConfig is None:
         import importlib
-        config_mod = importlib.import_module('core.agent.v4.runtime.config')
+        # 4d3aaf7 重构后 config 在 core.agent.runtime.config（v4 路径已废弃）
+        config_mod = importlib.import_module('core.agent.runtime.config')
         RuntimeConfig = config_mod.RuntimeConfig
         load_runtime_config = config_mod.load_runtime_config
         build_default_config = config_mod.build_default_config
@@ -313,7 +314,7 @@ class PathAwareScheduler:
             "queue_size": sum(len(q) for q in self._queues.values()),
             "workers": self.pool.stats(),
             "path_snapshots": {
-                path.value: {
+                path: {
                     "state": snap.state.value,
                     "pending": snap.pending,
                     "running": snap.running,

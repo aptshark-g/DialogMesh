@@ -37,10 +37,21 @@ class EmbeddingEngine:
     轻量级语义向量引擎。
     优先使用 sentence-transformers（离线、轻量），
     否则回退到基于 hash 的伪向量（保证功能可用）。
+
+    编码器契约（T7）:
+      - 每次 encode 都会记录当前生效的编码器身份（current_encoder()）。
+      - 外部编码器（如 BGE）通过 register_encoder(name, fn) 注册，由引擎
+        统一管理编码器身份与维度，避免 hash/BGE 向量混用（跨空间比较）。
+      - supports_semantics() 表示当前编码器是否具备真实语义（hash 为 False）。
+      - T1: 模型加载失败（含 ImportError/ValueError/TypeError 等环境问题）
+        一律回退 hash 伪向量，绝不抛异常。
     """
 
     _model = None
     _model_name = "all-MiniLM-L6-v2"  # 384-dim, 轻量, 适合实时
+    _custom_encoder: Optional[Tuple[str, Any]] = None  # (name, fn(text)->List[float])
+    _encoder_name: str = "hash"       # 当前生效编码器身份
+    _encoder_dim: int = 384           # 当前生效编码器维度
 
     @classmethod
     def _load_model(cls):
@@ -49,13 +60,61 @@ class EmbeddingEngine:
         try:
             from sentence_transformers import SentenceTransformer
             cls._model = SentenceTransformer(cls._model_name)
+            cls._encoder_name = f"sentence-transformers:{cls._model_name}"
+            try:
+                cls._encoder_dim = int(cls._model.get_sentence_embedding_dimension())
+            except Exception:
+                pass
             return cls._model
-        except ImportError:
+        except Exception:
+            # T1: 宽异常兜底 — 环境导入链任何异常（ValueError/TypeError 等）都回退
             return None
+
+    @classmethod
+    def register_encoder(cls, name: str, fn) -> None:
+        """注册自定义编码器（T7 契约入口，例如 BGE）。fn(text) -> List[float]。"""
+        cls._custom_encoder = (name, fn)
+        cls._encoder_name = name
+        try:
+            probe = fn("")
+            if probe:
+                cls._encoder_dim = len(probe)
+        except Exception:
+            pass
+
+    @classmethod
+    def current_encoder(cls) -> str:
+        """当前生效编码器身份（hash | sentence-transformers:... | 自定义名）。"""
+        return cls._encoder_name
+
+    @classmethod
+    def supports_semantics(cls) -> bool:
+        """hash 伪向量不具备真实语义（跨文本相似度无意义）。"""
+        return cls._encoder_name != "hash"
+
+    @classmethod
+    def reset(cls) -> None:
+        """复位编码器状态（测试/热切换用）。"""
+        cls._model = None
+        cls._custom_encoder = None
+        cls._encoder_name = "hash"
+        cls._encoder_dim = 384
 
     @classmethod
     def encode(cls, text: str) -> List[float]:
         """编码文本为向量。失败时返回基于 hash 的确定性伪向量。"""
+        if cls._custom_encoder is not None:
+            name, fn = cls._custom_encoder
+            try:
+                vec = fn(text)
+                if vec is not None and len(vec) > 0:
+                    return vec
+            except Exception:
+                pass
+            # 自定义编码器失败时回退 hash（不再尝试 sentence-transformers）
+            cls._encoder_name = "hash"
+            cls._encoder_dim = 384
+            return cls._hash_embedding(text)
         model = cls._load_model()
         if model is not None:
             try:
@@ -63,6 +122,8 @@ class EmbeddingEngine:
                 return vec.tolist()
             except Exception:
                 pass
+        cls._encoder_name = "hash"
+        cls._encoder_dim = 384
         # 回退：基于 hash 的伪向量 (384-dim, 归一化)
         return cls._hash_embedding(text)
 
@@ -86,6 +147,26 @@ class EmbeddingEngine:
 # 3. Cohesion 计算器 (极致化)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+DEFAULT_INTENT_RELATED: Dict[Tuple[str, str], float] = {
+    ("ADVISOR", "QUERY"): 0.7,
+    ("DIRECTIVE", "TOOL"): 0.8,
+    ("COMPANION", "ADVISOR"): 0.6,
+}
+
+
+def intent_consistency(
+    intent_a: str, intent_b: str, related: Optional[Dict[Tuple[str, str], float]] = None
+) -> float:
+    """模块级意图一致性计算（T5: 映射表可配置，默认见 DEFAULT_INTENT_RELATED）。"""
+    if not intent_a or not intent_b:
+        return 0.5  # 未知意图视为中性
+    if intent_a == intent_b:
+        return 1.0
+    rel = related if related is not None else DEFAULT_INTENT_RELATED
+    key = tuple(sorted([intent_a, intent_b]))
+    return rel.get(key, 0.0)
+
+
 @dataclass
 class CohesionMetrics:
     """cohesion 多维度评分。"""
@@ -107,10 +188,12 @@ class CohesionCalculator:
         w_semantic: float = 0.4,
         w_entity: float = 0.35,
         w_intent: float = 0.25,
+        intent_related: Optional[Dict[Tuple[str, str], float]] = None,
     ):
         self.w_semantic = w_semantic
         self.w_entity = w_entity
         self.w_intent = w_intent
+        self.intent_related = dict(DEFAULT_INTENT_RELATED if intent_related is None else intent_related)
 
     def calculate(
         self,
@@ -124,6 +207,10 @@ class CohesionCalculator:
 
         # 1. Semantic similarity (embedding 余弦)
         sem_score = self._semantic_similarity(query_embedding, target_node.embedding)
+        # T7 编码器一致性: 目标节点嵌入与当前编码器不同空间 → 语义贡献置 0
+        target_encoder = (target_node.metadata or {}).get("embedding_encoder")
+        if target_encoder and target_encoder != EmbeddingEngine.current_encoder():
+            sem_score = 0.0
 
         # 2. Entity overlap (Jaccard)
         ent_score = self._entity_overlap(query_entities, target_node.entities)
@@ -187,20 +274,8 @@ class CohesionCalculator:
         union = len(vals_a | vals_b)
         return intersection / union if union > 0 else 0.0
 
-    @staticmethod
-    def _intent_consistency(intent_a: str, intent_b: str) -> float:
-        if not intent_a or not intent_b:
-            return 0.5  # 未知意图视为中性
-        if intent_a == intent_b:
-            return 1.0
-        # 相关意图映射 (可扩展)
-        related = {
-            ("ADVISOR", "QUERY"): 0.7,
-            ("DIRECTIVE", "TOOL"): 0.8,
-            ("COMPANION", "ADVISOR"): 0.6,
-        }
-        key = tuple(sorted([intent_a, intent_b]))
-        return related.get(key, 0.0)
+    def _intent_consistency(self, intent_a: str, intent_b: str) -> float:
+        return intent_consistency(intent_a, intent_b, self.intent_related)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -236,7 +311,17 @@ class TopicDecisionClassifier:
       - merge:     检测到两个分支可合并 (语义高相似 + 意图相同)
     """
 
-    def __init__(self, weights: Optional[Dict[str, float]] = None):
+    def __init__(
+        self,
+        weights: Optional[Dict[str, float]] = None,
+        thresholds: Optional[Dict[str, float]] = None,
+        intent_drift_threshold: float = 0.3,
+        merge_similarity: float = 0.85,
+        attach_score_floor: float = 0.25,
+        attach_sim_weight: float = 0.7,
+        attach_recency_weight: float = 0.3,
+    ):
+        """T5: 全部决策阈值/权重参数化（A18 参数自适应入口）。"""
         self.weights = weights or {
             "cohesion": 0.30,
             "entity": 0.20,
@@ -245,11 +330,16 @@ class TopicDecisionClassifier:
             "depth": 0.05,
             "branch_count": 0.10,
         }
-        self.thresholds = {
+        self.thresholds = thresholds or {
             "continue": 0.55,
             "fork": 0.30,
             "attach_min": 0.25,
         }
+        self.intent_drift_threshold = intent_drift_threshold
+        self.merge_similarity = merge_similarity
+        self.attach_score_floor = attach_score_floor
+        self.attach_sim_weight = attach_sim_weight
+        self.attach_recency_weight = attach_recency_weight
 
     def decide(
         self,
@@ -267,12 +357,15 @@ class TopicDecisionClassifier:
         intent_drift = 1.0 - cohesion.intent
 
         # 决策逻辑
-        if cohesion.composite >= self.thresholds["continue"] and intent_drift < 0.3:
+        if cohesion.composite >= self.thresholds["continue"] and intent_drift < self.intent_drift_threshold:
             return TopicDecision(
                 action="continue",
                 target_node_id=current_node.id if current_node else None,
                 confidence=cohesion.composite,
-                reason=f"cohesion={cohesion.composite:.2f} ≥ {self.thresholds['continue']}, intent_drift={intent_drift:.2f} < 0.3",
+                reason=(
+                    f"cohesion={cohesion.composite:.2f} ≥ {self.thresholds['continue']}, "
+                    f"intent_drift={intent_drift:.2f} < {self.intent_drift_threshold}"
+                ),
                 features=features,
             )
 
@@ -348,7 +441,7 @@ class TopicDecisionClassifier:
             sim = CohesionCalculator._semantic_similarity(
                 EmbeddingEngine.encode(query), node.embedding
             )
-            if sim > 0.85 and sim > best_score:  # 高阈值才触发合并
+            if sim > self.merge_similarity and sim > best_score:  # 高阈值才触发合并
                 best_score = sim
                 best = self._Candidate(id=node.id, name=node.name, score=0.0, similarity=sim)
         return best
@@ -364,8 +457,8 @@ class TopicDecisionClassifier:
             sim = CohesionCalculator._semantic_similarity(query_emb, node.embedding)
             # 时间衰减
             time_decay = 1.0 / (1.0 + (time.time() - node.last_active_at) / 3600)
-            score = sim * 0.7 + time_decay * 0.3
-            if score > best_score and score > 0.25:
+            score = sim * self.attach_sim_weight + time_decay * self.attach_recency_weight
+            if score > best_score and score > self.attach_score_floor:
                 best_score = score
                 best = self._Candidate(id=node.id, name=node.name, score=score)
         return best
@@ -392,9 +485,21 @@ class ForkPointLocator:
       2. 意图漂移检测：如果意图类别变化 > 0.5，标记为漂移
     """
 
-    def __init__(self, similarity_threshold: float = 0.4, intent_drift_threshold: float = 0.5):
+    def __init__(
+        self,
+        similarity_threshold: float = 0.4,
+        intent_drift_threshold: float = 0.5,
+        calculator: Optional[CohesionCalculator] = None,
+    ):
         self.similarity_threshold = similarity_threshold
         self.intent_drift_threshold = intent_drift_threshold
+        self.calculator = calculator
+
+    def _intent_consistency(self, intent_a: str, intent_b: str) -> float:
+        """意图一致性：优先用注入的 CohesionCalculator（T5 配置统一源）。"""
+        if self.calculator is not None:
+            return self.calculator._intent_consistency(intent_a, intent_b)
+        return intent_consistency(intent_a, intent_b)
 
     def locate(
         self,
@@ -414,7 +519,7 @@ class ForkPointLocator:
             # 语义相似度
             sim = CohesionCalculator._semantic_similarity(query_embedding, node.embedding)
             # 意图漂移检测
-            intent_drift = 1.0 - CohesionCalculator._intent_consistency(query_intent, node.intent_category)
+            intent_drift = 1.0 - self._intent_consistency(query_intent, node.intent_category)
 
             # 综合得分：高相似度 + 低意图漂移 才是好的分叉点
             score = sim * (1.0 - intent_drift)
@@ -424,9 +529,7 @@ class ForkPointLocator:
                 best_node = node
 
         if best_node:
-            intent_drift = 1.0 - CohesionCalculator._intent_consistency(
-                query_intent, best_node.intent_category
-            )
+            intent_drift = 1.0 - self._intent_consistency(query_intent, best_node.intent_category)
             return ForkPoint(
                 node_id=best_node.id,
                 node_name=best_node.name,
@@ -696,6 +799,26 @@ class RoutingDecisionV2:
     merge_result: Optional[MergeResult] = None
 
 
+DEFAULT_TOPIC_TREE_CONFIG: Dict[str, Any] = {
+    # T5: 阈值/权重统一参数化（A18 参数自适应入口；默认值 = 原硬编码）
+    "cohesion_continue": 0.55,
+    "cohesion_fork": 0.25,
+    "max_depth": 6,
+    "hot_zone_depth": 2,
+    "activation_threshold": 10,
+    "auto_activate": True,          # T6: 默认首轮 route 即建树（不再静默跳过）
+    "cohesion_weights": {"w_semantic": 0.4, "w_entity": 0.35, "w_intent": 0.25},
+    "intent_related": None,
+    "classifier_weights": None,
+    "classifier_thresholds": None,
+    "intent_drift_threshold": 0.3,
+    "merge_similarity": 0.85,
+    "attach_score_floor": 0.25,
+    "fork_similarity_threshold": 0.4,
+    "fork_intent_drift_threshold": 0.5,
+}
+
+
 class TopicTreeManagerV2:
     """
     TopicTree 管理器 V2 — 极致化版本。
@@ -708,14 +831,14 @@ class TopicTreeManagerV2:
       5. ReactFlow/D3.js 导出
     """
 
-    # 阈值
-    COHESION_CONTINUE = 0.55
-    COHESION_FORK = 0.25
-    MAX_DEPTH = 6
-    HOT_ZONE_DEPTH = 2
-    ACTIVATION_THRESHOLD = 10  # 延迟激活轮数
+    # 阈值（默认值；实例值由 config 覆盖 — T5 参数化）
+    COHESION_CONTINUE = DEFAULT_TOPIC_TREE_CONFIG["cohesion_continue"]
+    COHESION_FORK = DEFAULT_TOPIC_TREE_CONFIG["cohesion_fork"]
+    MAX_DEPTH = DEFAULT_TOPIC_TREE_CONFIG["max_depth"]
+    HOT_ZONE_DEPTH = DEFAULT_TOPIC_TREE_CONFIG["hot_zone_depth"]
+    ACTIVATION_THRESHOLD = DEFAULT_TOPIC_TREE_CONFIG["activation_threshold"]
 
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         self._nodes: Dict[str, TopicNode] = {}
         self._edges: List[TopicEdge] = []
         self._current_node_id: Optional[str] = None
@@ -723,10 +846,38 @@ class TopicTreeManagerV2:
         self._entity_index: Dict[str, Set[str]] = {}
         self._hot_zone: Set[str] = set()
 
+        # T5: 配置合并（默认 + 外部覆盖），实例阈值从此读取
+        cfg = dict(DEFAULT_TOPIC_TREE_CONFIG)
+        if config:
+            cfg.update(config)
+        self.config = cfg
+        self.cohesion_continue = float(cfg["cohesion_continue"])
+        self.cohesion_fork = float(cfg["cohesion_fork"])
+        self.max_depth = int(cfg["max_depth"])
+        self.hot_zone_depth = int(cfg["hot_zone_depth"])
+        self.activation_threshold = int(cfg["activation_threshold"])
+        self.auto_activate = bool(cfg.get("auto_activate", True))
+
         # 极致化组件
-        self.cohesion_calculator = CohesionCalculator()
-        self.decision_classifier = TopicDecisionClassifier()
-        self.fork_locator = ForkPointLocator()
+        cw = cfg.get("cohesion_weights") or {}
+        self.cohesion_calculator = CohesionCalculator(
+            w_semantic=float(cw.get("w_semantic", 0.4)),
+            w_entity=float(cw.get("w_entity", 0.35)),
+            w_intent=float(cw.get("w_intent", 0.25)),
+            intent_related=cfg.get("intent_related"),
+        )
+        self.decision_classifier = TopicDecisionClassifier(
+            weights=cfg.get("classifier_weights"),
+            thresholds=cfg.get("classifier_thresholds"),
+            intent_drift_threshold=float(cfg.get("intent_drift_threshold", 0.3)),
+            merge_similarity=float(cfg.get("merge_similarity", 0.85)),
+            attach_score_floor=float(cfg.get("attach_score_floor", 0.25)),
+        )
+        self.fork_locator = ForkPointLocator(
+            similarity_threshold=float(cfg.get("fork_similarity_threshold", 0.4)),
+            intent_drift_threshold=float(cfg.get("fork_intent_drift_threshold", 0.5)),
+            calculator=self.cohesion_calculator,
+        )
         self.merge_engine = MergeEngine(self.cohesion_calculator)
         self.exporter = ReactFlowExporter()
 
@@ -745,7 +896,7 @@ class TopicTreeManagerV2:
         return self._is_active
 
     def should_activate(self, turn_index: int) -> bool:
-        return turn_index >= self.ACTIVATION_THRESHOLD
+        return turn_index >= self.activation_threshold
 
     def mark_potential_fork(
         self, turn_index: int, query: str, cohesion_score: float, intent_category: str
@@ -772,9 +923,13 @@ class TopicTreeManagerV2:
         极致化话题路由。
         """
         if not self._is_active:
-            return RoutingDecisionV2(
-                action="continue", reason="TopicTree not yet activated",
-            )
+            if self.auto_activate:
+                # T6: 默认首轮即建树（discourse_manager 显式 activate 不受影响）
+                self.activate([])
+            else:
+                return RoutingDecisionV2(
+                    action="continue", reason="TopicTree not yet activated",
+                )
 
         self._turn_count += 1
 
@@ -949,6 +1104,9 @@ class TopicTreeManagerV2:
             summary=summary,
             depth=0 if parent_id is None else self._nodes[parent_id].depth + 1,
         )
+        # T7: 节点标记编码器身份/维度，跨空间比较由 CohesionCalculator 置 0
+        node.metadata["embedding_encoder"] = EmbeddingEngine.current_encoder()
+        node.metadata["embedding_dim"] = len(embedding) if embedding else 0
         self._nodes[node.id] = node
         if parent_id and parent_id in self._nodes:
             self._nodes[parent_id].children_ids.append(node.id)
@@ -969,7 +1127,7 @@ class TopicTreeManagerV2:
     def _maintain_hot_zone(self, current_node_id: str) -> None:
         self._hot_zone.clear()
         self._hot_zone.add(current_node_id)
-        ancestors = self._get_ancestors(current_node_id, depth=self.HOT_ZONE_DEPTH)
+        ancestors = self._get_ancestors(current_node_id, depth=self.hot_zone_depth)
         for node in ancestors:
             self._hot_zone.add(node.id)
         current = self._nodes.get(current_node_id)
@@ -993,7 +1151,7 @@ class TopicTreeManagerV2:
 
     def _check_depth_and_compress(self, node_id: str) -> None:
         path = self._get_path_to_root(node_id)
-        if len(path) <= self.MAX_DEPTH:
+        if len(path) <= self.max_depth:
             return
         mid = len(path) // 2
         summary_node = self._create_summary_node(path[:mid])
@@ -1071,6 +1229,21 @@ class TopicTreeManagerV2:
 
     def get_current_node(self) -> Optional[TopicNode]:
         return self._nodes.get(self._current_node_id)
+
+    def get_current_branch(self) -> List[TopicNode]:
+        """返回从根到当前节点的活跃分支（root→current）。
+
+        T2 修复: context_assembly 曾调用不存在的方法导致 topic_tree 上下文恒空。
+        无树时返回空列表（不抛异常）。
+        """
+        if not self._current_node_id:
+            return []
+        return self._get_path_to_root(self._current_node_id)
+
+    def get_active_path(self) -> List[TopicNode]:
+        """get_current_branch 别名（T3 修复: engineering TopicTreeBridge 曾调
+        get_active_path 不存在 → 恒空）。"""
+        return self.get_current_branch()
 
     def get_node(self, node_id: str) -> Optional[TopicNode]:
         return self._nodes.get(node_id)

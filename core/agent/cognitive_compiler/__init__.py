@@ -7,11 +7,9 @@ Cognitive compiler exports.
 
 from core.agent.cognitive_compiler.compiler import CognitiveCompiler, CompileInput
 CompiledInput = CompileInput  # backward compat — class renamed
-try:
-    from core.agent.cognitive_compiler.compiler import CompilerMode
-except ImportError:
-    CompilerMode = None  # class removed during merge
-from core.agent.cognitive_compiler.decomposer import SyntacticDecomposer, ParsedClause
+from core.agent.cognitive_compiler.decomposer import (
+    CompilerMode, SyntacticDecomposer, ParsedClause,
+)
 from core.agent.cognitive_compiler.injector import HeaderInjector
 from core.agent.cognitive_compiler.scorer import CohesionScorer
 from core.agent.cognitive_compiler.dual_manager import DualStructureManager, TimelineEvent

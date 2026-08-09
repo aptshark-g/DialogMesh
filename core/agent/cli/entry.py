@@ -495,6 +495,8 @@ def _dispatch_p8(args):
         cmd_chunk_stats, cmd_chunk_search, cmd_chunk_add,
         cmd_graph_entities, cmd_graph_traverse,
         cmd_meta_show, cmd_meta_tag, cmd_meta_cluster,
+        cmd_tiered_stats, cmd_tiered_archive, cmd_tiered_rehydrate,
+        cmd_recall,
     )
     cmd = args.command
     op = getattr(args, "d_op", getattr(args, "k_op", getattr(args, "subcommand", "")))
@@ -515,6 +517,9 @@ def _dispatch_p8(args):
         ("rgraph","entities"): cmd_graph_entities, ("rgraph","traverse"): cmd_graph_traverse,
         ("blockmeta","show"): cmd_meta_show, ("blockmeta","tag"): cmd_meta_tag,
         ("blockmeta","cluster"): cmd_meta_cluster,
+        ("tiered","stats"): cmd_tiered_stats, ("tiered","archive"): cmd_tiered_archive,
+        ("tiered","rehydrate"): cmd_tiered_rehydrate,
+        ("recall",""): cmd_recall,
     }
     key = (cmd, op)
     if key in m:
@@ -625,6 +630,7 @@ def _dispatch_batch2(args):
 def _dispatch_p9(args):
     """P9 dispatcher: context, format, graph, eventlog, memory, blueprint, decider, meta, assoc, behavior, engineering, profile, reply, discourse, session."""
     from core.agent.cli.commands.p9_cmd import (
+        cmd_heu_list, cmd_heu_stats, cmd_heu_show, cmd_heu_inject_test,
         cmd_context_compile, cmd_context_section, cmd_context_ir_export,
         cmd_context_ir_format, cmd_context_ir_format_set,
         cmd_format_encode, cmd_format_decode, cmd_format_template_show,
@@ -669,6 +675,10 @@ def _dispatch_p9(args):
     op = sub  # Use subcommand directly
     
     m = {
+        ("heu","list"): cmd_heu_list,
+        ("heu","stats"): cmd_heu_stats,
+        ("heu","show"): cmd_heu_show,
+        ("heu","inject-test"): cmd_heu_inject_test,
         ("context","compile"): cmd_context_compile, ("context","section"): cmd_context_section,
         ("context","ir-export"): cmd_context_ir_export, ("context","ir-format"): cmd_context_ir_format,
         ("format","encode"): cmd_format_encode, ("format","decode"): cmd_format_decode,
@@ -758,6 +768,7 @@ def _dispatch_p10(args):
         cmd_meta_self_audit, cmd_behavior_discover,
         cmd_profile_analyze, cmd_memory_compile_events,
         cmd_context_paradigm, cmd_causal_trigger, cmd_assoc_analyze,
+        cmd_trace_errors, cmd_trace_turn,
     )
     sub = getattr(args, "subcommand", "")
     m = {
@@ -769,6 +780,8 @@ def _dispatch_p10(args):
         "eventbus-wire": cmd_eventbus_wire,
         "trace-show": cmd_trace_show,
         "trace-metrics": cmd_trace_metrics,
+        "trace-errors": cmd_trace_errors,
+        "trace-turn": cmd_trace_turn,
         "cli-version": cmd_cli_version,
         "hotreload": cmd_hotreload,
         "rate-guard": cmd_rate_guard,
@@ -1200,7 +1213,7 @@ def main():
     elif args.command in ("d", "obs-put", "knowledge", "event-log", "profile-set",
                           "rules-delete", "annotations-add", "corrections-add",
                           "feedback-add", "registry",
-                          "chunk", "rgraph", "blockmeta"):
+                          "chunk", "rgraph", "blockmeta", "recall"):
         _dispatch_p8(args)
     elif hasattr(args, "d_op"):
         _dispatch_p8(args)

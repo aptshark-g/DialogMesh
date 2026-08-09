@@ -8,7 +8,7 @@ interface ChatStore {
   isThinking: boolean;
   activeProvider: ProviderInfo | null;
   addUserMessage: (content: string) => void;
-  addAIMessage: (content: string) => void;
+  addAIMessage: (content: string, extra?: Partial<ChatMessage>) => void;
   setThinking: (v: boolean) => void;
   setSessionId: (id: string) => void;
   setActiveProvider: (p: ProviderInfo | null) => void;

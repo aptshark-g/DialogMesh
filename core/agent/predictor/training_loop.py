@@ -1,7 +1,7 @@
 from .models import TrainingSignal, Candidate, PredictionResult
-from ..behavior_graph.models import BehaviorStep, BehaviorEdge
-from ..behavior_graph.weight_updater import WeightUpdater
-from ..behavior_graph.statistics import GraphStatisticsCollector
+from ..behavior.models import BehaviorStep, BehaviorEdge
+from ..behavior.weight_updater import WeightUpdater
+from ..behavior.statistics import GraphStatisticsCollector
 import time
 
 
@@ -27,8 +27,6 @@ class TrainingFeedbackLoop:
             is_correction=is_correction,
         )
         signal.compute_reward()
-        if is_correction:
-            signal.reward = -0.20
 
         # 2. Find matching edge in graph by action_summary
         matched_edge_key = None

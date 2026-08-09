@@ -142,7 +142,12 @@ class ContextAssembly:
         # Built-in: TopicTree
         if self._topic_tree:
             try:
-                gathered["topic_tree"] = self._topic_tree.get_current_branch()
+                # T2: V2 get_current_branch 返回 TopicNode 列表 → 序列化为 dict
+                branch = self._topic_tree.get_current_branch()
+                gathered["topic_tree"] = [
+                    n.to_dict() if hasattr(n, "to_dict") else str(n)
+                    for n in branch
+                ]
             except Exception:
                 pass
         for name, fn in self._sources.items():

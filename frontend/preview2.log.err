@@ -1,0 +1,410 @@
+[2m17:08:14[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:14[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:14[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:14[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:19[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:19[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:19[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:19[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:24[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:24[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:24[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:08:24[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v4/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/config[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/usage[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/stats[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/router/modes[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers/tokens[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:18:57[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/metrics[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:02[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:02[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:02[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:02[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:07[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:07[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:07[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:07[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v3/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v4/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/config[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/usage[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/stats[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/router/modes[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers/tokens[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:12[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/metrics[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:17[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:17[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:17[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:17[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:22[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:22[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:22[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:22[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v4/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/router/modes[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers/tokens[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/usage[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/stats[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/health[39m
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+[2m17:19:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/metrics[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:37[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:37[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:37[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:37[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v3/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v4/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/config[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/usage[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/router/modes[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/stats[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/gateway/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/providers/tokens[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:42[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/metrics[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/profile[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/trace[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/abc[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)
+[2m17:19:52[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /v6/mind[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1194:18)
+    at afterConnectMultiple (node:net:1784:7)

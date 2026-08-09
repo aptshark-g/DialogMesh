@@ -321,6 +321,56 @@ class PipelineTracer:
     def query(self, trace_id: str = None, limit: int = 50) -> List[dict]:
         return self.store.query(trace_id=trace_id, limit=limit)
 
+
+    def turn_detail(self, trace_id: str = None, limit: int = 50) -> List[dict]:
+        """B3: ?? trace????????? phase ???????????
+
+        ? recent() ?? trace_id ?????????? trace ????
+        ?pcr/intent/llm/... + publish ???????/???????
+        """
+        # query() returns plain dicts; re-sort by insertion order (oldest first
+        # was the recording order, but query filters preserve list order).
+        records = self.store.query(trace_id=trace_id, limit=limit)
+        for r in records:
+            r["ts"] = r.pop("timestamp", None)
+        return records
+
+    def error_report(self, window: int = 200) -> dict:
+        """B3: ??????? ? ?? phase ???????????????
+
+        ???????????????"????"?????
+        ???? + ?? 10 ????????????
+        """
+        records = self.store._records[-window:]
+        by_subsystem: Dict[str, dict] = {}
+        recent_failures = []
+        for r in records:
+            if not r.success:
+                meta = r.metadata or {}
+                recent_failures.append({
+                    "subsystem": r.subsystem,
+                    "kind": r.kind,
+                    "latency_ms": round(r.latency_ms, 1),
+                    "error": str(meta.get("error", ""))[:200],
+                    "ts": r.timestamp,
+                })
+                s = by_subsystem.setdefault(r.subsystem, {"failures": 0, "last_error": ""})
+                s["failures"] += 1
+                s["last_error"] = str(meta.get("error", ""))[:200]
+        # ????? subsystem ?? total?
+        totals: Dict[str, int] = {}
+        for r in records:
+            totals[r.subsystem] = totals.get(r.subsystem, 0) + 1
+        for name, s in by_subsystem.items():
+            s["total"] = totals.get(name, 0)
+            s["failure_rate"] = round(s["failures"] / max(1, s["total"]), 3)
+        return {
+            "checked": len(records),
+            "failures": len(recent_failures),
+            "by_subsystem": by_subsystem,
+            "recent_failures": recent_failures[-10:],
+        }
+
     def recent(self, limit: int = 10) -> List[dict]:
         return self.store.get_recent_traces(limit=limit)
 

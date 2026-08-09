@@ -337,7 +337,15 @@ Return JSON object of cause→effect pairs."""
 # ═══════════════════════════════════════════════════
 
 class AssociationFunnel:
-    """Five-layer + LLM hypothesis generation. Bridge between events and knowledge."""
+    """Five-layer funnel — one component library, coarse and fine entries (D-5).
+
+    Coarse entry ``run()``: per-layer minimal logic in one pass (province-level
+    summary). Fine entry ``run_layers()``: calls the full layered components
+    (L1 EntityExtractor → L1.5 CollaborativeCompleter → L2.5 BeliefAccumulator
+    → L3 MultiPerspectiveValidator → L4 L4TemporalEngine → L5 CausalSubstrate)
+    so every layer runs its complete logic. Both share the same component
+    library — no second inline implementation.
+    """
 
     def __init__(self, llm_provider=None):
         self.llm = llm_provider
@@ -414,5 +422,90 @@ class AssociationFunnel:
                              self.layer3.llm_calls + self.layer5.llm_calls),
                 "total_entities": len(self.layer2.type_registry),
                 "total_beliefs": len(self.layer3.behavior_labels),
+            }
+        }
+
+    # ------------------------------------------------------------------ #
+    # Fine entry (D-5): full per-layer logic via the layered components
+    # ------------------------------------------------------------------ #
+
+    def run_layers(self, text: str = "", pcr_zone: str = "MIXED",
+                   entities: List[str] = None) -> dict:
+        """Fine-grained entry: run every layer's *complete* logic.
+
+        Unlike ``run()`` (minimal per-layer logic), each layer here invokes
+        the full component API — L1 EntityExtractor (gleaning when gateway
+        available), L1.5 CollaborativeCompleter (syntax+LLM+consensus),
+        L2.5 BeliefAccumulator (Bayesian + 7D decision), L3
+        MultiPerspectiveValidator (4-perspective + LLM deadlock), L4
+        L4TemporalEngine (transition matrix + drift), L5 CausalSubstrate
+        (skeleton matching → structural_prior ≤ 0.7).
+        """
+        text = text or (self._text_buffer[-1] if self._text_buffer else "")
+        if not text:
+            return {"layers": {}, "error": "no text"}
+
+        # L1 — entity extraction (full: gleaning when gateway available)
+        from .entity_extractor import EntityExtractor
+        ex = EntityExtractor()
+        extracted = ex.extract(text) or []
+        names = [e.get("name", "") for e in extracted if e.get("name")]
+        entity_names = list(dict.fromkeys([*(entities or []), *names]))
+
+        # L1.5 — collaborative completer (syntax candidates + LLM rank + fusion)
+        from .l1_5_completer import CollaborativeCompleter
+        completer = CollaborativeCompleter(llm_provider=self.llm)
+        completion = completer.complete(
+            text, modifier_context="", entity_clusters={},
+        )
+
+        # L2.5 — belief accumulator (Bayesian backbone + 7D decision)
+        from .l2_5_belief import BeliefAccumulator, Evidence
+        acc = BeliefAccumulator()
+        for i, name in enumerate(entity_names[:5]):
+            acc.ingest(Evidence(
+                entity_id=name,
+                entity_name=name,
+                relation_type="co_occurrence",
+                confidence=0.5,
+                turn_num=i + 1,
+                source="l2_graph",
+            ))
+
+        # L3 — multi-perspective intent validation (incl. LLM deadlock)
+        from .l3_intent import MultiPerspectiveValidator
+        val = MultiPerspectiveValidator(llm_provider=self.llm)
+        b7d = acc.status().get("belief_7d", {})
+        best = acc._best_intent()
+        l3_result = val.validate(
+            intent_hypothesis=best,
+            belief_7d=b7d.get(best, {}),
+            entity_relations=entity_names,
+            pcr_zone=pcr_zone,
+        )
+
+        # L4 — temporal engine (T-BN transition matrix + drift)
+        from .l4_temporal import L4TemporalEngine
+        eng = L4TemporalEngine()
+        for i in range(len(entity_names[:5])):
+            eng.record(best, confidence=0.6, turn=i + 1)
+
+        # L5 — causal substrate (skeleton match → capped structural prior)
+        from .causal_substrate import CausalSubstrate
+        cs = CausalSubstrate(graph=None)
+        from types import SimpleNamespace
+        out = SimpleNamespace(undefined=False, slots={})
+        if entity_names:
+            out.slots = {"action": type("A", (), {"value": entity_names[0]})()}
+        prior = cs.process_single(out) if entity_names else 0.0
+
+        return {
+            "layers": {
+                "l1": {"entities": extracted, "entity_names": entity_names},
+                "l1_5": completion,
+                "l2_5": acc.status(),
+                "l3": l3_result,
+                "l4": eng.status(),
+                "l5": {"structural_prior": prior, "triggered": prior > 0.0},
             }
         }

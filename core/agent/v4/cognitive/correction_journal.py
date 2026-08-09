@@ -139,6 +139,21 @@ If the system is just reverting to its default → correction_still_valid."""
             "last": self._entries[-1].__dict__ if self._entries else None,
         }
 
+    def last_entry(self, dimension: str) -> Optional[CorrectionEntry]:
+        """Last correction for a dimension (B5-3 revert 用)."""
+        return self._last_corrected.get(dimension)
+
+    def last(self) -> Optional[CorrectionEntry]:
+        """Most recent correction overall (B5-3 revert 用)."""
+        return self._entries[-1] if self._entries else None
+
+    def entries_since(self, dimension: str = "", limit: int = 100) -> List[CorrectionEntry]:
+        """Recent entries, optionally filtered by dimension prefix (A19 白盒)."""
+        pool = self._entries if not dimension else [
+            e for e in self._entries if e.dimension.startswith(dimension)
+        ]
+        return pool[-limit:]
+
     def _load(self):
         if os.path.exists(self._path):
             with open(self._path) as f:

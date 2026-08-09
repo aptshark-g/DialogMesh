@@ -11,6 +11,7 @@ ConstraintChecker validates every DAG before execution.
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import List, Optional, Tuple
 
@@ -37,23 +38,35 @@ class ConstraintChecker:
     MAX_NODES = 7
     MAX_DEPTH = 18
 
-    def validate(self, dag: BlueprintDAG) -> Tuple[bool, List[str]]:
-        """Validate a BlueprintDAG. Returns (is_valid, error_messages)."""
+    def validate(self, dag: BlueprintDAG,
+                 strictness: float = 0.5) -> Tuple[bool, List[str]]:
+        """Validate a BlueprintDAG. Returns (is_valid, error_messages).
+
+        GAP-P1（DESIGN_DEEP_AUDIT §P2 控制面板参数化）: strictness ∈ [0,1]
+        缩放约束:
+          - 0.0 宽松 → 节点上限放宽到 12, 深度放宽到 24
+          - 0.5 默认 → 7 / 18
+          - 1.0 严格 → 5 / 12
+        """
         errors = []
 
         # Structural validation
         errors.extend(dag.validate())
 
         # Node count
-        if dag.node_count > self.MAX_NODES:
-            errors.append(f"Node count {dag.node_count} exceeds max {self.MAX_NODES}")
+        max_nodes = self._scaled_limit(self.MAX_NODES, strictness,
+                                       lo=5, hi=12)
+        if dag.node_count > max_nodes:
+            errors.append(f"Node count {dag.node_count} exceeds max {max_nodes}")
         if dag.node_count == 0:
             errors.append("DAG has no nodes")
 
         # Dag depth (longest path)
         depth = self._max_depth(dag)
-        if depth > self.MAX_DEPTH:
-            errors.append(f"DAG depth {depth} exceeds max {self.MAX_DEPTH}")
+        max_depth = self._scaled_limit(self.MAX_DEPTH, strictness,
+                                       lo=12, hi=24)
+        if depth > max_depth:
+            errors.append(f"DAG depth {depth} exceeds max {max_depth}")
 
         # Check LLM reply present
         has_llm_reply = any(n.chain == "llm_reply" for n in dag.nodes)
@@ -78,6 +91,15 @@ class ConstraintChecker:
                 errors.append(f"Unknown data_key '{e.data_key}' in edge {e.from_node}→{e.to_node}")
 
         return len(errors) == 0, errors
+
+    @staticmethod
+    def _scaled_limit(base: int, strictness: float, lo: int, hi: int) -> int:
+        """按严格度缩放上限: 0.0 → hi（宽松）, 1.0 → lo（严格）."""
+        try:
+            s = max(0.0, min(1.0, float(strictness)))
+        except (TypeError, ValueError):
+            s = 0.5
+        return int(round(hi - (hi - lo) * s))
 
     def _max_depth(self, dag: BlueprintDAG) -> int:
         """Longest path from any root to any leaf."""
@@ -144,24 +166,55 @@ class BlueprintEngine:
       # dag is ready for Decider → EventBus execution
     """
 
-    def __init__(self):
-        self.registry = SkillRegistry()
+    def __init__(self, decision_bus=None, registry=None,
+                 default_strictness: float = 0.5,
+                 default_depth: int = 18,
+                 default_breadth: int = 3):
+        # GAP-D2: registry 可注入 — 生产路径共享 engine 持有的 registry
+        # （v3_session_api 本地 BlueprintEngine 与 runtime engine 的
+        # learning_bridge 共用同一 SkillRegistry, match/learn 不分叉）。
+        self.registry = registry or SkillRegistry()
         self.builder = LLMDAGBuilder()
         self.checker = ConstraintChecker()
         self._strategy_cache: dict = {}  # Simple in-memory cache
+        # 决策变更事件总线（META_ARBITER §3.2）: 构建期策略选择/降级可记录
+        self._decision_bus = decision_bus
+        # GAP-P1 控制面板默认参数（可被 build() 显式覆盖）
+        self._default_strictness = default_strictness
+        self._default_depth = default_depth
+        self._default_breadth = default_breadth
+        self.checker.MAX_DEPTH = default_depth
 
-    def build(self, text: str, intent: str = None, strategy: str = None) -> BlueprintDAG:
+    def build(self, text: str, intent: str = None, strategy: str = None,
+              strictness: float = None, depth: int = None,
+              breadth: int = None, decision_mode: str = None) -> BlueprintDAG:
         """Build a BlueprintDAG for the given input.
 
         Args:
             text: user input text
             intent: user intent (auto-detected if None)
             strategy: force a strategy (uses registry.match if None)
+            strictness: 约束严格度 0.0-1.0（控制面板; None → 默认 0.5）
+            depth: 图深度上限（None → 默认 18）
+            breadth: 发散路径数 2-6（LLM_DRIVEN; None → 默认 3）
+            decision_mode: auto|template|hybrid|llm — 决策模式映射 strategy
+              （auto → registry.match; 其余强制对应策略）
 
         Returns:
             BlueprintDAG ready for execution
         """
         t0 = __import__("time").time()
+        strictness = self._default_strictness if strictness is None else strictness
+        depth = self._default_depth if depth is None else depth
+        breadth = self._default_breadth if breadth is None else breadth
+        # GAP-P1: 决策模式 → 策略映射
+        mode_map = {
+            "template": "TEMPLATE", "hybrid": "HYBRID", "llm": "LLM_DRIVEN",
+            "rule_based": "RULE_BASED",
+        }
+        if decision_mode in mode_map:
+            strategy = mode_map[decision_mode]
+        self.checker.MAX_DEPTH = depth
 
         # Auto-detect intent + strategy
         if intent is None:
@@ -172,11 +225,16 @@ class BlueprintEngine:
             _, default_bp = self.registry.match(intent)
             blueprint = default_bp
 
-        # Cache key for fast path
-        cache_key = f"{intent}:{strategy}:{hash(text) % 10000}"
+        # Cache key for fast path — deterministic, no hash collision
+        cache_key = f"{intent}:{strategy}:{text[:200]}"
         if cache_key in self._strategy_cache:
             logger.info("Cache hit for %s", intent)
-            return self._strategy_cache[cache_key]
+            # Return a copy so callers cannot mutate the cached DAG
+            return copy.deepcopy(self._strategy_cache[cache_key])
+
+        # Isolate from the shared BUILTIN_TEMPLATES — LLM overrides / strategy
+        # writes must never leak into the global templates (P0-1).
+        blueprint = copy.deepcopy(blueprint)
 
         # ── Route by strategy ──
         if strategy in ("TEMPLATE", "RULE_BASED"):
@@ -184,13 +242,13 @@ class BlueprintEngine:
         elif strategy == "HYBRID":
             dag = self._build_hybrid(text, intent, blueprint)
         elif strategy == "LLM_DRIVEN":
-            dag = self._build_llm_driven(text, intent)
+            dag = self._build_llm_driven(text, intent, breadth=breadth)
         else:
             logger.warning("Unknown strategy '%s' → falling back to HYBRID", strategy)
             dag = self._build_hybrid(text, intent, blueprint)
 
         # ── Constraint check ──
-        valid, errors = self.checker.validate(dag)
+        valid, errors = self.checker.validate(dag, strictness=strictness)
         if not valid:
             logger.warning("Constraint check failed: %s — falling back to TEMPLATE", errors)
             dag = self._build_template(intent, blueprint)
@@ -208,13 +266,15 @@ class BlueprintEngine:
                     design_rationale="约束检查失败后的最小保底DAG",
                 )
 
-        dag.strategy = strategy
+        if dag.strategy != "RECOVERY":
+            dag.strategy = strategy
         elapsed = (__import__("time").time() - t0) * 1000
         logger.info("BlueprintEngine: built %s DAG (%d nodes, %.0fms)", strategy, dag.node_count, elapsed)
 
         # Cache
         self._strategy_cache[cache_key] = dag
-        return dag
+        # Return a copy so callers cannot mutate the cached DAG (same as hit path)
+        return copy.deepcopy(dag)
 
     def _build_template(self, intent: str, blueprint: BlueprintDAG) -> BlueprintDAG:
         """TEMPLATE strategy — direct template return (deterministic)."""
@@ -288,15 +348,16 @@ class BlueprintEngine:
                 if n.node_id == node_id:
                     n.priority = new_priority
 
-    def _build_llm_driven(self, text: str, intent: str) -> BlueprintDAG:
+    def _build_llm_driven(self, text: str, intent: str,
+                          breadth: int = 3) -> BlueprintDAG:
         """LLM_DRIVEN strategy — full diverge→learn→converge pipeline.
 
         Falls back to TEMPLATE on failure.
         """
-        dag = self.builder.build_llm_driven(text, intent)
+        dag = self.builder.build_llm_driven(text, intent, breadth=breadth)
         if dag is None:
             logger.warning("LLM_DRIVEN failed → falling back to general_chat TEMPLATE")
-            dag = self.registry.builtin_template("general_chat")
+            dag = copy.deepcopy(self.registry.builtin_template("general_chat"))
             dag.strategy = "RECOVERY"
             dag.design_rationale = "LLM_DRIVEN failed, recovered to general_chat template"
         return dag

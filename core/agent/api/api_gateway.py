@@ -390,7 +390,13 @@ class ActiveSwitch(BaseModel):
 
 @router.put("/active")
 async def switch_active(req: ActiveSwitch):
-    """Switch active provider and model at runtime."""
+    """Switch active provider and model at runtime.
+
+    B8-4 (2026-08-04): 全部 LLM 调用走 switch 网关 — 切换只改网关配置，
+    不再用 OpenAIProvider 直连替换引擎 provider（旧实现违反 B8-4，
+    且切换后引擎绕过网关直连上游）。参考 cc-switch 热切换 UX:
+    更新本地 active 配置 + 热通知 switch + 更新网关客户端默认值。
+    """
     cfg = _load_gateway_config()
     cfg["active_provider"] = req.provider
 
@@ -403,17 +409,32 @@ async def switch_active(req: ActiveSwitch):
     cfg["active_model"] = req.model
     _save_gateway_config(cfg)
 
-    # Apply to engine
+    # 热通知 switch（软配置，不重启）— 尽力而为，switch 离线不阻断
+    try:
+        import urllib.request
+        body = json.dumps({
+            "name": req.provider,
+            "default_model": req.model,
+            "enabled": True,
+        }).encode()
+        r = urllib.request.Request(
+            f"{SWITCH_URL}/v1/admin/providers/{req.provider}",
+            data=body, method="PUT")
+        r.add_header("Authorization", f"Bearer {ADMIN_KEY}")
+        r.add_header("Content-Type", "application/json")
+        urllib.request.urlopen(r, timeout=5)
+    except Exception as e:
+        logger.warning("switch hot-switch failed (config saved locally): %s", e)
+
+    # 更新引擎网关客户端默认值（不替换实例 — 仍是 GatewayLLMProvider）
     if _engine:
-        saved = _load_provider_config(req.provider)
-        builtin = BUILTIN_PROVIDERS.get(req.provider, {})
-        from core.agent.llm_providers.openai_provider import OpenAIProvider
-        new = OpenAIProvider(req.provider, {
-            "api_key": saved.get("api_key", "local"),
-            "base_url": saved.get("base_url") or builtin.get("default_base_url", ""),
-            "model": req.model,
-        })
-        _engine._llm_provider = new
+        prov = getattr(_engine, "_llm_provider", None)
+        if prov is not None and hasattr(prov, "_default_provider"):
+            prov._default_provider = req.provider
+            if req.model:
+                prov._default_model = req.model
+            logger.info("Engine gateway client hot-switched → %s/%s",
+                        req.provider, req.model)
 
     return {"active_provider": req.provider, "active_model": req.model, "switched": True}
 

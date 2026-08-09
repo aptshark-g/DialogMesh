@@ -1,4 +1,4 @@
-"""Monitored Chat Test — runs conversation + captures full ABC/Trace/Profile data per turn.
+﻿"""Monitored Chat Test — runs conversation + captures full ABC/Trace/Profile data per turn.
 
 Output: data/monitor/chat_session_<ts>.jsonl — every turn's complete state.
 After test, prints full analysis.
@@ -11,7 +11,7 @@ from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.events.event_ir import DialogAdapter
 
-KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
+KEY = "sk-REPLACE_WITH_YOUR_KEY"
 
 # MBTI-style prompts — analytical (T) vs emotional (F)
 TURNS = [

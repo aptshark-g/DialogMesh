@@ -137,3 +137,15 @@ class FailoverProvider(LLMProvider):
         self._is_degraded = True
         self._degraded_reason = f"{reason}: {detail}"
         self._last_failover_time = now
+
+
+# ── v3 backward-compat alias (B8-4: v3_0/llm_providers 归档后根级唯一) ──
+
+class FailoverProvider_v3(FailoverProvider):
+    """v3 兼容别名：接受 (config=, primary=, fallback=, failover_cooldown_s=)。"""
+
+    def __init__(self, config=None, primary=None, fallback=None, failover_cooldown_s=60.0):
+        from core.agent.llm_providers.models import ProviderConfig
+        cfg = config if config is None or isinstance(config, ProviderConfig) else ProviderConfig(**config)
+        name = cfg.name if cfg is not None else "failover"
+        super().__init__(name, {}, primary, fallback, failover_cooldown_s)

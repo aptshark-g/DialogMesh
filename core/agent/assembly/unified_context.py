@@ -87,9 +87,12 @@ class UnifiedContext:
             logger.debug("ContextCompressor unavailable: %s", e)
 
         # ── context_manager/ runtime components (v3 legacy, heavy deps) ──
-        # DiscourseManager is a v3 unmaintained module with heavy dependency chain
-        # (UserEngine, TaskEngine, Coordinator). Skipping for v6 minimal loop.
-        # To enable: uncomment and fix the dependency chain.
+        # C3 裁决（2026-08-05, 审计: "unified" 名不副实 — DiscourseManager 半边
+        # 被注释）：v6 minimal loop **不启用** v3 DiscourseManager（依赖链重:
+        # UserEngine/TaskEngine/Coordinator，且与 discourse_block_tree B 内核
+        # 功能重叠）。discourse 职责由 `discourse_block_tree/`（R6 D3 内核组装）
+        # 承担 —— UnifiedContext 的 discourse 半边 = B 内核接入点，非 v3 legacy。
+        # 若要启用 v3 DiscourseManager：需先解决依赖链并做双内核归一（红线 7）。
         self._discourse_manager = None
         # try:
         #     from core.agent.context_manager.discourse_manager import DiscourseManager

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.1] - 2026-08-09
+
+第一版功能里程碑（M1-M9 + 9 批模块级补全 + v2 执行层分层）。
+
+### Added
+- **v2 执行层分层** — tool_loop 增强（蓝图约束注入 / 工具白名单 / 超时 / 步钩子 / trace）+ ExecutionMonitor 三层监控（Hot 信号 / Warm 裁决 / Cold 复盘）+ TaskRunner 蓝图节点执行壳（重规划循环 / 三层介入 / 复盘回流）。agentic 工具节点 + 编码请求均走该壳。
+- **OS 工具集** — run_shell / run_python / run_session（后台会话）/ dir_list / grep / write_file，共 13 个工具注册；权限门 C1-C4（4 级 RiskClass + 链式 shell 拦截 + 写根限制 + standing rules）生产挂载。
+- **LLM function calling** — 编码/实现类请求自主调工具（端到端实测：写文件 → 运行 → 排查 → 总结）。
+- **统一召回第二批** — 真实黄金集（40 query / 218 块）+ RRF 融合（top1 +12.5pp）+ G0 磁盘索引缓存（76s→15s）+ 修复 2 个向量全零 bug；边界测绘定案"主宾语义归一"蒸馏方向。
+- **白盒执行视图** — `GET /v6/execution/{sid}` 执行迹 + `/v6/changelog` 决策事件流（回看 / approve / reject 介入）。
+- **A6 复盘回流闭环** — 执行成败 → ExecutionAudit → MetaFeedback → 每 5 轮策略权重降级/升级（LLM_DRIVEN→HYBRID→TEMPLATE）。
+- **蓝图自增长闭环** — learn_blueprint 生产注入 + 蒸馏原料管道（HeuristicDistiller）+ 技能生命周期 + 决策事件 schema（strategy_switch / plan_gate / meta_advice / user_correction）。
+- **README 重写** — 通用 Agent 视角（场景清单 / 对比表 / 术语表），中英双语 + `scripts/demo.py` 全链路演示。
+
+### Changed
+- **StateMachine run_dag** — 工具节点静态执行 + agentic 分支（TaskRunner）；同 Tick 并行 / 跨 Tick 串行。
+- **v3 主流程** — 编码请求从裸 tool_loop 升级为 TaskRunner（已确认任务图注入为宏观约束）。
+- **存储/EventBus** — G0 索引缓存、EventBus v2 生命周期（per-subscriber 水位线 / 温减枝 / 冷摘要）。
+
 ## [Unreleased]
 
 ### Added

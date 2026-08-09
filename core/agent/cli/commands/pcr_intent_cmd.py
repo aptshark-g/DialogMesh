@@ -12,8 +12,10 @@ def cmd_pcr(args):
     pcr = getattr(e, '_pcr_router', None)
 
     if sub == 'config':
-        if pcr and hasattr(pcr, 'get_config'):
-            cfg = pcr.get_config()
+        # White-box config (A19): dimension weights / zone thresholds from YAML
+        from core.agent.pcr_dimensions import load_config
+        cfg = load_config()
+        if cfg:
             print(json.dumps(cfg, indent=2, ensure_ascii=False, default=str))
         else:
             print(json.dumps({"error": "No PCR config available"}, ensure_ascii=False))
@@ -45,15 +47,22 @@ def cmd_pcr(args):
             print(json.dumps({"error": "reset_config not available"}, ensure_ascii=False))
         return
 
-    # Default: route
-    import asyncio
+    # Default: route — PCRRouterV2.route(text) → PCRResult (zone + labels)
     text = " ".join(args.text) if isinstance(args.text, list) else args.text
     if pcr:
         try:
-            if hasattr(pcr, 'process'):
-                result = asyncio.run(pcr.process(text))
-                out = getattr(result, '__dict__', str(result)) if result else {}
-                print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+            if hasattr(pcr, 'route'):
+                result = pcr.route(text)
+                print(json.dumps({
+                    "zone": getattr(result, 'zone', 'MIXED'),
+                    "x_axis": getattr(result, 'x_axis', 0.5),
+                    "y_axis": getattr(result, 'y_axis', 0.5),
+                    "z_axis": getattr(result, 'z_axis', 0.0),
+                    "labels": getattr(result, 'labels', {}),
+                    "cognitive_level": getattr(result, 'cognitive_level', 'moderate'),
+                    "execution_mode": getattr(result, 'execution_mode', 'auto'),
+                    "prompt_style": getattr(result, 'prompt_style', 'default'),
+                }, indent=2, ensure_ascii=False, default=str))
                 return
         except Exception as err:
             print(json.dumps({"error": str(err)}, ensure_ascii=False))
@@ -61,7 +70,11 @@ def cmd_pcr(args):
     last_pcr = getattr(e, '_last_pcr', None)
     if last_pcr:
         print(json.dumps({
-            "zone": getattr(last_pcr, 'expectation', '?'),
+            "zone": getattr(last_pcr, 'zone', getattr(last_pcr, 'expectation', '?')),
+            "x_axis": getattr(last_pcr, 'x_axis', None),
+            "y_axis": getattr(last_pcr, 'y_axis', None),
+            "z_axis": getattr(last_pcr, 'z_axis', None),
+            "labels": getattr(last_pcr, 'labels', {}),
             "complexity": getattr(last_pcr, 'complexity_level', 0),
             "mode": getattr(last_pcr, 'execution_mode', '?'),
             "style": getattr(last_pcr, 'prompt_style', '?'),

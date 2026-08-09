@@ -25,7 +25,39 @@ from core.agent.mcp.security import SecurityManager
 
 from core.agent.tools.cognitive_tools import CognitiveTools, ExecutionContext
 from core.agent.pcr.rule_based import RuleBasedPCR
-from core.agent.v3_common.intent_parser import IntentParser
+
+# I8 (R3): 旧 v3_common shim 因 intent_rule_registry 断链恒为 None，直接
+# 调用 IntentParser() 会 TypeError。改为新包（Agent-Native pipeline）优先，
+# 无可用 parser 时显式降级（None + 日志），绝不再静默空转或崩溃。
+try:
+    from core.agent.intent.dual_track import DualTrackIntentPipeline
+    HAS_AGENT_NATIVE_INTENT = True
+except Exception:  # pragma: no cover
+    DualTrackIntentPipeline = None
+    HAS_AGENT_NATIVE_INTENT = False
+
+try:
+    from core.agent.v3_common.intent_parser import IntentParser as _LegacyIntentParser
+except Exception:  # pragma: no cover
+    _LegacyIntentParser = None
+
+
+def _default_intent_parser():
+    """Return the best available intent parser, or None with a warning."""
+    if HAS_AGENT_NATIVE_INTENT and DualTrackIntentPipeline is not None:
+        try:
+            return DualTrackIntentPipeline()
+        except Exception as e:  # pragma: no cover
+            logger.warning("Agent-Native intent pipeline init failed: %s", e)
+    if _LegacyIntentParser is not None:
+        try:
+            return _LegacyIntentParser()
+        except Exception as e:  # pragma: no cover
+            logger.warning("Legacy intent parser init failed: %s", e)
+    logger.warning(
+        "No intent parser available (shim broken + Agent-Native unavailable) — "
+        "MCP intent tools will explicitly degrade")
+    return None
 
 try:
     from mcp.server.fastmcp import FastMCP, Context
@@ -54,11 +86,11 @@ class MCPServerLifespanContext:
     def __init__(
         self,
         pcr: Optional[RuleBasedPCR] = None,
-        parser: Optional[IntentParser] = None,
+        parser: Optional[Any] = None,
         config: Optional[MCPServerConfig] = None,
     ):
         self.pcr = pcr or RuleBasedPCR()
-        self.parser = parser or IntentParser()
+        self.parser = parser if parser is not None else _default_intent_parser()
         self.config = config or MCPServerConfig.from_env()
         self.security = SecurityManager(self.config)
 
@@ -77,7 +109,7 @@ class MCPServerLifespanContext:
 
 def create_mcp_server(
     pcr: Optional[RuleBasedPCR] = None,
-    parser: Optional[IntentParser] = None,
+    parser: Optional[Any] = None,
     config: Optional[MCPServerConfig] = None,
 ) -> Optional[Any]:
     """
@@ -328,7 +360,7 @@ def create_mcp_server(
 
 def run_stdio_server(
     pcr: Optional[RuleBasedPCR] = None,
-    parser: Optional[IntentParser] = None,
+    parser: Optional[Any] = None,
     config: Optional[MCPServerConfig] = None,
 ) -> None:
     """
@@ -342,7 +374,7 @@ def run_stdio_server(
 
 def get_streamable_http_app(
     pcr: Optional[RuleBasedPCR] = None,
-    parser: Optional[IntentParser] = None,
+    parser: Optional[Any] = None,
     config: Optional[MCPServerConfig] = None,
 ) -> Optional[Any]:
     """

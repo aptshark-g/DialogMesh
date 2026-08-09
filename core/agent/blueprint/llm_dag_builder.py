@@ -107,6 +107,8 @@ class LearningResult:
     arxiv_matches: List[Dict[str, str]] = field(default_factory=list)
     eventlog_matches: List[Dict[str, Any]] = field(default_factory=list)
     reference_matches: List[str] = field(default_factory=list)
+    # G1 (FLOW_SELF_GROWTH): learn 阶段经 ToolRegistry.discover 找到的可用工具
+    tools: List[Dict[str, str]] = field(default_factory=list)  # [{name, description, category}]
 
 
 class LLMDAGBuilder:
@@ -163,12 +165,17 @@ class LLMDAGBuilder:
 
     # ─── Phase 1: Diverge (发散) ───
 
-    def diverge(self, text: str, intent: str) -> List[Hypothesis]:
+    def diverge(self, text: str, intent: str,
+                breadth: int = 3) -> List[Hypothesis]:
         """LLM T=0.8, no context constraint — generate multiple candidate paths.
 
+        GAP-P1（DESIGN_DEEP_AUDIT §P2 控制面板参数化）: breadth 控制
+        发散路径数（默认 3, 建议 2-5; 高价值场景可加宽探索）。
         Returns list of Hypothesis objects. Falls back to empty list on failure.
         """
-        prompt = f"用户意图: {intent}\n用户输入: {text[:1000]}\n\n请生成 2-4 种可能的执行路径。"
+        b = max(2, min(6, int(breadth or 3)))
+        prompt = (f"用户意图: {intent}\n用户输入: {text[:1000]}\n\n"
+                  f"请生成 {b} 种可能的执行路径。")
         response = self._call_llm(DIVERGE_SYSTEM, prompt, temperature=0.8, max_tokens=1500)
         if not response:
             logger.warning("Diverge LLM returned empty — falling back")
@@ -206,11 +213,28 @@ class LLMDAGBuilder:
         if not hypotheses:
             return result
 
+        # G1: 工具发现 — ToolRegistry.discover(intent) 找可用工具
+        # （"查论文" → arxiv_search; "爬网页" → web_fetch; 替代硬编码引用表）
+        try:
+            from core.agent.tools.registry import ToolRegistry
+            for tool in ToolRegistry.discover(intent, limit=5):
+                result.tools.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category,
+                })
+        except Exception as e:
+            logger.debug("Tool discovery failed: %s", e)
+
         # Use the full ingestion pipeline
         try:
             from core.agent.learning.ingestion import IngestionPipeline
             pipeline = IngestionPipeline()
-            ingested = pipeline.run(intent, max_results=3, fetch_full=True)
+            # R4: 查询词修正 — 传原始 query（eventlog_query）而非中文 intent 摘要
+            search_query = (eventlog_query or intent or "").strip()
+            if len(search_query) < 2:
+                search_query = intent
+            ingested = pipeline.run(search_query, max_results=3, fetch_full=True)
 
             for hit in ingested:
                 if hit.get("source") == "arxiv":
@@ -255,12 +279,33 @@ class LLMDAGBuilder:
             hypotheses_text += f"路径{i+1} (c={h.confidence:.2f}): {nodes_text}\n  理由: {h.rationale}\n"
 
         learning_text = "\n".join(learning.reference_matches) if learning.reference_matches else "无"
+        # G1+T1: 可用工具注入完整 schema（OpenClaw descriptor 式）—
+        # LLM 基于 input_schema 产出带真实参数的 tool 节点
+        tools_text = ""
+        try:
+            from core.agent.tools.registry import ToolRegistry
+            all_tools = ToolRegistry.list_all()
+            # 优先 learning.tools（discover 命中）, 兜底全部
+            hit_names = {t["name"] for t in learning.tools}
+            if hit_names:
+                all_tools = [t for t in all_tools if t["name"] in hit_names]
+            tools_text = "可用工具:\n" + "\n".join(
+                f"  - {t['name']} ({t['category']}): {t['description'][:150]}\n"
+                f"    参数: {t.get('schema') or {}}"
+                for t in all_tools
+            )
+        except Exception as e:
+            logger.debug("tool schema injection failed: %s", e)
 
         prompt = (
             f"用户意图: {intent}\n"
             f"用户输入: {text[:1000]}\n\n"
             f"候选路径:\n{hypotheses_text}\n"
-            f"参考信息:\n{learning_text}\n\n"
+            f"参考信息:\n{learning_text}\n"
+            f"{tools_text}\n\n"
+            f"如果任务需要外部操作（查论文/爬网页/读文件/写文件）, 在 DAG 中加 "
+            f"tool 节点: {{\"node_id\": \"tool_N\", \"chain\": \"tool\", "
+            f"\"params\": {{\"tool\": \"工具名\", \"args\": {{按上面参数 schema 填}}}}}}\n"
             f"请选择最优路径并输出完整的 BlueprintDAG JSON。"
         )
 
@@ -291,14 +336,20 @@ class LLMDAGBuilder:
         # Parse edges
         edges = []
         for e in data.get("edges", []):
+            raw_required = e.get("required", True)
+            required = raw_required if isinstance(raw_required, bool) else str(raw_required).lower() in ("1", "true", "yes")
             edges.append(BlueprintEdge(
                 from_node=e.get("from_node", "?"),
                 to_node=e.get("to_node", "?"),
                 data_key=e.get("data_key", "data"),
-                required=bool(e.get("required", True)),
+                required=required,
             ))
 
-        confidence = float(data.get("confidence", 0.5))
+        try:
+            confidence = float(data.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            logger.warning("Converge: invalid confidence %r → 0.5", data.get("confidence"))
+            confidence = 0.5
         rationale = data.get("design_rationale", "")
 
         dag = BlueprintDAG(
@@ -319,9 +370,10 @@ class LLMDAGBuilder:
 
     # ─── Convenience: full LLM_DRIVEN pipeline ───
 
-    def build_llm_driven(self, text: str, intent: str) -> Optional[BlueprintDAG]:
+    def build_llm_driven(self, text: str, intent: str,
+                         breadth: int = 3) -> Optional[BlueprintDAG]:
         """Full diverge → learn → converge pipeline."""
-        hypotheses = self.diverge(text, intent)
+        hypotheses = self.diverge(text, intent, breadth=breadth)
         if not hypotheses:
             return None
         learning = self.learn(hypotheses, intent)

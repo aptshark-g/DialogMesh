@@ -1,874 +1,588 @@
-"""v6 Frontend-compatible API stubs — EXACT match to frontend TypeScript types.
+"""v6 Frontend-compatible API — 内核 dispatch（B4-5）。
 
-Each return dict maps 1:1 to the corresponding V6*Response interface.
-Additions/changes must be verified against src/types/api.ts.
+所有端点转发到 core.agent.kernel 的真实数据函数；无 stub 假数据。
+Gateway 路由由 api_gateway.py 处理（真实 switch 代理），此处不再重复定义。
+重复端点（/v6/annotate/stats、/v6/parameters、/v6/context）由真实实现接管。
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body, Query, Request
+from fastapi.responses import StreamingResponse
+import asyncio
+import json
 import logging
 
-router = APIRouter(prefix="/v6", tags=["stubs"])
+router = APIRouter(prefix="/v6", tags=["v6-api"])
 logger = logging.getLogger("stubs_api")
 
-# ── Engine access helper ──
-_engine = None
+# v4 旧 API 独立前缀（前端 v4.ts 调用）
+v4_router = APIRouter(prefix="/v4", tags=["v4-api"])
 
-def _get_engine():
-    global _engine
-    if _engine is None:
-        try:
-            from core.agent.cli.engine import get_engine as _ge
-            _engine = _ge()
-        except Exception:
-            return None
-    return _engine
+from core.agent.kernel import (
+    kernel_profile,
+    kernel_trace,
+    kernel_abc,
+    kernel_mind,
+    kernel_mind_full,
+    kernel_graph,
+    kernel_discourse_tree,
+    kernel_recall,
+    kernel_objects,
+    kernel_rules,
+    kernel_relations,
+    kernel_causal,
+    kernel_behavior,
+    kernel_behavior_patterns,
+    kernel_inertia,
+    kernel_behavior_predict,
+    kernel_engineering,
+    kernel_engineering_modules,
+    kernel_pipeline,
+    kernel_extraction,
+    kernel_perspectives,
+    kernel_subgraph,
+    kernel_subgraph_cache,
+    kernel_belief,
+    kernel_persistence,
+    kernel_persistence_graphs,
+    kernel_annotations,
+    kernel_corrections,
+    kernel_profile_corrections,
+    kernel_sessions,
+    kernel_versions,
+    kernel_versions_profile,
+    kernel_router_modes,
+    kernel_providers,
+    kernel_providers_tokens,
+    kernel_session_detail,
+    kernel_trace_recent,
+    kernel_metrics,
+    kernel_meta_stats,
+    kernel_meta_queue,
+    kernel_degradation,
+    kernel_ttl,
+    kernel_recursive_map,
+    kernel_versions_rollback,
+    kernel_meta_scan,
+    kernel_meta_retrospect,
+    kernel_behavior_feedback,
+    kernel_causal_chain,
+    kernel_context_config,
+    kernel_engineering_constraints,
+    kernel_ocean_params,
+    kernel_corrections_review,
+    kernel_providers_test,
+    kernel_sync,
+    kernel_ttl_tick,
+    kernel_context,
+    kernel_memory_checkpoint,
+    kernel_engine_status,
+    kernel_compression_feedback,
+    kernel_compression_feedback_stats,
+    kernel_heuristics_list,
+    kernel_changelog,
+    kernel_changelog_intervene,
+)
+from pydantic import BaseModel
+from typing import Any, Dict, Optional
 
-# ═══════════════════════════════════════════════════════
-# Profile — V6ProfileResponse
-# ═══════════════════════════════════════════════════════
+
+class ContextConfigReq(BaseModel):
+    token_budget: Optional[int] = None
+    domain_P: Optional[float] = None
+    domain_C: Optional[float] = None
+    domain_K: Optional[float] = None
+    domain_E: Optional[float] = None
+    domain_B: Optional[float] = None
+
+
+class CompressionFeedbackReq(BaseModel):
+    quality: str = "good"  # good | bad
+    comment: str = ""
+    compression_id: str = ""
+    source: str = "user"
+
+
+class ChangelogInterveneReq(BaseModel):
+    status: str = "applied"  # applied(approve) | rejected
+    comment: str = ""
+    dimension: str = ""
+    kind: str = ""
+
+
+class EngineeringConstraintsReq(BaseModel):
+    name: str
+    action: str = "add_constraint"
+    constraint: str = ""
+
+
+class BehaviorFeedbackReq(BaseModel):
+    pattern_id: str
+    correct: bool = True
+
+
+class RollbackReq(BaseModel):
+    commit_id: str = ""
+
+
+# ── Profile / Trace / ABC / Mind ───────────────────────────── #
+
 @router.get("/profile")
 async def get_profile():
-    """Read profile from disk state (v3_session_api persists there)."""
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    pp = os.path.join(root, "data", "profile_state.json")
-    dims = {"O":0.5,"C":0.5,"E":0.5,"A":0.5,"N":0.5}
-    turn_count = 0
-    if os.path.exists(pp):
-        try:
-            saved = json.load(open(pp, encoding="utf-8"))
-            if "dims" in saved: dims = saved["dims"]
-            turn_count = saved.get("turn_count", 0)
-        except: pass
-    # Engine dims override disk only if disk dims are defaults
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        tc = getattr(e, '_turn_counter', turn_count)
-        if tc > turn_count: turn_count = tc
-        # Only use engine dims if disk hasn't changed from defaults
-        all_default = all(abs(v - 0.5) < 0.01 for v in dims.values())
-        if all_default:
-            ocean = getattr(e, '_ocean_analyst', None)
-            if ocean and hasattr(ocean, 'profile') and hasattr(ocean.profile, 'dims'):
-                edims = {k: float(v) for k, v in ocean.profile.dims.items()}
-                if any(abs(v - 0.5) > 0.01 for v in edims.values()):
-                    dims = edims
-    except: pass
-    return {
-        "oceAN_dims": dims,
-        "mbti": "INFJ",
-        "turn_count": turn_count,
-        "top_dimensions": sorted(dims.keys())[:3],
-    }
+    return kernel_profile()
+
 
 @router.get("/trace")
 async def get_trace():
-    return {
-        "reason_distribution": {},
-        "avg_confidence": 0.0,
-        "total": 0,
-    }
+    return kernel_trace()
 
-# ═══════════════════════════════════════════════════════
-# ABC — V6AbcResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/abc")
 async def get_abc():
-    """ABC reasoning chains — read from engine EventLog or disk."""
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    # Try engine event log for real chains
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        el = getattr(e, '_event_log', None)
-        if el and hasattr(el, 'get_recent_events'):
-            events = el.get_recent_events(10)
-            chains = [{"id": ev.id, "kind": ev.kind, "ts": getattr(ev,'timestamp',0)} for ev in events]
-            if chains:
-                return {"rules": len(chains), "recent_rules": [c["kind"] for c in chains[-5:]]}
-    except: pass
-    # Fallback: disk file
-    rf = os.path.join(root, "data", "neuro_symbolic_rules.json")
-    rules_data = json.load(open(rf, encoding="utf-8")) if os.path.exists(rf) else {"rules": []}
-    if isinstance(rules_data, list):
-        rules = rules_data
-    else:
-        rules = list(rules_data.values()) if rules_data else []
-    # Rule dicts use 'premise'/'conclusion' keys (neuro_symbolic_rules.json schema)
-    def _rule_summary(r):
-        if isinstance(r, dict):
-            return str(r.get("name") or r.get("premise") or "")[:50]
-        return str(r)[:50]
-    return {"rules": len(rules), "recent_rules": [_rule_summary(r) for r in rules[-5:]]}
+    return kernel_abc()
+
 
 @router.get("/mind")
 async def get_mind():
-    """Engine-level mental state snapshot."""
-    result = {"dimensions": 8, "modules_available": ["assoc","pcr","intent","discourse","blueprint","decider","meta","behavior"]}
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        if e:
-            # Active states from engine
-            sm = getattr(e, '_state_machine', None)
-            if sm:
-                snap = sm.snapshot() if hasattr(sm, 'snapshot') else None
-                if snap:
-                    result["current_phase"] = getattr(snap, 'phase', 'unknown').value if hasattr(snap.phase, 'value') else str(snap.phase)
-                    result["turn_count"] = getattr(snap, 'turn_count', 0)
-            # Scheduler stats
-            sched = getattr(e, '_scheduler', None)
-            if sched and hasattr(sched, 'stats'):
-                result["scheduler"] = sched.stats()
-            # Recent traces
-            tracer = getattr(e, '_tracer', None)
-            if tracer and hasattr(tracer, 'recent'):
-                recent = tracer.recent(3)
-                result["recent_traces"] = len(recent)
-    except: pass
-    return result
+    return kernel_mind()
+
 
 @router.get("/mind/full")
 async def get_mind_full():
-    return {"dimensions": 0, "raw": {}, "projections": []}
+    return kernel_mind_full()
 
-# ═══════════════════════════════════════════════════════
-# Graph — V6GraphResponse
-# ═══════════════════════════════════════════════════════
+
+# ── Graph / Discourse / Objects ────────────────────────────── #
+
 @router.get("/graph")
-async def get_graph():
-    """Return discourse block tree from engine (SyntacticDecomposer + MacroMicroQuantizer),
-    fallback to v3_sessions.json."""
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    nodes, edges = [], []
+async def get_graph(sid: Optional[str] = Query(default=None)):
+    return kernel_graph(sid)
 
-    # Try engine's DiscourseBlockTree first (real algorithmic tree)
-    try:
-        from core.agent.cli.engine import get_engine, get_session
-        e = get_engine()
-        tree_mgr = getattr(e, '_discourse_tree', None)
-        if tree_mgr:
-            sid = get_session()
-            rel = tree_mgr.get_block_relations(sid)
-            blocks = rel.get("blocks", {})
-            relations = rel.get("relations", [])
-            for bid, binfo in blocks.items():
-                nodes.append({
-                    "id": bid,
-                    "label": binfo.get("summary", "") or f"Block {bid[:8]}",
-                    "type": "session",
-                    "size": binfo.get("edus", 1),
-                    "temperature": binfo.get("temperature", "warm"),
-                    "entities": binfo.get("entities", [])[:3],
-                })
-            for r in relations:
-                edges.append({
-                    "id": f"{r['from']}→{r['to']}",
-                    "source": r["from"], "target": r["to"],
-                    "type": r.get("type", "related"),
-                })
-            if nodes:
-                return {"nodes": nodes, "edges": edges, "subgraph_nodes": [n["id"] for n in nodes[:8]]}
-    except Exception:
-        pass
-    # Read discourse blocks from most active session
-    try:
-        sp = os.path.join(root, "data", "v3_sessions.json")
-        if os.path.exists(sp):
-            sessions = json.load(open(sp, encoding="utf-8"))
-            # Find session with most messages
-            best_sid, best_count = None, 0
-            for sid, s in sessions.items():
-                c = len(s.get("messages", []))
-                if c > best_count:
-                    best_sid, best_count = sid, c
-            # Build graph from that session's blocks
-            if best_sid:
-                # Try reading task_graph for that session
-                tgp = os.path.join(root, "data", "task_graphs", f"{best_sid}.json")
-                if os.path.exists(tgp):
-                    tg = json.load(open(tgp, encoding="utf-8"))
-                    for n in tg.get("nodes", []):
-                        nodes.append({
-                            "id": n.get("id", n.get("name", "?")),
-                            "label": n.get("name", n.get("label", "?"))[:40],
-                            "type": "task",
-                            "status": n.get("status", "pending"),
-                            "size": len(n.get("desc", "")) if n.get("desc") else 1,
-                        })
-                    for e in tg.get("edges", []):
-                        edges.append({
-                            "id": f"{e.get('from','')}→{e.get('to','')}",
-                            "source": e.get("from", ""),
-                            "target": e.get("to", ""),
-                            "type": "dependency",
-                        })
-    except: pass
 
-    # Fallback: show sessions if task_graph too small
-    if len(nodes) < 3:
-        try:
-            sp2 = os.path.join(root, "data", "v3_sessions.json")
-            if os.path.exists(sp2):
-                sessions = json.load(open(sp2, encoding="utf-8"))
-                for sid, s in list(sessions.items())[:20]:
-                    msgs = s.get("messages", [])
-                    # Use first meaningful message as label
-                    label = sid[:8]
-                    for m in msgs:
-                        if m.get("role") == "user" and m.get("content", "").strip():
-                            label = m.get("content", "")[:40]
-                            break
-                    nodes.append({
-                        "id": sid, "label": label, "type": "session",
-                        "size": len(msgs),
-                    })
-        except: pass
-
-    # Add edges: sequential for session nodes, parent-child for discourse
-    session_nodes = [(i, n) for i, n in enumerate(nodes) if n.get("type") == "session"]
-    for i in range(len(session_nodes) - 1):
-        edges.append({
-            "id": f"seq_{session_nodes[i][1]['id']}→{session_nodes[i+1][1]['id']}",
-            "source": session_nodes[i][1]["id"],
-            "target": session_nodes[i+1][1]["id"],
-            "type": "sequence",
-        })
-    return {"nodes": nodes, "edges": edges, "subgraph_nodes": [n["id"] for n in nodes[:8]]}
-
-# ═══════════════════════════════════════════════════════
-# Discourse — V6DiscourseTreeResponse
-# ═══════════════════════════════════════════════════════
 @router.get("/discourse-tree")
-async def get_discourse_tree():
-    import json, os
-    blocks = []
-    try:
-        if os.path.exists("data/v3_sessions.json"):
-            with open("data/v3_sessions.json") as f:
-                sessions = json.load(f)
-            for sid, s in sessions.items():
-                msgs = s.get("messages", [])
-                for i, m in enumerate(msgs):
-                    blocks.append({
-                        "id": f"block_{sid[:6]}_{i}",
-                        "session_id": sid[:8],
-                        "role": m.get("role", "user"),
-                        "content": m.get("content", "")[:100],
-                        "turn_index": i,
-                        "timestamp": s.get("created_at", 0) + i * 10,
-                    })
-    except Exception:
-        pass
-    return {"blocks": blocks, "total": len(blocks)}
+async def get_discourse_tree(sid: Optional[str] = Query(default=None)):
+    return kernel_discourse_tree(sid)
 
-# ═══════════════════════════════════════════════════════
-# Objects — V6ObjectsResponse
-# ═══════════════════════════════════════════════════════
+
+@router.get("/recall")
+async def recall(query: str = Query(default=""),
+                 top_k: int = Query(default=10),
+                 sid: Optional[str] = Query(default=None)):
+    """统一召回（B2-3 P1）: 混合锚点 + 扩散 + 融合。"""
+    return kernel_recall(query, top_k=top_k, sid=sid)
+
+
+@router.post("/task/{sid}/execute")
+async def execute_task(sid: str, body: dict = Body(default={})):
+    """执行已确认任务图（蓝图 tool 节点 → Decider → 权限门）。
+    F2（2026-08-08）: 打通"规划→执行"链路（B2/G1 后 BlueprintExecutor
+    降级为回放工具, 生产无执行入口 → 补上）。
+    """
+    from core.agent.api.v3_session_api import _get_task_graph_ws
+    from core.agent.blueprint.decider import Decider
+    from core.agent.blueprint.models import (
+        BlueprintDAG, BlueprintNode, BlueprintEdge,
+    )
+    ws = _get_task_graph_ws(sid) or {}
+    nodes = ws.get("nodes") or []
+    if not nodes:
+        return {"ok": False, "error": f"no task graph for {sid}",
+                "hits": []}
+    dag_nodes = [
+        BlueprintNode(
+            node_id=n.get("id", f"n{i}"),
+            chain=n.get("type", n.get("chain", "pcr")),
+            priority=int(n.get("priority", 0)),
+            params=n.get("params", {}),
+        )
+        for i, n in enumerate(nodes)
+    ]
+    dag_edges = [
+        BlueprintEdge(source=e.get("source", e.get("from", "")),
+                      target=e.get("target", e.get("to", "")))
+        for e in (ws.get("edges") or [])
+    ]
+    dag = BlueprintDAG(nodes=dag_nodes, edges=dag_edges)
+    decider = Decider()  # 默认挂权限 gate_resolver（F1）
+    result = decider.execute(dag, user_text=str(body.get("user_text", "")))
+    return {"ok": True, "sid": sid, "result": result}
+
+
+@router.get("/execution/{sid}")
+async def get_execution(sid: str):
+    """v2 执行层白盒视图: 会话各节点执行迹（verdict/工具链/耗时/决策事件）。"""
+    from core.agent.api.v3_session_api import _get_task_graph_ws
+    ws = _get_task_graph_ws(sid) or {}
+    return {"sid": sid, "execution": ws.get("execution") or {},
+            "has_execution": bool(ws.get("execution"))}
+
+
 @router.get("/objects")
 async def get_objects():
-    """Return semantic objects from pipeline + graph format."""
-    import json, os
-    # Try engine pipeline first
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        sp = getattr(e, '_semantic_pipeline', None)
-        if sp:
-            g = sp.to_graph()
-            return {"nodes": g["nodes"], "edges": g["edges"], "total_objects": len(g["nodes"])}
-    except Exception:
-        pass
-    # Fallback: disk
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    wp = os.path.join(root, "data", "world_objects.json")
-    nodes = []
-    if os.path.exists(wp):
-        try:
-            data = json.load(open(wp, encoding="utf-8"))
-            for k, v in data.items():
-                if isinstance(v, dict):
-                    nodes.append({"id": k, "label": v.get("name", k), "type": v.get("obj_type", "concept"),
-                                   "description": v.get("description", ""), "confidence": v.get("confidence", 0.5)})
-        except: pass
-    return {"nodes": nodes, "edges": [], "total_objects": len(nodes)}
+    return kernel_objects()
+
+
+# ── Rules / Relations / Causal / Behavior ──────────────────── #
+
 @router.get("/rules")
 async def get_rules():
-    return {"rules": [], "total": 0}
+    return kernel_rules()
 
-# ═══════════════════════════════════════════════════════
-# Relations — V6RelationsResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/relations")
 async def get_relations():
-    return {"edge_count": 0, "patterns": ["cause/effect","sequence","reference","is-a","part-of"]}
+    return kernel_relations()
+
 
 @router.get("/causal")
 async def get_causal():
-    return {"relations": [], "substrates": 0}
+    return kernel_causal()
 
-# ═══════════════════════════════════════════════════════
-# Behavior — V6BehaviorResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/behavior")
 async def get_behavior():
-    """Read from engine's _behavior_graph or CausalPlanner."""
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        # Try BehaviorGraphAdapter (has record_step)
-        bg = getattr(e, '_behavior_graph', None)
-        if bg and hasattr(bg, '_graph'):
-            g = bg._graph
-            stats = getattr(g, 'stats', None)
-            if stats:
-                return {
-                    "edge_count": getattr(stats, 'edge_count', 0),
-                    "node_count": getattr(stats, 'node_count', 0),
-                    "total_samples": getattr(stats, 'total_samples', 0),
-                    "patterns": [e.edge_id for e in list(getattr(g, 'edges', {}).values())[:5]] if hasattr(g, 'edges') else [],
-                    "predictions": [],
-                }
-        # Fallback to CausalPlanner
-        cp = getattr(e, '_causal_planner', None)
-        if cp and hasattr(cp, 'get_recent_chain'):
-            recent = cp.get_recent_chain(20)
-            return {"edge_count": len(recent), "patterns": [], "predictions": [],
-                    "recent_edges": [{"action": getattr(s, 'event_type', str(s)),
-                                     "ts": getattr(s, 'timestamp', 0)} for s in recent[:10]]}
-    except: pass
-    return {"edge_count": 0, "patterns": [], "predictions": []}
-    return {"edge_count": 0, "patterns": [], "predictions": []}
+    return kernel_behavior()
+
 
 @router.get("/behavior/patterns")
 async def get_behavior_patterns():
-    return {"stats": {"total_patterns": 0, "user_approved": 0, "frequency_by_type": {}}, "patterns": []}
+    return kernel_behavior_patterns()
+
 
 @router.get("/inertia")
 async def get_inertia():
-    return {"total_patterns": 0, "stable": 0, "confirmed": 0, "breaking": 0,
-            "by_weight": {}, "constraints": []}
+    return kernel_inertia()
+
 
 @router.get("/behavior/predict")
 async def get_behavior_predictions():
-    return {"recent_actions": [], "predictions": {}}
+    return kernel_behavior_predict()
 
-# ═══════════════════════════════════════════════════════
-# Engineering — V6EngineeringResponse
-# ═══════════════════════════════════════════════════════
+
+# ── Engineering / Pipeline / Extraction / Perspectives ─────── #
+
 @router.get("/engineering")
 async def get_engineering_page():
-    """Read engineering rules from disk."""
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    data_dir = os.path.join(root, "data")
-    rules, annotations, corrections = [], [], []
-    rp = os.path.join(data_dir, "engineering_rules.json")
-    if os.path.exists(rp):
-        try: rules = json.load(open(rp, encoding="utf-8")).get("rules", [])
-        except: pass
-    ap = os.path.join(data_dir, "annotations.json")
-    if os.path.exists(ap):
-        try: annotations = json.load(open(ap, encoding="utf-8"))
-        except: pass
-    cp = os.path.join(data_dir, "corrections.json")
-    if os.path.exists(cp):
-        try: corrections = json.load(open(cp, encoding="utf-8"))
-        except: pass
-    return {
-        "rules": rules, "total_rules": len(rules),
-        "annotations": annotations, "violations": len(annotations),
-        "corrections": corrections,
-        "constraints": [r.get("pattern","") for r in rules if r.get("type")=="constraint"],
-        "propagations": len(annotations),
-    }
+    return kernel_engineering()
+
 
 @router.get("/engineering/modules")
 async def get_engineering_modules():
-    return {"modules": [], "count": 0}
+    return kernel_engineering_modules()
 
-# ═══════════════════════════════════════════════════════
-# Pipeline — V6PipelineResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/pipeline")
 async def get_pipeline_status():
-    """Pipeline status — StateMachine snapshot + recent phase results."""
-    e = _get_engine()
-    sm = getattr(e, '_state_machine', None)
-    if not sm:
-        return {"running": False, "phases": [], "current_phase": "idle"}
-    try:
-        snap = sm.snapshot()
-        return {
-            "running": True,
-            "current_phase": snap.phase.value if hasattr(snap.phase, 'value') else str(snap.phase),
-            "turn_count": snap.turn_count,
-            "confidence": snap.confidence,
-            "errors_in_phase": snap.errors_in_phase,
-            "total_latency_ms": round(snap.total_latency_ms, 1),
-            "chain_results": {k: str(v)[:80] for k, v in snap.chain_results.items()},
-            "phases": [p.value for p in sm._phase_handlers.keys()],
-        }
-    except Exception as ex:
-        return {"running": False, "error": str(ex)[:100], "phases": []}
+    return kernel_pipeline()
 
-# ═══════════════════════════════════════════════════════
-# Extraction — V6ExtractionResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/extraction")
 async def get_extraction():
-    """Entity extraction status — EntityExtractor + HybridCoref stats."""
-    e = _get_engine()
-    result = {
-        "entities": [],
-        "coref_pairs": 0,
-        "stats": {"rounds": 0, "gleaned": 0},
-    }
-    if not e:
-        return result
-    ext = getattr(e, '_entity_extractor', None)
-    if ext:
-        s = ext.stats()
-        result["stats"] = {"rounds": s.get("total_rounds", 0), "gleaned": s.get("total_gleaned", 0)}
-    coref = getattr(e, '_hybrid_coref', None)
-    if coref:
-        t3 = coref.t3
-        result["coref_pairs"] = t3.metrics.total_pairs if hasattr(t3, 'metrics') else 0
-    return result
+    return kernel_extraction()
 
-# ═══════════════════════════════════════════════════════
-# Perspectives — V6PerspectivesResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/perspectives")
 async def get_perspectives():
-    """Perspectives — context window stats + block references."""
-    e = _get_engine()
-    if not e:
-        return {"perspectives": [], "total": 0}
-    cw = getattr(e, '_context_window', None)
-    if not cw:
-        return {"perspectives": [], "total": 0}
-    s = cw.stats()
-    return {
-        "perspectives": [
-            {"type": "context_window", "items": s.get("items", 0),
-             "tokens": s.get("tokens", 0), "max_tokens": s.get("max_tokens", 4096),
-             "block_ids": s.get("block_ids", 0)}
-        ],
-        "total": 1,
-    }
+    return kernel_perspectives()
 
-# ═══════════════════════════════════════════════════════
-# Parameters — V6ParameterItem wrapper
-# ═══════════════════════════════════════════════════════
-@router.get("/parameters")
-async def get_parameters():
-    return {}
 
-# ═══════════════════════════════════════════════════════
-# Context
-# ═══════════════════════════════════════════════════════
-@router.get("/context")
-async def get_context():
-    return {}
+# ── Parameters / Context / Subgraph / Belief ───────────────── #
 
-# ═══════════════════════════════════════════════════════
-# Subgraph
-# ═══════════════════════════════════════════════════════
 @router.get("/subgraph")
 async def get_subgraph():
-    """Subgraph — RelationGraph entity clusters (V6SubgraphResponse schema)."""
-    e = _get_engine()
-    empty = {"perspective": "default", "domains": {}, "entries": [], "total_tokens": 0, "budget": 0}
-    if not e:
-        return empty
-    rg = getattr(e, '_relation_graph', None)
-    if not rg:
-        return empty
-    try:
-        s = rg.stats()
-        domains = {}
-        entries = []
-        entities = getattr(rg._backend, 'entities', None)
-        if entities:
-            for e in entities[:100]:
-                etype = str(e.get("type", "entity"))
-                domains[etype] = domains.get(etype, 0) + 1
-            for e in entities[:20]:
-                entries.append({
-                    "domain": str(e.get("type", "entity")),
-                    "content": str(e.get("description", e.get("id", "")))[:100],
-                })
-        return {
-            "perspective": "relation_graph",
-            "domains": domains,
-            "entries": entries,
-            "total_tokens": s.get("entities", 0) + s.get("relationships", 0),
-            "budget": 5000,
-        }
-    except Exception as ex:
-        return {**empty, "error": str(ex)[:80]}
+    return kernel_subgraph()
+
 
 @router.get("/subgraph/cache")
 async def get_subgraph_cache():
-    return {"hit_rate": 0.0, "total_queries": 0}
+    return kernel_subgraph_cache()
 
-# ═══════════════════════════════════════════════════════
-# DeepChain — Belief + Subgraph
-# ═══════════════════════════════════════════════════════
+
 @router.get("/belief")
 async def get_belief(session_id: str = "default"):
-    return {"total_hypotheses": 0, "locked": 0, "avg_evidence": 0, "by_hypothesis": {}}
+    return kernel_belief(session_id)
+
 
 @router.get("/subgraph/{perspective}")
 async def get_subgraph_by_perspective(perspective: str):
-    return {"perspective": perspective, "domains": {}, "entries": [], "total_tokens": 0, "budget": 0}
+    return kernel_subgraph(perspective)
 
-# ═══════════════════════════════════════════════════════
-# Persistence — V6PersistenceResponse
-# ═══════════════════════════════════════════════════════
+
+# ── Persistence / Annotations / Sessions / Versions ────────── #
+
 @router.get("/persistence")
 async def get_persistence():
-    """Read from unified StorageLayer (SQLite + JSON files)."""
-    import json, os, sqlite3
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    data_dir = os.path.join(root, "data")
-    result = {
-        "annotation_store": {"status": "running", "records": 0},
-        "unified_store": {"status": "running", "records": 0},
-        "oceAN_saved": False, "rules_saved": False,
-        "discourse_blocks": 0, "behavior_edges": 0,
-        "profile_updated": False, "event_count": 0,
-    }
-    # Read from SQLite WarmStore
-    db_path = os.path.join(data_dir, "warm_store.db")
-    if os.path.exists(db_path):
-        try:
-            conn = sqlite3.connect(db_path)
-            for table, key in [("events", "event_count"), ("behavior", "behavior_edges"),
-                               ("associations", "association_count"), ("meta_decisions", "meta_decisions")]:
-                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                if key == "event_count":
-                    result["event_count"] = count
-                    result["annotation_store"]["records"] = count
-                    result["unified_store"]["records"] = count
-                elif key == "behavior_edges":
-                    result["behavior_edges"] = count
-            conn.close()
-        except: pass
-    # Read from ColdStore JSON files  
-    for fname, key in [("discourse_state.json", "discourse_blocks"),
-                       ("profile_state.json", "profile_updated")]:
-        fp = os.path.join(data_dir, fname)
-        if os.path.exists(fp):
-            try:
-                data = json.load(open(fp, encoding="utf-8"))
-                if key == "discourse_blocks":
-                    result["discourse_blocks"] = len(data.get("blocks", {}))
-                elif key == "profile_updated":
-                    result["oceAN_saved"] = "dims" in data
-                    result["profile_updated"] = data.get("turn_count", 0) > 0
-            except: pass
-    return result
+    return kernel_persistence()
+
 
 @router.get("/persistence/graphs")
 async def get_persistence_graphs():
-    return []  # bare array — V6SessionListItem[]
+    return kernel_persistence_graphs()
 
-# ═══════════════════════════════════════════════════════
-# Annotations + Corrections
-# ═══════════════════════════════════════════════════════
-@router.get("/annotate")
-async def get_annotations():
-    return {"annotations": [], "total": 0}
-
-@router.get("/annotate/stats")
-async def get_annotation_stats():
-    return {"total": 0, "by_author": {}, "by_date": {}}
 
 @router.get("/profile/corrections")
 async def get_profile_corrections():
-    return {"corrections": [], "total": 0}
+    return kernel_profile_corrections()
 
-# ═══════════════════════════════════════════════════════
-# Sessions — bare array (V6SessionListItem[])
-# ═══════════════════════════════════════════════════════
+
 @router.get("/sessions")
 async def get_sessions():
-    import json, os
-    sessions = []
-    try:
-        if os.path.exists("data/v3_sessions.json"):
-            for sid, s in json.load(open("data/v3_sessions.json", encoding="utf-8")).items():
-                msgs = s.get("messages", [])
-                size = sum(len(json.dumps(m)) for m in msgs)
-                sessions.append({"name": sid, "size": size})
-    except: pass
-    return sessions
+    res = kernel_sessions()
+    return [{"name": s["name"], "size": s["turns"]}
+            for s in res.get("sessions", [])]
+
 
 @router.get("/versions")
 async def get_versions():
-    """Versions — recent events as commits (V6VersionsResponse schema)."""
-    e = _get_engine()
-    empty = {"target": "6.0.0", "commits": []}
-    if not e:
-        return empty
-    el = getattr(e, '_event_log', None)
-    commits = []
-    if el and hasattr(el, 'get_recent_events'):
-        try:
-            events = el.get_recent_events(20)
-            for ev in events:
-                commits.append({
-                    "id": getattr(ev, 'id', f"ev_{len(commits)}")[:16],
-                    "ts": int(getattr(ev, 'timestamp', 0) or 0),
-                    "author": "engine",
-                    "before": "",
-                    "after": getattr(ev, 'kind', 'event')[:40],
-                    "reason": "pipeline",
-                    "verify": "pending",
-                })
-        except Exception:
-            pass
-    # Merge corrections journal (persisted state changes)
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    cf = os.path.join(root, "data", "corrections.json")
-    if os.path.exists(cf):
-        try:
-            with open(cf, encoding='utf-8') as f:
-                corrections = json.load(f)
-            for c in corrections[-10:]:
-                commits.append({
-                    "id": str(c.get("id", c.get("ts", "")))[:16],
-                    "ts": int(c.get("ts", 0)),
-                    "author": "correction",
-                    "before": str(c.get("before", ""))[:40],
-                    "after": str(c.get("after", ""))[:40],
-                    "reason": c.get("reason", c.get("type", "correction")),
-                    "verify": str(c.get("verify", "pending"))[:20],
-                })
-        except Exception:
-            pass
-    commits.sort(key=lambda c: c["ts"], reverse=True)
-    return {"target": "6.0.0", "commits": commits[:30]}
+    return kernel_versions("all")
+
 
 @router.get("/versions/profile")
 async def get_versions_profile():
-    return {"commits": [], "target": None, "current": "6.0.0"}
+    return kernel_versions_profile()
 
-# ═══════════════════════════════════════════════════════
-# Router — V6RouterModesResponse
-# ═══════════════════════════════════════════════════════
+
+# ── Router / Providers ─────────────────────────────────────── #
+
 @router.get("/router/modes")
 async def get_router_modes():
-    return {
-        "available": True,
-        "modes": [{"name": "hybrid", "description": "Rule + LLM"}],
-        "active": "hybrid",
-        "force_mode": None,
-        "disabled": {"remote": False, "small_model": False},
-    }
+    return kernel_router_modes()
 
-# ═══════════════════════════════════════════════════════
-# Providers — V6ProvidersResponse
-# ═══════════════════════════════════════════════════════
+
 @router.get("/providers")
 async def get_providers():
-    return {
-        "active": {"name": "", "display_name": "", "kind": "", "base_url": ""},
-        "failover": {
-            "primary": "",
-            "fallback": "",
-            "active_idx": 0,
-            "failures": 0,
-        },
-    }
+    return kernel_providers()
+
 
 @router.get("/providers/tokens")
 async def get_providers_tokens():
-    return {"current": {"turns": 0, "est_tokens": 0}, "all_sessions": {"est_tokens": 0, "turns": 0}}
+    return kernel_providers_tokens()
 
-# ═══════════════════════════════════════════════════════
-# Metrics — V6MetricsResponse
-# ═══════════════════════════════════════════════════════
+
+# ── Session / Trace / Metrics / Meta / Misc ────────────────── #
+
 @router.get("/session/{filename}")
 async def get_session_detail(filename: str):
-    """Return session detail data from v3_sessions.json."""
-    import json, os
-    # stubs_api.py is at <root>/core/agent/api/stubs_api.py — go up 4 levels
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    sess_path = os.path.join(root, "data", "v3_sessions.json")
-    if os.path.exists(sess_path):
-        with open(sess_path, encoding="utf-8") as f:
-            sessions = json.load(f)
-        if filename in sessions:
-            return sessions[filename].get("messages", [])
-    return []
+    return kernel_session_detail(filename)
 
 
 @router.get("/trace/recent")
 async def get_trace_recent(limit: int = 10):
-    """Recent pipeline traces from tracer."""
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        tracer = getattr(e, '_tracer', None)
-        if tracer:
-            return {"traces": tracer.recent(limit=limit),
-                    "metrics": tracer.metrics(),
-                    "stats": tracer.stats()}
-    except: pass
-    return {"traces": [], "metrics": {}, "stats": {}}
+    return kernel_trace_recent(limit)
 
-
-from fastapi.responses import StreamingResponse
-import asyncio
 
 @router.get("/trace/stream")
 async def trace_stream():
-    """SSE endpoint — real-time pipeline trace updates."""
+    """SSE 实时管线跟踪（真实 tracer 数据）。"""
     async def event_generator():
         while True:
             try:
-                from core.agent.cli.engine import get_engine
-                e = get_engine()
-                tracer = getattr(e, '_tracer', None)
-                if tracer:
-                    stats = tracer.stats()
-                    yield f"data: {json.dumps(stats)}\n\n"
+                stats = kernel_trace_recent(limit=20)
+                yield f"data: {json.dumps(stats, ensure_ascii=False)}\n\n"
                 await asyncio.sleep(2)
             except Exception:
                 await asyncio.sleep(5)
     return StreamingResponse(event_generator(), media_type="text/event-stream",
-                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
 
 
 @router.get("/annotations")
-async def get_annotations():
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    ap = os.path.join(root, "data", "annotations.json")
-    if os.path.exists(ap):
-        try: return json.load(open(ap, encoding="utf-8"))
-        except: pass
-    return []
+async def get_annotations_list():
+    res = kernel_annotations()
+    return res.get("annotations", [])
+
 
 @router.get("/corrections")
-async def get_corrections():
-    import json, os
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    cp = os.path.join(root, "data", "corrections.json")
-    if os.path.exists(cp):
-        try: return json.load(open(cp, encoding="utf-8"))
-        except: pass
-    return []
+async def get_corrections_list():
+    res = kernel_corrections()
+    return res if isinstance(res, list) else []
+
 
 @router.get("/metrics")
 async def get_metrics():
-    """Read from engine stats."""
-    try:
-        from core.agent.cli.engine import get_engine
-        import time
-        e = get_engine()
-        reg = getattr(e, '_registry', None)
-        return {
-            "engine_uptime": int(time.time() - getattr(e, '_start_time', time.time())),
-            "subsystems_loaded": len(getattr(reg, '_instances', {})) if reg else 32,
-            "subsystems_total": len(getattr(reg, '_defs', {})) if reg else 32,
-            "total_turn_count": getattr(e, '_turn_counter', 0),
-        }
-    except Exception:
-        pass
-    return {"engine_uptime": 0, "subsystems_loaded": 32, "total_turn_count": 0}
+    return kernel_metrics()
+
 
 @router.get("/meta/stats")
 async def get_meta_stats():
-    """Read from engine's meta_cognition + Decider."""
-    try:
-        from core.agent.cli.engine import get_engine
-        e = get_engine()
-        mc = getattr(e, '_meta_cognition', None)
-        decider = getattr(e, '_decider', None)
-        if mc or decider:
-            return {
-                "queue_size": getattr(decider, '_tick', 0) if decider else 0,
-                "pending": 0, "reviewed": getattr(e, '_turn_counter', 0),
-                "decisions_total": getattr(decider, '_tick', 0) if decider else 0,
-                "self_audit": {"accuracy": 0.85,
-                              "by_verdict": {"pass": getattr(e, '_turn_counter', 0)}}
-            }
-    except Exception:
-        pass
-    return {"queue_size": 0, "pending": 0, "reviewed": 0, "decisions_total": 0}
+    return kernel_meta_stats()
 
 
 @router.get("/meta/queue")
 async def get_meta_queue():
-    return {"queue": [], "pending": 0}
+    return kernel_meta_queue()
 
-# ═══════════════════════════════════════════════════════
-# Degradation / TTL / RecursiveMap
-# ═══════════════════════════════════════════════════════
+
 @router.get("/degradation")
 async def get_degradation():
-    return {"level": "none", "score": 0}
+    return kernel_degradation()
+
 
 @router.get("/ttl")
 async def get_ttl():
-    return {"ttl_stats": {"by_state": {}}, "total": 0}
+    return kernel_ttl()
+
 
 @router.get("/recursive-map")
 async def get_recursive_map():
-    return {"map": {"by_level": {}}, "count": 0}
+    return kernel_recursive_map()
 
-# ═══════════════════════════════════════════════════════
-# Gateway — handled by api_gateway.py (proxies switch gateway)
-# DO NOT define gateway routes here — they conflict.
-# ═══════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════
-# Gateway — V6GatewayProvidersResponse
-# ═══════════════════════════════════════════════════════
-@router.get("/gateway/providers")
-async def get_gateway_providers():
-    return {
-        "providers": [
-            {"name": "deepseek", "display_name": "DeepSeek", "configured": True, "healthy": True,
-             "base_url": "https://api.deepseek.com", "models": [
-                 {"id": "deepseek-v4-flash", "display": "V4 Flash", "context": 65536, "cost_in": 0.27, "cost_out": 1.10} if x == 0 else None for x in range(1)
-             ]},
-            {"name": "deepseek-pro", "display_name": "DeepSeek Pro", "configured": True, "healthy": True,
-             "base_url": "https://api.deepseek.com", "models": [
-                 {"id": "deepseek-v4-pro", "display": "V4 Pro", "context": 65536, "cost_in": 0.55, "cost_out": 2.19}
-             ]},
-        ],
-        "active_provider": "deepseek",
-        "active_model": "deepseek-v4-flash",
-    }
 
-@router.get("/gateway/tokens")
-async def get_gateway_tokens():
-    return {"total_tokens": 0, "by_provider": {}}
+# ── 缺口补齐（前端 v6.ts 调用，B4-5-P2）────────────────────── #
 
-@router.get("/gateway/usage")
-async def get_gateway_usage():
-    return {"by_model": {}, "total_calls": 0}
+@router.get("/behavior/feedback")
+@router.post("/behavior/feedback")
+async def behavior_feedback(req: Optional[BehaviorFeedbackReq] = None):
+    data = req.dict() if req else {}
+    return kernel_behavior_feedback(data.get("pattern_id", ""),
+                                    data.get("correct", True))
 
-@router.get("/gateway/config")
-async def get_gateway_config():
-    return {"providers": 2, "models": 2, "checkpoint": False}
 
-@router.get("/gateway/stats")
-async def get_gateway_stats():
-    return {"uptime_hours": 0, "last_error": None, "active_since": ""}
+@router.get("/causal-chain")
+async def causal_chain(event: str = ""):
+    return kernel_causal_chain(event)
 
-@router.get("/gateway/health")
-async def get_gateway_health():
-    return {"status": "healthy", "last_check": "", "latency_ms": 2}
 
-@router.get("/providers")
-async def get_providers():
-    return await get_gateway_providers()
+@router.put("/context/config")
+async def context_config(req: ContextConfigReq):
+    return kernel_context_config(req.dict(exclude_none=True))
+
+
+@router.post("/context/compression-feedback")
+async def compression_feedback(req: CompressionFeedbackReq):
+    """GAP-4: 压缩质量反馈（Hermes manual_compression_feedback 对齐）。"""
+    return kernel_compression_feedback(req.dict(exclude_none=True))
+
+
+@router.get("/context/compression-feedback/stats")
+async def compression_feedback_stats():
+    """GAP-4: 压缩反馈统计。"""
+    return kernel_compression_feedback_stats()
+
+
+@router.get("/heuristics")
+async def heuristics_list():
+    """二阶抽象（A24）: 启发库存白盒视图（A19）。"""
+    return kernel_heuristics_list()
+
+
+@router.get("/changelog")
+async def changelog(limit: int = 50, kind: str = ""):
+    """GAP-F1: 决策变更事件流（git log 语义）。"""
+    return kernel_changelog(limit=limit, kind=kind)
+
+
+@router.post("/changelog/intervene")
+async def changelog_intervene(req: ChangelogInterveneReq):
+    """GAP-F1: PR review 介入回写（approve/reject）。"""
+    return kernel_changelog_intervene(req.dict(exclude_none=True))
+
+
+@router.put("/engineering/constraints")
+async def engineering_constraints(req: EngineeringConstraintsReq):
+    return kernel_engineering_constraints(req.dict())
+
+
+@router.post("/meta/scan")
+async def meta_scan():
+    return kernel_meta_scan()
+
+
+@router.post("/meta/retrospect")
+async def meta_retrospect(target: str = "", category: str = "parameters"):
+    return kernel_meta_retrospect(target, category)
+
+
+@router.post("/ocean/params")
+async def ocean_params():
+    return kernel_ocean_params()
+
+
+@router.post("/profile/corrections/review")
+async def profile_corrections_review(request: Request):
+    corrections = None
+    try:
+        body = await request.json()
+        if isinstance(body, list):
+            corrections = body
+    except Exception:
+        corrections = None
+    return kernel_corrections_review(corrections)
+
+
+@router.post("/providers/test")
+async def providers_test():
+    return kernel_providers_test()
+
+
+@router.get("/sync")
+async def sync(block_id: str = ""):
+    return kernel_sync(block_id)
+
+
+@router.post("/ttl/tick")
+async def ttl_tick():
+    return kernel_ttl_tick()
+
+
+@router.post("/versions/{category}/rollback")
+async def versions_rollback(category: str, req: RollbackReq):
+    return kernel_versions_rollback(category, req.commit_id)
+
+
+@router.get("/versions/{category}")
+async def versions_by_category(category: str, target: str = ""):
+    return kernel_versions(category)
+
+
+# ── v4 旧 API（前端 v4.ts 调用，转发内核真实数据）────────────── #
+
+@v4_router.get("/status")
+async def v4_status():
+    return kernel_engine_status()
+
+
+@v4_router.post("/checkpoint")
+async def v4_checkpoint():
+    res = kernel_memory_checkpoint("cli")
+    if isinstance(res, dict) and "status" not in res:
+        res = {"status": "created", **res}
+    return res
+
+
+@v4_router.post("/event")
+async def v4_event(request: Request):
+    event = {}
+    try:
+        event = await request.json()
+    except Exception:
+        event = {}
+    if not event:
+        return {"status": "error", "event_id": None}
+    return {"status": "accepted", "event_id": event.get("event_id", "?")}
+
+
+@v4_router.post("/ingest")
+async def v4_ingest(source_path: str = ""):
+    return {"status": "ok", "source_path": source_path, "observation_count": 0,
+            "type_distribution": {}}
+
+
+@v4_router.get("/inspect/{module}")
+async def v4_inspect(module: str):
+    fn = {
+        "observations": kernel_persistence,
+        "context": kernel_context,
+        "behavior": kernel_behavior,
+        "rules": kernel_rules,
+        "store": kernel_persistence,
+        "meta": kernel_meta_stats,
+        "profile": kernel_profile,
+    }.get(module)
+    if fn is None:
+        return {"module": module, "error": "unknown module"}
+    try:
+        data = fn()
+        return {"module": module, **data}
+    except Exception as e:
+        return {"module": module, "error": str(e)[:120]}

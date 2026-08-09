@@ -116,6 +116,9 @@ class RateLimiter:
         # 2. 会话级限流
         session_bucket = self._get_session_bucket(session_id)
         if not session_bucket.acquire():
+            # 会话拒绝时退还租户令牌 — 否则租户配额会被无效请求白白耗尽
+            # （B4-1-P1 薄中间件实测发现的真实缺陷）
+            tenant_bucket.tokens += 1
             wait = session_bucket.wait_time()
             return False, wait, "session_rate_limited"
 

@@ -12,6 +12,12 @@ from core.agent.behavior.runtime_hook import (
     BehaviorGraphRuntimeHook,
     register_with_engine,
 )
+from core.agent.behavior.scheduler import BehaviorScheduler, ScheduleMode
+from core.agent.behavior.explicit_commitment import (
+    Commitment,
+    CommitmentRegistry,
+)
+from core.agent.behavior.brain import BehaviorBrain
 
 __all__ = [
     "BehaviorGraphAdapter",
@@ -21,4 +27,9 @@ __all__ = [
     "CausalInsight",
     "BehaviorGraphRuntimeHook",
     "register_with_engine",
+    "BehaviorScheduler",
+    "ScheduleMode",
+    "Commitment",
+    "CommitmentRegistry",
+    "BehaviorBrain",
 ]

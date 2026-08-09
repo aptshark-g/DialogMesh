@@ -356,3 +356,18 @@ class OpenAIProvider(LLMProvider):
         云端 API：首 token 延迟 ~200ms + 每 token ~20ms。
         """
         return 200 + (prompt_tokens + output_tokens) * 20
+
+
+# ── v3 backward-compat alias (B8-4: v3_0/llm_providers 归档后根级唯一) ──
+
+class OpenAIProvider_v3(OpenAIProvider):
+    """v3 兼容别名：接受 ProviderConfig(pydantic) 单参数构造。"""
+
+    def __init__(self, config):
+        from core.agent.llm_providers.models import ProviderConfig
+        cfg = config if isinstance(config, ProviderConfig) else ProviderConfig(**config)
+        super().__init__(cfg.name, {
+            "api_key": cfg.api_key or "",
+            "base_url": cfg.base_url or "https://api.openai.com/v1",
+            "model": cfg.model,
+        })

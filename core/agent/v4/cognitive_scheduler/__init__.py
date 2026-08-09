@@ -1,10 +1,12 @@
-"""Cognitive Scheduler: unified scheduling layer.
+"""Cognitive Scheduler: path-aware scheduling layer (engine 在用).
 
-Exports both legacy and path-aware APIs for backward compatibility.
+B1-8 定案归档修正 (2026-08-04):
+  * scheduler.py / policy.py（B 套统一调度循环 + WorkerPool 策略）→ 已归档
+    un_use/cognitive_scheduler_b/（被 PathAwareScheduler 演进取代, 零生产引用）
+  * path_* + tasks 保留 — engine._scheduler = PathAwareScheduler 实际消费
+  * 认知运行时调度职责归 A 套 v4/cognitive/scheduler.py（CognitiveScheduler）
 """
-from .models import Task, CallableTask, Worker, WorkerPool, WorkerStats, PathState, PathStateMachine
-from .policy import SchedulerPolicy, PriorityFIFOPolicy, PathAwarePolicy
-from .scheduler import CognitiveScheduler, SchedulerMonitor, QueueSnapshot
+from .models import Task
 from .tasks import ObservationTask, HypothesisTask, KnowledgeTask, SkillTask
 
 # Path-aware new API (lazy imports to avoid circular dependencies)
@@ -31,11 +33,6 @@ def _load_path_scheduler():
     return _path_scheduler
 
 __all__ = [
-    # Legacy
-    "Task", "CallableTask", "Worker", "WorkerPool", "WorkerStats",
-    "SchedulerPolicy", "PriorityFIFOPolicy", "PathAwarePolicy",
-    "CognitiveScheduler", "SchedulerMonitor", "QueueSnapshot",
+    "Task",
     "ObservationTask", "HypothesisTask", "KnowledgeTask", "SkillTask",
-    # Path-aware (available via lazy import or direct submodule import)
-    "PathState", "PathStateMachine",
 ]

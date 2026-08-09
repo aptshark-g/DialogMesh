@@ -35,14 +35,24 @@ class HeaderInjector:
     def inject(self, text: str, session_id: str, history: List[str] = None) -> str:
         if history:
             self._update_cache(session_id, history)
-        # Structural pronoun detection — SyntacticDecomposer checks empty-subject slots
-        edus = self._decomposer.decompose(text)
-        for edu in edus:
-            if edu.subject is None and edu.obj:
-                resolved = self._resolve_reference(edu.object, 
-                    self._entity_cache.get(session_id, []))
-                if resolved:
-                    return text  # SyntacticDecomposer handles substitution
+        # C1 (R6): delegate real coreference injection to the B kernel's
+        # HeaderInjector (one implementation, no second parallel set — red line
+        # 7). Seed its cache with this session's known entities so cross-turn
+        # pronouns resolve.
+        try:
+            from core.agent.discourse_block_tree.header_injector import (
+                HeaderInjector as BKernelHeaderInjector,
+                DiscourseEntity as BEntity,
+            )
+            if getattr(self, "_b_header_injector", None) is None:
+                self._b_header_injector = BKernelHeaderInjector()
+            for phrase in self._entity_cache.get(session_id, []):
+                self._b_header_injector.cache.push(
+                    [BEntity(text=str(phrase), etype="context", confidence=0.9)]
+                )
+            return self._b_header_injector.inject(text)
+        except Exception:
+            return text
         return text
 
     def _update_cache(self, session_id: str, history: List[str]):
@@ -177,6 +187,21 @@ class CohesionScore:
     subject_cont: float = 0.5
     ref_inherit: float = 0.5
     lexical: float = 0.5
+
+    # D-14 (R6 D3): 与 discourse_block_tree/models.py 字段名对齐。
+    # A 版内部 794/830 行使用 total_score，B 版 CohesionScore 使用
+    # total_score/macro_score/micro_score —— 这里加兼容属性，两套命名都可用。
+    @property
+    def total_score(self) -> float:
+        return self.total
+
+    @property
+    def macro_score(self) -> float:
+        return self.macro
+
+    @property
+    def micro_score(self) -> float:
+        return self.micro
 
     @property
     def is_extreme(self) -> bool:
@@ -378,34 +403,21 @@ class DiscourseBlock:
         return self.summary
     
     def _llm_summarize(self, text: str, llm_provider=None) -> str:
-        """LLM compression via LM Studio nemotron. Falls back to BM25+kurtosis."""
+        """LLM compression via provider. Falls back to BM25+kurtosis.
+
+        M1-P12: 不再直连 127.0.0.1:1234 的 LM Studio 硬编码端点 ——
+        统一走 llm_provider 参数（网关/Provider 注入），无 provider 时
+        直接 BM25 兜底，不产生任何直连。
+        """
         if not llm_provider:
-            try:
-                import urllib.request, json
-                prompt = f"Extract the key action and entity from this reverse engineering conversation. Output 1 short sentence:\n{text[:300]}"
-                req = urllib.request.Request(
-                    "http://127.0.0.1:1234/v1/chat/completions",
-                    data=json.dumps({
-                        "model": "nvidia/nemotron-3-nano-4b",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 100, "temperature": 0.1
-                    }).encode(),
-                    headers={"Content-Type": "application/json"}
-                )
-                resp = urllib.request.urlopen(req, timeout=10)
-                result = json.loads(resp.read())
-                content = result["choices"][0]["message"].get("content", "")
-                if not content:
-                    content = result["choices"][0]["message"].get("reasoning_content", "")
-                if content and len(content) > 5:
-                    return content[:120]
-                raise ValueError("empty LLM response")
-            except Exception as e:
-                logger.debug("LM Studio failed: %s, using BM25 fallback", e)
-                return self._bm25_fallback(text)
-        
-        result = llm_provider.generate(prompt=f"Extract key action: {text[:200]}", max_tokens=80)
-        return (result.text if hasattr(result, 'text') else str(result))[:120]
+            return self._bm25_fallback(text)
+        try:
+            result = llm_provider.generate(
+                prompt=f"Extract key action: {text[:200]}", max_tokens=80)
+            return (result.text if hasattr(result, 'text') else str(result))[:120]
+        except Exception as e:
+            logger.debug("LLM summarize failed: %s, using BM25 fallback", e)
+            return self._bm25_fallback(text)
     
     def _bm25_fallback(self, text: str) -> str:
         """BM25+kurtosis topic matching when LLM unavailable."""
@@ -710,6 +722,7 @@ class DiscourseBlockTreeManager:
         self._decomposer = SyntacticDecomposer()
         self._quantizer = MacroMicroQuantizer()
         self._last_block: Dict[str, str] = {}
+        self._gray_scores: Dict[str, list] = {}  # C2/A13: cross-turn gray buffer
         import threading
         self._cold_queue: list = []
         self._cold_lock = threading.Lock()
@@ -758,6 +771,7 @@ class DiscourseBlockTreeManager:
         last_bid = self._last_block.get(session_id)
         decisions = []
         turn_started = False  # ensure first EDU of each turn gets its own block
+        gray_buffer = self._gray_scores.setdefault(session_id, [])
 
         for i, edu in enumerate(edus):
             if i == 0:
@@ -766,12 +780,27 @@ class DiscourseBlockTreeManager:
                     prev_edus = tree.blocks[last_bid].edus
                     if prev_edus:
                         cohesion = self._quantizer.compute(prev_edus[-1], edu)
-                        if cohesion.decision in ("fork", "gray_zone"):
+                        if cohesion.decision == "fork":
                             # Fork from last turn's block
                             parent = tree.blocks[last_bid].parent if last_bid in tree.blocks else tree.root_id
                             block = self._new_block([edu], tree, parent)
                             last_bid = block.block_id
                             decisions.append(RouteDecision.FORK)
+                            gray_buffer.clear()
+                            continue
+                        if cohesion.decision == "gray_zone":
+                            # C2 (R6): gray zone defers to A13 long-proof
+                            # posterior — accumulate across turns instead of
+                            # forking immediately. Only fork once the buffer
+                            # shows sustained boundary evidence.
+                            gray_buffer.append(cohesion.total_score)
+                            if self._gray_should_fork(gray_buffer):
+                                parent = tree.blocks[last_bid].parent if last_bid in tree.blocks else tree.root_id
+                                block = self._new_block([edu], tree, parent)
+                                last_bid = block.block_id
+                                decisions.append(RouteDecision.FORK)
+                                gray_buffer.clear()
+                                continue
                             continue
                 # Otherwise continue: add to last block or create new
                 if last_bid and last_bid in tree.blocks:
@@ -793,11 +822,29 @@ class DiscourseBlockTreeManager:
             else:
                 # Fork: new block
                 cohesion = self._quantizer.compute(edus[i - 1], edu)
-                if cohesion.decision in ("fork", "gray_zone"):
+                if cohesion.decision == "fork":
                     parent = tree.blocks[last_bid].parent if last_bid and last_bid in tree.blocks else tree.root_id
                     block = self._new_block([edu], tree, parent)
                     last_bid = block.block_id
                     decisions.append(RouteDecision.FORK)
+                    gray_buffer.clear()
+                elif cohesion.decision == "gray_zone":
+                    gray_buffer.append(cohesion.total_score)
+                    if self._gray_should_fork(gray_buffer):
+                        parent = tree.blocks[last_bid].parent if last_bid and last_bid in tree.blocks else tree.root_id
+                        block = self._new_block([edu], tree, parent)
+                        last_bid = block.block_id
+                        decisions.append(RouteDecision.FORK)
+                        gray_buffer.clear()
+                    else:
+                        # Defers the boundary: keep the EDU in the current block
+                        # and let the accumulated signal decide later.
+                        if last_bid and last_bid in tree.blocks:
+                            tree.blocks[last_bid].edus.append(edu)
+                        else:
+                            block = self._new_block([edu], tree)
+                            last_bid = block.block_id
+                        decisions.append(RouteDecision.CONTINUE)
                 else:
                     # Continue (cohesion > 0.25)
                     if last_bid and last_bid in tree.blocks:
@@ -827,6 +874,19 @@ class DiscourseBlockTreeManager:
     def _should_merge(self, prev: EDU, curr: EDU) -> bool:
         cohesion = self._quantizer.compute(prev, curr)
         return cohesion.decision == "continue"
+
+    def _gray_should_fork(self, buffer: list) -> bool:
+        """A13 (C2): sustained gray-zone boundary evidence → fork.
+
+        A single strong gray (≥ 0.45) or two consecutive grays above the low
+        threshold (≥ 0.30) count as posterior evidence that a boundary is
+        real. Weak single signals stay deferred (kept in the current block).
+        """
+        if buffer and max(buffer) >= 0.45:
+            return True
+        if len(buffer) >= 2 and all(s >= 0.30 for s in buffer[-2:]):
+            return True
+        return False
 
     def get_block_relations(self, session_id: str) -> dict:
         """Association chain query interface — returns block-level relationship graph."""
@@ -896,10 +956,30 @@ class DiscourseBlockTreeManager:
         # Update summaries before building context
         current_turn = getattr(tree, '_turn_count', 0)
         block_list = list(tree.blocks.values())[:max_blocks]
+        # Bridge A blocks → B-compatible views (B engine reads raw_text /
+        # atomic_units / status). A blocks carry text in .edus instead.
+        bridged = []
+        for block in block_list:
+            raw = getattr(block, "raw_text", "") or ""
+            if not raw:
+                raw = " ".join(
+                    getattr(e, "raw_text", "") for e in getattr(block, "edus", [])
+                ).strip()
+            bridged.append(type("BBlockView", (), {
+                "raw_text": raw,
+                "status": getattr(block, "temperature", "active")
+                if isinstance(getattr(block, "temperature", "active"), str)
+                else "active",
+                "summary": getattr(block, "summary", None),
+                "atomic_units": getattr(block, "edus", []),
+                "entities": getattr(block, "entities", []),
+                "primary_intent": getattr(block, "primary_intent", ""),
+                "name": getattr(block, "name", ""),
+            })())
         for block in block_list:
             engine.check_upgrade(block, current_turn)
         
-        return engine.build_context(block_list)
+        return engine.build_context(bridged)
 
     def get_tree(self, session_id: str) -> Optional[DiscourseBlockTree]:
         return self._trees.get(session_id)

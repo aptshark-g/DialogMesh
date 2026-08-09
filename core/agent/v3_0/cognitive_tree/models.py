@@ -42,6 +42,7 @@ class CogType(Enum):
     VALIDATION = "validation"      # 对认知的验证结果
     LEARNING = "learning"        # 长期学习结论
     COMMUNICATION = "communication"  # LLM 间通信消息
+    PREDICTION = "prediction"    # 对内执行预测（LLM-3: 分支预测类比）
 
 
 class CogNodeStatus(Enum):

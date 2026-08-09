@@ -34,35 +34,35 @@ except ImportError:
 
 def pcr_show(args):
     e = get_engine()
-    inst = getattr(e, '_pcr_llm', None)
+    inst = getattr(e, '_pcr_router', None)
     if inst and hasattr(inst, 'show'):
         return print(inst.show())
     print('{"zone":"GENERAL","complexity":0.5}')
 
 def pcr_config(args):
     e = get_engine()
-    inst = getattr(e, '_pcr_llm', None)
+    inst = getattr(e, '_pcr_router', None)
     if inst and hasattr(inst, 'get_config'):
         return print(json.dumps(inst.get_config()))
     print('{"thresholds":{},"zone_map":{}}')
 
 def pcr_config_set(args):
     e = get_engine()
-    inst = getattr(e, '_pcr_llm', None)
+    inst = getattr(e, '_pcr_router', None)
     if inst and hasattr(inst, 'set_config'):
         return print(json.dumps(inst.set_config(getattr(args, 'key', ''), getattr(args, 'val', ''))))
     print('{"status":"set"}')
 
 def pcr_config_reset(args):
     e = get_engine()
-    inst = getattr(e, '_pcr_llm', None)
+    inst = getattr(e, '_pcr_router', None)
     if inst and hasattr(inst, 'reset_config'):
         return print(json.dumps(inst.reset_config()))
     print('{"status":"reset"}')
 
 def pcr_history(args):
     e = get_engine()
-    inst = getattr(e, '_pcr_llm', None)
+    inst = getattr(e, '_pcr_router', None)
     if inst and hasattr(inst, 'history'):
         return print(json.dumps(inst.history()))
     print('{"history":[],"total":0}')

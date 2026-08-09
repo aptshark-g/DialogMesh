@@ -3,9 +3,69 @@
 import { create } from 'zustand';
 import type { ReactNode } from 'react';
 
+export type DockContentKey = 'profile' | 'context' | 'engineering' | 'tasks' | 'legend' | 'thinking' | 'heuristics' | 'changelog' | 'node_detail';
+
+export const DOCK_TITLES: Record<DockContentKey, string> = {
+  profile: '认知画像',
+  context: '上下文',
+  engineering: '工程链',
+  tasks: '任务',
+  legend: '图例',
+  thinking: '思考流',
+  heuristics: '启发',
+  changelog: '变更日志',
+  node_detail: '节点详情',
+};
+
+/** 右键"在右侧显示详情"的节点数据（B5） */
+export interface InspectNodeData {
+  id: string;
+  label?: string;
+  type?: string;
+  intent?: string;
+  depth?: number;
+  temperature?: string;
+  size?: number;
+  entities?: string[];
+  raw_text?: string;
+  summary?: string;
+  state?: Record<string, unknown>;
+  edges?: { source: string; target: string; type?: string }[];
+}
+
+const SIDEPANEL_WIDTH_KEY = 'dm_sidepanel_width';
+const CENTERPANEL_WIDTH_KEY = 'dm_centerpanel_width';
+const SIDEPANEL_MIN = 280;
+const SIDEPANEL_MAX = 560;
+const CENTERPANEL_MIN = 360;
+const CENTERPANEL_MAX = 720;
+
+function loadInitialWidth(): number {
+  try {
+    const v = parseInt(localStorage.getItem(SIDEPANEL_WIDTH_KEY) || '', 10);
+    if (v >= SIDEPANEL_MIN && v <= SIDEPANEL_MAX) return v;
+  } catch {}
+  return 340;
+}
+
+function loadInitialCenterWidth(): number {
+  try {
+    const v = parseInt(localStorage.getItem(CENTERPANEL_WIDTH_KEY) || '', 10);
+    if (v >= CENTERPANEL_MIN && v <= CENTERPANEL_MAX) return v;
+  } catch {}
+  return 480;
+}
+
 interface SidePanelState {
   isOpen: boolean;
   title: string;
+  width: number;
+  mode: 'auto' | 'fixed';
+  dockContent: DockContentKey;
+}
+
+interface CenterPanelState {
+  isOpen: boolean;
   width: number;
 }
 
@@ -22,12 +82,24 @@ interface ModalState {
 
 export interface UIStore {
   sidePanel: SidePanelState;
+  /** B5（2026-08-07）: 内容坞显示位置 — 右侧 Dock 或 中间浮层 */
+  dockPlacement: 'right' | 'center';
+  centerPanel: CenterPanelState;
+  inspectNode: InspectNodeData | null;
   modal: ModalState;
 
   openSidePanel: (opts?: Partial<Omit<SidePanelState, 'isOpen'>>) => void;
   closeSidePanel: () => void;
   toggleSidePanel: () => void;
   setSidePanelTitle: (title: string) => void;
+  setSidePanelMode: (mode: 'auto' | 'fixed') => void;
+  setDockContent: (dockContent: DockContentKey) => void;
+  setSidePanelWidth: (width: number) => void;
+  setDockPlacement: (placement: 'right' | 'center') => void;
+  openCenterPanel: () => void;
+  closeCenterPanel: () => void;
+  setCenterPanelWidth: (width: number) => void;
+  setInspectNode: (node: InspectNodeData | null) => void;
 
   openModal: (opts: Partial<Omit<ModalState, 'isOpen'>>) => void;
   closeModal: () => void;
@@ -45,8 +117,16 @@ export const useUIStore = create<UIStore>((set) => ({
   sidePanel: {
     isOpen: true,
     title: '认知画像',
-    width: 340,
+    width: loadInitialWidth(),
+    mode: 'auto',
+    dockContent: 'profile',
   },
+  dockPlacement: 'right',
+  centerPanel: {
+    isOpen: false,
+    width: loadInitialCenterWidth(),
+  },
+  inspectNode: null,
   modal: {
     isOpen: false,
     title: '',
@@ -74,6 +154,50 @@ export const useUIStore = create<UIStore>((set) => ({
     set((s) => ({
       sidePanel: { ...s.sidePanel, title },
     })),
+  setSidePanelMode: (mode) =>
+    set((s) => ({
+      sidePanel: { ...s.sidePanel, mode },
+    })),
+  setDockContent: (dockContent) =>
+    set((s) => ({
+      sidePanel: { ...s.sidePanel, dockContent },
+    })),
+  setSidePanelWidth: (width) => {
+    const w = Math.min(SIDEPANEL_MAX, Math.max(SIDEPANEL_MIN, Math.round(width)));
+    try {
+      localStorage.setItem(SIDEPANEL_WIDTH_KEY, String(w));
+    } catch {}
+    set((s) => ({
+      sidePanel: { ...s.sidePanel, width: w },
+    }));
+  },
+  setDockPlacement: (placement) =>
+    set((s) => ({
+      dockPlacement: placement,
+      // 切换位置时只保留目标位置的容器；源容器关闭避免同内容双开
+      sidePanel: { ...s.sidePanel, isOpen: placement === 'right' ? s.sidePanel.isOpen : false },
+      centerPanel: { ...s.centerPanel, isOpen: placement === 'center' ? s.centerPanel.isOpen : false },
+    })),
+  openCenterPanel: () =>
+    set((s) => ({
+      centerPanel: { ...s.centerPanel, isOpen: true },
+      sidePanel: { ...s.sidePanel, isOpen: false },
+    })),
+  closeCenterPanel: () =>
+    set((s) => ({
+      centerPanel: { ...s.centerPanel, isOpen: false },
+    })),
+  setCenterPanelWidth: (width) => {
+    const w = Math.min(CENTERPANEL_MAX, Math.max(CENTERPANEL_MIN, Math.round(width)));
+    try {
+      localStorage.setItem(CENTERPANEL_WIDTH_KEY, String(w));
+    } catch {}
+    set((s) => ({
+      centerPanel: { ...s.centerPanel, width: w },
+    }));
+  },
+  setInspectNode: (node) =>
+    set({ inspectNode: node }),
 
   openModal: (opts) =>
     set((s) => ({
@@ -115,4 +239,12 @@ export function useSidePanelTitle(): string {
 
 export function useSidePanelWidth(): number {
   return useUIStore((s) => s.sidePanel.width);
+}
+
+export function useSidePanelMode(): 'auto' | 'fixed' {
+  return useUIStore((s) => s.sidePanel.mode);
+}
+
+export function useDockContent(): DockContentKey {
+  return useUIStore((s) => s.sidePanel.dockContent);
 }

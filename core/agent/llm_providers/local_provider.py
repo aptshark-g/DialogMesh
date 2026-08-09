@@ -233,6 +233,22 @@ class LocalProvider(LLMProvider):
         return base + (prompt_tokens + output_tokens) * per_token
 
 
+# ── v3 backward-compat alias (B8-4: v3_0/llm_providers 归档后根级唯一) ──
+
+class LocalProvider_v3(LocalProvider):
+    """v3 兼容别名：接受 ProviderConfig(pydantic) 单参数构造。"""
+
+    def __init__(self, config):
+        from core.agent.llm_providers.models import ProviderConfig
+        cfg = config if isinstance(config, ProviderConfig) else ProviderConfig(**config)
+        super().__init__(cfg.name, {
+            "backend": getattr(cfg.backend, "value", str(cfg.backend)),
+            "model_path": cfg.model,
+            "base_url": cfg.base_url or "http://localhost:11434",
+            "api_key": cfg.api_key or "local",
+        })
+
+
 # ── 后端适配器（占位实现，按需扩展）──────────────────────────
 
 class _VLLMBackend:

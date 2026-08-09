@@ -1,10 +1,12 @@
-"""ChunkStore — semantic atom storage backed by ChromaDB.
+"""ChunkStore — semantic atom storage with pluggable vector backends.
 
 Design: OPENSOURCE_DEEP_READ.md → GraphRAG + LangChain patterns.
   - Atom: smallest retrievable unit, with block_id back-reference.
   - Non-chunkable marker: code/quote/exact match → not split, not embedded.
   - Hash-based dedup: sha256(text) → skip if already processed.
-  - Pluggable: defaults to ChromaDB, swap via backend= param.
+  - Pluggable: backend= "in_memory" (default) | "chromadb" | "unified".
+    "unified" wires UnifiedStore (BGE + LSH, lightweight stage-1 vector
+    backend per G10); falls back to keyword when BGE unavailable.
 """
 from __future__ import annotations
 
@@ -31,14 +33,22 @@ class Atom:
 
 
 class ChunkStore:
-    """Semantic atom store with ChromaDB backend and hash-based dedup."""
+    """Semantic atom store with pluggable vector backend and hash-based dedup."""
 
-    def __init__(self, backend: str = "in_memory", collection: str = "discourse_atoms"):
+    def __init__(self, backend: str = "in_memory", collection: str = "discourse_atoms",
+                 bge_model=None, unified_store=None):
         self._atoms: List[Atom] = []
         self._store = None
         self._backend = backend
         self._collection_name = collection
         self._dedup_cache: set = set()  # fallback if ChromaDB unavailable
+        # G10-P1: UnifiedStore (BGE + LSH) lightweight vector backend
+        self._bge = bge_model
+        self._unified = unified_store
+        if backend == "chromadb":
+            self._init_chromadb()
+        elif backend == "unified":
+            self._init_unified()
 
     # ── Write ──
 
@@ -49,7 +59,10 @@ class ChunkStore:
             if not self._should_process(atom.text):
                 continue
             self._atoms.append(atom)
-            self._try_chromadb_add(atom)
+            if self._backend == "unified":
+                self._try_unified_add(atom)
+            else:
+                self._try_chromadb_add(atom)
             new_count += 1
         return new_count
 
@@ -61,13 +74,34 @@ class ChunkStore:
         atom = Atom(text=text, block_id=block_id, chunkable=chunkable,
                     tags=tags or [])
         self._atoms.append(atom)
-        self._try_chromadb_add(atom)
+        if self._backend == "unified":
+            self._try_unified_add(atom)
+        else:
+            self._try_chromadb_add(atom)
         return atom
 
     # ── Read ──
 
     def search(self, query: str, top_k: int = 10) -> List[Atom]:
         """Vector search. Falls back to keyword search if ChromaDB unavailable."""
+        if self._backend == "unified" and self._unified is not None:
+            try:
+                hits = self._unified.search_texts(query, top_k=top_k)
+            except Exception:
+                hits = []
+            if hits:
+                atoms = []
+                for h in hits:
+                    md = h.get("metadata") or {}
+                    atoms.append(Atom(
+                        atom_id=h.get("id", ""),
+                        text=h.get("text", ""),
+                        block_id=md.get("block_id", ""),
+                        chunkable=md.get("chunkable", True),
+                        tags=md.get("tags", []) or [],
+                        priority=md.get("priority", 0.5),
+                    ))
+                return atoms[:top_k]
         if self._store:
             try:
                 results = self._store.query(query_texts=[query], n_results=top_k)
@@ -97,6 +131,8 @@ class ChunkStore:
             "chunkable": sum(1 for a in self._atoms if a.chunkable),
             "non_chunkable": sum(1 for a in self._atoms if not a.chunkable),
             "backend": self._backend,
+            "unified_indexed": self._unified.stats().get("indexed_texts", 0)
+            if self._unified is not None else 0,
         }
 
     # ── Dedup ──
@@ -140,3 +176,28 @@ class ChunkStore:
             logger.info("ChunkStore: ChromaDB not installed, using in-memory only")
         except Exception as e:
             logger.warning("ChunkStore: ChromaDB init failed (%s), using in-memory", e)
+
+    # ── UnifiedStore integration (G10-P1) ──
+
+    def _init_unified(self) -> None:
+        """Lazy init UnifiedStore (BGE + LSH) — lightweight vector backend."""
+        try:
+            from core.agent.persistence.unified_store import UnifiedStore
+            self._unified = self._unified or UnifiedStore(bge_model=self._bge)
+            logger.info("ChunkStore: UnifiedStore backend wired (dim=%s)", self._unified._dim)
+        except Exception as e:
+            logger.warning("ChunkStore: UnifiedStore init failed (%s), using in-memory", e)
+            self._unified = None
+
+    def _try_unified_add(self, atom: Atom) -> None:
+        """Best-effort UnifiedStore write. Falls back to in-memory only."""
+        if self._unified is None:
+            return
+        try:
+            self._unified.add_text(
+                atom.text, atom.atom_id,
+                {"block_id": atom.block_id, "chunkable": atom.chunkable,
+                 "tags": atom.tags, "priority": atom.priority},
+            )
+        except Exception as e:
+            logger.debug("UnifiedStore add failed (in-memory only): %s", e)

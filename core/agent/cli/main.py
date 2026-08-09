@@ -27,16 +27,28 @@ class V4CLI:
             return
         from core.agent.runtime.engine import CognitiveRuntimeEngine
 
-        if self._api_key:
-            from core.agent.llm_providers.openai_provider import OpenAIProvider
-            llm = OpenAIProvider("deepseek", {
-                "api_key": self._api_key,
-                "base_url": "https://api.deepseek.com/v1",
-                "model": "deepseek-chat",
-            })
-        else:
-            from core.agent.llm_providers.mock_provider import MockProvider
-            llm = MockProvider("mock", {})
+        # B8-4 (2026-08-04): 主路径 = switch 网关。优先网关（探测健康），
+        # 离线降级直连（有 key）/ mock（无 key）。不再无条件直连。
+        switch_url = os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080")
+        llm = None
+        try:
+            from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+            gw = GatewayLLMProvider(base_url=switch_url)
+            if gw.health_check():
+                llm = gw
+        except Exception:
+            llm = None
+        if llm is None:
+            if self._api_key:
+                from core.agent.llm_providers.openai_provider import OpenAIProvider
+                llm = OpenAIProvider("deepseek", {
+                    "api_key": self._api_key,
+                    "base_url": "https://api.deepseek.com/v1",
+                    "model": "deepseek-chat",
+                })
+            else:
+                from core.agent.llm_providers.mock_provider import MockProvider
+                llm = MockProvider("mock", {})
 
         self._engine = CognitiveRuntimeEngine(llm_provider=llm)
         self._engine.start()

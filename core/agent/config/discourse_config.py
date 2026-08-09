@@ -247,10 +247,11 @@ class ConfigLoader:
 
     def _load_from_yaml(self, raw: Dict) -> None:
         """从 YAML 配置文件加载并覆盖。"""
-        if not self.CONFIG_FILE.exists():
-            return
-
         try:
+            # exists() can raise PermissionError on some runtimes (uv 3.13 +
+            # restricted ~/.config ACL) instead of returning False — guard it.
+            if not self.CONFIG_FILE.exists():
+                return
             import yaml
             with open(self.CONFIG_FILE, "r", encoding="utf-8") as f:
                 user_config = yaml.safe_load(f)

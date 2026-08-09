@@ -47,20 +47,18 @@ class EnginePool:
     def _create_engine(self, slot_id: int):
         from core.agent.cli.engine import _create_engine_instance
         engine = _create_engine_instance(self._provider_type)
-        # Each engine in pool gets its own isolated StateMachine and subscribers
-        from core.agent.event.statemachine import DeciderStateMachine
-        from core.agent.event.handlers import register_all_handlers
+        # B1: bootstrap already assembled StateMachine + handlers via
+        # _create_engine_instance -> engine.bootstrap(). Pool only needs the
+        # EventBus subscribers (not part of the unified assembly).
         from core.agent.event.subscribers import wire_subscribers
-        sm = DeciderStateMachine()
-        register_all_handlers(engine, tracer=getattr(engine, '_tracer', None))
         wire_subscribers(engine)
-        engine._state_machine = sm
+        sm = getattr(engine, '_state_machine', None)
         self._slots[slot_id] = engine
         self._stats["created"] += 1
         logger.info("EnginePool[%d] created: %s subs, %s handlers",
                      slot_id,
                      len(getattr(engine, '_event_subscribers', {})),
-                     len(getattr(sm, '_phase_handlers', {})))
+                     len(getattr(sm, '_phase_handlers', {})) if sm else 0)
         return engine
 
     def _find_free_slot(self) -> Optional[int]:

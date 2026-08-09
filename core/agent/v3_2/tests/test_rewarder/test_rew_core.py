@@ -22,9 +22,29 @@ class TestRules:
     def test_hit(self):
         c = [Candidate("x", expected_value=0.9)]
         r = PredictionResult(c, {}, "full")
-        assert RewardRuleTable().evaluate(r, "x") == 0.10
+        assert RewardRuleTable().evaluate(r, "x") == 1.0
     def test_correction(self):
         assert RewardRuleTable().evaluate(None, "", True) == -0.20
+    def test_top3_hit(self):
+        c = [Candidate("a", expected_value=0.9), Candidate("x", expected_value=0.5)]
+        r = PredictionResult(c, {}, "full")
+        assert RewardRuleTable().evaluate(r, "x") == 0.5
+    def test_partial_shared_word(self):
+        # Direction overlap via shared ASCII word (design: add_doc vs add comments).
+        c = [Candidate("add_doc", expected_value=0.9)]
+        r = PredictionResult(c, {}, "full")
+        assert RewardRuleTable().evaluate(r, "add comments") == 0.2
+    def test_partial_rejects_strict_prefix(self):
+        # Generic prediction must not be rewarded for a more specific action.
+        c = [Candidate("写代码", expected_value=0.9)]
+        r = PredictionResult(c, {}, "full")
+        assert RewardRuleTable().evaluate(r, "写代码注释") == -0.5
+    def test_alternative(self):
+        c = [Candidate("a", expected_value=0.9)]
+        r = PredictionResult(c, {}, "full")
+        assert RewardRuleTable().evaluate(r, "z", has_alternative=True) == -0.3
+    def test_none(self):
+        assert RewardRuleTable().evaluate(None, "x") == 0.0
 
 class TestDecay:
     def test_no(self):

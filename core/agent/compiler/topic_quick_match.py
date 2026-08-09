@@ -1,4 +1,3 @@
-from core.agent.llm_config import DEFAULT as _LLM_CFG
 """Topic Quick-Match — BM25 + Kurtosis fallback for LLM summary.
 
 Design: docs/BUSINESS_CHAIN_02_APPENDIX_TOPIC_MATCH.md

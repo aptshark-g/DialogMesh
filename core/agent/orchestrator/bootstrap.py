@@ -410,7 +410,8 @@ class SystemBootstrap:
         try:
             await asyncio.sleep(0)
             # Phase 1 暂不实现完整 Service Layer
-            # 仅记录占位，实际 FastAPI/WebSocket 服务在 core/service/v3_0 中实现
+            # B4-1-P2: v3_0 服务层已归档 — 生产入口 = core.agent.api.v6_app
+            # （薄中间件层 rate_limiter/queue/session 由 service_middleware 承接）
             health.components["service_layer"] = {
                 "status": "degraded",
                 "message": "Phase 1: service layer placeholder",

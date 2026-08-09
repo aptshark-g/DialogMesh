@@ -1,75 +1,37 @@
-"""Association Subscriber — cold path, Event Sourcing.
+# -*- coding: utf-8 -*-
+"""Association Subscriber — 薄门面（一内核两门面，红线 7）。
 
-Subscribes to 6 event types. Triggered on topic switch or behavior pattern.
-Produces: ASSOCIATION_DISCOVERED, CAUSAL_CLOSURE.
+内核: :class:`core.agent.association.association_service.AssociationService`
+（M→1 定向通道 + EventLog Event Sourcing，蓝图 §7.3）。
+此处保留旧类名/旧构造签名，供 CLI registry 与外部引用兼容。
 """
-
 from __future__ import annotations
-from dataclasses import dataclass
+
 import logging
-from core.agent.api.api_event_log import EventLog
-from core.agent.events.event_bus import EventBus, EventType
+from typing import Any, Optional
+
+from core.agent.association.association_service import (
+    AssociationService,
+    AssociationState,
+    INTERESTED_KINDS,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AssociationState:
-    current_intent: str = "UNKNOWN"
-    topic_shift_count: int = 0
-    behavior_count: int = 0
-    cohesion: float = 1.0
+class AssociationSubscriber(AssociationService):
+    """兼容门面: 旧 ``AssociationSubscriber`` 名称指向独立服务内核。"""
+
+    def __init__(self, event_log: Any = None, bus: Any = None,
+                 llm_provider: Any = None, **kwargs):
+        super().__init__(
+            event_log=event_log,
+            bus=bus,
+            llm_provider=llm_provider,
+            db_path=kwargs.pop("db_path", "data/event_log.db"),
+            queue_size=kwargs.pop("queue_size", AssociationService.DEFAULT_QUEUE_SIZE),
+        )
 
 
-class AssociationSubscriber:
-    """Subscribes to: PCR, Route, Intent, Discourse, Topic, Behavior. Triggered on topic switch."""
-
-    def __init__(self, event_log: EventLog, bus: EventBus, llm_provider=None):
-        self._log = event_log
-        self._bus = bus
-        self._last_seq = 0
-        self._state = AssociationState()
-        from core.agent.association.association_funnel import AssociationFunnel
-        self._funnel = AssociationFunnel(llm_provider=llm_provider)
-
-        for et in (EventType.PCR_COMPUTED, EventType.ROUTE_GENERATED,
-                   EventType.INTENT_PARSED, EventType.REPLY_GENERATED,
-                   EventType.BEHAVIOR_RECORDED):
-            if self._bus is not None:
-
-                self._bus.subscribe(et, "assoc", self._on_event)
-
-    def _on_event(self, event: dict):
-        kind = event.get("kind", "")
-        payload = event.get("payload", {})
-
-        # Feed all events into AssociationFunnel
-        if self._funnel is not None:
-            self._funnel.ingest_event(event)
-
-        if kind == "intent_parsed":
-            self._state.current_intent = payload.get("category", "UNKNOWN")
-        elif kind == "behavior_recorded":
-            self._state.behavior_count += 1
-
-        if self._should_discover():
-            self._discover_and_publish()
-
-    def _should_discover(self) -> bool:
-        return self._state.topic_shift_count >= 2 or self._state.behavior_count >= 10
-
-    def _discover_and_publish(self):
-        result = self._funnel.run()
-        if self._bus is not None:
-
-            self._bus.publish("association_discovered", {
-            "intent": self._state.current_intent,
-            "behavior_count": self._state.behavior_count,
-            "funnel": {
-                "l1_relations": len(result["layer1_relations"]),
-                "l3_consensus": result["layer3_consensus"],
-                "l4_chains": len(result["layer4_chains"]),
-                "l5_causal": result["layer5_causal"],
-                "stats": result["stats"],
-            }
-        })
+__all__ = ["AssociationSubscriber", "AssociationService", "AssociationState",
+           "INTERESTED_KINDS"]

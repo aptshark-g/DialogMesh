@@ -23,7 +23,7 @@ from core.agent.service.models import Session, TurnRecord, IntentResult, Clarifi
 
 from core.agent.pcr.rule_based import RuleBasedPCR
 from core.agent.llm_providers.mock_provider import MockProvider
-from core.agent.v3_common.intent_parser import IntentParser
+from core.agent.intent.dual_track import DualTrackIntentPipeline
 from core.agent.frontend import ClarificationFSM, ClarificationState
 from core.agent.frontend.multimodal import MediaAttachment, MultimodalPipeline
 
@@ -42,7 +42,7 @@ class TestAsyncAgentService(unittest.IsolatedAsyncioTestCase):
         self.store = SQLiteSessionStore(db_path=self.test_db)
         self.pcr = RuleBasedPCR()
         self.llm = MockProvider("mock", {"response_text": "TOOL: scan_memory"})
-        self.parser = IntentParser(llm_provider=self.llm)
+        self.parser = DualTrackIntentPipeline(llm=self.llm)
         self.rate_limiter = RateLimiter()
         self.session_manager = AsyncSessionManager(store=self.store)
         await self.session_manager.start()

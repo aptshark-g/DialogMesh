@@ -289,9 +289,15 @@ class StorageLayer:
         store.warm.insert_event("pcr_computed", {"zone": "MIXED"})
         store.cold.save("discourse_state.json", block_tree)
         stats = store.stats()
+
+    G10-P2 (2026-08-04): 分层接线 — ``enable_tiered=True`` 时挂载
+    TieredStorageManager（Hot/Warm/Cold 会话自动迁移：热缓存淘汰 → warm
+    SQLite → TTL 归档 → 按需回热）。默认关闭，保持零依赖行为不变。
     """
 
-    def __init__(self, data_dir: str = None, db_path: str = None, pg_dsn: str = None):
+    def __init__(self, data_dir: str = None, db_path: str = None, pg_dsn: str = None,
+                 enable_tiered: bool = False, tiered_db: str = None,
+                 cold_dir: str = None, tier_policy=None):
         self.hot = HotStore()
         self.warm = WarmStore(db_path)
         self.cold = ColdStore(data_dir)
@@ -305,17 +311,99 @@ class StorageLayer:
                 self._pg_available = self.pg.available
             except Exception:
                 pass
+        # G10-P2: TieredStorageManager (Hot/Warm/Cold session migration)
+        self.tiered = None
+        self._tiered_error = None
+        if enable_tiered:
+            self._init_tiered(tiered_db=tiered_db, cold_dir=cold_dir,
+                              tier_policy=tier_policy)
 
     @property
     def pg_available(self) -> bool:
         return self._pg_available
 
     def stats(self) -> dict:
-        return {
+        stats = {
             "hot": self.hot.stats(),
             "warm": self.warm.stats(),
             "cold": self.cold.stats(),
         }
+        if self.tiered is not None:
+            try:
+                stats["tiered"] = self.tiered.get_storage_stats()
+            except Exception:
+                stats["tiered"] = {"error": "tiered stats unavailable"}
+        return stats
+
+    # ── G10-P2: TieredStorage integration ──────────────────────────────
+
+    def _init_tiered(self, tiered_db: str = None, cold_dir: str = None,
+                     tier_policy=None) -> None:
+        """Lazily mount TieredStorageManager (session Hot/Warm/Cold)."""
+        try:
+            from core.agent.persistence.sqlite_store import SQLiteSessionStore
+            from core.agent.persistence.tiered_storage import TieredStorageManager
+            # 默认落项目 data/ 目录（~/.dialogmesh 在部分环境不可写 —
+            # 与 state.json PermissionError 同源）；仍失败则回退 :memory:。
+            candidates = [
+                tiered_db,
+                "data/dialogmesh/tiered_sessions.db",
+                ":memory:",
+            ]
+            warm = None
+            for db in candidates:
+                if not db:
+                    continue
+                try:
+                    probe = SQLiteSessionStore(db)
+                    probe._ensure_connection()
+                    warm = probe
+                    break
+                except Exception:
+                    continue
+            if warm is None:
+                raise RuntimeError("all tiered db candidates failed")
+            self.tiered = TieredStorageManager(
+                warm_store=warm,
+                cold_dir=cold_dir or "data/dialogmesh/archive",
+                policy=tier_policy,
+            )
+        except Exception as e:
+            self.tiered = None
+            self._tiered_error = str(e)
+            logger.warning("StorageLayer: tiered init failed (%s), continuing without", e)
+
+    def tiered_stats(self) -> dict:
+        """Tiered storage statistics (or None when disabled/failed)."""
+        if self.tiered is None:
+            return {"enabled": False, "error": self._tiered_error}
+        return {"enabled": True, **self.tiered.get_storage_stats()}
+
+    def archive_tiered(self, dry_run: bool = False):
+        """Archive expired warm sessions to cold (auto tier migration)."""
+        if self.tiered is None:
+            return {"archived_sessions": 0, "archived_turns": 0,
+                    "enabled": False}
+        archived, turns = self.tiered.archive_warm_to_cold(dry_run=dry_run)
+        return {"archived_sessions": archived, "archived_turns": turns,
+                "enabled": True}
+
+    def rehydrate_tiered(self, session_id: str):
+        """Rehydrate a cold-archived session back to warm."""
+        if self.tiered is None:
+            return None
+        return self.tiered.rehydrate_cold_to_warm(session_id)
+
+    def put_tiered_hot(self, session) -> None:
+        """Put a session into the tiered hot cache."""
+        if self.tiered is not None:
+            self.tiered.put_hot(session)
+
+    def get_tiered_hot(self, session_id: str):
+        """Get a session from the tiered hot cache (updates access time)."""
+        if self.tiered is None:
+            return None
+        return self.tiered.get_hot(session_id)
 
     def save_state(self, name: str, data: Any, tier: str = "cold") -> str:
         """Persist engine state to appropriate tier."""
@@ -337,4 +425,11 @@ class StorageLayer:
             return self.cold.load(name)
 
     def close(self):
-        self.warm.close()
+        try:
+            self.warm.close()
+        finally:
+            if self.tiered is not None:
+                try:
+                    self.tiered.shutdown()
+                except Exception:
+                    pass

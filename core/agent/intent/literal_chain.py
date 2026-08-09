@@ -125,9 +125,12 @@ Output JSON: {{"decision": "accept" or "reject", "confidence": 0.0-1.0, "segment
             return []
 
     _stanza_nlp = None
+    _stanza_failed = False  # cache failures so a broken numpy/stanza env doesn't stall every call
 
     @classmethod
     def _get_stanza(cls):
+        if cls._stanza_failed:
+            return None
         if cls._stanza_nlp is not None:
             return cls._stanza_nlp
         try:
@@ -136,4 +139,5 @@ Output JSON: {{"decision": "accept" or "reject", "confidence": 0.0-1.0, "segment
             cls._stanza_nlp = stanza.Pipeline('zh', processors='tokenize,pos,depparse', verbose=False)
             return cls._stanza_nlp
         except Exception:
+            cls._stanza_failed = True
             return None

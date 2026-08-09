@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════════════════
 # DialogMesh v4 — Docker Compose for E2E Testing
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Usage:
@@ -17,7 +17,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-27ab2dd8d9af4b0aa8fa54b46ec9ebe6}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-REPLACE_WITH_YOUR_KEY}
     volumes:
       - ./core:/app/core:ro
       - ./tests:/app/tests:ro

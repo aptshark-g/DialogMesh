@@ -1,5 +1,32 @@
 from dataclasses import dataclass, field
 
+
+# BC05 §5.1 / A18: predictor weights live in ParameterRegistry (behavior.*).
+# The literals below are only cold-start fallbacks when the registry is
+# unavailable; runtime tuning goes through the registry.
+_PREDICT_WEIGHT_KEYS = {
+    "llm": "behavior.predict_weight_llm",
+    "success": "behavior.predict_weight_success",
+    "load": "behavior.predict_weight_load",
+    "profile": "behavior.predict_weight_profile",
+}
+_PREDICT_WEIGHT_DEFAULTS = {"llm": 0.4, "success": 0.3, "load": 0.2, "profile": 0.1}
+
+
+def get_predict_weights() -> dict:
+    """Read predictor weights from ParameterRegistry (A18)."""
+    try:
+        from core.agent.compiler.parameter_registry import get_registry
+        reg = get_registry()
+    except Exception:
+        reg = None
+    out = {}
+    for name, key in _PREDICT_WEIGHT_KEYS.items():
+        val = reg.get(key) if reg is not None else None
+        out[name] = float(val) if val is not None else _PREDICT_WEIGHT_DEFAULTS[name]
+    return out
+
+
 @dataclass
 class Candidate:
     action_summary: str
@@ -10,12 +37,13 @@ class Candidate:
     profile_match: float = 0.0
     expected_value: float = 0.0
 
-    def compute_value(self):
+    def compute_value(self, weights: dict = None):
+        w = weights or get_predict_weights()
         self.expected_value = (
-            self.llm_probability * 0.4
-            + self.success_rate * 0.3
-            + (1 - self.cognitive_load) * 0.2
-            + self.profile_match * 0.1
+            self.llm_probability * w["llm"]
+            + self.success_rate * w["success"]
+            + (1 - self.cognitive_load) * w["load"]
+            + self.profile_match * w["profile"]
         )
         return self.expected_value
 
@@ -48,11 +76,9 @@ class TrainingSignal:
     is_correction: bool = False
 
     def compute_reward(self):
-        top3 = sorted(self.predicted, key=lambda c: -c.expected_value)[:3]
-        top1 = top3[0] if top3 else None
-        in_top3 = any(c.action_summary == self.actual_action for c in top3)
-        is_top1 = top1 and top1.action_summary == self.actual_action
-        if is_top1: self.reward = 0.10
-        elif in_top3: self.reward = 0.05
-        else: self.reward = -0.15
+        # BC05 §6.1 accuracy kernel (shared with RewardRuleTable).
+        from core.agent.rewarder.reward_rules import evaluate_accuracy
+        self.reward = evaluate_accuracy(
+            self.predicted, self.actual_action, is_correction=self.is_correction,
+        )
         return self.reward

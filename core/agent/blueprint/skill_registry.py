@@ -27,67 +27,117 @@ def _make_edge(from_node: str, to_node: str, data_key: str, required: bool = Tru
 
 
 # ═══════════════════════════════════════════════
-# 5 Built-in Blueprint Templates (§十, §0.2)
+# 5 Built-in Blueprint Templates (订阅表语义 §14.3)
 # ═══════════════════════════════════════════════
+#
+# 重构依据: BUSINESS_FLOW_COLLECTION_20260805.md
+#   - 模板 = 业务流（技能 × 链 × Tick × 工具 × 安全约束）
+#   - 同 Tick 并行（pcr∥intent）→ 跨 Tick 串行（context/subgraph/profile）→ llm_reply
+#   - 工具/安全约束进 node.params（DESIGN_BLUEPRINT_SYSTEM §三）
+#   - async 段（meta/behavior）发事件广播（DESIGN_BLUEPRINT_ORCHESTRATION §14.3）
 
 BUILTIN_TEMPLATES: Dict[str, BlueprintDAG] = {}
+# G2 (FLOW_SELF_GROWTH): 学习沉淀的动态模板区（执行成功 → 沉淀）
+# match 顺序: LEARNED 优先（成功经验 > 通用种子）
+LEARNED_TEMPLATES: Dict[str, BlueprintDAG] = {}
 
-# Template 1: code_analysis — TEMPLATE (确定性)
-BUILTIN_TEMPLATES["code_analysis"] = BlueprintDAG(
-    nodes=[
+
+def _tick0_pair(analysis_rationale: str) -> list:
+    """Tick0: pcr ∥ intent (并行，§14.3 订阅表)."""
+    return [
         _make_node("pcr_0", "pcr", priority=0),
         _make_node("intent_1", "intent", priority=0),
-        _make_node("context_2", "context", priority=1),
-        _make_node("subgraph_3", "subgraph", priority=1),
-        _make_node("llm_reply_4", "llm_reply", priority=2),
+    ]
+
+
+def _llm_reply_node(node_id: str, priority: int = 2, reply_mode: str = "llm",
+                    **params) -> BlueprintNode:
+    return _make_node(node_id, "llm_reply", priority=priority,
+                      reply_mode=reply_mode, **params)
+
+
+# Template 1: code_analysis — TEMPLATE (确定性)
+# DESIGN_BLUEPRINT_SYSTEM: analyze/security/bug/vulnerability → read+grep+write
+BUILTIN_TEMPLATES["code_analysis"] = BlueprintDAG(
+    nodes=[
+        * _tick0_pair("标准代码分析路径"),
+        _make_node("context_2", "context", priority=1,
+                   tools=["read", "grep"],
+                   safety={"mode": "read_only"}),
+        _make_node("subgraph_3", "subgraph", priority=1,
+                   tools=["read", "grep"],
+                   safety={"mode": "read_only"}),
+        _llm_reply_node("llm_reply_4", priority=2,
+                        format="markdown_report"),
+        _make_node("meta_audit_5", "meta", priority=9),
+        _make_node("behavior_learn_6", "behavior", priority=9),
     ],
     edges=[
-        _make_edge("pcr_0", "intent_1", "route"),
+        # §14.3: pcr.route 与 intent.split 同 Tick 并行（intent 只读文本）
+        _make_edge("pcr_0", "intent_1", "route", required=False),
+        _make_edge("pcr_0", "context_2", "compass"),
         _make_edge("intent_1", "context_2", "intent_context"),
         _make_edge("context_2", "subgraph_3", "assembled_context"),
+        _make_edge("intent_1", "subgraph_3", "intent_context"),
         _make_edge("subgraph_3", "llm_reply_4", "compiled_subgraph"),
         _make_edge("intent_1", "llm_reply_4", "intent_context"),
         _make_edge("pcr_0", "llm_reply_4", "compass"),
     ],
     strategy="TEMPLATE",
     confidence=1.0,
-    design_rationale="标准代码分析路径: 路由→意图→上下文→子图→回复",
+    design_rationale=(
+        "代码分析: Tick0(pcr∥intent) → Tick1(context∥subgraph 并行, 只读工具) "
+        "→ Tick2(llm_reply 报告) → async(meta.audit∥behavior.learn)"
+    ),
 )
 
 # Template 2: general_chat — HYBRID (模板基础 + LLM可覆盖)
 BUILTIN_TEMPLATES["general_chat"] = BlueprintDAG(
     nodes=[
-        _make_node("pcr_0", "pcr", priority=0),
-        _make_node("intent_1", "intent", priority=0),
-        _make_node("profile_2", "profile", priority=1),
-        _make_node("llm_reply_3", "llm_reply", priority=2),
+        * _tick0_pair("通用对话"),
+        _make_node("profile_2", "profile", priority=1,
+                   safety={"mode": "read_only"}),
+        _llm_reply_node("llm_reply_3", priority=2),
+        _make_node("behavior_learn_4", "behavior", priority=9),
     ],
     edges=[
-        _make_edge("pcr_0", "intent_1", "route"),
+        _make_edge("pcr_0", "intent_1", "route", required=False),
         _make_edge("intent_1", "profile_2", "intent_context"),
         _make_edge("profile_2", "llm_reply_3", "profile_text"),
         _make_edge("intent_1", "llm_reply_3", "intent_context"),
+        _make_edge("pcr_0", "llm_reply_3", "compass"),
     ],
     strategy="HYBRID",
     confidence=0.9,
-    design_rationale="通用对话: 路由→意图→画像→回复。LLM可加context/subgraph节点",
+    design_rationale=(
+        "通用对话: Tick0(pcr∥intent) → Tick1(profile) → Tick2(llm_reply) "
+        "→ async(behavior.learn)。LLM可加context/subgraph节点"
+    ),
 )
 
 # Template 3: task_planning — HYBRID
+# DESIGN_BLUEPRINT_SYSTEM: 任务分解 → 子 Agent 分配 → 拓扑执行
 BUILTIN_TEMPLATES["task_planning"] = BlueprintDAG(
     nodes=[
-        _make_node("pcr_0", "pcr", priority=0),
-        _make_node("intent_1", "intent", priority=0),
-        _make_node("context_2", "context", priority=1),
-        _make_node("subgraph_3", "subgraph", priority=1),
-        _make_node("profile_4", "profile", priority=1),
-        _make_node("llm_reply_5", "llm_reply", priority=2),
+        * _tick0_pair("任务规划"),
+        _make_node("context_2", "context", priority=1,
+                   tools=["read"], safety={"mode": "read_only"}),
+        _make_node("subgraph_3", "subgraph", priority=1,
+                   tools=["read", "grep"], safety={"mode": "read_only"}),
+        _make_node("profile_4", "profile", priority=1,
+                   safety={"mode": "read_only"}),
+        _llm_reply_node("llm_reply_5", priority=2,
+                        format="task_graph"),
+        _make_node("meta_audit_6", "meta", priority=9),
+        _make_node("behavior_learn_7", "behavior", priority=9),
     ],
     edges=[
-        _make_edge("pcr_0", "intent_1", "route"),
+        _make_edge("pcr_0", "intent_1", "route", required=False),
+        _make_edge("pcr_0", "context_2", "compass"),
         _make_edge("intent_1", "context_2", "intent_context"),
         _make_edge("context_2", "subgraph_3", "assembled_context"),
         _make_edge("intent_1", "profile_4", "intent_context"),
+        _make_edge("intent_1", "subgraph_3", "intent_context"),
         _make_edge("subgraph_3", "llm_reply_5", "compiled_subgraph"),
         _make_edge("profile_4", "llm_reply_5", "profile_text"),
         _make_edge("intent_1", "llm_reply_5", "intent_context"),
@@ -95,38 +145,53 @@ BUILTIN_TEMPLATES["task_planning"] = BlueprintDAG(
     ],
     strategy="HYBRID",
     confidence=0.85,
-    design_rationale="任务规划: 全链+画像→生成task_graph。LLM可调整节点顺序",
+    design_rationale=(
+        "任务规划: Tick0(pcr∥intent) → Tick1(context∥subgraph∥profile 并行) "
+        "→ Tick2(llm_reply task_graph) → async(meta.audit∥behavior.learn)"
+    ),
 )
 
 # Template 4: data_search — TEMPLATE
+# DESIGN_BLUEPRINT_SYSTEM: search/find/grep → grep+glob+read (read_only)
 BUILTIN_TEMPLATES["data_search"] = BlueprintDAG(
     nodes=[
-        _make_node("pcr_0", "pcr", priority=0),
-        _make_node("intent_1", "intent", priority=0),
-        _make_node("llm_reply_2", "llm_reply", priority=1),
+        * _tick0_pair("数据搜索"),
+        _llm_reply_node("llm_reply_2", priority=1,
+                        tools=["grep", "glob", "read"],
+                        safety={"mode": "read_only"}),
+        _make_node("behavior_learn_3", "behavior", priority=9),
     ],
     edges=[
-        _make_edge("pcr_0", "intent_1", "route"),
+        _make_edge("pcr_0", "intent_1", "route", required=False),
         _make_edge("pcr_0", "llm_reply_2", "compass"),
         _make_edge("intent_1", "llm_reply_2", "intent_context"),
     ],
     strategy="TEMPLATE",
     confidence=1.0,
-    design_rationale="快速搜索: 路由→意图→直接回复(跳过context/subgraph加速)",
+    design_rationale=(
+        "快速搜索: Tick0(pcr∥intent) → Tick1(llm_reply, 只读工具) "
+        "→ async(behavior.learn)。跳过 context/subgraph 加速"
+    ),
 )
 
 # Template 5: causal_reasoning — LLM_DRIVEN (LLM 全权构建)
 BUILTIN_TEMPLATES["causal_reasoning"] = BlueprintDAG(
     nodes=[
-        _make_node("pcr_0", "pcr", priority=0),
-        _make_node("intent_1", "intent", priority=0),
+        * _tick0_pair("因果推理"),
+        _make_node("plan_gate_2", "context", priority=1, checkpoint=True,
+                   safety={"mode": "read_only"},
+                   note="LLM_DRIVEN 建图后 PlanGate 人工审核准入（§十一）"),
     ],
     edges=[
-        _make_edge("pcr_0", "intent_1", "route"),
+        _make_edge("pcr_0", "intent_1", "route", required=False),
+        _make_edge("intent_1", "plan_gate_2", "intent_context"),
     ],
     strategy="LLM_DRIVEN",
     confidence=0.0,  # No base confidence — LLM fills the rest
-    design_rationale="因果推理: LLM 全权构建完整DAG。PlanGate checkpoint 必须审核。",
+    design_rationale=(
+        "因果推理: Tick0(pcr∥intent) → Tick1(PlanGate checkpoint 人工审核准入) "
+        "→ LLM 全权构建完整 DAG。四保护齐备前保持特殊模式（§十一）"
+    ),
 )
 
 
@@ -164,9 +229,15 @@ class SkillRegistry:
     def __init__(self):
         # intent → list of strategy weights
         self._strategy_weights: Dict[str, List[StrategyWeight]] = {}
+        # GAP-D5: 技能生命周期（活性状态机, 可选挂载）
+        self._lifecycle = None
 
         # Initialize with reasonable defaults
         self._init_defaults()
+
+    def set_lifecycle(self, lifecycle) -> None:
+        """GAP-D5: 挂载技能生命周期（learn 登记 + match touch）."""
+        self._lifecycle = lifecycle
 
     def _init_defaults(self):
         """Seed initial strategy weights based on template defaults."""
@@ -203,7 +274,23 @@ class SkillRegistry:
 
         Returns (strategy_name, blueprint_dag).
         Falls back to general_chat HYBRID if no match.
+        G2: LEARNED_TEMPLATES 优先（成功沉淀的经验 > 通用种子）。
         """
+        # Empty intent must never substring-match ("" in "代码分析" is True)
+        if not intent:
+            logger.info("Empty intent → defaulting to general_chat")
+            return "HYBRID", BUILTIN_TEMPLATES["general_chat"]
+
+        # G2: 学习模板优先（精确命中）
+        if intent in LEARNED_TEMPLATES:
+            logger.info("Intent '%s' → LEARNED template (self-grown)", intent)
+            if self._lifecycle is not None:
+                try:
+                    self._lifecycle.touch(intent)
+                except Exception as e:
+                    logger.debug("lifecycle touch failed: %s", e)
+            return "TEMPLATE", LEARNED_TEMPLATES[intent]
+
         # Normalize intent — try exact match, then partial
         matched_intent = intent
         if intent not in self._strategy_weights:
@@ -236,6 +323,38 @@ class SkillRegistry:
         blueprint = BUILTIN_TEMPLATES.get(template_name, BUILTIN_TEMPLATES["general_chat"])
 
         return best.strategy, blueprint
+
+    def learn_blueprint(self, intent: str, dag: BlueprintDAG,
+                        source_dag_id: str = "") -> bool:
+        """G2: 执行成功的动态 DAG 沉淀为学习模板（业务流自增长核心）。
+
+        - 只沉淀含 tool 节点的 DAG（纯 pcr/intent 链已有内置模板）
+        - 覆盖同意图旧学习模板（新经验替代旧经验）
+        - 模板带 provenance（from: dynamic_learn）
+        """
+        if not intent or dag is None or dag.node_count == 0:
+            return False
+        if not any(n.chain == "tool" for n in dag.nodes):
+            logger.debug("learn_blueprint: skip (no tool node, intent=%s)", intent)
+            return False
+        import copy
+        learned = copy.deepcopy(dag)
+        learned.design_rationale = (
+            f"LEARNED (from: dynamic_learn, source_dag={source_dag_id or '?'})"
+        )
+        LEARNED_TEMPLATES[intent] = learned
+        # GAP-D5: 生命周期登记（活性状态机原料）
+        if self._lifecycle is not None:
+            try:
+                self._lifecycle.register(intent)
+            except Exception as e:
+                logger.debug("lifecycle register failed: %s", e)
+        # 也进意图权重表（可被 MetaFeedback 调整）
+        if intent not in self._strategy_weights:
+            self._strategy_weights[intent] = [StrategyWeight("TEMPLATE", 1.0)]
+        logger.info("LEARNED template registered: intent=%s nodes=%d",
+                     intent, dag.node_count)
+        return True
 
     def update_weight(self, intent: str, strategy: str, score: float):
         """Called by MetaFeedback — adjust strategy weight after execution."""

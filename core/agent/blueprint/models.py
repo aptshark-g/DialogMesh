@@ -12,11 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 
-# Valid chain identifiers (10 business chains + llm_reply)
+# Valid chain identifiers (10 business chains + llm_reply + tool)
+# G1 (FLOW_SELF_GROWTH): tool 链 = 动态生成 DAG 的真实工具执行节点
+#   params: {tool: "arxiv_search"|..., args: {...}} → ToolRegistry.execute
 CHAIN_IDS = {
     "pcr", "intent", "context", "subgraph", "profile",
     "llm_reply", "behavior", "meta", "discourse", "association",
-    "engineering", "metap",
+    "engineering", "metap", "tool",
 }
 
 # Valid strategies (§十)

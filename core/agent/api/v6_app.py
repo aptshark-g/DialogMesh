@@ -15,6 +15,14 @@ app = FastAPI(title="DialogMesh v6", version="6.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
+# B4-1-P1 (2026-08-04): 薄中间件层 — rate_limiter/queue/session 挂 FastAPI
+# （服务层降级为组件库后，缓冲由唯一生产入口内聚接入）。
+from core.agent.api.service_middleware import (
+    install_service_middleware, router as service_router,
+)
+install_service_middleware(app)
+app.include_router(service_router)
+
 # ═══ Debug log sink ═══
 from core.agent.api.debug_api import router as debug_router
 app.include_router(debug_router)
@@ -32,8 +40,9 @@ from core.agent.api.pipeline_api import router as pipeline_router
 app.include_router(pipeline_router)
 
 # ═══ Unified stubs ═══
-from core.agent.api.stubs_api import router as stubs_router
+from core.agent.api.stubs_api import router as stubs_router, v4_router
 app.include_router(stubs_router)
+app.include_router(v4_router)
 
 # ═══ Legacy API routes (gracefully) ═══
 _loaded = []
@@ -45,14 +54,15 @@ def _try_include(import_path: str, router_name: str):
         if router:
             app.include_router(router)
             _loaded.append(import_path)
-            print(f"  ✅ {import_path}")
+            print(f"  [OK] {import_path}")
         return router
     except Exception as e:
-        print(f"  ⚠️  SKIP {import_path}: {e}")
+        print(f"  [SKIP] {import_path}: {e}")
         return None
 
 # v4/v6 legacy routes (frontend expects these)
 _try_include("core.agent.api.api_gateway","router")  # /v6/gateway/*
+_try_include("core.agent.api.api_annotate","router")  # /v6/annotate (真实 JSONL 注释系统)
 _try_include("core.agent.api.api_sessions","router")  # /v6/sessions
 _try_include("core.agent.api.api_trace","router")  # /v6/trace
 _try_include("core.agent.api.api_profile","router")  # /v6/profile
@@ -69,6 +79,7 @@ _try_include("core.agent.api.api_abc","router")  # /v6/abc
 _try_include("core.agent.api.api_mind","router")  # /v6/mind
 _try_include("core.agent.api.api_versions","router")  # /v6/versions
 _try_include("core.agent.api.api_subgraph","router")  # /v6/subgraph
+_try_include("core.agent.api.api_viz_edit","router")  # /v6/edit/* (FE-1/G4 白盒编辑)
 
 # Legacy health endpoints (frontend probes)
 @app.get("/v4/health")
@@ -76,9 +87,13 @@ _try_include("core.agent.api.api_subgraph","router")  # /v6/subgraph
 async def legacy_health():
     return {"status": "ok", "version": "6.0.0"}
 
-@app.post("/v3/session")
-async def v3_session():
-    return {"session_id": "demo", "status": "active"}
+@app.get("/v1/health")
+async def v1_health():
+    from core.agent.kernel import kernel_engine_status
+    st = kernel_engine_status()
+    return {"status": "ok" if st.get("running") else "degraded",
+            "version": "6.0.0",
+            "components": {"engine": "ok" if st.get("running") else "down"}}
 
 @app.websocket("/v6/ws")
 async def ws_endpoint(ws):
@@ -173,47 +188,11 @@ async def v6_audit_recent():
 
 # Missing DESIGN_AUDIT endpoints
 
-@app.get("/v6/gateway/providers")
-async def v6_gateway_providers():
-    """Gateway provider list."""
-    import os, json as _json
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    fp = os.path.join(root, "gateway", "provider.yaml")
-    if os.path.exists(fp):
-        with open(fp, encoding='utf-8') as f:
-            return {"providers": f.read()}
-    return {"providers": "provider.yaml not found"}
-
 @app.get("/v6/usage")
 async def v6_usage():
-    """Token usage stats."""
-    return {"total_tokens": 0, "total_cost": 0, "by_model": {}}
-
-@app.get("/v6/annotations")
-async def v6_annotations_summary():
-    """Annotation summary from disk."""
-    import os, json as _json
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    fp = os.path.join(root, "data", "annotations.json")
-    if os.path.exists(fp):
-        with open(fp, encoding='utf-8') as f:
-            data = _json.load(f)
-        count = len(data) if isinstance(data, list) else (1 if data else 0)
-        return {"annotations_count": count, "recent": str(data[-1])[:200] if isinstance(data,list) and data else None}
-    return {"annotations_count": 0}
-
-@app.get("/v6/corrections")
-async def v6_corrections_summary():
-    """Correction summary from disk."""
-    import os, json as _json
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    fp = os.path.join(root, "data", "corrections.json")
-    if os.path.exists(fp):
-        with open(fp, encoding='utf-8') as f:
-            data = _json.load(f)
-        count = len(data) if isinstance(data, list) else (1 if data else 0)
-        return {"corrections_count": count, "recent": str(data[-1])[:200] if isinstance(data,list) and data else None}
-    return {"corrections_count": 0}
+    """Token usage stats（真实内核数据）。"""
+    from core.agent.kernel import kernel_providers_tokens
+    return kernel_providers_tokens()
 
 @app.get("/v6/status")
 async def v6_status():
@@ -227,8 +206,12 @@ async def v6_pcr_summary():
         pcr = getattr(e, '_pcr_router', None)
         last = getattr(e, '_last_pcr', None)
     except: pcr = last = None
-    return {"active": pcr is not None, "last_zone": getattr(last,'expectation','none') if last else 'none',
-            "last_complexity": getattr(last,'complexity_level',0) if last else 0}
+    return {
+        "active": pcr is not None,
+        "last_zone": getattr(last, 'zone', getattr(last, 'expectation', 'none')) if last else 'none',
+        "last_complexity": getattr(last, 'complexity_level', 0) if last else 0,
+        "last_labels": getattr(last, 'labels', {}) if last else {},
+    }
 
 @app.get("/v6/intent")
 async def v6_intent_summary():
@@ -265,4 +248,24 @@ async def startup():
     from core.agent.orchestrator.bootstrap_v6 import bootstrap
     orch = bootstrap()
     set_orchestrator(orch)
+    # FE-1/G4 (2026-08-04): 白盒编辑 API 注入 engine
+    # （api_viz_edit / api_gateway 均需 engine 才能操作真实数据）
+    try:
+        from core.agent.cli.engine import get_engine
+        eng = get_engine()
+        try:
+            import core.agent.api.api_viz_edit as viz_mod
+            if hasattr(viz_mod, "init"):
+                viz_mod.init(eng)
+                logger.info("api_viz_edit init(engine) — 白盒编辑已启用")
+        except Exception as e:
+            logger.warning("api_viz_edit init failed: %s", e)
+        try:
+            import core.agent.api.api_gateway as gw_mod
+            if hasattr(gw_mod, "init"):
+                gw_mod.init(eng)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("White-box edit engine inject failed: %s", e)
     logger.info("Orchestrator loaded — %d legacy routes", len(_loaded))

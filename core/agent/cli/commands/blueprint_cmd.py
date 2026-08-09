@@ -78,13 +78,9 @@ def cmd_decider_chains(args):
     print(json.dumps({"chains": []}, ensure_ascii=False))
 
 def cmd_decider_execute(args):
-    e = get_engine()
-    sm = getattr(e, '_state_machine', None)
-    if sm:
-        print(json.dumps({"executed": True, "handlers": len(getattr(sm, '_phase_handlers', {}))},
-                         ensure_ascii=False))
-        return
-    print(json.dumps({"error": "No state machine"}, ensure_ascii=False))
+    from core.agent.kernel import kernel_decider_execute
+    text = " ".join(args.text) if hasattr(args, 'text') and args.text else "execute"
+    print(json.dumps(kernel_decider_execute(text), indent=2, ensure_ascii=False))
 
 def register_cmds(subparsers):
     p = subparsers.add_parser("blueprint", help="Blueprint DAG operations")

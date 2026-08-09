@@ -119,21 +119,27 @@ class TestMarkdownParser:
         md = "Just a paragraph.\n\nAnother paragraph.\n"
         parser = MarkdownParser()
         root = parser.parse(md, "/test.md")
-        assert root.node_type == "paragraph"
-        assert len(root.children) == 0
+        assert root.node_type == "root"
+        # 无标题文档: 段落作为 root 的子节点（空行合并为一个段落块）
+        assert len(root.children) == 1
+        assert all(c.node_type == "paragraph" for c in root.children)
 
     def test_code_block_detection(self):
         md = "```python\nprint(1)\n```\n"
         parser = MarkdownParser()
         root = parser.parse(md, "/test.md")
-        # Code block inside heading-less doc is root node_type
-        assert root.node_type == "code"
+        # 无标题文档: 代码块是 root 的子节点
+        assert root.node_type == "root"
+        assert len(root.children) == 1
+        assert root.children[0].node_type == "code"
 
     def test_supports(self):
-        parser = MarkdownParser()
-        assert parser.supports("file.md")
-        assert parser.supports("file.markdown")
-        assert not parser.supports("file.txt")
+        # supports 能力由 ParserRegistry.get_parser 承担
+        from core.agent.document.parsers import ParserRegistry
+        registry = ParserRegistry()
+        assert registry.get_parser("file.md") is not None
+        assert registry.get_parser("file.markdown") is not None
+        assert registry.get_parser("file.txt") is None
 
     def test_parse_exception_fallback(self):
         parser = MarkdownParser()
@@ -143,7 +149,7 @@ class TestMarkdownParser:
         parser._HEADING_RE = None  # type: ignore
         try:
             root = parser.parse("# Test\n", "/test.md")
-            assert root.node_type == "paragraph"
+            assert root.node_type == "root"
         finally:
             parser._HEADING_RE = original
 
@@ -204,10 +210,12 @@ class TestObservationExtractor:
             raw_text="x",
             node_type="paragraph",
         )
-        ext = ObservationExtractor(min_confidence=0.9)
+        # ObservationExtractor 无 min_confidence 参数 — 短文本无规则命中时
+        # 降级为 content 观察（confidence 0.3），不进高置信分类
+        ext = ObservationExtractor()
         obs = ext.extract(node, event_id="e1")
-        # Very short text should not pass 0.9 confidence
-        assert all(o.confidence < 0.9 for o in obs) or len(obs) == 0
+        assert all(o.observation_type == "content" for o in obs)
+        assert all(o.confidence < 0.9 for o in obs)
 
     def test_deduplication(self):
         node = DocumentNode(

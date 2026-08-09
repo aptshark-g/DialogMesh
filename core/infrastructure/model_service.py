@@ -134,7 +134,10 @@ class ModelService:
                 if SemanticEncoder is None:
                     raise RuntimeError("SemanticEncoder not available")
 
-                self._encoder = SemanticEncoder()
+                # Reuse the global SemanticEncoder singleton so preload and
+                # ModelService share ONE BGE instance (no duplicate model RAM).
+                from core.agent.compiler.semantic_encoder import get_encoder
+                self._encoder = get_encoder()
                 # 触发首次加载（热身编码）
                 _ = self._encoder.encode("warmup", use_cache=False)
                 self._status = "warm"
@@ -275,3 +278,43 @@ def get_model_service() -> ModelService:
 def encode_text(text: str, use_cache: bool = True) -> Optional[np.ndarray]:
     """快捷编码函数（自动 warm-up）。"""
     return get_model_service().encode(text, use_cache=use_cache)
+
+
+def prewarm_models(blocking: bool = False) -> bool:
+    """统一异步预加载：BGE / SemanticEncoder / ModelService 后台预热。
+
+    Call at engine/API startup so the first user request does not pay the
+    cold model-load latency (unified prewarm, DESIGN_DEEP_AUDIT §7.7).
+    Non-blocking by default (daemon background thread).
+
+    Covers both consumers:
+      - get_encoder() users (semantic_parser / decomposer / header_injector / ...)
+      - ModelService users (SemanticIndex) — shares the same BGE singleton,
+        so only one model instance is loaded in RAM.
+    """
+    def _warm() -> bool:
+        try:
+            from core.agent.compiler.semantic_encoder import preload as preload_encoder
+            preload_encoder(blocking=True)
+            service = get_model_service()
+            service.warm_up(timeout=180.0)
+            # PCR V2 keeps its own BGE (bge-small-zh-v1.5) with class-level
+            # caching — warm it too so first route() is fast (DESIGN_DEEP_AUDIT
+            # §7.7: unified async prewarm covers every model consumer).
+            try:
+                from core.agent.pcr_router_v2 import PCRRouterV2
+                PCRRouterV2._load_mood_vectors()
+            except Exception as pe:
+                logger.debug("PCR mood vectors prewarm skipped: %s", pe)
+            logger.info("Model prewarm complete (status=%s)", service.status)
+            return True
+        except Exception as e:
+            logger.warning("Model prewarm failed: %s", e)
+            return False
+
+    if blocking:
+        return _warm()
+    t = threading.Thread(target=_warm, daemon=True, name="model-prewarm")
+    t.start()
+    logger.info("Model prewarm started (background thread)")
+    return True

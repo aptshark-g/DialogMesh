@@ -117,7 +117,7 @@ if (typeof window !== 'undefined') {
 let _enabled = true;
 
 
-export function pauseDebug() { _enabled = false; _syncEnabled = false; disableBackendSync(); console.log('[DM] Debug paused'); }
+export function pauseDebug() { _enabled = false; disableBackendSync(); console.log('[DM] Debug paused'); }
 export function resumeDebug() { _enabled = true; console.log('[DM] Debug resumed'); }
 export function isDebugEnabled() { return _enabled; }
 

@@ -138,13 +138,12 @@ class AgentOrchestrator:
         # 1. PCR V2
         if self.pcr:
             try:
-                route = self.pcr.route(text,
-                    override=correction.get("suggested_action") if correction else None)
+                route = self.pcr.route(text)
                 result["route"] = {
                     "zone": getattr(route, 'zone', 'MIXED'),
-                    "x": getattr(route, 'x', 0.5),
-                    "y": getattr(route, 'y', 0.5),
-                    "z": getattr(route, 'z', 0.0),
+                    "x": getattr(route, 'x_axis', 0.5),
+                    "y": getattr(route, 'y_axis', 0.5),
+                    "z": getattr(route, 'z_axis', 0.0),
                 }
                 if self.cognitive:
                     self.cognitive.on_pcr_route(result["route"])

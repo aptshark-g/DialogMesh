@@ -77,7 +77,7 @@ class ColdIndexer:
     
     def recall(self, record: ColdEdgeRecord, full_data_provider: Callable):
         """Reconstruct a full BehaviorEdge from cold record + flat data provider."""
-        from .behavior_graph.models import BehaviorEdge
+        from .behavior.models import BehaviorEdge
         flat = full_data_provider(record.edge_id)
         if not flat:
             return None

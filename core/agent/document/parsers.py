@@ -36,6 +36,16 @@ class MarkdownParser(DocumentParser):
             raw_text="",
             node_type="root",
         )
+        # 解析内部异常优雅降级: 返回含原始文本的 root，不中断管道
+        try:
+            return self._parse_internal(content, source_path, root)
+        except Exception as e:
+            logger.warning("Markdown parse degraded: %s", e)
+            root.raw_text = content[:2000]
+            return root
+
+    def _parse_internal(self, content: str, source_path: str,
+                        root: DocumentNode) -> DocumentNode:
         if not content or not content.strip():
             return root
 

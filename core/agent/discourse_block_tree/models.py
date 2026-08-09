@@ -153,6 +153,62 @@ class DiscourseBlock:
     cross_refs: list = field(default_factory=list)  # list[CrossReference]
     group_refs: list = field(default_factory=list)  # list[GroupReference]
 
+    # ── A 兼容别名（R6 D3 内核组装：B 管理内核 + A 接线门面）─────────────
+    # A 版 blocks 读 .edus/.parent/.children/.temperature/.topic；
+    # B 版内核用 atomic_units/parent_id/child_ids/status/name。
+    # 这些属性让 CLI/API 门面（cmd_show/cmd_block/api_viz_edit/batch3/4）
+    # 无需改动即可消费 B 内核块。
+
+    @property
+    def edus(self):
+        """A 兼容: edus → atomic_units（写操作就地修改同一 list）。"""
+        return self.atomic_units
+
+    @edus.setter
+    def edus(self, value):
+        self.atomic_units = value
+
+    @property
+    def parent(self):
+        """A 兼容: parent → parent_id。"""
+        return self.parent_id
+
+    @parent.setter
+    def parent(self, value):
+        self.parent_id = value
+
+    @property
+    def children(self):
+        """A 兼容: children → child_ids。"""
+        return self.child_ids
+
+    @children.setter
+    def children(self, value):
+        self.child_ids = value
+
+    @property
+    def temperature(self):
+        """A 兼容: temperature → status（字符串语义，与 api_viz_edit _TEMP_MAP 一致）。"""
+        return self.status
+
+    @temperature.setter
+    def temperature(self, value):
+        if isinstance(value, int):
+            # A 版旧语义 0=Hot 1=Warm 2=Cold 3=Frozen
+            self.status = {0: "active", 1: "paused", 2: "cold", 3: "frozen"}.get(
+                value, self.status)
+        else:
+            self.status = str(value)
+
+    @property
+    def topic(self):
+        """A 兼容: topic → name（batch4 discourse_topic_heat / api_viz_edit rename）。"""
+        return self.name
+
+    @topic.setter
+    def topic(self, value):
+        self.name = str(value)
+
     def add_edu(self, edu: EDU):
         self.atomic_units.append(edu)
         self.last_active_turn = edu.index

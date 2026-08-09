@@ -23,19 +23,8 @@ from core.agent.runtime.config import RuntimeConfig, PathConfig
 from core.agent.world.params import WorldParams
 
 
-class PathState(Enum):
-    """Lifecycle states for a cognitive path.
-
-    Transitions:
-        idle → running   : path starts executing
-        running → idle   : path completes successfully
-        running → backlogged : path is blocked (queue full, dependency waiting)
-        backlogged → idle: backlog cleared, path ready again
-    """
-
-    IDLE = "idle"
-    RUNNING = "running"
-    BACKLOGGED = "backlogged"
+# PathState 唯一来源: path_models（str, Enum）— 三处重复定义归一（2026-08-06）
+from .path_models import PathState
 
 
 class PathTriggerPolicy(ABC):

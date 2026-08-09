@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -42,11 +43,20 @@ class ToolAdapter:
     name: str
     description: str               # LLM uses this to decide if tool matches
     category: str = "general"      # search | file | parse | compute | code | web
+    keywords_zh: List[str] = field(default_factory=list)  # 中文关键词（discover 双语言匹配）
     dependencies: List[str] = field(default_factory=list)  # pip packages
     input_schema: Dict[str, str] = field(default_factory=dict)
     handler: Optional[Callable] = None  # execute(**kwargs) → ToolResult
     enabled: bool = True
     auto_install: bool = True
+    availability: Dict[str, Any] = field(default_factory=dict)
+    # P1-4 (FLOW_SELF_GROWTH §5.5 OpenClaw availability signal):
+    #   条件工具可见性 — {"env": ["GITHUB_TOKEN"], "config": ["gateway.url"],
+    #   "auth": True, "note": "需要 GitHub token"}
+    #   env    — 全部 env 变量存在才可见
+    #   config — 全部配置键存在才可见（ToolRegistry._config 注入, 默认空）
+    #   auth   — 需要认证（ToolRegistry._auth_ok 注入）
+    #   note   — 不可用原因（LLM/前端可见）
     _instance: Any = None           # cached class instance
 
     def execute(self, **kwargs) -> ToolResult:
@@ -74,6 +84,8 @@ class ToolRegistry:
     _tools: Dict[str, ToolAdapter] = {}
     _categories: Dict[str, List[str]] = {}
     _auto_install_log: List[str] = []
+    _config: Dict[str, Any] = {}     # P1-4: 配置注入（engine/bootstrap 挂载）
+    _auth_ok: bool = False           # P1-4: 认证状态（auth 条件工具）
 
     # ── Registration ──
 
@@ -93,6 +105,43 @@ class ToolRegistry:
             return True
         return False
 
+    # ── P1-4 availability signal ──
+
+    @classmethod
+    def set_config(cls, cfg: Dict[str, Any]):
+        """注入配置（engine/bootstrap 装配时调用; 影响 config 条件可见性）."""
+        if isinstance(cfg, dict):
+            cls._config = cfg
+
+    @classmethod
+    def set_auth(cls, ok: bool):
+        """注入认证状态（auth 条件工具可见性）."""
+        cls._auth_ok = bool(ok)
+
+    @classmethod
+    def availability_reason(cls, tool: ToolAdapter) -> str:
+        """返回空串 = 可用; 非空 = 不可用原因."""
+        if not tool.enabled:
+            return "disabled"
+        for key in tool.availability.get("env", []):
+            if not os.environ.get(key):
+                return f"missing env {key}"
+        for key in tool.availability.get("config", []):
+            if key not in cls._config:
+                return f"missing config {key}"
+        if tool.availability.get("auth") and not cls._auth_ok:
+            return "auth required"
+        return ""
+
+    @classmethod
+    def is_available(cls, name: str) -> tuple:
+        """(ok, reason) — 工具是否当前可见/可用."""
+        tool = cls._tools.get(name)
+        if tool is None:
+            return (False, f"not registered: {name}")
+        reason = cls.availability_reason(tool)
+        return (reason == "", reason)
+
     # ── Discovery ──
 
     @classmethod
@@ -100,32 +149,38 @@ class ToolRegistry:
         """Return tools whose description/name matches the query.
 
         LLM calls this: "有没有搜论文的工具？" → matches arxiv_search
+
+        E2 (ERROR_META_REFLECTION): 接 zh_keyword_match — 中文意图匹配
+        英文工具描述（"查论文" ↔ arxiv_search.keywords_zh），根治子串
+        匹配缺陷。
         """
-        q = query.lower()
+        from core.agent.common.text_utils import zh_keyword_match
         scored = []
         for t in cls._tools.values():
-            if not t.enabled:
+            if cls.availability_reason(t):
                 continue
-            score = 0
-            if q in t.name.lower():
-                score += 10
-            if q in t.description.lower():
-                score += 5
-            for kw in q.split():
-                if kw in t.description.lower():
-                    score += 1
-            if score > 0:
-                scored.append((score, t))
+            if zh_keyword_match(query, t.keywords_zh,
+                                en_text=t.description, name=t.name):
+                scored.append((1.0, t))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [t for _, t in scored[:limit]]
 
     @classmethod
-    def list_all(cls) -> List[Dict[str, Any]]:
+    def list_all(cls, include_unavailable: bool = False) -> List[Dict[str, Any]]:
         """Return summary of all tools for LLM context."""
-        return [{"name": t.name, "description": t.description,
-                 "category": t.category, "schema": t.input_schema,
-                 "enabled": t.enabled}
-                for t in cls._tools.values()]
+        out = []
+        for t in cls._tools.values():
+            reason = cls.availability_reason(t)
+            if reason and not include_unavailable:
+                continue
+            item = {"name": t.name, "description": t.description,
+                    "category": t.category, "schema": t.input_schema,
+                    "enabled": t.enabled}
+            if reason:
+                item["unavailable_reason"] = reason
+                item["availability_note"] = t.availability.get("note", "")
+            out.append(item)
+        return out
 
     # ── Resolution (Level 1 + 2) ──
 
@@ -135,8 +190,13 @@ class ToolRegistry:
         if name not in cls._tools:
             raise KeyError(f"Tool '{name}' not registered. Available: {list(cls._tools)}")
         tool = cls._tools[name]
-        if not tool.enabled:
-            raise RuntimeError(f"Tool '{name}' is disabled")
+        reason = cls.availability_reason(tool)
+        if reason:
+            note = tool.availability.get("note", "")
+            raise RuntimeError(
+                f"Tool '{name}' unavailable: {reason}"
+                + (f" ({note})" if note else "")
+            )
 
         # Check dependencies
         missing = []
@@ -180,7 +240,8 @@ class ToolRegistry:
             "total_tools": len(cls._tools),
             "categories": {c: len(ts) for c, ts in cls._categories.items()},
             "tools": {n: {"enabled": t.enabled, "category": t.category,
-                          "deps_ok": cls._check_deps(t)}
+                          "deps_ok": cls._check_deps(t),
+                          "available": cls.availability_reason(t) == ""}
                      for n, t in cls._tools.items()},
             "auto_installs": cls._auto_install_log[-5:],
         }

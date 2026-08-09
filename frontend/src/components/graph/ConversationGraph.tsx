@@ -6,8 +6,10 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   Handle,
   Position,
   addEdge,
@@ -15,7 +17,6 @@ import {
   type Node,
   type Edge,
   type NodeProps,
-  type NodeMouseHandler,
 } from '@reactflow/core';
 import { Background } from '@reactflow/background';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,7 @@ import { useTheme } from '@/stores/themeStore';
 import dagre from 'dagre';
 import '@reactflow/core/dist/style.css';
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import { Plus, Trash2, GripVertical, Pencil, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Pencil, ArrowUp, ArrowDown, Info } from 'lucide-react';
 
 export interface ConversationGraphProps {
   nodes: GraphNode[];
@@ -36,6 +37,7 @@ export interface ConversationGraphProps {
   onNodeAdd?: (type: string) => void;
   onNodeDelete?: (nodeId: string) => void;
   onNodeEdit?: (nodeId: string, newLabel: string) => void;
+  onNodeInspect?: (nodeId: string) => void;
   zoomLevel?: number;
   onZoomChange?: (zoom: number) => void;
   className?: string;
@@ -50,20 +52,22 @@ interface ContextMenuState {
   edgeId: string | null;
 }
 
-function ContextMenu({ state, onClose, onDelete, onEdit, onPromote, onDemote, onAddChild }: {
+function ContextMenu({ state, onClose, onDelete, onEdit, onInspect, onPromote, onDemote, onAddChild }: {
   state: ContextMenuState;
   onClose: () => void;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
+  onInspect: (id: string) => void;
   onPromote?: (id: string) => void;
   onDemote?: (id: string) => void;
   onAddChild?: (id: string) => void;
 }) {
-  const { theme } = useTheme();
+  const theme = useTheme();
   const isDark = theme === 'dark';
   const items: { label: string; icon: React.ReactNode; action: () => void; danger?: boolean }[] = [];
 
   if (state.nodeId) {
+    items.push({ label: '在右侧显示详情', icon: <Info className="w-3.5 h-3.5" />, action: () => onInspect(state.nodeId!) });
     items.push({ label: '编辑名称', icon: <Pencil className="w-3.5 h-3.5" />, action: () => onEdit(state.nodeId!) });
     if (onAddChild) items.push({ label: '添加子节点', icon: <Plus className="w-3.5 h-3.5" />, action: () => onAddChild(state.nodeId!) });
     if (onPromote) items.push({ label: '提升 (活跃)', icon: <ArrowUp className="w-3.5 h-3.5" />, action: () => onPromote(state.nodeId!) });
@@ -160,12 +164,12 @@ const CUSTOM_NODE_TYPES = {
 
 /* ─── Main Component ──────────────────────────────────────── */
 
-export function ConversationGraph({
+function ConversationGraphInner({
   nodes: graphNodes, edges: graphEdges, searchQuery, activeFilters,
-  selectedNodeId, onNodeClick, onEdgeClick, onNodeAdd, onNodeDelete, onNodeEdit,
+  selectedNodeId, onNodeClick, onNodeDelete, onNodeEdit, onNodeInspect,
   className,
 }: ConversationGraphProps) {
-  const { theme } = useTheme();
+  const theme = useTheme();
   const isDark = theme === 'dark';
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editingNode, setEditingNode] = useState<string | null>(null);
@@ -205,6 +209,7 @@ export function ConversationGraph({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const { fitView } = useReactFlow();
 
   const prevNodeCount = useRef(initialNodes.length);
   useEffect(() => {
@@ -213,6 +218,25 @@ export function ConversationGraph({
       prevNodeCount.current = initialNodes.length;
     }
   }, [initialNodes, initialEdges]);
+
+  // 节点数据就绪后主动 fitView（fitView prop 在受控节点 + 异步加载场景
+  // 不保证生效，否则图谱初始定位在视口外，鼠标交互失效）。
+  // 2026-08-07 实测：单次 50ms fitView 在节点尚未被 ReactFlow 测量尺寸时
+  // 执行，用错误 bounds 算出的 scale 偏大 → 20 节点中 12 个落在视口外。
+  // 改为多重试（幂等、便宜），等节点真正渲染/测量完成后再拟合。
+  useEffect(() => {
+    if (initialNodes.length === 0) return;
+    let cancelled = false;
+    const timers = [80, 250, 500, 900].map((ms) =>
+      window.setTimeout(() => {
+        if (!cancelled) fitView({ padding: 0.2, duration: 0 });
+      }, ms)
+    );
+    return () => {
+      cancelled = true;
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [initialNodes.length, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge({ ...connection, type: 'smoothstep', animated: true }, eds)),
@@ -284,6 +308,7 @@ export function ConversationGraph({
   const bgColor = isDark ? '#0C0A0F' : '#FDFCF8';
 
   return (
+    
     <div className={cn('absolute inset-0 rounded-xl overflow-hidden border border-subtle', className)}>
       {nodes.length === 0 ? (
         <div className="flex items-center justify-center h-full text-text-muted text-sm">
@@ -306,7 +331,8 @@ export function ConversationGraph({
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneClick={handlePaneClick}
         nodeTypes={CUSTOM_NODE_TYPES as any}
-        fitView snapToGrid snapGrid={[16, 16]}
+        fitView minZoom={0.05} maxZoom={2}
+        snapToGrid snapGrid={[16, 16]}
         style={{ background: bgColor }}
         deleteKeyCode={null}
         multiSelectionKeyCode="Shift"
@@ -332,6 +358,9 @@ export function ConversationGraph({
               setEditingNode(id);
               setEditValue((node?.data?.label as string) || '');
             }}
+            onInspect={(id) => {
+              onNodeInspect?.(id);
+            }}
             onPromote={(id) => onNodeEdit?.(id, nodes.find((n) => n.id === id)?.data?.label as string || '')}
             onDemote={(id) => onNodeEdit?.(id, nodes.find((n) => n.id === id)?.data?.label as string || '')}
           />
@@ -354,5 +383,14 @@ export function ConversationGraph({
         </div>
       )}
     </div>
+    
   );
 }
+export function ConversationGraph(props: ConversationGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <ConversationGraphInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+

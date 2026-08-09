@@ -30,11 +30,13 @@ class BehaviorGraphRuntimeHook:
         behavior_adapter: Optional[BehaviorGraphAdapter] = None,
         causal_adapter: Optional[CausalSubstrateAdapter] = None,
         enable_causal_on_checkpoint: bool = True,
+        brain=None,
     ):
         self._engine = engine
         self._behavior = behavior_adapter or BehaviorGraphAdapter(graph_path=graph_path)
         self._causal = causal_adapter or CausalSubstrateAdapter(self._behavior)
         self._enable_causal = enable_causal_on_checkpoint
+        self._brain = brain
         self._event_count = 0
         self._inject_into_assembler()
         logger.info(
@@ -55,6 +57,9 @@ class BehaviorGraphRuntimeHook:
         try:
             self._behavior.record_event(event, success=True)
             self._event_count += 1
+            if self._brain is not None:
+                self._brain.learn_from_event(event)
+                self._brain.predict_next_background()
             logger.debug("Event recorded in BehaviorGraph: %s", event.id)
         except Exception as e:
             logger.warning("BehaviorGraph event recording failed: %s", e)
@@ -75,9 +80,17 @@ class BehaviorGraphRuntimeHook:
                 logger.info("Causal analysis on checkpoint: %d insights", len(causal_results))
             except Exception as e:
                 logger.warning("Causal analysis on checkpoint failed: %s", e)
+        brain_stats = {}
+        if self._brain is not None:
+            try:
+                self._brain.on_checkpoint()
+                brain_stats = self._brain.stats()
+            except Exception as e:
+                logger.warning("BehaviorBrain checkpoint failed: %s", e)
         return {
             "causal_insights": causal_results,
             "behavior_stats": self._behavior.stats(),
+            "brain": brain_stats,
             "event_count": self._event_count,
         }
 
@@ -89,11 +102,14 @@ class BehaviorGraphRuntimeHook:
             logger.warning("BehaviorGraph session-end save failed: %s", e)
 
     def stats(self) -> Dict[str, Any]:
-        return {
+        stats = {
             "behavior": self._behavior.stats(),
             "causal": self._causal.stats(),
             "events_recorded": self._event_count,
         }
+        if self._brain is not None:
+            stats["brain"] = self._brain.stats()
+        return stats
 
     def _inject_into_assembler(self) -> None:
         assembler = getattr(self._engine, "_context_assembler", None)
@@ -111,9 +127,24 @@ def register_with_engine(
     engine,
     graph_path: Optional[str] = "data/behavior_graph.json",
     enable_causal: bool = True,
+    llm_provider=None,
 ):
-    return BehaviorGraphRuntimeHook(
+    hook = BehaviorGraphRuntimeHook(
         engine=engine,
         graph_path=graph_path,
         enable_causal_on_checkpoint=enable_causal,
     )
+    # P1: attach the behavior brain as the engine's shared kernel (one brain,
+    # multiple facades) so production handlers drive the same instance.
+    try:
+        from core.agent.behavior.brain import BehaviorBrain
+        brain = getattr(engine, '_behavior_brain', None)
+        if brain is None:
+            brain = BehaviorBrain(
+                graph=hook._behavior.graph, llm_provider=llm_provider,
+            )
+            engine._behavior_brain = brain
+        hook._brain = brain
+    except Exception as e:
+        logger.warning("BehaviorBrain unavailable: %s", e)
+    return hook

@@ -17,6 +17,100 @@ router = APIRouter(prefix="/v3/session")
 _SESSIONS_FILE = Path(os.path.join(DATA_DIR, "v3_sessions.json"))
 _SESSIONS_LOCK = __import__("threading").Lock()
 
+# ═══ Task Graph Workspace (内存态=热 / 落盘=温, 版本冲突检测) ═══
+_TASK_GRAPH_WORKSPACES: Dict[str, Dict[str, Any]] = {}
+_TASK_GRAPHS_LOCK = __import__("threading").Lock()
+
+
+def _get_task_graph_ws(session_id: str) -> Dict[str, Any]:
+    """内存态优先; 无则读盘兜底; 返回 {nodes, edges, version, execution}。"""
+    with _TASK_GRAPHS_LOCK:
+        ws = _TASK_GRAPH_WORKSPACES.get(session_id)
+        if ws is not None:
+            return {"nodes": list(ws.get("nodes", [])), "edges": list(ws.get("edges", [])),
+                    "version": int(ws.get("version", 0)),
+                    "execution": dict(ws.get("execution") or {})}
+    path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            entry = {"nodes": data.get("nodes", []), "edges": data.get("edges", []),
+                     "version": int(data.get("version", 1)),
+                     "execution": data.get("execution") or {}}
+            with _TASK_GRAPHS_LOCK:
+                _TASK_GRAPH_WORKSPACES[session_id] = dict(entry)
+            return entry
+        except Exception as e:
+            logger.warning("Load task_graph failed: %s", e)
+    return {"nodes": [], "edges": [], "version": 0, "execution": {}}
+
+
+def _persist_task_graph(session_id: str, ws: Dict[str, Any]) -> None:
+    """写盘（温层, 含 version）。"""
+    try:
+        os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
+        path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"nodes": ws["nodes"], "edges": ws["edges"],
+                       "version": ws["version"],
+                       "execution": ws.get("execution") or {}},
+                      f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except Exception as e:
+        logger.warning("Persist task_graph failed: %s", e)
+
+
+def _put_task_execution(session_id: str, node_id: str,
+                        exec_result: Dict[str, Any]) -> None:
+    """记录一次节点执行迹（热内存 + 温落盘, v2 执行层白盒视图）。"""
+    ws = _get_task_graph_ws(session_id)
+    execs = dict(ws.get("execution") or {})
+    execs[node_id] = exec_result
+    with _TASK_GRAPHS_LOCK:
+        current = _TASK_GRAPH_WORKSPACES.get(session_id) or {
+            "nodes": ws.get("nodes", []), "edges": ws.get("edges", []),
+            "version": ws.get("version", 0)}
+        current = dict(current)
+        current["execution"] = execs
+        _TASK_GRAPH_WORKSPACES[session_id] = current
+    _persist_task_graph(session_id, current)
+
+
+def _put_task_graph(session_id: str, nodes: list, edges: list, version: Optional[int] = None) -> Dict[str, Any]:
+    """写入工作区（热）并落盘（温）。不带 version = 强制覆盖（向后兼容）;
+    带 version 且落后于当前 = 409 冲突。返回最新 entry。"""
+    current = _get_task_graph_ws(session_id)
+    cur_v = current["version"]
+    if version is not None and version < cur_v:
+        raise HTTPException(status_code=409, detail={
+            "error": "version_conflict",
+            "current_version": cur_v,
+            "nodes": current["nodes"],
+            "edges": current["edges"],
+        })
+    entry = {"nodes": nodes, "edges": edges, "version": cur_v + 1,
+             "execution": current.get("execution") or {}}
+    with _TASK_GRAPHS_LOCK:
+        _TASK_GRAPH_WORKSPACES[session_id] = dict(entry)
+    _persist_task_graph(session_id, entry)
+    return entry
+
+
+def _seed_task_graph(session_id: str, nodes: list) -> bool:
+    """LLM 规划落盘 — 仅在无用户确认版本（version==0）时写入, 不覆盖用户编辑。"""
+    current = _get_task_graph_ws(session_id)
+    if current["version"] > 0:
+        return False
+    entry = {"nodes": nodes, "edges": [],
+             "version": 1,
+             "execution": current.get("execution") or {}}
+    with _TASK_GRAPHS_LOCK:
+        _TASK_GRAPH_WORKSPACES[session_id] = dict(entry)
+    _persist_task_graph(session_id, entry)
+    return True
+
 def _load_sessions() -> Dict[str, Dict[str, Any]]:
     """Load sessions from JSON file."""
     try:
@@ -115,20 +209,57 @@ async def send_message(session_id: str, req: SendMessageRequest):
     t0 = time.time()
     content = ""
     msg_id = str(uuid.uuid4())[:8]  # generate early for tracing
+    # 防御初始化（B4-1-P2 全栈实测）: task_graph 在 try 内 Phase 5 才赋值，
+    # 网关离线走 except 跳过后 `if task_graph:` 会 UnboundLocalError —
+    # 本环境 switch 8080 未运行时这正是常态路径。
+    task_graph = []
     try:
         # Phase 1: Cognitive analysis via AgentOrchestrator
         import json as _json
         cognitive_ctx = {}
         try:
-            from core.agent.orchestrator.agent_native import AgentOrchestrator
-            orch = AgentOrchestrator()
-            cog = orch.process(text=req.content)
+            # M4-P3 (G1+G3-P3): 数据源从空壳 AgentOrchestrator 换真引擎。
+            # 原 L125 无参构造 AgentOrchestrator() → 核心链全 None →
+            # intents/route 恒空 = 认知结果被丢弃/伪造的数据流断裂。
+            # 现在: 引擎 PCR router + IntentParser 轻量认知（不重跑 post-LLM
+            # 管线, 避免与 L262 StateMachine 双跑）。保留 try/except fallback。
+            from core.agent.cli.engine import get_engine
+            eng = get_engine()
+            route_meta, intent_meta = {}, {}
+            if eng is not None:
+                pcr = getattr(eng, '_pcr_router', None)
+                if pcr is not None:
+                    try:
+                        r = pcr.route(req.content)
+                        if r is not None:
+                            route_meta = {"zone": getattr(r, 'zone', 'MIXED')}
+                            eng._last_pcr = r
+                    except Exception:
+                        pass
+                parser = getattr(eng, '_intent_parser', None)
+                if parser is not None:
+                    try:
+                        pr = parser.parse(user_input=req.content)
+                        eng._last_parse_result = pr
+                        intent = getattr(pr, 'intent', None)
+                        if intent is not None:
+                            intent_meta = {
+                                "segments": (getattr(intent, 'segments', None)
+                                             or [req.content[:30]]),
+                                "confidence": getattr(intent, 'confidence', 0.5),
+                                "category": str(getattr(intent, 'category',
+                                                       'general')),
+                            }
+                    except Exception:
+                        pass
+            if not route_meta:
+                route_meta = {"zone": "MIXED"}
             cognitive_ctx = {
-                "intents": cog.get("intents", {}),
-                "route": cog.get("route", {}),
-                "compass": cog.get("compass", {}),
-                "context": cog.get("context", {}),
-                "cognition": cog.get("cognition", {}),
+                "intents": intent_meta,
+                "route": route_meta,
+                "compass": {},
+                "context": {},
+                "cognition": {},
             }
         except Exception as e:
             logger.warning("Cognitive pipeline skipped: %s", e)
@@ -153,42 +284,97 @@ async def send_message(session_id: str, req: SendMessageRequest):
         # Phase 3: Build messages with full context
         system_prompt = _build_system_prompt(profile_text, cognitive_ctx)
 
-        # Phase 3.5: Execute BlueprintDAG via Decider (EventBus) — enrich context
+        # Phase 3.5: Build BlueprintDAG (view layer) + execute via StateMachine
+        # (B2/G1: BlueprintExecutor no longer the primary executor - the
+        # StateMachine consumes the DAG through registered phase handlers.
+        # BlueprintExecutor stays available as a validation/replay tool.)
         decider_context = ""
         chain_summary = {}
         ticks_count = 0
         dag_nodes = 0
         trace_errors = []
+        intent = "通用对话"  # function-level: Phase 3.5 sets real value, Phase 5 reuses
         try:
             from core.agent.blueprint.engine import BlueprintEngine
-            from core.agent.orchestrator.agent_native import AgentOrchestrator
             from core.agent.blueprint.tracer import PipelineTracer
-            engine = BlueprintEngine()
-            intent = cognitive_ctx.get("intents", {}).get("primary", "")
-            if not intent:
-                segments = cognitive_ctx.get("intents", {}).get("segments", [])
-                intent = segments[0] if segments else "通用对话"
+            from core.agent.cli.engine import get_engine
+            _eng = get_engine()
+            _dbus = getattr(_eng, "_decision_bus", None) if _eng is not None else None
+            # GAP-D2: 共享 registry — 本地 BlueprintEngine 与 runtime engine
+            # 的 learning_bridge 共用同一 SkillRegistry（match/learn 不分叉,
+            # LEARNED_TEMPLATES 生命周期可挂载）。
+            _shared_registry = None
+            if _eng is not None:
+                try:
+                    _shared_registry = getattr(
+                        _eng, "_learning_bridge", None) and \
+                        getattr(_eng._learning_bridge, "registry", None)
+                except Exception:
+                    _shared_registry = None
+            engine = BlueprintEngine(decision_bus=_dbus, registry=_shared_registry)
+            # Real intent from DualTrack so the 5 built-in templates can
+            # actually be selected (P0-7/P1-25).
+            try:
+                from core.agent.intent.dual_track import DualTrackIntentPipeline
+                dt = DualTrackIntentPipeline()
+                segs = getattr(dt.process(req.content), "segments", [])
+                if segs:
+                    intent = segs[0]
+            except Exception:
+                pass
             dag = engine.build(req.content, intent=intent)
             dag_nodes = dag.node_count
-            orch = AgentOrchestrator()
-            chain_result = orch.process_dag(dag, user_text=req.content)
-            ticks_count = len(chain_result.get("ticks", []))
-            # Build context enrichment
-            chain_parts = []
-            for node_id, output in chain_result.get("chain_outputs", {}).items():
-                status = "ok" if output and not output.get("error") else "empty"
-                chain = node_id.split("_")[0] if "_" in node_id else node_id
-                chain_summary[chain] = status
-                if node_id.startswith("intent"):
-                    intents = output.get("intents", output)
-                    chain_parts.append(f"意图: {str(intents)[:200]}")
-                elif node_id.startswith("pcr"):
-                    route = output.get("route", output)
-                    chain_parts.append(f"路由: {str(route)[:200]}")
-                elif node_id.startswith("context"):
-                    chain_parts.append(f"上下文: {str(output.get('assembled_context', output))[:200]}")
-            if chain_parts:
-                decider_context = "## 管线分析\n" + "\n".join(chain_parts)
+            # Execute through the live StateMachine (registered handlers map
+            # DAG chains to PipelinePhases via CHAIN_TO_PHASE).
+            eng = get_engine()
+            sm = getattr(eng, "_state_machine", None) if eng is not None else None
+            if sm is not None and hasattr(sm, "run_dag"):
+                chain_result = sm.run_dag(
+                    dag,
+                    context={"text": req.content, "session_id": session_id,
+                             "request_id": msg_id,
+                             "decision_bus": _dbus,
+                             "meta_feedback": (getattr(_eng, "_meta_feedback", None)
+                                               if _eng is not None else None),
+                             "model": req.model or "deepseek-v4-flash"},
+                )
+                dag_results = chain_result.get("results", {})
+                ticks_count = len(dag_results)
+                # GAP-D2/D1: 生产学习注入 — run_dag 成功后沉淀含 tool 节点
+                # 的成功 DAG + 收集蒸馏原料（走共享 engine 的 learning_bridge,
+                # 保证 registry 与本地 BlueprintEngine 一致）。
+                try:
+                    _learn_ok = False
+                    for _out in dag_results.values():
+                        if _out and not _out.get("error"):
+                            _learn_ok = True
+                            break
+                    if _learn_ok:
+                        _learn_fn = getattr(_eng, "learn_from_execution", None)
+                        if _learn_fn is not None:
+                            _learn_fn(dag, intent=intent, request_id=msg_id,
+                                      success=True)
+                except Exception as _le:
+                    logger.debug("learn_from_execution failed: %s", _le)
+                # Build context enrichment
+                chain_parts = []
+                for node_id, output in dag_results.items():
+                    status = "ok" if output and not output.get("error") else "empty"
+                    chain = node_id.split("_")[0] if "_" in node_id else node_id
+                    chain_summary[chain] = status
+                    if node_id.startswith("intent"):
+                        intents = output.get("intents", output)
+                        chain_parts.append(f"意图: {str(intents)[:200]}")
+                    elif node_id.startswith("pcr"):
+                        route = output.get("route", output)
+                        chain_parts.append(f"路由: {str(route)[:200]}")
+                    elif node_id.startswith("context"):
+                        chain_parts.append(f"上下文: {str(output.get('assembled_context', output))[:200]}")
+                if chain_parts:
+                    decider_context = "## 管线分析\n" + "\n".join(chain_parts)
+            else:
+                # StateMachine unavailable - skip execution (never fake it)
+                logger.warning("Decider pipeline skipped: no StateMachine")
             # Record trace
             PipelineTracer.record(
                 request_id=msg_id or str(uuid.uuid4())[:8],
@@ -233,21 +419,107 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
         # Phase 4: Call LLM via switch gateway
         import urllib.request
-        body = {
-            "provider": req.provider or "deepseek",
-            "model": req.model or "deepseek-v4-flash",
-            "messages": all_messages,
-        }
-        http_req = urllib.request.Request(
-            "http://127.0.0.1:8080/v1/chat/completions",
-            data=_json.dumps(body).encode(),
-            headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(http_req, timeout=60) as resp:
-            data = _json.loads(resp.read())
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not content:
-            content = str(data)
+        tool_loop_used = False
+        try:
+            # 编码/实现类请求 → LLM 自主工具调用循环（function calling）
+            from core.agent.blueprint.code_request import is_code_request
+            if is_code_request(req.content):
+                # v2 执行层（2026-08-09）: TaskRunner = tool_loop + 蓝图约束
+                # 注入（已确认任务图作为宏观约束）+ 元认知监控 + 决策事件。
+                from core.agent.llm.task_runner import (
+                    TaskRunner, TaskConstraint)
+                # 已确认任务图 → 允许范围约束（蓝图宏观 → 执行层微观）
+                scope = ""
+                try:
+                    _tg = _get_task_graph_ws(session_id) or {}
+                    _tgn = _tg.get("nodes") or []
+                    if _tgn:
+                        scope = ("用户已确认的任务规划: " + json.dumps(
+                            [{"id": n.get("id"),
+                              "name": n.get("name", n.get("type", ""))}
+                             for n in _tgn], ensure_ascii=False)[:1500])
+                except Exception:
+                    pass
+                _dbus2 = None
+                _mf2 = None
+                try:
+                    from core.agent.cli.engine import get_engine as _ge2
+                    _eng2 = _ge2()
+                    _dbus2 = (getattr(_eng2, "_decision_bus", None)
+                              if _eng2 is not None else None)
+                    _mf2 = (getattr(_eng2, "_meta_feedback", None)
+                            if _eng2 is not None else None)
+                except Exception:
+                    _dbus2 = None
+                    _mf2 = None
+                _runner = TaskRunner(decision_bus=_dbus2,
+                                     meta_feedback=_mf2,
+                                     model=req.model or "deepseek-v4-flash")
+                _tr = _runner.run(
+                    goal=req.content,
+                    constraint=TaskConstraint(
+                        goal=req.content, scope=scope,
+                        max_rounds=6, timeout_s=120, max_replans=1),
+                    node_id="root_task", session_id=session_id,
+                    request_id=msg_id, messages=all_messages)
+                tool_loop_used = True
+                content = _tr.content or ""
+                if _tr.tool_calls or _tr.verdict != "continue":
+                    _exec_summary = "; ".join(
+                        f"{c.get('name', '?')}:"
+                        f"{'ok' if c.get('ok') else 'fail'}"
+                        for c in _tr.tool_calls[:8])
+                    logger.info("tool_loop: %d calls (%s)",
+                                len(_tr.tool_calls), _exec_summary)
+                # 执行迹 → 会话工作区（前端 /v6/execution 白盒视图）
+                try:
+                    _put_task_execution(session_id, "root_task",
+                                        _tr.to_dict())
+                except Exception as _pe:
+                    logger.debug("put execution failed: %s", _pe)
+        except Exception as _tle:
+            logger.debug("tool_loop skipped: %s", _tle)
+            tool_loop_used = False
+        if not tool_loop_used:
+            body = {
+                "provider": req.provider or "deepseek",
+                "model": req.model or "deepseek-v4-flash",
+                "messages": all_messages,
+            }
+            http_req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data=_json.dumps(body).encode(),
+                headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(http_req, timeout=60) as resp:
+                data = _json.loads(resp.read())
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not content:
+                content = str(data)
+
+        # ── 代码执行后处理（2026-08-08, "实现软件"链路）──
+        # LLM 回复含 ```python 代码块 → 自动执行 → 输出追加到回复。
+        # 确定性, 不依赖 LLM 生成 tool 节点（LLM_DRIVEN 候选全是认知链）。
+        try:
+            if not tool_loop_used:
+                import re as _re
+                blocks = _re.findall(r"```python\n(.*?)```", content, _re.S)
+                if blocks:
+                    from core.agent.tools.os_tools import _run_python
+                    exec_parts = []
+                    for i, code in enumerate(blocks[:3], 1):
+                        res = _run_python(code=code, timeout_s=30)
+                        out = (res.data or {}).get("stdout", "") if hasattr(res, "data") else ""
+                        err = (res.data or {}).get("stderr", "") if hasattr(res, "data") else ""
+                        status = "ok" if res.success else "error"
+                        exec_parts.append(
+                            f"### 代码执行结果 (块 {i}, {status})\n"
+                            f"```\n{out[-1500:]}\n```\n"
+                            + (f"stderr:\n```\n{err[-800:]}\n```\n" if err else ""))
+                    if exec_parts:
+                        content = content + "\n\n---\n\n" + "\n".join(exec_parts)
+        except Exception as _ce:
+            logger.debug("code exec post-processing failed: %s", _ce)
 
         # ── StateMachine: unified post-LLM pipeline ──
         sm_results = {}
@@ -272,7 +544,6 @@ async def send_message(session_id: str, req: SendMessageRequest):
             logger.debug("Post-LLM pipeline skipped: %s", _ep)
 
         # Phase 5: Extract task plan from LLM response
-        task_graph = []
         # Try to parse LLM-generated task JSON first
         parsed = _parse_plan_json(content)
         if parsed:
@@ -282,10 +553,6 @@ async def send_message(session_id: str, req: SendMessageRequest):
             try:
                 from core.agent.blueprint.engine import BlueprintEngine
                 engine = BlueprintEngine()
-                intent = cognitive_ctx.get("intents", {}).get("primary", "")
-                if not intent:
-                    segments = cognitive_ctx.get("intents", {}).get("segments", [])
-                    intent = segments[0] if segments else "通用对话"
                 dag = engine.build(req.content, intent=intent)
                 chain_names = {
                     "pcr": "认知路由分析", "intent": "意图解析",
@@ -316,12 +583,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
     # Also save task_graph as standalone resource — only if no user-confirmed version exists
     if task_graph:
         try:
-            import os as _os
-            tg_path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
-            if not _os.path.exists(tg_path):  # don't overwrite user's confirmed edits
-                _os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
-                with open(tg_path, "w") as f:
-                    json.dump({"nodes": task_graph, "edges": []}, f, ensure_ascii=False)
+            _seed_task_graph(session_id, task_graph)
         except Exception:
             pass
 
@@ -381,43 +643,42 @@ async def edit_dag(session_id: str, req: DAGEditRequest):
 class TaskGraphUpdateRequest(BaseModel):
     nodes: list = []
     edges: list = []
+    version: Optional[int] = None
 
 
 @router.get("/{session_id}/task-graph")
 async def get_task_graph(session_id: str):
-    """Return the standalone task graph for a session."""
+    """Return the standalone task graph for a session (memory-first, disk fallback)."""
     try:
-        import json, os
-        path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                return json.load(f)
+        entry = _get_task_graph_ws(session_id)
+        if entry["nodes"] or entry["edges"]:
+            return entry
         # Fallback: extract from session messages
         session_path = os.path.join(DATA_DIR, "v3_sessions.json")
         if os.path.exists(session_path):
-            with open(session_path, "r") as f:
+            with open(session_path, "r", encoding="utf-8") as f:
                 sessions = json.load(f)
             s = sessions.get(session_id, {})
             for msg in reversed(s.get("messages", [])):
                 if msg.get("metadata", {}).get("taskGraph"):
-                    return {"nodes": msg["metadata"]["taskGraph"], "edges": []}
-        return {"nodes": [], "edges": []}
+                    return {"nodes": msg["metadata"]["taskGraph"], "edges": [],
+                            "version": entry["version"]}
+        return {"nodes": [], "edges": [], "version": entry["version"]}
     except Exception as e:
         logger.warning("Get task_graph failed: %s", e)
-        return {"nodes": [], "edges": []}
+        return {"nodes": [], "edges": [], "version": 0}
 
 
 @router.put("/{session_id}/task-graph")
 async def update_task_graph(session_id: str, req: TaskGraphUpdateRequest):
-    """Persist user-modified task graph as a standalone resource."""
+    """Persist user-modified task graph with version conflict detection."""
     try:
-        import json, os
-        os.makedirs(TASK_GRAPHS_DIR, exist_ok=True)
-        path = os.path.join(TASK_GRAPHS_DIR, f"{session_id}.json")
-        with open(path, "w") as f:
-            json.dump({"nodes": req.nodes, "edges": req.edges}, f, ensure_ascii=False, indent=2)
-        logger.info("Saved task_graph for session %s: %d nodes", session_id[:8], len(req.nodes))
-        return {"status": "ok", "nodes": req.nodes, "edges": req.edges}
+        entry = _put_task_graph(session_id, req.nodes, req.edges, req.version)
+        logger.info("Saved task_graph for session %s: %d nodes (v%d)",
+                    session_id[:8], len(req.nodes), entry["version"])
+        return {"status": "ok", "nodes": req.nodes, "edges": req.edges, "version": entry["version"]}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("Task graph save failed: %s", e)
         return {"status": "error", "error": str(e)[:200]}

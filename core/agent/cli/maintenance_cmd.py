@@ -5,7 +5,7 @@ from __future__ import annotations
 def _maintenance_gc(engine):
     """Run manual GC and tier migration."""
     try:
-        from core.agent.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_graph_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         result = store.run_maintenance()
@@ -24,25 +24,25 @@ def _maintenance_gc(engine):
 def _maintenance_stats(engine):
     """Show tiered storage stats."""
     try:
-        from core.agent.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_graph_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         stats = store.stats
-        store.close()
 
         print(f"Nodes: {stats.get('node_count', 0)}")
         print(f"Edges: {stats.get('edge_count', 0)}")
 
         # Tier distribution
         try:
-            warm = len(store.query_nodes(tier="warm"))
-            cold = len(store.query_nodes(tier="cold"))
-            archive = len(store.query_nodes(tier="archive"))
+            warm = len(store.query_nodes(tier="W"))
+            cold = len(store.query_nodes(tier="C"))
+            archive = len(store.query_nodes(tier="A"))
             total = stats.get('node_count', 0)
             hot = max(0, total - warm - cold - archive)
             print(f"Tiers: hot={hot}, warm={warm}, cold={cold}, archive={archive}")
         except Exception:
             pass
+        store.close()
 
         # Event log stats
         try:

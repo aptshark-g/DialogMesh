@@ -10,8 +10,10 @@ import type {
   HealthResponse,
   CheckpointResponse,
 } from '../types/api';
+import { sessionHeaders } from './sessionHeaders';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// B5（2026-08-07）: 默认相对路径 → 同源代理
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 // v4 API 的 P0 Bearer 鉴权 (core/agent/v4/api.py auth_middleware)
 const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'dev-token';
 
@@ -22,6 +24,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       Authorization: `Bearer ${AUTH_TOKEN}`,
+      ...sessionHeaders(),
       ...(options?.headers || {}),
     },
   });

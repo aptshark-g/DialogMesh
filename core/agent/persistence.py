@@ -1,8 +1,6 @@
 ﻿import os, json, time, asyncio
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-if TYPE_CHECKING:
-    from .integration import V32Pipeline
+from typing import Optional
 
 class PersistenceManager:
     SAVE_INTERVAL = 60

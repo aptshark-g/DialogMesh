@@ -79,11 +79,19 @@ class MetaFeedback:
       fb.check_degradations()     # 异步Tick检查
     """
 
-    def __init__(self, registry: SkillRegistry = None):
+    def __init__(self, registry: SkillRegistry = None, decision_bus=None):
         self.registry = registry or SkillRegistry()
+        # 决策变更事件总线（META_ARBITER §3.2）: degrade/promote 写事件流,
+        # 供前端回看 + 用户介入（PR review 语义）
+        self._decision_bus = decision_bus
         self._strategy_states: Dict[str, MetaState] = {}
         self._intent_sightings: Dict[str, int] = defaultdict(int)  # intent → count
         self._total_audits: int = 0
+
+    def attach_bus(self, bus):
+        """绑定决策事件总线（engine 每轮刷新 attach, 与 intervention 同源）。"""
+        if bus is not None:
+            self._decision_bus = bus
 
     def consume(self, audit: ExecutionAudit):
         """Consume one execution audit record."""
@@ -113,6 +121,8 @@ class MetaFeedback:
         """Check all strategies for degradation/promotion triggers.
 
         Returns list of actions taken: [{action, strategy, detail}].
+        P0-3 (META_ARBITER): 副作用化 — degrade/promote 真实改 SkillRegistry
+        权重（影响下次 match 选策略）+ 写决策变更事件（可回看/可介入）。
         """
         actions = []
         for strategy, state in self._strategy_states.items():
@@ -120,6 +130,17 @@ class MetaFeedback:
                 state.degradation_level += 1
                 state.consecutive_low = 0
                 next_strategy = self._next_degraded_strategy(strategy)
+                # P0-3 副作用: 降低该策略在所有意图下的权重（真实影响下次选择）
+                try:
+                    for intent in list(self.registry._strategy_weights.keys()):
+                        self.registry.update_weight(intent, strategy, 0.0)
+                    self._record_decision(
+                        action="degrade", strategy=strategy, next_strategy=next_strategy,
+                        detail=f"连续{state.DEGRADE_TRIGGER}次低分, 降级 {strategy}→{next_strategy}",
+                        state=state,
+                    )
+                except Exception as e:
+                    logger.debug("degrade side-effect failed: %s", e)
                 actions.append({
                     "action": "degrade",
                     "strategy": strategy,
@@ -133,6 +154,17 @@ class MetaFeedback:
                 state.degradation_level -= 1
                 state.consecutive_high = 0
                 prev_strategy = self._prev_promoted_strategy(strategy)
+                # P0-3 副作用: 恢复该策略权重（升级）
+                try:
+                    for intent in list(self.registry._strategy_weights.keys()):
+                        self.registry.update_weight(intent, strategy, 0.9)
+                    self._record_decision(
+                        action="promote", strategy=strategy, next_strategy=prev_strategy,
+                        detail=f"连续{state.PROMOTE_TRIGGER}次高分, 升级 {strategy}→{prev_strategy}",
+                        state=state,
+                    )
+                except Exception as e:
+                    logger.debug("promote side-effect failed: %s", e)
                 actions.append({
                     "action": "promote",
                     "strategy": strategy,
@@ -143,6 +175,25 @@ class MetaFeedback:
                 logger.info("MetaFeedback: promoting %s→%s (avg=%.2f)", strategy, prev_strategy, state.avg_score)
 
         return actions
+
+    def _record_decision(self, action: str, strategy: str, next_strategy: str,
+                         detail: str, state: MetaState) -> None:
+        """写决策变更事件（strategy_switch, 可回看/可介入）。"""
+        bus = self._decision_bus
+        if bus is None:
+            return
+        try:
+            bus.log(
+                kind="strategy_switch",
+                dimension=f"meta.strategy.{strategy}",
+                before=strategy,
+                after=next_strategy,
+                reason=detail,
+                actor="meta",
+                comment=f"avg_score={state.avg_score:.2f}",
+            )
+        except Exception as e:
+            logger.debug("meta decision record failed: %s", e)
 
     def suggest_blueprints(self) -> List[Dict]:
         """Check for intent patterns that suggest new Blueprint templates.

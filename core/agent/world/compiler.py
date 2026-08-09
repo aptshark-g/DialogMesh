@@ -70,6 +70,9 @@ class StructuralContextCompiler:
         if graph.node_count == 0:
             return SubgraphResult()
 
+        # GAP-O4 接线: 确保 backbone 已计算（importance.py 原本零调用, 断线修复）
+        self._ensure_backbone(graph)
+
         # Step 1: Find intent-relevant seed nodes (embedding-based)
         seeds = self._find_seeds(graph, intent)
 
@@ -104,6 +107,27 @@ class StructuralContextCompiler:
             backbone_units=backbone_units,
             total_tokens_estimate=token_estimate,
         )
+
+    def _ensure_backbone(self, graph: StructuralWorldGraph) -> None:
+        """GAP-O4 归位: 结构重要性 → backbone（懒填充, 已填则跳过）。
+
+        TieredImportanceStrategy 按图大小自适应路由（betweenness /
+        k-sampling / community-chunk）; compute_backbone_scores 融合四维
+        （缺省仅结构维度）; write_backbone_to_graph 写回 graph.backbone + units。
+        """
+        if graph.backbone:
+            return
+        try:
+            from core.agent.world.importance import (
+                StructuralImportanceStrategy, compute_backbone_scores,
+                write_backbone_to_graph,
+            )
+            strategy = StructuralImportanceStrategy.from_name("tiered")
+            scores = strategy.compute(graph)
+            backbone = compute_backbone_scores(graph, scores)
+            write_backbone_to_graph(graph, backbone)
+        except Exception as e:
+            logger.debug("backbone compute failed: %s", e)
 
     def build_node_embeddings(self, graph: StructuralWorldGraph) -> Dict[str, List[float]]:
         """Pre-compute embeddings for all nodes in the graph.

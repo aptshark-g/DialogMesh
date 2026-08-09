@@ -65,7 +65,9 @@ def start_backend(port: int, log_level: str) -> subprocess.Popen:
     """启动后端 uvicorn 服务。"""
     cmd = [
         sys.executable, "-m", "uvicorn",
-        "core.service.v3_0.app_factory:create_app_v3",
+        # B4-1-P2 (2026-08-04): v3_0 服务层已归档 → 开发入口走 v6_app
+        # （生产唯一入口, 含薄中间件层 rate_limiter/queue/session）
+        "core.agent.api.v6_app:app",
         "--host", "0.0.0.0",
         "--port", str(port),
         "--log-level", log_level,

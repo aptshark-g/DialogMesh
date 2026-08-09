@@ -18,10 +18,19 @@ class TestResult:
 class TestSignal:
     def test_hit(self):
         s = TrainingSignal([Candidate("x", expected_value=0.9)], "x")
-        assert s.compute_reward() == 0.10
+        assert s.compute_reward() == 1.0
+    def test_top3_hit(self):
+        s = TrainingSignal(
+            [Candidate("a", expected_value=0.9), Candidate("x", expected_value=0.5)],
+            "x",
+        )
+        assert s.compute_reward() == 0.5
     def test_miss(self):
         s = TrainingSignal([Candidate("a", expected_value=0.9)], "z")
-        assert s.compute_reward() == -0.15
+        assert s.compute_reward() == -0.5
+    def test_correction(self):
+        s = TrainingSignal([Candidate("a", expected_value=0.9)], "z", is_correction=True)
+        assert s.compute_reward() == -0.2
 
 class TestLoad:
     def test_known(self):

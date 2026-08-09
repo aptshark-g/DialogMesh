@@ -16,6 +16,7 @@ Window manager: Hot/Warm/Cold 3-layer window architecture.
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -58,7 +59,11 @@ class WindowManager:
             "total_compressed": 0,
             "total_turns": 0,
             "last_compression_time_ms": 0.0,
+            "last_compression_id": "",
         }
+        # GAP-4: 最近压缩日志（反馈闭环关联 compression_id）
+        self.compression_log: deque = deque(maxlen=10)
+        self._compression_counter = 0
 
     # ── 核心 API ───────────────────────────────────────────
 
@@ -108,6 +113,7 @@ class WindowManager:
             "total_tokens": hot_tokens + warm_tokens + cold_tokens,
             "total_max": self.config.max_total_tokens,
             "compression_stats": dict(self._compression_stats),
+            "recent_compressions": list(self.compression_log),
         }
 
     def clear(self) -> None:
@@ -119,7 +125,29 @@ class WindowManager:
             "total_compressed": 0,
             "total_turns": 0,
             "last_compression_time_ms": 0.0,
+            "last_compression_id": "",
         }
+        self.compression_log.clear()
+        self._compression_counter = 0
+
+    # ── GAP-4 压缩日志 ─────────────────────────────────────
+
+    def _new_compression_id(self) -> str:
+        self._compression_counter += 1
+        return f"c{self._compression_counter}_{int(time.time() * 1000)}"
+
+    def _log_compression(self, level: int, before_tokens: int, after_tokens: int) -> str:
+        cid = self._new_compression_id()
+        self.compression_log.append({
+            "id": cid,
+            "level": level,
+            "before_tokens": before_tokens,
+            "after_tokens": after_tokens,
+            "saved_tokens": max(0, before_tokens - after_tokens),
+            "ts": time.time(),
+        })
+        self._compression_stats["last_compression_id"] = cid
+        return cid
 
     # ── 窗口滑动 ───────────────────────────────────────────
 
@@ -154,9 +182,13 @@ class WindowManager:
             pass
 
         # 压缩后进入冷窗口
+        before_tokens = self.compressor.estimate_tokens([oldest])
         compressed = self.compressor.compress(oldest, CompressionLevel.MEDIUM)
         self.cold.append(compressed)
         self._compression_stats["total_compressed"] += 1
+        self._log_compression(CompressionLevel.MEDIUM.value,
+                              before_tokens,
+                              self.compressor.estimate_tokens([compressed]))
 
     # ── Token 限制 ───────────────────────────────────────────
 
@@ -184,10 +216,15 @@ class WindowManager:
 
     def _compress_warm(self) -> None:
         """压缩温窗口：从轻度到中度。"""
+        before_tokens = self.compressor.estimate_tokens(self.warm)
         for i, turn in enumerate(self.warm):
             if turn.compression_level < CompressionLevel.MEDIUM.value:
                 self.warm[i] = self.compressor.compress(turn, CompressionLevel.MEDIUM)
                 self._compression_stats["total_compressed"] += 1
+        after_tokens = self.compressor.estimate_tokens(self.warm)
+        if after_tokens < before_tokens:
+            self._log_compression(CompressionLevel.MEDIUM.value,
+                                  before_tokens, after_tokens)
 
     def _compress_cold(self) -> None:
         """压缩冷窗口：合并多轮为摘要。"""

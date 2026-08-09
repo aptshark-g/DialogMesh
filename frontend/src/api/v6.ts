@@ -2,6 +2,7 @@
 // DialogMesh v6 GUI API — 42 endpoints covering Profile, Graph, Rules,
 // Providers, Router, DeepChain, Pipeline, Metrics, Sessions
 
+import { sessionHeaders } from './sessionHeaders';
 import type {
   V6ProfileResponse, V6ProfileEditRequest, V6ProfileEditResponse,
   V6TraceResponse, V6AbcResponse, V6MindResponse, V6MindFullResponse,
@@ -55,9 +56,24 @@ import type {
   // v10 Scheduler & Degradation
   V6SyncResponse, V6CausalChainResponse, V6DegradationResponse,
   V6TtlResponse, V6TtlTickResponse, V6SubgraphCacheResponse,
+  V6HeuristicsResponse,
+  V6ChangelogResponse, V6InterveneRequest,
 } from '../types/api';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// B5（2026-08-07）: 默认相对路径 → 同源代理（dev server / nginx），
+// 避免跨域 CORS 被系统 Chrome 剥离（B5_UI_TEST_PLAN_20260807.md）
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+/** 可视化编辑版本冲突（409）——服务端已有更新版本, 本地编辑被拒绝。 */
+export class VizConflictError extends Error {
+  currentVersion: number;
+
+  constructor(detail: any) {
+    super('图谱已被更新, 本地编辑与服务器版本冲突');
+    this.name = 'VizConflictError';
+    this.currentVersion = detail?.current_version ?? 0;
+  }
+}
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
@@ -65,10 +81,15 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      ...sessionHeaders(),
       ...(options?.headers || {}),
     },
   });
   if (!response.ok) {
+    if (response.status === 409) {
+      const data = await response.json().catch(() => null);
+      throw new VizConflictError(data?.detail);
+    }
     const err = await response.text().catch(() => 'Unknown error');
     throw new Error(`HTTP ${response.status}: ${err}`);
   }
@@ -110,12 +131,15 @@ export function getMindFull(): Promise<V6MindFullResponse> {
 // 图/树/对象 (Visualization)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function getGraph(): Promise<V6GraphResponse> {
-  return apiFetch<V6GraphResponse>('/v6/graph');
+// B5（2026-08-07）: 支持 ?sid= — 图谱按当前会话取对话树（OS 式三级取数）
+export function getGraph(sid?: string): Promise<V6GraphResponse> {
+  const qs = sid ? `?sid=${encodeURIComponent(sid)}` : '';
+  return apiFetch<V6GraphResponse>(`/v6/graph${qs}`);
 }
 
-export function getDiscourseTree(): Promise<V6DiscourseTreeResponse> {
-  return apiFetch<V6DiscourseTreeResponse>('/v6/discourse-tree');
+export function getDiscourseTree(sid?: string): Promise<V6DiscourseTreeResponse> {
+  const qs = sid ? `?sid=${encodeURIComponent(sid)}` : '';
+  return apiFetch<V6DiscourseTreeResponse>(`/v6/discourse-tree${qs}`);
 }
 
 export function getObjects(): Promise<V6ObjectsResponse> {
@@ -242,6 +266,43 @@ export function editParameters(req: V6ParameterEditRequest): Promise<{ updated: 
 
 export function getContext(): Promise<V6ContextResponse> {
   return apiFetch<V6ContextResponse>('/v6/context');
+}
+
+/** 二阶抽象（A24）: 启发库存白盒视图（A19）。 */
+export function getHeuristics(): Promise<V6HeuristicsResponse> {
+  return apiFetch<V6HeuristicsResponse>('/v6/heuristics');
+}
+
+/** GAP-F1: 决策变更事件流（git log 语义, 回看/审计）。 */
+export function getChangelog(limit = 50, kind = ''): Promise<V6ChangelogResponse> {
+  const qs = kind ? `?limit=${limit}&kind=${encodeURIComponent(kind)}` : `?limit=${limit}`;
+  return apiFetch<V6ChangelogResponse>(`/v6/changelog${qs}`);
+}
+
+/** GAP-F1: PR review 介入回写（approve→applied / reject→rejected）。 */
+export function interveneChangelog(req: V6InterveneRequest): Promise<{ intervened: boolean; event?: unknown }> {
+  return apiFetch<{ intervened: boolean; event?: unknown }>('/v6/changelog/intervene', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export interface CompressionFeedbackResult {
+  recorded: boolean;
+  id?: string;
+  stats?: { total: number; good: number; bad: number; good_rate: number };
+}
+
+/** GAP-4: 压缩质量反馈（Hermes manual_compression_feedback 对齐）。 */
+export function submitCompressionFeedback(req: {
+  quality: 'good' | 'bad';
+  comment?: string;
+  compression_id?: string;
+}): Promise<CompressionFeedbackResult> {
+  return apiFetch<CompressionFeedbackResult>('/v6/context/compression-feedback', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

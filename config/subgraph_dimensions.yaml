@@ -1,0 +1,47 @@
+# Subgraph dimension config (DESIGN_SUBGRAPH.md §6) — intent-aware allocation,
+# trim parameters, budget. Baseline keeps v4 behaviour for "query" intent.
+
+subgraph:
+  budget:
+    mode: auto                  # auto | manual | provider_default
+    manual_limit: 800
+    default: 500
+    provider: { deepseek: 1000, openai: 500, local: 1500, default: 600 }
+    layers: { required: 200, strategy: 300, elastic: 200 }
+
+  # design-domain → v4 grab-domain mapping (v3 intent matrix domains vs impl)
+  domain_map:
+    C: [D]                      # conversation → discourse tree
+    E: [K, E]                   # engineering → constraints + modules
+    B: [B]                      # behavior
+    P: [P, F]                   # profile → ocean profile + dims
+    K: [R]                      # causal ≈ relation substrate
+
+  # v3 intent-aware selection matrix (primary 60 / aux1 25 / aux2 15)
+  intent_matrix:
+    task:          { primary: E, aux1: B, aux2: P }
+    query:         { primary: C, aux1: E, aux2: P }
+    correction:    { primary: B, aux1: E, aux2: K }
+    discussion:    { primary: P, aux1: C, aux2: E }
+    casual:        { primary: C, aux1: P, aux2: null }
+    topic_switch:  { primary: C, aux1: B, aux2: P }
+
+  alloc_weights: { primary: 0.60, aux1: 0.25, aux2: 0.15 }
+
+  # PCR zone → intent_category fallback (DESIGN_SUBGRAPH §4.4). Used ONLY
+  # when no intent_category is provided; intent parsing is the primary path.
+  zone_fallback:
+    ATOMIC: task
+    PRECISION: task
+    EXPLORE: query
+    ABYSS: discussion
+    PSYCHE: discussion
+    MIXED: query
+
+  trim:
+    betweenness_threshold: 0.6
+    recency_window: 3
+    candidate_ratio: 0.3
+    alpha: { task: 0.3, discussion: 0.2, correction: 0.5, topic_switch: 0.1, casual: 0.4, query: 0.3 }
+    beta:  { task: 0.2, discussion: 0.5, correction: 0.3, topic_switch: 0.6, casual: 0.4, query: 0.3 }
+    gamma: { task: 0.5, discussion: 0.3, correction: 0.2, topic_switch: 0.3, casual: 0.2, query: 0.4 }

@@ -246,10 +246,10 @@ class TagAcquisitionEngine:
         except Exception:
             return {"level": "medium", "score": 0.5, "reasoning": "assessment failed"}
 
-    def build_tag(self, result: dict) -> UserTag:
-        """Build UserTag from assessment result."""
+    def build_tag(self, result: dict, domain: str = "general") -> UserTag:
+        """Build UserTag from assessment result (P10: domain-relative g)."""
         return UserTag(
-            name="g_factor",
+            name="g_factor" if domain == "general" else f"g_factor:{domain}",
             value=result.get("level", "medium"),
             confidence=min(0.8, result.get("score", 0.5)),
             source="L2",
@@ -294,14 +294,20 @@ class TagLayerManager:
         return tags, obs
 
     def assess_g_factor(self, dialogue_history: List[str],
-                        profile: CognitiveProfileV2 = None) -> Optional[UserTag]:
-        """Run g-factor assessment (async-compatible)."""
+                        profile: CognitiveProfileV2 = None,
+                        domain: str = "general") -> Optional[UserTag]:
+        """Run g-factor assessment (P10: domain-relative, 不标签固化).
+
+        DESIGN v2 §4.3.2 决策 2: g 因子不用于歧视/标签固化，仅领域相对。
+        存 ``track_b["g_factor:<domain>"]``，general 保留兼容旧键。
+        """
         if not self._gf_inferencer:
             return None
         result = self._gf_inferencer.assess_from_history(dialogue_history)
-        tag = self._gf_inferencer.build_tag(result)
+        tag = self._gf_inferencer.build_tag(result, domain=domain)
         if profile:
-            profile.track_b["g_factor"] = tag
+            key = "g_factor" if domain == "general" else f"g_factor:{domain}"
+            profile.track_b[key] = tag
         return tag
 
     @property

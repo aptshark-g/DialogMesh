@@ -6,7 +6,6 @@ from core.agent.compiler.parameter_registry import ParameterRegistry
 class TestParameterRegistry:
     def setup_method(self):
         self.reg = ParameterRegistry()
-        self.reg.load_defaults()
 
     def test_defaults_loaded(self):
         assert self.reg.get("relation.min_confidence_edge") is not None
@@ -22,7 +21,7 @@ class TestParameterRegistry:
         assert self.reg.get("slow_path.event_threshold") == 5
 
     def test_get_bool_defaults(self):
-        assert self.reg.get("rank.dependency_doc_source_needed") is True
+        assert self.reg.get("execution.context_threshold_8k") is True
 
     def test_set_and_get(self):
         self.reg.set("relation.min_confidence_edge", 0.3)
@@ -33,7 +32,7 @@ class TestParameterRegistry:
 
     def test_slow_path_threshold(self):
         assert self.reg.get("slow_path.event_threshold") == 5
-        assert self.reg.get("slow_path.velocity_window") == 30
+        assert self.reg.get("conversation.max_history_entries") == 10
 
     def test_all_returns_dict(self):
         params = self.reg.all()

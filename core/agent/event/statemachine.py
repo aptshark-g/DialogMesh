@@ -48,6 +48,22 @@ STATE_TRANSITIONS: Dict[PipelinePhase, Dict[str, PipelinePhase]] = {
     PipelinePhase.PERSIST:   {"normal": PipelinePhase.DONE},
 }
 
+# G1+G3-P2: Blueprint chain → PipelinePhase 映射（DAG 节点执行用）
+CHAIN_TO_PHASE = {
+    "pcr": PipelinePhase.PCR,
+    "intent": PipelinePhase.INTENT,
+    "context": PipelinePhase.CONTEXT,
+    "subgraph": PipelinePhase.CONTEXT,
+    "llm_reply": PipelinePhase.LLM,
+    "behavior": PipelinePhase.BEHAVIOR,
+    "meta": PipelinePhase.META,
+    "metap": PipelinePhase.META,
+    "discourse": PipelinePhase.DISCOURSE,
+    "association": PipelinePhase.ASSOCIATION,
+    "profile": PipelinePhase.PROFILE,
+    "engineering": PipelinePhase.PLANNING,
+}
+
 
 @dataclass 
 class StateSnapshot:
@@ -75,6 +91,8 @@ class DeciderStateMachine:
         self._history: List[StateSnapshot] = []
         self._phase_handlers: Dict[PipelinePhase, Callable] = {}
         self._running = True
+        # G1+G3-P5: GlobalDecider 状态底座（复用 registry 实例, 不暴露新决策器）
+        self._decider = None
 
     def register_handler(self, phase: PipelinePhase, handler: Callable):
         """Register a function to execute when this phase is reached."""
@@ -115,6 +133,22 @@ class DeciderStateMachine:
                 # Low confidence → escalate (if available)
                 pass  # Use normal path for now
 
+            # G1+G3-P5: 记录决策事件到 GlobalDecider 状态底座（不改变路由）
+            if self._decider is not None:
+                try:
+                    from core.agent.state.global_decider import Command
+                    cmd_type = phase.value
+                    cmd = Command(type=cmd_type, payload={
+                        "zone": result.get("zone"),
+                        "category": result.get("category"),
+                        "task_count": result.get("step_count", 0),
+                        "entries": result.get("ir_entries", 0),
+                        "confidence": result.get("confidence"),
+                    })
+                    self._decider.evolve(self._decider.decide(cmd))
+                except Exception:
+                    pass  # 决策记录失败不影响路由
+
         return transitions.get("normal", PipelinePhase.DONE)
 
     def transition(self, to_phase: PipelinePhase, result: dict = None):
@@ -148,17 +182,21 @@ class DeciderStateMachine:
         start_turn = self._state.turn_count  # per-run baseline for max-transition guard
 
         while current != PipelinePhase.DONE:
+            result = {}  # X5: 每轮显式重置 — 无 handler 阶段不留上轮残留
             handler = self._phase_handlers.get(current)
             if handler:
                 try:
-                    result = handler(context or {})
+                    # X4: 前序阶段结果注入 ctx — LLM/CONTEXT 等下游可消费
+                    phase_ctx = dict(context or {})
+                    phase_ctx.update(results)
+                    result = handler(phase_ctx)
                     results[current.value] = result
                 except Exception as e:
                     result = {"error": str(e)[:200]}
                     results[current.value] = result
             
-            next_phase = self.decide(current, result or {})
-            self.transition(current, result or {})
+            next_phase = self.decide(current, result)
+            self.transition(current, result)
             current = next_phase
 
             # Safety: max 20 transitions per run (not cumulative)
@@ -168,6 +206,182 @@ class DeciderStateMachine:
 
         return {"phases": list(results.keys()), "checkpoint": self._state.checkpoint,
                 "results": results}
+
+    def run_dag(self, dag, context: dict = None) -> dict:
+        """Execute a BlueprintDAG — 订阅表语义 (§14.3): 同 Tick 并行、跨 Tick 串行.
+
+        Nodes are grouped by priority (= Tick). Within one Tick, ready nodes
+        (dependencies satisfied) run in parallel via ThreadPoolExecutor;
+        the next Tick starts only after the current Tick completes.
+        async 段 (priority >= 9, meta/behavior) runs last, non-blocking order.
+
+        Each BlueprintNode.chain maps to a registered PipelinePhase handler
+        (CHAIN_TO_PHASE). Node outputs feed downstream nodes via data_key
+        edges. 环形图返回 error（不执行）。
+        """
+        from collections import deque
+        import threading
+        context = dict(context or {})
+        # 拓扑排序 (Kahn)
+        in_degree = {n.node_id: len(dag.incoming_edges(n.node_id))
+                     for n in dag.nodes}
+        ready = deque(n.node_id for n in dag.nodes if in_degree[n.node_id] == 0)
+        order = []
+        while ready:
+            nid = ready.popleft()
+            order.append(nid)
+            for e in dag.outgoing_edges(nid):
+                in_degree[e.to_node] -= 1
+                if in_degree[e.to_node] == 0:
+                    ready.append(e.to_node)
+        if len(order) != len(dag.nodes):
+            return {"error": "DAG contains cycle", "phases": order,
+                    "results": {}}
+
+        results = {}
+        node_outputs = {}
+        completed: set = set()
+        write_lock = threading.Lock()
+
+        def _run_node(nid: str):
+            """Execute one node; returns (node_id, output). Thread-safe."""
+            node = dag.get_node(nid)
+            if node is None:
+                return nid, {"status": "missing"}
+            # tool 链: 蓝图工具节点 → 权限门 → ToolRegistry 执行（2026-08-08）
+            if node.chain == "tool":
+                try:
+                    # v2 执行层（2026-08-09）: agentic 工具节点 → TaskRunner
+                    # （LLM 在节点目标范围内自主调工具 + 元认知监控 + 重规划）
+                    if node.params.get("agentic"):
+                        from core.agent.llm.task_runner import (
+                            TaskRunner, TaskConstraint)
+                        goal = (node.params.get("goal")
+                                or node.params.get("description", "")
+                                or f"执行节点 {node.node_id}")
+                        _dbus = context.get("decision_bus")
+                        runner = TaskRunner(
+                            decision_bus=_dbus,
+                            meta_feedback=context.get("meta_feedback"),
+                            model=context.get("model", ""))
+                        constraint = TaskConstraint(
+                            goal=goal,
+                            scope=node.params.get("scope", ""),
+                            allowed_tools=node.params.get("allowed_tools"),
+                            max_rounds=int(node.params.get("max_rounds", 6)),
+                            timeout_s=float(
+                                node.params.get("timeout_s", 120)),
+                            max_replans=int(
+                                node.params.get("max_replans", 1)),
+                        )
+                        _tr = runner.run(
+                            goal=goal, constraint=constraint, node_id=nid,
+                            session_id=context.get("session_id", ""),
+                            request_id=context.get("request_id", ""),
+                            messages=context.get("messages"),
+                        )
+                        return nid, {"status": _tr.status,
+                                     "task_result": _tr.to_dict()}
+                    from core.agent.blueprint.permission_engine import (
+                        PermissionEngine, has_shell_operators)
+                    tool = node.params.get("tool", "")
+                    args = node.params.get("args", {}) or {}
+                    if not tool:
+                        return nid, {"status": "error",
+                                     "error": "tool node missing tool param"}
+                    decision = PermissionEngine().evaluate(tool, args)
+                    if not decision.allowed:
+                        if ("writable root" in decision.reason
+                                or "read-only" in decision.reason):
+                            return nid, {"status": "rejected",
+                                         "error": decision.reason}
+                        if tool == "run_shell" or tool.startswith("shell:"):
+                            command = str(args.get("command", ""))
+                            if has_shell_operators(command):
+                                return nid, {"status": "rejected",
+                                             "error": "shell chaining blocked"}
+                    from core.agent.tools.registry import ToolRegistry
+                    result = ToolRegistry.execute(tool, **args)
+                    return nid, {
+                        "status": "ok", "tool": tool,
+                        "tool_result": (result.data if hasattr(result, "data")
+                                        else result),
+                    }
+                except Exception as ex:
+                    return nid, {"status": "error", "error": str(ex)[:200]}
+            phase = CHAIN_TO_PHASE.get(node.chain)
+            handler = self._phase_handlers.get(phase) if phase else None
+            # 下游数据注入: 上游节点输出按 data_key 提供（只读已完成集合）
+            node_ctx = dict(context)
+            node_ctx.update(results)
+            for e in dag.incoming_edges(nid):
+                if e.from_node in node_outputs:
+                    node_ctx[e.data_key] = node_outputs[e.from_node]
+            if handler:
+                try:
+                    out = handler(node_ctx)
+                    return nid, out
+                except Exception as ex:
+                    return nid, {"error": str(ex)[:200]}
+            return nid, {"skipped": f"no handler for chain {node.chain}"}
+
+        # 按 Tick (priority) 分组: 同 Tick 并行, 跨 Tick 串行 (§14.3)
+        tick_groups: Dict[int, List[str]] = {}
+        for nid in order:
+            node = dag.get_node(nid)
+            tick_groups.setdefault(node.priority, []).append(nid)
+
+        for tick in sorted(tick_groups.keys()):
+            pending = list(tick_groups[tick])
+            # 同 Tick 多轮收敛: 依赖可能在同一 Tick（LLM 乱序输出节点）
+            while pending:
+                # 只并行执行"无未完成入边依赖"的节点:
+                # 有同 Tick 依赖的节点留在 pending，下一轮串行收敛
+                # （避免并行读上游输出时 data_key 尚未注入的竞态）。
+                batch = []
+                for nid in pending:
+                    incoming = dag.incoming_edges(nid)
+                    if not incoming:
+                        batch.append(nid)
+                        continue
+                    # 所有入边源节点都已完成 → 可安全并行
+                    if all(
+                        e.from_node in completed or not e.required
+                        for e in incoming
+                    ):
+                        batch.append(nid)
+                if not batch:
+                    # 同 Tick 内依赖未满足 → 串行跳过（避免死锁）
+                    for nid in pending:
+                        results[nid] = {
+                            "skipped": f"dependencies not satisfied in tick {tick}",
+                        }
+                        node_outputs[nid] = results[nid]
+                        completed.add(nid)
+                    break
+                if len(batch) > 1:
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+                        futures = {ex.submit(_run_node, nid): nid for nid in batch}
+                        for fut in futures:
+                            nid_out, out = fut.result()
+                            with write_lock:
+                                results[nid_out] = out
+                                node_outputs[nid_out] = out
+                                completed.add(nid_out)
+                    pending = [nid for nid in pending if nid not in completed]
+                else:
+                    # 单节点直接执行（无并发，依赖已由 batch 筛选保证）
+                    nid = batch[0]
+                    nid_out, out = nid, _run_node(nid)[1]
+                    with write_lock:
+                        results[nid_out] = out
+                        node_outputs[nid_out] = out
+                        completed.add(nid_out)
+                    pending.remove(nid_out)
+
+        return {"phases": order, "results": results,
+                "strategy": getattr(dag, "strategy", "TEMPLATE")}
 
     def replay(self, from_checkpoint: str) -> Optional[StateSnapshot]:
         """Replay from a checkpoint (for recovery)."""

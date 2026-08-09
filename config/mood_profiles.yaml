@@ -15,6 +15,17 @@ profiles:
       - "I need actionable instructions to complete a task"
       - "find the exact location, address, or reference"
       - "show me the data directly without interpretation or analysis"
+    descriptors_zh:
+      - "给我确切的答案，我需要具体的事实"
+      - "确认这个是对还是错，是还是否"
+      - "给我具体的数值、数字或内存地址"
+      - "运行这个操作的确切结果是什么"
+      - "执行这个工具命令并返回输出"
+      - "执行具体的技术操作：扫描、修补、读取、写入"
+      - "修复这个错误，给我解决的步骤"
+      - "我需要可执行的指令来完成一个任务"
+      - "找到确切的位置、地址或引用"
+      - "直接给我数据，不要解释和分析"
 
   exploration:
     z_value: 0.0
@@ -29,6 +40,17 @@ profiles:
       - "let me explore ideas before committing to a solution"
       - "discuss the implications and possibilities"
       - "what are the pros and cons of each approach"
+    descriptors_zh:
+      - "我想理解这背后的推理和原理"
+      - "有哪些可能的方法、策略或途径"
+      - "帮我思考这个问题，探索各种选项"
+      - "你会从哪些不同角度分析这个情况"
+      - "做这个决定时我应该考虑哪些因素"
+      - "你能解释一下底层的机制或理论吗"
+      - "我对不同的视角和权衡很好奇"
+      - "在确定解决方案之前，让我先探索一下想法"
+      - "讨论一下影响和可能性"
+      - "每种方法的优缺点是什么"
 
   mirror_emotional:
     z_value: -1.0
@@ -41,6 +63,15 @@ profiles:
       - "I feel defeated, exhausted, and need emotional support"
       - "this situation is driving me crazy, I need to complain"
       - "I'm burned out and questioning everything"
+    descriptors_zh:
+      - "我很沮丧，需要发泄我的情绪"
+      - "这太难了，我觉得完全不知所措、被困住了"
+      - "我只是需要有人倾听并理解我的挣扎"
+      - "在表达情绪痛苦，不是在寻求技术解决方案"
+      - "在分享个人的挫折或失败，想要共情"
+      - "我觉得被打败了、筋疲力尽，需要情感支持"
+      - "这种情况快把我逼疯了，我需要抱怨"
+      - "我精疲力竭，怀疑一切"
 
   neutral:
     z_value: 0.0
@@ -49,3 +80,8 @@ profiles:
       - "general information exchange or update"
       - "simple greeting, acknowledgment, or small talk"
       - "quick status check or confirmation"
+    descriptors_zh:
+      - "例行的任务执行，简单的交流"
+      - "一般的信息交换或更新"
+      - "简单的问候、确认或闲聊"
+      - "快速的状态检查或确认"

@@ -193,9 +193,14 @@ class TestTelemetry(unittest.TestCase):
 
     def setUp(self):
         self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        # 日志目录隔离: 避免多个测试实例的 flush 线程并发打开
+        # ~/.memorygraph/logs 同一文件 → Windows 文件锁 PermissionError
+        self.log_dir = tempfile.mkdtemp(prefix="obs_logs_")
+        from core.agent.observability.logger import StructuredLogger
         self.telemetry = Telemetry(
             store=ObservabilityStore(self.db_path),
             store_enabled=True,
+            logger=StructuredLogger(log_dir=self.log_dir),
         )
         self.telemetry.store._ensure_connection()
 
@@ -203,6 +208,8 @@ class TestTelemetry(unittest.TestCase):
         self.telemetry.shutdown()
         os.close(self.db_fd)
         os.unlink(self.db_path)
+        import shutil
+        shutil.rmtree(self.log_dir, ignore_errors=True)
 
     def test_record_turn(self):
         trace, alerts = self.telemetry.record_turn(

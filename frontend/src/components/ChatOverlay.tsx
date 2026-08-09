@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { X, Minimize2, Maximize2, Send, Loader2, AlertCircle, MessageSquare } from 'lucide-react';
 import { useOverlayStore } from '@/stores/overlayStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -39,12 +39,15 @@ export function ChatOverlay() {
       const resp = await sendMessage(sid, text);
       const reply = resp.content || '';
       if (reply && reply !== '(no reply)' && reply !== '(empty)') {
-        addAI(reply, { taskGraph: resp.task_graph, metadata: { taskGraph: resp.task_graph, latencyMs: resp.latency_ms } } as any);
+        addAI(reply, {
+          taskGraph: resp.task_graph ?? undefined,
+          metadata: { taskGraph: resp.task_graph ?? undefined, latencyMs: resp.latency_ms },
+        });
       }
     } catch (e: any) {
       const msg = e?.message || String(e);
       setError(msg);
-      addAI(`[错误] ${msg}`, {} as any);
+      addAI(`[错误] ${msg}`);
     } finally { setThinking(false); }
   }, [inputValue, sessionId, isThinking, addUser, addAI, setSessionId, setThinking]);
 

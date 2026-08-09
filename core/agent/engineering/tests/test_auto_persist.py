@@ -24,6 +24,7 @@ class TestAutoPersist:
 
     def test_knowledge_auto_saved(self, pers):
         kg = KnowledgeGraph(persistence=pers)
-        kg.add("Custom Rule", __import__("core.agent.v3_2.engineering_chain.models", fromlist=["KnowledgeType"]).KnowledgeType.CONSTRAINT)
+        from core.agent.engineering.models import KnowledgeType
+        kg.add("Custom Rule", KnowledgeType.CONSTRAINT)
         rows = pers._store.load_nodes_by_session("default", domain="E")
         assert any(r["node_type"] == "constraint" for r in rows)

@@ -28,8 +28,8 @@ class PCRBridge:
         if self._loaded: return
         self._loaded = True
         try:
-            from core.agent.pcr_router_v2 import PCRV2Router
-            self._router = self._router or PCRV2Router()
+            from core.agent.pcr_router_v2 import PCRRouterV2
+            self._router = self._router or PCRRouterV2()
         except Exception as e:
             logger.debug("PCRV2Router: %s", e)
 
@@ -332,7 +332,11 @@ class TopicTreeBridge:
         return getattr(self._tree, 'get_active_path', lambda: [])() if self._tree else []
 
     def get_summary(self, level: int = 2) -> dict:
-        return {}  # Distance-decay summary (existing code, needs wiring)
+        # T3: V2 真数据（此前恒 {}）
+        self._ensure()
+        if self._tree is None:
+            return {}
+        return self._tree.get_tree_summary()
 
 
 # ═══ OBSERVABILITY (ENGINEERING_OBSERVABILITY.md, 865L) ═══
@@ -374,8 +378,8 @@ class BehaviorGraphBridge:
     def _ensure(self):
         if self._engine is None:
             try:
-                from core.agent.behavior.llm_collaborative import BehaviorCollaborative
-                self._engine = BehaviorCollaborative()
+                from core.agent.behavior.llm_collaborative import BehaviorLLMCollaborator
+                self._engine = BehaviorLLMCollaborator()
             except Exception:
                 pass
 

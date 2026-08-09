@@ -2,6 +2,7 @@
 
 All optional: if dependencies aren't installed, gracefully fall back.
 """
+import asyncio
 import logging, json, os
 from typing import Optional, Dict, Any
 
@@ -41,7 +42,17 @@ class NATSBridge:
         if not self._available:
             return False
         try:
-            self._nc = await self._nats().connect(self._server_url)
+            # 硬性总超时：本地无 NATS 服务时 connect_timeout=2s 仍会内部重试
+            # （_select_next_server 多次），代理/防火墙拦截 SYN 时可能无限挂起。
+            self._nc = await asyncio.wait_for(
+                self._nats().connect(
+                    self._server_url,
+                    connect_timeout=2,
+                    max_reconnect_attempts=0,
+                    allow_reconnect=False,
+                ),
+                timeout=5,
+            )
             logger.info("NATS connected: %s", self._server_url)
             return True
         except Exception as e:

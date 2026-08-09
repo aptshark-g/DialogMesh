@@ -11,8 +11,14 @@ _registry = SubsystemRegistry()
 _registry.register("state_machine", "core.agent.event.statemachine:DeciderStateMachine",
                    init_order=0, description="8-phase StateMachine, 12 transitions")
 
-_registry.register("storage", "core.agent.event.storage:StorageLayer",
-                   init_order=0, required=False, description="Hot/Warm/Cold 3-tier storage")
+def _storage_factory():
+    """StorageLayer + TieredStorageManager (G10-P2 分层接线)."""
+    from core.agent.event.storage import StorageLayer
+    return StorageLayer(enable_tiered=True)
+
+_registry.register("storage", "", init_order=0, required=False,
+                   description="Hot/Warm/Cold 3-tier storage + TieredStorageManager (G10-P2)",
+                   factory=_storage_factory)
 
 _registry.register("event_log", "core.agent.api.api_event_log:EventLog",
                    init_order=0, description="SQLite+WAL event persistence")
@@ -21,14 +27,17 @@ _registry.register("tracer", "core.agent.event.tracer:PipelineTracer",
                    init_order=0, required=False, description="Pipeline phase tracer")
 
 # ── Tier 1: Core cognition ──
-_registry.register("discourse_tree", "core.agent.compiler.discourse_block_tree:DiscourseBlockTreeManager",
-                   init_order=10, description="Discourse block tree for conversation structure")
+_registry.register("discourse_tree", "core.agent.discourse_block_tree.manager:DiscourseBlockTreeManager",
+                   init_order=10, description="Discourse block tree for conversation structure (B kernel, R6 D3)")
 
 _registry.register("conversation_tracker", "core.agent.conversation.tracker:ConversationTracker",
                    init_order=10, description="Multi-dimensional follow-up disambiguation")
 
-_registry.register("topic_tree", "core.agent.topic_tree.manager:TopicTreeManager",
-                   init_order=10, description="Topic heat tracking + routing")
+_registry.register("topic_tree", "core.agent.topic_tree.manager_v2:TopicTreeManagerV2",
+                   init_order=10, description="Topic tree V2 (唯一内核, T4 归一)")
+
+_registry.register("pcr_router", "core.agent.pcr_router_v2:PCRRouterV2",
+                   init_order=10, required=False, description="PCR V2 router (zero-hardcoded)")
 
 _registry.register("granularity", "core.agent.compiler.discourse_block_tree:DiscourseBlockGranularityRegulator",
                    init_order=10, required=False, description="BDI+BOR adaptive split/merge")
@@ -36,10 +45,15 @@ _registry.register("granularity", "core.agent.compiler.discourse_block_tree:Disc
 _registry.register("behavior_graph", "core.agent.behavior.adapter:BehaviorGraphAdapter",
                    init_order=15, description="Behavior chain recording + prediction")
 
+_registry.register("subgraph", "core.agent.v4.cognitive.subgraph_compiler:SubgraphCompiler",
+                   init_order=70, required=False, description="Subgraph Compiler")
+
 # ── Tier 2: Analysis engines ──
-_registry.register("ocean_analyst", "core.agent.v4.cognitive.ocean_profile:OCEANProfile",
-                   init_order=20, required=False, factory=True,
-                   description="OCEAN 10-dimension personality profiling")
+# P11: 双名注册归一 — registry.py 已注册 OCEANProfileAnalyst，这里必须同名同实现，
+# 避免"不同类同名"（OCEANProfile 无 analyze() → 消费方 AttributeError）。
+_registry.register("ocean_analyst", "core.agent.v4.cognitive.ocean_profile:OCEANProfileAnalyst",
+                   init_order=20, required=False,
+                   description="OCEAN 10-dimension personality profiling (analyst)")
 
 # ── Missing from factory but should be registered ──
 _registry.register("tool_registry", "core.agent.tool_registry.registry:ToolRegistry",
@@ -58,8 +72,9 @@ _registry.register("cascade_detector", "core.agent.event.closure:CascadeDetector
 _registry.register("hot_reloader", "core.agent.event.closure:HotReloader",
                    init_order=40, required=False, description="Hot reload engine")
 
-_registry.register("meta_cognition", "core.agent.metacognition:MetaCognitionAdapter",
-                   init_order=20, required=False, description="Metacognitive review + audit")
+_registry.register("meta_cognition", "core.agent.v4.cognitive.metacognition:MetaCognition",
+                   init_order=20, required=False,
+                   description="MetaCognition v4 唯一内核（M8 归一: v3 Adapter 已归档）")
 
 _registry.register("mind", "core.agent.v4.cognitive.mind:Mind",
                    init_order=20, required=False, description="Unified cognitive workspace")
@@ -123,8 +138,25 @@ _registry.register("l3_validator", "core.agent.association.l3_intent:MultiPerspe
                    description="L3: Multi-perspective validation")
 
 # ── Phase 1: Storage layer (ChunkStore, Splitter, Context) ──
-_registry.register("chunk_store", "core.agent.storage.chunk_store:ChunkStore",
-                   init_order=5, required=False, description="Semantic atom vector store (ChromaDB)")
+def _chunk_store_factory():
+    """ChunkStore backend 可配置 (G10-P1): DM_CHUNK_BACKEND=unified|in_memory."""
+    import os
+    from core.agent.storage.chunk_store import ChunkStore
+    backend = os.environ.get("DM_CHUNK_BACKEND", "in_memory")
+    bge = None
+    if backend == "unified":
+        try:
+            from core.infrastructure.model_service import get_model_service
+            svc = get_model_service()
+            if svc.status == "warm":
+                bge = svc
+        except Exception:
+            bge = None
+    return ChunkStore(backend=backend, bge_model=bge)
+
+_registry.register("chunk_store", "", init_order=5, required=False,
+                   description="Semantic atom vector store (in_memory|chromadb|unified)",
+                   factory=_chunk_store_factory)
 
 _registry.register("semantic_splitter", "core.agent.storage.semantic_splitter:SemanticSplitter",
                    init_order=5, required=False, description="Recursive splitter with overlap + non-chunkable detection")

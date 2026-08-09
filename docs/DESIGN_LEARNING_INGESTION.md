@@ -242,6 +242,6 @@ def learn(self, hypotheses, intent) -> LearningResult:
 | P2 | SelfCheckGPT 三层可信度 | ✅ |
 | P3 | ChromaDB 存储 + HNSW 聚类 | ✅ |
 | P4 | 凝练管线 (cluster → LLM → rule → EventLog) | ✅ |
-| P5 | OCR 可选开关 | ⬜ |
+| P5 | OCR 可选开关 (PaddleOCR — scan detection → auto-trigger) | ✅ |
 | P6 | 多模态模型可选开关 | ⬜ |
-| P7 | credibility 学习闭环 (Meta → 修正 domain_authority) | ⬜ |
+| P7 | credibility 学习闭环 (Meta → 修正 domain_authority) | ✅ |

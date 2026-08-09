@@ -4,6 +4,40 @@
 
 ---
 
+## 状态核查（2026-08-06）— 本文档与当前代码的对应
+
+> 核查方法: 源码逐条对照（stubs_api / api_gateway / GatewayPage / FlowchartCanvas）。
+
+### 已解决（M1-M9 施工后）
+
+| 条目 | 原问题 | 现状（实测） |
+|---|---|---|
+| §7 C 类缺失端点 | getBelief/getSubgraph/getAnnotations/getProfileCorrections 404 | ✅ 全部注册内核 dispatch: stubs_api.py L217-317（/subgraph /subgraph/cache /belief /profile/corrections /annotations） |
+| §8a stub 覆盖真实网关 | stub 空数组遮蔽 switch 代理 | ✅ 已消除: stubs_api.py 第 4 行注释"Gateway 路由由 api_gateway.py 处理", 网关端点统一走 api_gateway.py 代理 switch |
+| §8b 测试连接 0ms | 只读缓存不实测 | ✅ api_gateway 真 HTTP GET base_url 计时 |
+| §8c ProviderCard 抖动 | memo 定义在组件体内 | ✅ 已移文件顶层（GatewayPage.tsx L65） |
+| §10 ReactFlow 鼠标失效 | 环境层阻断（旧结论） | ✅ ConversationGraph（ReactFlow）交互已修复（2026-08-07 复核: 真根因 = 429 限流 + fitView minZoom 钳制, 见 §10f）; 任务画布 FlowchartCanvas（纯 SVG）在用 |
+
+### 仍然适用（方法论, 已系统化）
+
+- §7 方法论（读 TS interface → diff 后端 → 以组件 `?.` 访问链为准）已落地为
+  `docs/only/frontend/FE_CONTRACT_REGISTRY_20260806.md`（全量格式登记 + 端点矩阵）。
+- §7 教训 5（改后必须重启后端 + curl 验证）→ B5 绑定 smoke 的必做步骤。
+
+### 新增问题（2026-08-06 用户报告, 与 §7 同源不同层）— ✅ 已施工
+
+- **状态生命周期缺失（内存态 vs 持久化）**: LLM 规划任务图 → 后端直接落盘
+  `task_graphs/{sid}.json`（原 v3_session_api.py:399-407, 保护=文件存在性非版本号）;
+  前端编辑 PUT 无条件覆盖; 无内存态工作区 + 无版本冲突检测 → 竞态下前端操作
+  被刷新/新规划吞掉。
+- **2026-08-06 已修复（阶段 B P0）**: `TASK_GRAPH_VERSIONING_IMPL_20260806.md` —
+  内存态工作区 + version + 409 冲突检测 + 前端乐观更新（冲突提示条:
+  覆盖服务端/放弃本地）。后端 8/8 新测试 + 86/86 api 回归 + tsc/build 绿。
+- **2026-08-06 同型已推广（B1）**: 图谱编辑 /v6/edit/* 全部版本化
+  （engine._viz_version + 409 + 前端冲突条）, 记录 `B1_B6_IMPL_20260806.md`。
+
+---
+
 ## 1. 端口占用 (重复 4+ 次)
 
 ### 现象
@@ -490,3 +524,23 @@ ReactFlow 最简版也无法响应鼠标事件, 说明问题不在我们的代�
 | 代码量 | 少 | ~200 行 |
 | 调试成本 | 高(闭源内部 Store) | 低(全部可控) |
 | 适配风险 | 高(框架版本/环境) | 低(标准 DOM API) |
+
+### 10f. 2026-08-07 复核 — 真实根因（ConversationGraph 已修复）
+
+> B5 UI 测试实测（Playwright + 自带 chromium + vite dev 同源代理）推翻
+> "环境阻断"结论：ReactFlow 本身工作正常。之前的 20 轮调试被两个环境问题
+> 误导，本轮全部定位并修复：
+
+| # | 现象 | 真实根因 | 修复 |
+|---|------|----------|------|
+| 1 | 图谱页"收不到 pointer 事件"、节点 0 个 | **429 限流**：RateLimitMiddleware 按 `x-session-id` 分桶，前端不带 → 全部请求共享 `anonymous` 桶（burst=20, refill 1/s）；页面加载瞬时 16-18 个并发请求（health/profile/trace/abc/mind/graph/tree/objects ×2 StrictMode）直接打爆 → `getGraph().catch(()=>null)` 吞 429 → 图谱空 → 无节点可交互 | 前端全局带 `x-session-id`（sessionStorage 每标签页一身份）；后端限流默认关闭（单机模式无意义, `DM_SERVICE_ENABLE_RATE_LIMIT=1` 开启） |
+| 2 | 节点渲染 20 个但拖拽/平移/右键全失败 | **fitView minZoom 钳制**：ReactFlow 默认 `minZoom=0.5`；dagre 链式布局 20 节点高 2520px，容器 525px 需要 scale≈0.17，被钳在 0.5 → 只显示图中段，首尾节点全在视口外 → 鼠标事件落在空画布 | `<ReactFlow minZoom={0.05}>` + 节点就绪后多重试 `fitView`（80/250/500/900ms, 幂等） |
+| 3 | pane 平移测试恒失败 | 测试读 `viewport.getAttribute('transform')`（SVG attribute），ReactFlow v11 的 transform 是 CSS `style.transform` | 测试改读 `el.style.transform` |
+| 4 | 右键菜单测试歧义 | `getByText('编辑名称')` 命中菜单按钮 + 页面提示文案两处 | 测试改 `getByRole('button', { name: '编辑名称' })` |
+
+### 10g. 复核教训（修正 10d）
+
+1. **先看数据通不通，再看交互**：交互测试失败时第一步是确认数据真加载（429/空响应会被 `catch(()=>null)` 静默吞掉，表现成"没事件"）
+2. **fitView 不生效先查 minZoom/maxZoom**：默认 minZoom=0.5 会把大图的 fit scale 钳住，效果 = "fitView 算了但没算对"
+3. **节点在视口外 ≠ 交互坏**：Playwright `toBeVisible` 只查 CSS 可见性，不查遮挡/视口外；`click` 报 "element is outside of the viewport" 时先看几何
+4. 旧 §10 的"环境阻断"结论（React 19 + ReactFlow 11 不兼容）在本轮数据下不成立——当时缺的是同源代理 + 限流排查

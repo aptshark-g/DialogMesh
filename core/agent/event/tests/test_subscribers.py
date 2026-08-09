@@ -121,8 +121,10 @@ def test_wire_all_subscribers():
     e._l2_5_belief = DummyL2()
     
     stats = wire_subscribers(e)
-    assert stats["subscribers"] == 6
-    assert len(e._event_subscribers) == 6
+    # Phase 6（蓝图 §7.3）: 关联链不再广播订阅（独立服务 M→1 定向通道）。
+    assert stats["subscribers"] == 5
+    assert len(e._event_subscribers) == 5
+    assert "association" not in e._event_subscribers
 
 
 class DummyBG:

@@ -83,12 +83,15 @@ class MetaCognition:
     """
 
     def __init__(self, llm_provider=None, vcs: GlobalVersionControl = None,
-                 persist_dir: str = "data/meta"):
+                 persist_dir: str = "data/meta", meta_consumer: Any = None):
         self._llm = llm_provider
         self._vcs = vcs or GlobalVersionControl()
         self._queue: List[ReviewItem] = []
         self._decisions: List[MetaDecision] = []
         self._persist_dir = persist_dir
+        # M8 归一: v6 MetaConsumer 作为本内核的组件（学习闭环接入层），
+        # 不再作为"第三套并行实现"独立存在。
+        self._meta_consumer = meta_consumer
         os.makedirs(persist_dir, exist_ok=True)
         self._load()
 
@@ -127,6 +130,40 @@ class MetaCognition:
         # Scan stale annotations (placeholder)
         # Scan unreviewed patterns (placeholder)
         return items
+
+    def consume_trace(self, trace, turn_count: int) -> Dict[str, Any]:
+        """M8 归一入口: 消费 ExecutionTraceV3 → 建议转审核队列。
+
+        v6 MetaConsumer 原为"第三套并行实现"（runtime/engine 从未接线）。
+        现在作为本内核组件: consume() 产出的建议直接进入审核队列（ReviewItem），
+        裁决/复盘/自我复盘仍由本内核统一处理。
+        """
+        if self._meta_consumer is None:
+            try:
+                from core.agent.v4.cognitive.meta_consumer import MetaConsumer
+                self._meta_consumer = MetaConsumer()
+            except Exception as e:
+                logger.debug("MetaConsumer unavailable: %s", e)
+                return {"adjust": False}
+        advice = self._meta_consumer.consume(trace, turn_count)
+        if advice and advice.get("adjust"):
+            warnings = advice.get("warnings") or []
+            for warning in warnings[:3]:
+                self.submit(
+                    source="self",
+                    target="learning_loop",
+                    data={
+                        "warning": warning,
+                        "turn": turn_count,
+                        "suggestions": (advice.get("suggestions") or [])[:3],
+                    },
+                    priority=(
+                        ReviewPriority.URGENT if "REJECT" in warning.upper()
+                        else ReviewPriority.NORMAL
+                    ),
+                    mode=DecisionMode.RAPID,
+                )
+        return advice
 
     def process_queue(self, max_items: int = 3) -> List[ReviewItem]:
         """Process pending review items (urgent first). Returns reviewed items."""

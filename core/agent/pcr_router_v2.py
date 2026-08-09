@@ -16,6 +16,8 @@ from typing import Optional, Dict, Any, List
 import re, math, json
 import logging
 
+from core.agent.pcr_dimensions import run_axis
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,6 +100,7 @@ class PCRResult:
     y_axis: float    = 0.5   # operational granularity (0=atomic, 1=complex)
     z_axis: float    = 0.0   # feedback expectation (-1=mirror, 0=explore, +1=solution)
     zone: str        = "MIXED"
+    labels: Dict[str, str] = field(default_factory=dict)  # compass labels (§2.3)
     structural: Optional[StructuralFeatures] = None
     cognitive_level: str = "mixed"
     execution_mode: str = "slow"
@@ -132,10 +135,43 @@ class PCRRouterV2:
         cls._llm_provider = provider
 
     @classmethod
+    def warm_up(cls, config: dict = None):
+        """Lifecycle warm-up (IPCRRouter contract). Local-only init, no external calls.
+
+        Pre-loads lazy assets (mood vectors / NRC-VAD lexicon) so the first
+        route() call does not pay the cold-start cost. Config is accepted for
+        interface compatibility and currently unused — structural routing is
+        stateless.
+        """
+        try:
+            cls._load_mood_vectors()
+        except Exception:
+            pass
+        try:
+            cls._load_vad_lexicon()
+        except Exception:
+            pass
+
+    @classmethod
+    def shutdown(cls):
+        """Lifecycle shutdown (IPCRRouter contract). Idempotent no-op."""
+        cls._mood_vectors = None
+        cls._mood_labels = None
+        cls._mood_zvalues = None
+        cls._vad_lexicon = None
+
+    @classmethod
     def _load_mood_vectors(cls):
         """Load mood_profiles.yaml → BGE vectors once."""
         if cls._mood_vectors is not None:
             return
+
+        # Offline-first: model weights are cached locally (HF_HUB_OFFLINE).
+        # Prevents sentence_transformers from probing huggingface.co and
+        # failing the whole mood path when the network is restricted.
+        import os
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
         import yaml, json
         from pathlib import Path
@@ -147,11 +183,16 @@ class PCRRouterV2:
             logger.debug("mood_profiles.yaml not found, using fallback")
             return
 
-        descriptors, labels, zvalues = [], [], {}
+        descriptors, labels, zvalue_list, zvalues = [], [], [], {}
         for category, profile in config.get("profiles", {}).items():
             for d in profile.get("descriptors", []):
                 descriptors.append(d)
                 labels.append(category)
+                zvalue_list.append(profile.get("z_value", 0.0))
+            for d in profile.get("descriptors_zh", []):
+                descriptors.append(d)
+                labels.append(category)
+                zvalue_list.append(profile.get("z_value", 0.0))
             zvalues[category] = profile.get("z_value", 0.0)
 
         if not descriptors:
@@ -159,34 +200,58 @@ class PCRRouterV2:
 
         import numpy as np
         vecs = None
-        
+
+        # Try 0: 复用 SemanticEncoder（GAP-O3 模型统一）— 若本地 bge-small-zh
+        # 已就绪, 优先用它（与上下文/子图共用单模型内存, 消除双模型并存）。
+        # 无本地模型时静默回退现有链（不新增失败路径）。
+        try:
+            from core.agent.compiler.semantic_encoder import SemanticEncoder
+            enc = SemanticEncoder()
+            # 本地模型存在才尝试（否则抛 FileNotFoundError → 回退）
+            if enc is not None:
+                vecs = np.array([
+                    enc.encode(d) for d in descriptors
+                ])
+                vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
+                cls._local_embed_model = enc
+                cls._mood_source = "semantic_encoder"
+                logger.debug("SemanticEncoder loaded: %d descriptors", len(descriptors))
+        except Exception as e0:
+            logger.debug("SemanticEncoder unavailable, fallback chain: %s", e0)
+            vecs = None
+
         # Try 1: LM Studio nomic embedding (local, no numpy conflict)
-        try:
-            import urllib.request, json
-            embeddings = []
-            for d in descriptors:
-                req = urllib.request.Request(
-                    "http://127.0.0.1:1234/v1/embeddings",
-                    data=json.dumps({"model": "text-embedding-nomic-embed-text-v1.5", "input": d}).encode(),
-                    headers={"Content-Type": "application/json"}
-                )
-                resp = urllib.request.urlopen(req, timeout=5)
-                emb = json.loads(resp.read())["data"][0]["embedding"]
-                embeddings.append(emb)
-            vecs = np.array(embeddings)
-            vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
-            logger.debug("LM Studio nomic loaded: %d descriptors", len(descriptors))
-        except Exception as e1:
-            logger.debug("LM Studio nomic unavailable: %s", e1)
-        
+        if vecs is None:
+            try:
+                import urllib.request, json
+                embeddings = []
+                for d in descriptors:
+                    req = urllib.request.Request(
+                        "http://127.0.0.1:1234/v1/embeddings",
+                        data=json.dumps({"model": "text-embedding-nomic-embed-text-v1.5", "input": d}).encode(),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    resp = urllib.request.urlopen(req, timeout=5)
+                    emb = json.loads(resp.read())["data"][0]["embedding"]
+                    embeddings.append(emb)
+                vecs = np.array(embeddings)
+                vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
+                cls._mood_source = "nomic"
+                logger.debug("LM Studio nomic loaded: %d descriptors", len(descriptors))
+            except Exception as e1:
+                logger.debug("LM Studio nomic unavailable: %s", e1)
+
         # Try 2: sentence_transformers
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
-            vecs = np.array([model.encode(d, normalize_embeddings=True) for d in descriptors])
-        except Exception as e1:
-            logger.debug("sentence_transformers unavailable: %s", e1)
-        
+        if vecs is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+                vecs = np.array([model.encode(d, normalize_embeddings=True) for d in descriptors])
+                cls._local_embed_model = model
+                cls._mood_source = "bge"
+            except Exception as e1:
+                logger.debug("sentence_transformers unavailable: %s", e1)
+
         # Try 2: fastembed (lighter, CPU-optimized)
         if vecs is None:
             try:
@@ -195,6 +260,8 @@ class PCRRouterV2:
                 raw = list(model.embed(descriptors))
                 vecs = np.array(raw)
                 vecs = vecs / (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-8)
+                cls._local_embed_model = model
+                cls._mood_source = "bge"
             except Exception as e2:
                 logger.debug("fastembed unavailable: %s", e2)
         
@@ -206,6 +273,8 @@ class PCRRouterV2:
                 from sentence_transformers import SentenceTransformer
                 model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
                 vecs = np.array([model.encode(d, normalize_embeddings=True) for d in descriptors])
+                cls._local_embed_model = model
+                cls._mood_source = "bge"
             except Exception as e3:
                 logger.debug("BGE with mirror also failed: %s", e3)
                 return
@@ -213,6 +282,7 @@ class PCRRouterV2:
         cls._mood_vectors = vecs
         cls._mood_labels = labels
         cls._mood_zvalues = zvalues
+        cls._mood_zvalue_list = zvalue_list
         logger.debug("Mood vectors loaded: %d descriptors", len(descriptors))
 
     @classmethod
@@ -249,25 +319,30 @@ class PCRRouterV2:
     # ── Core routing ──
 
     @classmethod
-    def route(cls, text: str, history: list = None) -> PCRResult:
-        """Zero-keyword routing: structural features → coordinate → zone."""
+    def route(cls, text: str, history: list = None,
+              subgraph_prior: str = None) -> PCRResult:
+        """Zero-keyword routing: structural features → coordinate → zone.
 
-        # Y-axis: operational granularity from structural features
+        subgraph_prior: expected-context text from the subgraph/association
+        chain (DESIGN_PCR §5). When provided, X-axis distance is measured
+        against this real reference (1 - cos(query, prior)); without it, X
+        degrades explicitly to structural novelty (no fake baseline).
+        """
+
+        # Dimension units (DESIGN_PCR §3.1): each axis is a registry of
+        # deterministic/vector/llm units; first non-None wins.
         sf = StructuralFeatures.extract(text)
-        
-        # LLM entity gap-fill: regex misses Chinese technical terms
-        if sf.entity_count == 0 and len(text) > 10:
-            llm_ents = cls._llm_entities(text)
-            if llm_ents:
-                sf.entity_count = max(sf.entity_count, llm_ents)
-        
-        y = cls._compute_granularity(sf)
+        ctx = {"structural": sf, "prior": subgraph_prior}
 
-        # Z-axis: feedback expectation from mood vectors
-        z = cls._compute_mood(text)
+        y = run_axis("y", text, ctx)
+        z = run_axis("z", text, ctx)
+        x = run_axis("x", text, ctx)
 
-        # X-axis: cognitive distance from vocabulary novelty
-        x = cls._compute_distance(text)
+        # Defensive defaults — every axis has a terminal deterministic unit,
+        # but never let a unit failure break the router.
+        y = y if y is not None else 0.5
+        z = z if z is not None else 0.0
+        x = x if x is not None else 0.3
 
         # Zone routing
         zone = cls._zone_from_xyz(x, y, z)
@@ -283,6 +358,7 @@ class PCRRouterV2:
 
         return PCRResult(
             x_axis=x, y_axis=y, z_axis=z, zone=zone,
+            labels=cls._compass_labels(x, y, z, zone),
             structural=sf,
             cognitive_level=cls._cognitive_level(x, y, z),
             execution_mode=cls._execution_mode(zone),
@@ -291,118 +367,214 @@ class PCRRouterV2:
                      "sf_words": sf.word_count, "sf_cjk": sf.cjk_ratio},
         )
 
-    # ── Axis computation ──
+    @classmethod
+    def _compass_labels(cls, x: float, y: float, z: float, zone: str) -> Dict[str, str]:
+        """Compass labels for LLM navigation (DESIGN_PCR §2.3).
+
+        Deterministic approximation until the LLM compass (JSON-schema
+        constrained, §3.3.4) lands: temperature from z, distance from x,
+        value from zone semantics. Two views stay independent — labels serve
+        the LLM, coordinates serve the algorithm; conflicts are recorded, not
+        arbitrated.
+        """
+        temperature = "neutral"
+        if z < -0.15:
+            temperature = "cold"
+        elif z > 0.15:
+            temperature = "warm"
+
+        distance = "mid"
+        if x < 0.2:
+            distance = "near"
+        elif x > 0.5:
+            distance = "far"
+
+        value = {"PRECISION": "high", "ABYSS": "high",
+                 "ATOMIC": "medium", "EXPLORE": "medium",
+                 "PSYCHE": "low", "MIXED": "low"}.get(zone, "medium")
+
+        return {"temperature": temperature, "distance": distance, "value": value}
+
+    # ── Axis computation — unit forwarding methods (DESIGN_PCR §3.1) ──
+    # Each method backs one registered DimensionUnit; return None to let the
+    # next unit in the axis take over. Behaviour identical to the pre-split
+    # single _compute_* methods.
 
     @classmethod
-    def _compute_granularity(cls, sf: StructuralFeatures) -> float:
-        """Y-axis: 0 = atomic, 1 = complex workflow."""
+    def _granularity_structural(cls, text: str, sf: StructuralFeatures) -> Optional[float]:
+        """Y: formula value, or None when LLM gap-fill should take over."""
+        if sf is None:
+            return None
+        if sf.entity_count == 0 and len(text or "") > 10:
+            return None  # let the LLM entity unit fill the gap first
         y = min(sf.verb_count / 5, 1.0) * 0.4 \
           + min(sf.entity_count / 5, 1.0) * 0.3 \
           + min(sf.word_count / 20, 1.0) * 0.3
         return round(y, 3)
 
     @classmethod
-    def _compute_mood(cls, text: str) -> float:
-        """Z-axis: -1 = mirror, 0 = explore, +1 = solution.
+    def _granularity_llm(cls, text: str, sf: StructuralFeatures) -> Optional[float]:
+        """Y: LLM entity gap-fill recompute (only when structural yields none)."""
+        if not text or not text.strip() or sf is None:
+            return None
+        if sf.entity_count > 0 or len(text) <= 10:
+            return None  # no gap to fill — structural unit already handled it
+        llm_ents = cls._llm_entities(text)
+        if llm_ents:
+            sf.entity_count = max(sf.entity_count, llm_ents)
+        # Direct formula — must NOT re-enter _granularity_structural, which
+        # would yield again (entity_count may still be 0 → None → y=0.5
+        # fallback, collapsing zh/en into a fake "consistent" MIXED).
+        y = min(sf.verb_count / 5, 1.0) * 0.4 \
+          + min(sf.entity_count / 5, 1.0) * 0.3 \
+          + min(sf.word_count / 20, 1.0) * 0.3
+        return round(y, 3)
 
-        Priority: BGE mood vectors > NRC-VAD lexicon > structural fallback."""
+    @classmethod
+    def _mood_vector(cls, text: str) -> Optional[float]:
+        """Z: mood class-aggregated soft vote (WEAK signal offline, see §8.2)."""
         if not text or not text.strip():
-            return 0.0
-
-        # 1. LM Studio nomic mood vectors (primary)
+            return None
         cls._load_mood_vectors()
-        if cls._mood_vectors is not None:
-            try:
-                import urllib.request, json, numpy as np
-                req = urllib.request.Request(
-                    "http://127.0.0.1:1234/v1/embeddings",
-                    data=json.dumps({"model": "text-embedding-nomic-embed-text-v1.5", "input": text}).encode(),
-                    headers={"Content-Type": "application/json"}
-                )
-                resp = urllib.request.urlopen(req, timeout=5)
-                v = np.array(json.loads(resp.read())["data"][0]["embedding"])
-                v = v / (np.linalg.norm(v) + 1e-8)
-                idx = int(np.argmax(np.dot(cls._mood_vectors, v)))
-                return cls._mood_zvalues.get(cls._mood_labels[idx], 0.0)
-            except Exception:
-                pass
+        if cls._mood_vectors is None:
+            return None
+        v = cls._query_embed(text)
+        if v is None:
+            return None
+        import numpy as np
+        v = np.asarray(v, dtype=np.float64)
+        if v.ndim == 1:
+            v = v[np.newaxis, :]
+        scores = np.dot(cls._mood_vectors, v.T).flatten()
+        class_scores = {}
+        for i, lab in enumerate(cls._mood_labels):
+            class_scores[lab] = max(class_scores.get(lab, -1e9), scores[i])
+        cats = list(class_scores.keys())
+        cs = np.array([class_scores[c] for c in cats], dtype=np.float64)
+        # softmax temperature from config (baseline 0.15); adaptive tier later
+        from core.agent.pcr_dimensions import axis_config
+        temp = float(axis_config("z").get("softmax_temp", 0.15))
+        exp_s = np.exp((cs - cs.max()) / temp)
+        w = exp_s / exp_s.sum()
+        zv = np.array([cls._mood_zvalues[c] for c in cats], dtype=np.float64)
+        z = float(np.dot(w, zv))
+        return round(max(-1.0, min(1.0, z)), 3)
 
-        # 2. NRC-VAD lexicon (secondary)
+    @classmethod
+    def _mood_nrc(cls, text: str) -> Optional[float]:
+        """Z: NRC-VAD lexicon (English dominance/valence)."""
+        if not text or not text.strip():
+            return None
         cls._load_vad_lexicon()
-        if cls._vad_lexicon is not None:
-            words = re.findall(r'[a-zA-Z]+', text.lower())
-            if words:
-                vs, ds = [], []
-                for w in words:
-                    if w in cls._vad_lexicon:
-                        v, a, d = cls._vad_lexicon[w]
-                        vs.append(v)
-                        ds.append(d)
-                if vs:
-                    avg_d = sum(ds) / len(ds)
-                    avg_v = sum(vs) / len(vs)
-                    # High dominance + high valence → solution, high arousal → mirror
-                    if avg_d > 0.1:
-                        return 1.0 if avg_v > 0 else 0.0
-                    elif avg_d < -0.3:
-                        return -1.0
-                    return 0.0
-
-        # 3. Structural fallback (tertiary)
-        sf = StructuralFeatures.extract(text)
-        # Signals tier: explicit markers take priority
-        if sf.imperative_markers > 0:
-            return 1.0  # imperatives → solution
-        if sf.question_markers > 0:
-            return 0.0  # questions → exploration
+        if cls._vad_lexicon is None:
+            return None
+        words = re.findall(r'[a-zA-Z]+', text.lower())
+        if not words:
+            return None
+        vs, ds = [], []
+        for w in words:
+            if w in cls._vad_lexicon:
+                v, a, d = cls._vad_lexicon[w]
+                vs.append(v)
+                ds.append(d)
+        if not vs:
+            return None
+        avg_d = sum(ds) / len(ds)
+        avg_v = sum(vs) / len(vs)
+        if avg_d > 0.1:
+            return 1.0 if avg_v > 0 else 0.0
+        elif avg_d < -0.3:
+            return -1.0
         return 0.0
 
     @classmethod
-    def _compute_distance(cls, text: str) -> float:
-        """X-axis: 0=near(familiar), 1=far(novel). Design: BGE(S,O)cos.
-
-        Upgraded: nomic 768d (S,O) cosine proxy for BGE + IDF correction.
-        Fallback: entity_density (structural only).
-        """
+    def _mood_structural(cls, text: str) -> Optional[float]:
+        """Z: imperative/question structural fallback (terminal unit)."""
         if not text or not text.strip():
-            return 0.3
-
+            return 0.0
         sf = StructuralFeatures.extract(text)
-        entity_density = sf.entity_count / max(1, sf.word_count)
+        if sf.imperative_markers > 0:
+            return 1.0
+        if sf.question_markers > 0:
+            return 0.0
+        return 0.0
 
-        # Try Stanza SVO → nomic cosine (replaces BGE)
+    @classmethod
+    def _distance_prior(cls, text: str, prior: str) -> Optional[float]:
+        """X: 1 - cos(query, prior) with shared-vocab correction.
+
+        DATA (2026-08-01): short-text BGE 1-cos has poor resolution as a
+        novelty meter ("量子退火 + related prior" → X=0.51). Only reliable
+        when prior is a REAL subgraph/history vector (§5 pull_prior).
+        """
+        if not text or not text.strip() or not prior or not prior.strip():
+            return None
+        qv = cls._local_embed(text)
+        pv = cls._local_embed(prior)
+        if qv is None or pv is None:
+            return None
+        import numpy as np
+        qv = np.asarray(qv, dtype=np.float64)
+        pv = np.asarray(pv, dtype=np.float64)
+        cos = float(np.dot(qv, pv) / (max(1e-8, np.linalg.norm(qv) * np.linalg.norm(pv))))
+        semantic_distance = 1.0 - cos
+        q_words = set(re.findall(r'[a-zA-Z\u4e00-\u9fff]+', text.lower()))
+        p_words = set(re.findall(r'[a-zA-Z\u4e00-\u9fff]+', prior.lower()))
+        overlap = len(q_words & p_words) / max(1, len(q_words))
+        return min(1.0, semantic_distance * 0.7 + (1.0 - overlap) * 0.3)
+
+    @classmethod
+    def _distance_svo_nomic(cls, text: str, sf: StructuralFeatures) -> Optional[float]:
+        """X: Stanza SVO subject/object cosine via nomic (LM Studio)."""
+        if not text or not text.strip() or sf is None:
+            return None
         try:
             import stanza, urllib.request, json
             nlp = cls._get_stanza()
-            if nlp:
-                doc = nlp(text)
-                if doc.sentences:
-                    words = doc.sentences[0].words
-                    s_words = [w.text for w in words if w.deprel and 'nsubj' in w.deprel]
-                    o_words = [w.text for w in words if w.deprel and w.deprel.split(':')[0] == 'obj']
-                    if s_words and o_words:
-                        s_emb = cls._nomic_embed(s_words[0])
-                        o_emb = cls._nomic_embed(o_words[0])
-                        if s_emb and o_emb:
-                            cos = sum(a*b for a,b in zip(s_emb, o_emb)) / (
-                                max(1e-8, sum(x*x for x in s_emb)**0.5 * sum(x*x for x in o_emb)**0.5))
-                            semantic_distance = 1.0 - cos
-                            # IDF: word frequency in corpus
-                            idf_avg = len(set(s_words + o_words)) / max(1, sf.word_count)
-                            return min(1.0, semantic_distance * 0.7 + idf_avg * 0.3)
+            if not nlp:
+                return None
+            doc = nlp(text)
+            if not doc.sentences:
+                return None
+            words = doc.sentences[0].words
+            s_words = [w.text for w in words if w.deprel and 'nsubj' in w.deprel]
+            o_words = [w.text for w in words if w.deprel and w.deprel.split(':')[0] == 'obj']
+            if not s_words or not o_words:
+                return None
+            s_emb = cls._nomic_embed(s_words[0])
+            o_emb = cls._nomic_embed(o_words[0])
+            if not s_emb or not o_emb:
+                return None
+            cos = sum(a*b for a,b in zip(s_emb, o_emb)) / (
+                max(1e-8, sum(x*x for x in s_emb)**0.5 * sum(x*x for x in o_emb)**0.5))
+            semantic_distance = 1.0 - cos
+            idf_avg = len(set(s_words + o_words)) / max(1, sf.word_count)
+            return min(1.0, semantic_distance * 0.7 + idf_avg * 0.3)
         except Exception:
-            pass
+            return None
 
-        # Fallback: NRC-VAD for English, entity_density for Chinese
-        import re
+    @classmethod
+    def _distance_nrc_rarity(cls, text: str, sf: StructuralFeatures) -> Optional[float]:
+        """X: English NRC-VAD word rarity."""
+        if not text or not text.strip() or sf is None:
+            return None
         english_words = re.findall(r'[a-zA-Z]+', text)
-        if english_words and len(english_words) > len(text.split()) * 0.5:
-            # English-dominant text → NRC-VAD word rarity
-            cls._load_vad_lexicon()
-            if cls._vad_lexicon:
-                known = sum(1 for w in english_words if w.lower() in cls._vad_lexicon)
-                rarity = 1.0 - (known / max(1, len(english_words)))
-                return min(1.0, entity_density * 0.3 + rarity * 0.7)
+        if not english_words or len(english_words) <= len(text.split()) * 0.5:
+            return None
+        entity_density = sf.entity_count / max(1, sf.word_count)
+        cls._load_vad_lexicon()
+        if not cls._vad_lexicon:
+            return None
+        known = sum(1 for w in english_words if w.lower() in cls._vad_lexicon)
+        rarity = 1.0 - (known / max(1, len(english_words)))
+        return min(1.0, entity_density * 0.3 + rarity * 0.7)
+
+    @classmethod
+    def _distance_entity(cls, text: str, sf: StructuralFeatures) -> Optional[float]:
+        """X: explicit structural degradation (terminal unit)."""
+        if sf is None:
+            return 0.3
+        entity_density = sf.entity_count / max(1, sf.word_count)
         return min(1.0, entity_density * 0.5 + 0.3)
 
     @classmethod
@@ -420,6 +592,46 @@ class PCRRouterV2:
             return None
 
     @classmethod
+    def _local_embed(cls, text: str) -> Optional[list]:
+        """Local BGE embedding — offline replacement for LM Studio HTTP.
+
+        Uses the same model that built _mood_vectors (sentence_transformers or
+        fastembed). Returns a normalized vector list, or None on any failure.
+        """
+        model = getattr(cls, '_local_embed_model', None)
+        if model is None:
+            return None
+        try:
+            import numpy as np
+            if hasattr(model, 'embed'):
+                # fastembed: model.embed(list[str]) -> iterable of ndarray
+                raw = list(model.embed([text]))
+                if not raw:
+                    return None
+                v = np.asarray(raw[0], dtype=np.float64)
+            else:
+                # sentence_transformers: model.encode(str, normalize_embeddings=True)
+                v = np.asarray(model.encode(text, normalize_embeddings=True), dtype=np.float64)
+            if v.size == 0:
+                return None
+            return v.tolist()
+        except Exception as e:
+            logger.debug("local embed failed: %s", e)
+            return None
+
+    @classmethod
+    def _query_embed(cls, text: str) -> Optional[list]:
+        """Encode a query with the SAME embedder that built _mood_vectors.
+
+        Mood vectors can come from LM Studio nomic (768d) or local BGE (512d);
+        dot product requires matching dimensions. _mood_source records which
+        one was used at load time so the query side never mismatches.
+        """
+        if getattr(cls, '_mood_source', None) == "nomic":
+            return cls._nomic_embed(text)
+        return cls._local_embed(text)
+
+    @classmethod
     def _get_stanza(cls):
         if not hasattr(cls, '_stanza_nlp'):
             try:
@@ -434,16 +646,20 @@ class PCRRouterV2:
 
     @classmethod
     def _zone_from_xyz(cls, x: float, y: float, z: float) -> str:
-        """Map 3D coordinate to routing zone."""
+        """Map 3D coordinate to routing zone.
+
+        Thresholds = DESIGN_PCR §8.1 baseline (aligned with coordinate_router).
+        v2 "relaxed" set (0.3/0.3; abyss z>0.3) retired — single source of truth.
+        """
         if z < -0.5:
             return "PSYCHE"        # mirror/emotional — use small model, no solutions
-        if x < 0.3 and y < 0.3:
+        if x < 0.2 and y < 0.2:
             return "ATOMIC"        # near + simple → cache/rule
-        if x > 0.7 and y > 0.6 and z > 0.3:
+        if x > 0.7 and y > 0.7 and z > 0.5:
             return "ABYSS"         # far + complex + solution → ReAct + no depth limit
-        if x < 0.5 and y > 0.4 and z > 0:
+        if x < 0.5 and y > 0.5 and z > 0:
             return "PRECISION"     # near + complex + solution → CoT + tools
-        if x > 0.4 and y < 0.4 and z <= 0:
+        if x > 0.5 and y < 0.5 and z <= 0:
             return "EXPLORE"       # far + simple + explore → retrieval + open-ended
         return "MIXED"
 

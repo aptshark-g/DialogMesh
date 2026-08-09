@@ -26,7 +26,7 @@ Refs:
   - Zheng et al., "Judging LLM-as-a-Judge" (2023)
 """
 from __future__ import annotations
-import json, logging, time
+import json, logging, os, time
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -263,3 +263,53 @@ STEP 3 — Rate each dimension 0-1:
             direction = "↑" if v > 0.55 else "↓" if v < 0.45 else "→"
             lines.append(f"[{dim}{direction}] {v:.2f}")
         return lines
+
+    # ── P11: analyst-level facade (CLI dead-command fixes) ─────────────
+
+    def update_dimension(self, dim: str, value: float) -> Dict[str, Any]:
+        """P11: directly set one OCEAN dimension (white-box edit, A19).
+
+        CLI ``dm profile edit <dim> <value>`` lands here instead of the
+        ``else: not available`` dead branch. The analyst owns the EMA
+        profile, so the edit is applied to the live profile and persisted.
+        """
+        if dim not in DIMENSIONS:
+            return {"error": f"unknown dimension: {dim}", "valid": list(DIMENSIONS)}
+        self.profile.dims[dim] = max(0.0, min(1.0, float(value)))
+        self.profile.turn_count += 1
+        try:
+            self.profile.save()
+        except Exception:
+            pass  # 无持久化路径时白盒编辑仍生效（A17 记录由调用方负责）
+        return {"status": "updated", "dimension": dim, "value": self.profile.dims[dim]}
+
+    def snapshot(self) -> Dict[str, Any]:
+        """P11: full analyst snapshot for CLI ``dm profile traits``."""
+        return {
+            "dims": dict(self.profile.dims),
+            "mbti": self.profile.to_mbti(),
+            "turn_count": self.profile.turn_count,
+            "top_dimensions": self.profile.top_dimensions(5),
+            "history_len": len(self.profile.history),
+        }
+
+    def history(self, limit: int = 20) -> List[Dict]:
+        """P11: recent per-turn rating history (white-box A19)."""
+        return self.profile.history[-limit:] if self.profile.history else []
+
+    def reset(self) -> Dict[str, Any]:
+        """P11: reset the EMA profile back to neutral."""
+        self.profile = OCEANProfile()
+        try:
+            self.profile.save()
+        except Exception:
+            pass
+        return {"status": "reset"}
+
+    def save(self) -> Dict[str, Any]:
+        """P11: persist the live OCEAN profile (``OCEANProfile.save`` caller)."""
+        try:
+            self.profile.save()
+            return {"status": "saved", "path": "data/profile/ocean_profile.json"}
+        except Exception as e:
+            return {"error": str(e)[:100]}

@@ -154,9 +154,12 @@ class FileSandbox:
             sb.rollback()       # Discard all changes
     """
 
-    def __init__(self, workspace: str, constraint_tree=None):
+    def __init__(self, workspace: str, constraint_tree=None,
+                 semantic_differ=None, semantic_constraint=None):
         self._workspace = os.path.abspath(workspace)
         self._constraint = constraint_tree
+        self._semantic_differ = semantic_differ
+        self._semantic_constraint = semantic_constraint
         self._overlay: Optional[OverlayLayer] = None
         self._snapshot: Dict[str, str] = {}     # path → sha256
         self._snapshot_content: Dict[str, str] = {}  # path → content (small files)
@@ -268,6 +271,12 @@ class FileSandbox:
             if change.change_type == ChangeType.DELETED:
                 violations.append(f"deletion: {path} (needs explicit approval)")
 
+            # AST-level semantic check (SemanticDiff, DESIGN_SEMANTIC_DIFF)
+            if change.change_type in (ChangeType.MODIFIED, ChangeType.ADDED) \
+                    and path.endswith(".py"):
+                vios = self._semantic_violations(change)
+                violations.extend(vios)
+
         # Custom audit
         if audit_fn:
             custom = audit_fn(self._changes)
@@ -279,6 +288,46 @@ class FileSandbox:
             logger.warning("Sandbox review: %d violations", len(violations))
 
         return approved, violations
+
+    def _semantic_violations(self, change: FileChange) -> List[str]:
+        """AST-level diff + constraint evaluation for a Python file change.
+
+        Only runs when a SemanticDiffer is available (default policy:
+        lazily create with a default SemanticConstraint). Non-blocking:
+        any parse/import failure degrades to no additional violations.
+        """
+        if self._semantic_differ is None:
+            try:
+                from core.agent.execution.semantic_diff import SemanticDiffer
+                self._semantic_differ = SemanticDiffer()
+            except Exception as e:
+                logger.debug("SemanticDiffer unavailable: %s", e)
+                return []
+        if self._semantic_constraint is None:
+            try:
+                from core.agent.execution.semantic_diff import SemanticConstraint
+                self._semantic_constraint = SemanticConstraint()
+            except Exception as e:
+                logger.debug("SemanticConstraint unavailable: %s", e)
+                return []
+
+        old_code = change.old_content or ""
+        new_code = change.new_content or ""
+        try:
+            ast_changes = self._semantic_differ.diff(old_code, new_code, change.path)
+        except Exception as e:
+            logger.debug("Semantic diff failed for %s: %s", change.path, e)
+            return []
+
+        vios = []
+        for c in ast_changes:
+            allowed, action, reason = self._semantic_constraint.evaluate(c)
+            if not allowed:
+                vios.append(
+                    f"semantic[{action}]: {change.path}::{c.entity_name} "
+                    f"({c.change_class.value}) — {reason}"
+                )
+        return vios
 
     def commit(self) -> int:
         """Commit overlay → workspace. Equivalent to git commit."""
@@ -374,10 +423,13 @@ class SandboxIntegration:
     """
 
     def __init__(self, sandbox: FileSandbox = None,
-                 constraint_tree=None, plan_gate=None):
+                 constraint_tree=None, plan_gate=None,
+                 semantic_differ=None, semantic_constraint=None):
         self._sandbox = sandbox
         self._constraint = constraint_tree
         self._plan_gate = plan_gate
+        self._semantic_differ = semantic_differ
+        self._semantic_constraint = semantic_constraint
         self._execution_count = 0
         self._commits = 0
         self._rollbacks = 0
@@ -390,7 +442,11 @@ class SandboxIntegration:
           { status, changes: [...], approved, violations: [...], action }
         """
         self._execution_count += 1
-        sandbox = self._sandbox or FileSandbox(os.getcwd(), self._constraint)
+        sandbox = self._sandbox or FileSandbox(
+            os.getcwd(), self._constraint,
+            semantic_differ=self._semantic_differ,
+            semantic_constraint=self._semantic_constraint,
+        )
 
         # 1. Snapshot
         n = sandbox.snapshot()

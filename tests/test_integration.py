@@ -5,7 +5,7 @@ sys.path.insert(0, '.')
 from core.agent.topic_tree.manager import TopicTreeManager
 from core.agent.cognitive.learning_loop import LearningLoop
 from core.agent.pcr_router_v2 import PCRRouterV2
-from core.agent.events.event_bus import EventBus, EventType
+from core.agent.event.event_bus import EventBus
 from core.agent.api.api_event_log import EventLog
 from core.agent.state.global_decider import GlobalDecider, Command
 from core.agent.state.trigger_conditions import TRIGGER_CONDITIONS
@@ -42,7 +42,7 @@ def test_full_pipeline():
         
         # Decider: track events
         decider.evolve(decider.decide(Command(type="pcr")))
-        bus.publish("pcr_computed", {"zone": pcr.zone})
+        bus.publish_sync("pcr_computed", {"zone": pcr.zone})
         
         # Learning Loop: feed signals
         if i == 3:  # User is frustrated
@@ -75,6 +75,7 @@ def test_full_pipeline():
     print(f"\nTree: {tree.stats['facts']} facts, {tree.stats['relations']} relations, {tree.stats['heat']['t1_size']} T1 nodes")
     print(f"Learning: {loop.correction_count} corrections, {loop.pending_count} pending signals")
     print(f"Decider: {decider.state.tick} ticks")
+    bus.drain_sync()
     print("\n✅ Integration: all modules active, pipeline intact")
 
 

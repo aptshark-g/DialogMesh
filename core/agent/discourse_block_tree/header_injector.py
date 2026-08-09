@@ -4,10 +4,10 @@ from typing import List, Optional
 from .models import EDU, DiscourseEntity
 
 
-NEGATION_MARKERS = {"?", "?", "?", "?", "??", "??", "??", "??", "not", "no", "never"}
-UNCERTAINTY_MARKERS = {"??", "??", "??", "??", "??", "maybe", "perhaps", "possibly"}
-IMPERATIVE_MARKERS = {"?", "?", "??", "please", "help"}
-PRONOUNS = {"??", "??", "??", "??", "?", "?", "?", "??", "??", "??",
+NEGATION_MARKERS = {"不", "没有", "无", "非", "不要", "不用", "别", "never", "not", "no", "never"}
+UNCERTAINTY_MARKERS = {"可能", "也许", "大概", "或许", "应该", "maybe", "perhaps", "possibly"}
+IMPERATIVE_MARKERS = {"请", "帮", "帮我", "please", "help"}
+PRONOUNS = {"这个", "那个", "它", "其", "该", "这", "那", "它们", "这些", "那些",
             "this", "that", "these", "those", "it", "its", "there"}
 
 
@@ -25,8 +25,12 @@ class EntityCache:
             self._recent = self._recent[-self._max * 3:]
 
     def find(self, pronoun: str) -> Optional[DiscourseEntity]:
+        # Demonstratives (这个/那个/这些/那些) resolve to the most recent entity;
+        # others (它/其) also fall back to the last entity — the cache only
+        # holds recent discourse entities, so "last" is the correct referent.
+        demonstrative = pronoun in ("这个", "那个", "这些", "那些", "它", "其", "该")
         for e in reversed(self._recent):
-            if pronoun == "??" or pronoun == "that":
+            if demonstrative or pronoun in ("this", "that", "these", "those", "it", "its"):
                 return e
         return None
 

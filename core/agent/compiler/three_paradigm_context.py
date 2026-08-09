@@ -134,6 +134,7 @@ class ThreeParadigmContext:
     def _block_text(self, block) -> str:
         """Get best available text for a block."""
         text = (getattr(block, 'raw_text', '') or
+                getattr(getattr(block, 'summary', None), 'v3_evolution', '') or
                 getattr(getattr(block, 'summary', None), 'v3_milestone', '') or
                 getattr(getattr(block, 'summary', None), 'v2_entity', ''))
         return text[:250].replace('\n', ' ').strip()

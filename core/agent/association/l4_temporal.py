@@ -238,3 +238,70 @@ Output JSON: {{"plausible": true/false, "reason": "brief"}}"""
             "recent_drifts": len(self._drift_history),
             "window": self.window,
         }
+
+    # ── D-16: L4 三方交汇（关联链 × 行为链 × 工程链）──
+
+    def triparty_reconcile(
+        self,
+        behavior_sequences: List[tuple],
+        engineering_constraints: Dict[str, Any] = None,
+    ) -> dict:
+        """Reconcile L4 temporal patterns with behavior chains and engineering
+        constraints (BUSINESS_CHAIN_06 §2.6 / A14).
+
+        - Behavior chain supplies observed A→B sequences → strengthens the
+          matching transition counts (real-world support).
+        - Engineering chain supplies constraints (A14: 约束在事实中) → blocks
+          transitions that violate resource/rule constraints.
+
+        Data format alignment: all parties speak ``(from_intent, to_intent,
+        weight)``; behavior sequences are injected as counted transitions,
+        engineering constraints modulate the final matrix.
+        """
+        engineering_constraints = engineering_constraints or {}
+        blocked: List[Dict[str, str]] = []
+
+        # 1) Behavior chain support: each observed A→B increments the count.
+        for seq in (behavior_sequences or []):
+            if not isinstance(seq, (tuple, list)) or len(seq) < 2:
+                continue
+            a, b = str(seq[0]), str(seq[1])
+            if a == b:
+                continue
+            self._total_turns += 1
+            self._add_transition(a, b, self._total_turns, confidence=0.8)
+            self._intent_sequence.extend([a, b])
+            if len(self._intent_sequence) > self.window * 3:
+                self._intent_sequence = self._intent_sequence[-self.window * 2:]
+            self._intent_distribution[a] = self._intent_distribution.get(a, 0) + 1
+            self._intent_distribution[b] = self._intent_distribution.get(b, 0) + 1
+
+        # 2) Engineering constraints: penalize/block violating transitions.
+        #    resource_constraints: {tool_or_capability: available(bool)}
+        #    forbidden_transitions: [["诊断", "吐槽"], ...]
+        forbidden = engineering_constraints.get("forbidden_transitions", [])
+        resource = engineering_constraints.get("resource_constraints", {})
+        matrix = self.transition_matrix()
+
+        for from_intent, to_counts in list(matrix.items()):
+            for to_intent in list(to_counts.keys()):
+                violates = (
+                    any(f == [from_intent, to_intent] for f in forbidden)
+                    or (
+                        to_intent in resource
+                        and resource.get(to_intent) is False
+                    )
+                )
+                if violates:
+                    blocked.append({
+                        "from": from_intent, "to": to_intent,
+                        "reason": "engineering constraint",
+                    })
+                    del matrix[from_intent][to_intent]
+
+        return {
+            "reconciled_matrix": matrix,
+            "behavior_supported": len(behavior_sequences or []),
+            "blocked_transitions": blocked,
+            "parties": ["association", "behavior", "engineering"],
+        }

@@ -3,7 +3,7 @@ import sys, os, asyncio, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 pytest.importorskip("pytest_benchmark")
 
-from core.agent.v3_2.testing_utils import MockLLM, DEFAULT_COMPILER_RESPONSE
+from core.agent.testing_utils import MockLLM, DEFAULT_COMPILER_RESPONSE
 from core.agent.compiler.hybrid_compiler import HybridCompiler
 from core.agent.behavior.graph_store import BehaviorGraph
 from core.agent.behavior.models import BehaviorStep

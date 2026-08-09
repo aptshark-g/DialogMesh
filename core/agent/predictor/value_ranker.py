@@ -1,4 +1,5 @@
 from .models import Candidate, ValueBreakdown
+from .models import get_predict_weights
 
 class ValueRanker:
     def __init__(self, graph, load_est=None, prof_matcher=None):
@@ -7,6 +8,7 @@ class ValueRanker:
         self.prof_matcher = prof_matcher
 
     async def rank(self, candidates, profile):
+        weights = get_predict_weights()
         for c in candidates:
             c.success_rate = self._get_success_rate(c)
             if self.load_est:
@@ -14,7 +16,7 @@ class ValueRanker:
             if self.prof_matcher:
                 c.profile_match = await self.prof_matcher.match(
                     c.action_type, c.action_summary, profile)
-            c.compute_value()
+            c.compute_value(weights)
         candidates.sort(key=lambda c: -c.expected_value)
         return candidates
 

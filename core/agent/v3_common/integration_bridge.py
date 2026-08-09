@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.agent.pcr.tests.intent_trace_cli import run_intent_trace
 from core.agent.llm_providers.base import LLMProvider
-from core.agent.v3_2.integration import V32Pipeline
 
 from core.agent.cognitive_compiler import (
     CognitiveCompiler, CompilerMode, EntityCache, CompiledInput,
@@ -137,7 +136,7 @@ class AgentPipeline:
     def _init_v32_pipeline(self) -> None:
         """初始化 v3.2 并行分析管线。"""
         try:
-            from core.agent.v3_2.testing_utils import MockLLM, DEFAULT_COMPILER_RESPONSE
+            from core.agent.testing_utils import MockLLM, DEFAULT_COMPILER_RESPONSE
             from core.agent.v3_2.integration import V32Pipeline
             from core.agent.v3_2.monitor import Monitor
             from core.agent.v3_2.session_recorder import SessionRecorder

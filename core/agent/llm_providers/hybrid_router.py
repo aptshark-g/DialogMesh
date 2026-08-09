@@ -189,3 +189,14 @@ class HybridRouter(LLMProvider):
             }
             for pid, p in self._providers.items()
         }
+
+
+# ── v3 backward-compat alias (B8-4: v3_0/llm_providers 归档后根级唯一) ──
+
+class HybridRouter_v3(HybridRouter):
+    """v3 兼容别名：接受 ProviderConfig(pydantic) 单参数构造。"""
+
+    def __init__(self, config):
+        from core.agent.llm_providers.models import ProviderConfig
+        cfg = config if isinstance(config, ProviderConfig) else ProviderConfig(**config)
+        super().__init__(cfg.name, {})

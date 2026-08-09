@@ -122,15 +122,34 @@ class RouterOutputValidator:
 # BlueprintExecutor — 执行引擎
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# F1 权限门: 工具节点语义的最小 node-like（legacy 执行器按步骤名构造）。
+# 认知链步骤 chain="cognitive"（resolver 放行）; 真 OS 工具名 chain="tool"
+# （resolver 可拒绝, 与 decider/statemachine/TaskRunner 同语义）。
+_OS_TOOL_NAMES = {
+    "write_file", "file_write", "run_shell", "run_python", "run_session",
+    "dir_list", "grep",
+}
+
+
+class _StepNode:
+    def __init__(self, name: str):
+        self.chain = "tool" if name in _OS_TOOL_NAMES else "cognitive"
+        self.params = {"tool": name, "args": {}}
+
+
 class BlueprintExecutor:
     """
     蓝图执行引擎：按 Blueprint.strategy_steps 顺序调用 CognitiveTools。
     支持：状态快照、步骤回滚、动态追加工具、fallback 切换。
     """
 
-    def __init__(self):
+    def __init__(self, gate_resolver=None):
         self.trace: List[ExecutionStep] = []
         self.state: Dict[str, Any] = {}
+        # F1（2026-08-08 补接线）: 权限 resolver（node, outputs）→ decision。
+        # 生产路径工具权限在 decider/statemachine/TaskRunner 已生效;
+        # 本 legacy 认知链执行器接受并执行前检查（认知链放行, 真工具可拒）。
+        self._gate_resolver = gate_resolver
 
     def reset(self):
         self.trace.clear()
@@ -158,6 +177,23 @@ class BlueprintExecutor:
                     error="Latency budget exceeded", latency_ms=ctx.elapsed_ms()
                 ))
                 return self._fallback(blueprint, ctx, "LATENCY_BUDGET_EXCEEDED")
+
+            # F1 权限门: resolver 拒绝 → 跳过该步并走 fallback
+            if self._gate_resolver is not None:
+                try:
+                    decision = self._gate_resolver(
+                        _StepNode(tool_name), self.state) or {}
+                    if decision.get("status") == "rejected":
+                        self.trace.append(ExecutionStep(
+                            index=idx, tool=tool_name, status="rejected",
+                            error=str(decision.get("comment",
+                                                   "permission denied")),
+                            latency_ms=ctx.elapsed_ms(),
+                        ))
+                        return self._fallback(blueprint, ctx,
+                                              "PERMISSION_REJECTED")
+                except Exception:
+                    pass
 
             # 1. 执行前快照
             snapshot = self._snapshot()

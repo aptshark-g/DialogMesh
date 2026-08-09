@@ -6,14 +6,17 @@ import type {
   SessionStatusResponse,
   HealthResponse,
 } from '../types/api.ts';
+import { sessionHeaders } from './sessionHeaders';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// B5（2026-08-07）: 默认相对路径 → 同源代理
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...sessionHeaders(),
       ...(options?.headers || {}),
     },
   });
@@ -69,15 +72,59 @@ export function editDAG(sessionId: string, instruction: string, currentNodes: an
   }).then(res => res.json());
 }
 
-export function saveTaskGraph(sessionId: string, nodes: any[], edges: any[]): Promise<{status: string}> {
-  return apiFetch<{status: string}>(`/v3/session/${sessionId}/task-graph`, {
+export interface TaskGraphData {
+  nodes: any[];
+  edges: any[];
+  version?: number;
+}
+
+/** 版本冲突（409）——服务端已有更新版本, 本地编辑被拒绝覆盖。 */
+export class TaskGraphConflictError extends Error {
+  currentVersion: number;
+  serverNodes: any[];
+  serverEdges: any[];
+
+  constructor(detail: any) {
+    super('任务规划已被更新, 本地编辑与服务器版本冲突');
+    this.name = 'TaskGraphConflictError';
+    this.currentVersion = detail?.current_version ?? 0;
+    this.serverNodes = detail?.nodes ?? [];
+    this.serverEdges = detail?.edges ?? [];
+  }
+}
+
+/**
+ * 保存任务图（乐观更新 + 版本冲突检测）。
+ * 带 version = 冲突检测（409 → TaskGraphConflictError）;
+ * 不带 version = 强制覆盖（向后兼容旧调用）。
+ */
+export function saveTaskGraph(
+  sessionId: string,
+  nodes: any[],
+  edges: any[],
+  version?: number,
+): Promise<TaskGraphData> {
+  const body: any = { nodes, edges };
+  if (version !== undefined) body.version = version;
+  return fetch(`${BASE_URL}/v3/session/${sessionId}/task-graph`, {
     method: 'PUT',
-    body: JSON.stringify({ nodes, edges }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(async (res) => {
+    if (res.status === 409) {
+      const data = await res.json().catch(() => null);
+      throw new TaskGraphConflictError(data?.detail);
+    }
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HTTP ${res.status}: ${err}`);
+    }
+    return res.json() as Promise<TaskGraphData>;
   });
 }
 
-export function getTaskGraph(sessionId: string): Promise<{nodes: any[]; edges: any[]}> {
-  return apiFetch<{nodes: any[]; edges: any[]}>(`/v3/session/${sessionId}/task-graph`);
+export function getTaskGraph(sessionId: string): Promise<TaskGraphData> {
+  return apiFetch<TaskGraphData>(`/v3/session/${sessionId}/task-graph`);
 }
 
 export function getHealth(): Promise<HealthResponse> {

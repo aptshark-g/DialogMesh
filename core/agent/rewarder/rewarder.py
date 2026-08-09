@@ -30,9 +30,11 @@ class BehaviorRewarder:
         sig = RewardSignal(key, raw, dec, self.noise.noise_level,
                            is_exploration=is_exp,
                            correction_count=self.correction_counts.get(key, 0))
-        # Use noise.get_effective_reward instead of raw sig.compute_effective
         sig.effective_reward = self.noise.get_effective_reward(sig)
-        if self.correction_counts.get(key, 0) >= 3 and edge:
+        from core.agent.compiler.parameter_registry import get_registry
+        reg = get_registry()
+        hard_threshold = int(reg.get("behavior.correction_hard_threshold", 2))
+        if self.correction_counts.get(key, 0) >= hard_threshold and edge:
             self._mark_persistent_error(key)
         ref = None
         if is_correction or raw < 0:
@@ -56,10 +58,12 @@ class BehaviorRewarder:
         if hasattr(self.graph, "edges"):
             for e in self.graph.edges.values():
                 e.weight *= 0.95
+        from core.agent.compiler.parameter_registry import get_registry
+        rate = float(get_registry().get("behavior.reward_apply_rate", 0.1))
         if edge_key and hasattr(self.graph, "edges"):
             edge = self.graph.edges.get(edge_key)
             if edge:
-                edge.weight = max(0.0, min(1.0, edge.weight + effective_reward * 0.1))
+                edge.weight = max(0.0, min(1.0, edge.weight + effective_reward * rate))
 
     def _find_key(self, actual):
         if not hasattr(self.graph, "edges"):

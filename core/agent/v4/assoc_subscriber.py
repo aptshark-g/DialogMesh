@@ -1,71 +1,11 @@
-"""Association Subscriber — cold path, Event Sourcing.
+# -*- coding: utf-8 -*-
+"""v4 门面 — 复用根门面，消除第三份并行实现（红线 7）。"""
+from core.agent.assoc_subscriber import (
+    AssociationSubscriber,
+    AssociationService,
+    AssociationState,
+    INTERESTED_KINDS,
+)
 
-Subscribes to 6 event types. Triggered on topic switch or behavior pattern.
-Produces: ASSOCIATION_DISCOVERED, CAUSAL_CLOSURE.
-"""
-
-from __future__ import annotations
-from dataclasses import dataclass
-import logging
-from core.agent.api.api_event_log import EventLog
-from core.agent.events.event_bus import EventBus, EventType
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AssociationState:
-    current_intent: str = "UNKNOWN"
-    topic_shift_count: int = 0
-    behavior_count: int = 0
-    cohesion: float = 1.0
-
-
-class AssociationSubscriber:
-    """Subscribes to: PCR, Route, Intent, Discourse, Topic, Behavior. Triggered on topic switch."""
-
-    def __init__(self, event_log: EventLog, bus: EventBus, llm_provider=None):
-        self._log = event_log
-        self._bus = bus
-        self._last_seq = 0
-        self._state = AssociationState()
-        from core.agent.association.association_funnel import AssociationFunnel
-        self._funnel = AssociationFunnel(llm_provider=llm_provider)
-
-        for et in (EventType.PCR_COMPUTED, EventType.ROUTE_GENERATED,
-                   EventType.INTENT_PARSED, EventType.REPLY_GENERATED,
-                   EventType.BEHAVIOR_RECORDED):
-            self._bus.subscribe(et, "assoc", self._on_event)
-
-    def _on_event(self, event: dict):
-        kind = event.get("kind", "")
-        payload = event.get("payload", {})
-
-        # Feed all events into AssociationFunnel
-        if self._funnel is not None:
-            self._funnel.ingest_event(event)
-
-        if kind == "intent_parsed":
-            self._state.current_intent = payload.get("category", "UNKNOWN")
-        elif kind == "behavior_recorded":
-            self._state.behavior_count += 1
-
-        if self._should_discover():
-            self._discover_and_publish()
-
-    def _should_discover(self) -> bool:
-        return self._state.topic_shift_count >= 2 or self._state.behavior_count >= 10
-
-    def _discover_and_publish(self):
-        result = self._funnel.run()
-        self._bus.publish("association_discovered", {
-            "intent": self._state.current_intent,
-            "behavior_count": self._state.behavior_count,
-            "funnel": {
-                "l1_relations": len(result["layer1_relations"]),
-                "l3_consensus": result["layer3_consensus"],
-                "l4_chains": len(result["layer4_chains"]),
-                "l5_causal": result["layer5_causal"],
-                "stats": result["stats"],
-            }
-        })
+__all__ = ["AssociationSubscriber", "AssociationService", "AssociationState",
+           "INTERESTED_KINDS"]

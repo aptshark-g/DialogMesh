@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,14 +12,17 @@ import {
 } from '../components/graph';
 import type { GraphEditTarget } from '../components/graph';
 import { useGraphStore } from '../stores/graphStore';
+import { useUIStore } from '../stores/uiStore';
+import type { InspectNodeData } from '../stores/uiStore';
 import type { GraphNode, GraphEdge, ViewMode } from '../types/graph';
 import { getIntentColor } from '../types/graph';
 import { cn, formatTimestamp } from '../lib/utils';
-import { RefreshCw, Info, GitBranch, ListTree, Boxes, MessageSquare, Pencil } from 'lucide-react';
+import { RefreshCw, Info, GitBranch, ListTree, Boxes, MessageSquare, Pencil, AlertTriangle } from 'lucide-react';
 import { Tooltip } from '../components/ui/Tooltip';
 import { Toast } from '../components/ui/Toast';
 import { useV6Graph } from '../hooks/useV6Graph';
-import { editGraph, editDiscourseTree, editObjects } from '../api/v6';
+import { useChatStore } from '../stores/chatStore';
+import { editGraph, editDiscourseTree, editObjects, VizConflictError } from '../api/v6';
 import type {
   V6GraphEditRequest,
   V6DiscourseTreeEditRequest,
@@ -52,7 +55,13 @@ interface ToastState {
 
 export function ConversationGraphPage() {
   const navigate = useNavigate();
-  const { graph, discourseTree, objects, loading, error, refresh } = useV6Graph();
+  // B5（2026-08-07）: 图谱按当前聊天会话取对话树（?sid= 兜底，支持直接链接）
+  const urlSid = new URLSearchParams(window.location.search).get('sid') || undefined;
+  const sessionId = useChatStore((s) => s.sessionId) || urlSid;
+  const { graph, discourseTree, objects, loading, error, refresh } = useV6Graph(sessionId || undefined);
+  const versionRef = useRef(0);
+  const lastEditReqRef = useRef<{ kind: 'graph' | 'tree' | 'objects'; req: Record<string, unknown> } | null>(null);
+  const [conflict, setConflict] = useState<{ currentVersion: number } | null>(null);
 
   // Local state for graph page
   const [activeTab, setActiveTab] = useState<PageTab>('graph');
@@ -70,8 +79,16 @@ export function ConversationGraphPage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
+  useEffect(() => {
+    if (graph?.version != null) versionRef.current = graph.version;
+  }, [graph?.version]);
+
   // Use graph store for nodes/edges (initialize from API)
   const graphStore = useGraphStore();
+  const setInspectNode = useUIStore((s) => s.setInspectNode);
+  const setDockContent = useUIStore((s) => s.setDockContent);
+  const setSidePanelMode = useUIStore((s) => s.setSidePanelMode);
+  const openSidePanel = useUIStore((s) => s.openSidePanel);
 
   const showToast = useCallback((type: ToastState['type'], message: string) => {
     setToast({ key: Date.now(), type, message });
@@ -220,7 +237,8 @@ export function ConversationGraphPage() {
     async (req: V6GraphEditRequest) => {
       setEditSubmitting(true);
       try {
-        const resp = await editGraph(req);
+        lastEditReqRef.current = { kind: 'graph', req: { ...req, version: versionRef.current } };
+        const resp = await editGraph({ ...req, version: versionRef.current });
         if (resp.error) {
           showToast('error', `编辑失败: ${resp.error}`);
           return;
@@ -230,6 +248,11 @@ export function ConversationGraphPage() {
         refresh();
         setLastUpdated(new Date());
       } catch (err) {
+        if (err instanceof VizConflictError) {
+          setConflict({ currentVersion: err.currentVersion });
+          showToast('error', `图谱已被更新（v${err.currentVersion}）, 请选择覆盖或加载最新`);
+          return;
+        }
         showToast('error', err instanceof Error ? err.message : '编辑请求失败');
       } finally {
         setEditSubmitting(false);
@@ -243,7 +266,8 @@ export function ConversationGraphPage() {
     async (req: V6DiscourseTreeEditRequest): Promise<boolean> => {
       setEditSubmitting(true);
       try {
-        const resp = await editDiscourseTree(req);
+        lastEditReqRef.current = { kind: 'tree', req: { ...req, version: versionRef.current } };
+        const resp = await editDiscourseTree({ ...req, version: versionRef.current });
         if (resp.error) {
           showToast('error', `编辑失败: ${resp.error}`);
           return false;
@@ -253,6 +277,11 @@ export function ConversationGraphPage() {
         setLastUpdated(new Date());
         return true;
       } catch (err) {
+        if (err instanceof VizConflictError) {
+          setConflict({ currentVersion: err.currentVersion });
+          showToast('error', `对话树已被更新（v${err.currentVersion}）, 请选择覆盖或加载最新`);
+          return false;
+        }
         showToast('error', err instanceof Error ? err.message : '编辑请求失败');
         return false;
       } finally {
@@ -267,7 +296,8 @@ export function ConversationGraphPage() {
     async (req: V6ObjectEditRequest): Promise<boolean> => {
       setEditSubmitting(true);
       try {
-        const resp = await editObjects(req);
+        lastEditReqRef.current = { kind: 'objects', req: { ...req, version: versionRef.current } };
+        const resp = await editObjects({ ...req, version: versionRef.current });
         if (resp.error) {
           showToast('error', `编辑失败: ${resp.error}`);
           return false;
@@ -277,6 +307,11 @@ export function ConversationGraphPage() {
         setLastUpdated(new Date());
         return true;
       } catch (err) {
+        if (err instanceof VizConflictError) {
+          setConflict({ currentVersion: err.currentVersion });
+          showToast('error', `语义对象已被更新（v${err.currentVersion}）, 请选择覆盖或加载最新`);
+          return false;
+        }
         showToast('error', err instanceof Error ? err.message : '编辑请求失败');
         return false;
       } finally {
@@ -285,6 +320,59 @@ export function ConversationGraphPage() {
     },
     [refresh, showToast]
   );
+
+  // B5: 右键"在右侧显示详情" — 节点 + 关联边送入右侧 Dock
+  const handleNodeInspect = useCallback(
+    (nodeId: string) => {
+      const apiNode = graph?.nodes.find((n) => n.id === nodeId);
+      const edges = (graph?.edges ?? [])
+        .filter((e) => e.source === nodeId || e.target === nodeId)
+        .map((e) => ({ source: e.source, target: e.target, type: e.type }));
+      const data: InspectNodeData = {
+        id: nodeId,
+        label: apiNode?.label || nodes.find((n) => n.id === nodeId)?.label || nodeId,
+        type: apiNode?.type || 'session',
+        intent: apiNode?.intent,
+        depth: apiNode?.depth,
+        temperature: apiNode?.temperature,
+        size: apiNode?.size,
+        entities: apiNode?.entities,
+        raw_text: apiNode?.raw_text,
+        summary: apiNode?.summary,
+        state: apiNode?.state,
+        edges,
+      };
+      setInspectNode(data);
+      setDockContent('node_detail');
+      setSidePanelMode('fixed');
+      openSidePanel();
+    },
+    [graph, nodes, setInspectNode, setDockContent, setSidePanelMode, openSidePanel]
+  );
+
+  // 冲突解决: 强制覆盖服务端（不带 version = 向后兼容强制写）
+  const handleForceOverwrite = useCallback(async () => {
+    const last = lastEditReqRef.current;
+    if (!last) return;
+    const { version: _ignored, ...body } = last.req;
+    try {
+      if (last.kind === 'graph') await editGraph(body as unknown as V6GraphEditRequest);
+      else if (last.kind === 'tree') await editDiscourseTree(body as unknown as V6DiscourseTreeEditRequest);
+      else await editObjects(body as unknown as V6ObjectEditRequest);
+      setConflict(null);
+      refresh();
+      setLastUpdated(new Date());
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : '覆盖失败');
+    }
+  }, [refresh, showToast]);
+
+  // 冲突解决: 放弃本地, 加载服务端最新
+  const handleLoadLatest = useCallback(() => {
+    setConflict(null);
+    refresh();
+    setLastUpdated(new Date());
+  }, [refresh]);
 
   // Selected node details
   const selectedNode = useMemo(
@@ -322,6 +410,24 @@ export function ConversationGraphPage() {
         </div>
         <div className="mt-3 border-b border-subtle" />
       </header>
+
+      {/* Version Conflict Banner */}
+      {conflict && (
+        <div className="mx-4 md:mx-6 mb-2 flex items-center gap-3 px-4 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 shrink-0">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">
+            图谱已被更新（v{conflict.currentVersion}），你的编辑与服务器版本冲突。
+          </span>
+          <button onClick={handleForceOverwrite}
+            className="px-2.5 py-1 rounded bg-amber-500 text-white font-medium hover:bg-amber-600">
+            覆盖服务端
+          </button>
+          <button onClick={handleLoadLatest}
+            className="px-2.5 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-100">
+            加载最新
+          </button>
+        </div>
+      )}
 
       {/* Tab Bar */}
       <div className="px-4 md:px-6 pt-3 shrink-0">
@@ -379,6 +485,7 @@ export function ConversationGraphPage() {
               activeFilters={activeFilters}
               selectedNodeId={selectedNodeId}
               onNodeClick={handleNodeClick}
+              onNodeInspect={handleNodeInspect}
               onEdgeClick={handleEdgeClick}
               zoomLevel={zoomLevel}
               onZoomChange={setZoomLevel}

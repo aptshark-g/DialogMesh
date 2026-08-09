@@ -12,15 +12,41 @@ class MetaRole(IntEnum):
     JSPLIT = 8
 
 
-class SkeletonMatch:
-    """Match between a behavior chain and a causal skeleton. (stub)"""
-    score: float
-    skeleton_id: str
-
-
+@dataclass
 class CausalConstraints:
-    """Constraints for causal substrate reasoning. (stub)"""
-    pass
+    """Structural constraints extracted from a behavior step.
+
+    These six fields drive skeleton matching: domain hint, feedback loop,
+    dissipation/storage/transformation involvement, and causal direction.
+    """
+    domain_hint: str = "general"
+    has_feedback: bool = False
+    involves_dissipation: bool = False
+    involves_storage: bool = False
+    causal_direction: str = "cause->effect"
+    involves_transformation: bool = False
+
+
+@dataclass
+class SkeletonMatch:
+    """Match between a behavior chain and a causal skeleton.
+
+    ``roles`` are the meta-role chain matched, ``coverage`` is the fraction of
+    required roles covered, ``score`` is the overall match quality, and
+    ``is_multi`` marks multi-skeleton ties. ``to_prior()`` converts the match
+    into a capped structural prior (A22: prior ≤ 0.7, never 1.0).
+    """
+    roles: list = field(default_factory=list)
+    coverage: float = 0.0
+    score: float = 0.0
+    is_multi: bool = False
+
+    def to_prior(self) -> float:
+        if self.score > 0.8:
+            return 0.7
+        if self.score > 0.5:
+            return 0.3
+        return 0.0
 
 
 class TrackType(str, Enum):

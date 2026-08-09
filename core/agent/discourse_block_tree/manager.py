@@ -37,8 +37,12 @@ class DiscourseBlockTreeManager:
         self.indexer = Indexer()
         self.group_ref_index: dict[str, GroupReference] = {}
 
-    def ingest_turn(self, turn_index, text):
+    def ingest_turn(self, turn_index, text, cognitive_hints=None):
         self.turn_count = turn_index
+        # P5 (画像 R5 ③): Track A 认知状态 → 组块边界判据输入。
+        # 消费方：segmenter 可读 self._last_cognitive_hints 调整合并/切分倾向
+        # （KERNEL §八.8.4 疲劳/注意力/惯性）。白盒 get_stats 亦暴露。
+        self._last_cognitive_hints = cognitive_hints or {}
         injected = self.header_injector.inject(text)
         entities = self.header_injector.extract_entities(text)
         self.entity_cache.push(entities)
@@ -111,6 +115,38 @@ class DiscourseBlockTreeManager:
 
     def build_context(self, block_id=None):
         active = block_id or self.current_block_id
+        if not active:
+            return ""
+        return self.context_builder.build(self.blocks, active)
+
+    def build_session_context(self, session_id: str = None, max_blocks: int = 8) -> str:
+        """A-compatible session context: blocks -> SummaryEngine build_context.
+
+        CLI p10_cmd calls ``build_context(sid, max_blocks=8)`` and needs a
+        session-level context; B's native ``build_context(block_id)`` is
+        block-level. This is the A-facade-on-B-kernel mapping.
+        """
+        block_list = list(self.blocks.values())[:max_blocks]
+        if not block_list:
+            return ""
+        return self.summary_engine.build_context(block_list, max_tokens=2000)
+
+    def build_context(self, block_id=None, session_id=None, max_blocks: int = 8) -> str:
+        """A-compatible facade: ``build_context(session_id, max_blocks=8)``
+        or ``build_context(block_id)`` (B native block-level).
+
+        R6 D3 facade unification: p10_cmd calls with (sid, max_blocks);
+        B tests/internal call with (block_id) or no args. Dispatch: when
+        ``session_id`` is given (or first arg is not a block id) -> session
+        level; otherwise block level.
+        """
+        if block_id is not None and session_id is None:
+            if block_id in self.blocks:
+                return self.context_builder.build(self.blocks, block_id)
+            session_id = block_id
+        if session_id is not None:
+            return self.build_session_context(session_id, max_blocks)
+        active = self.current_block_id
         if not active:
             return ""
         return self.context_builder.build(self.blocks, active)
@@ -254,3 +290,351 @@ class DiscourseBlockTreeManager:
             if block_id in gr.block_ids:
                 activated.append(gr)
         return activated
+
+    # ── A-compatible facade (Phase 3.1: B kernel behind the A wiring) ──────
+
+    @property
+    def _trees(self) -> dict:
+        """A-compatible multi-session view over the single B kernel.
+
+        A's manager kept ``_trees: {session_id: DiscourseBlockTree}``; engine,
+        subscribers and the monitor all read ``_trees``. B is a single-session
+        kernel, so every session maps to this same manager instance (blocks
+        are shared). Multi-session isolation is out of scope for Phase 3 and
+        noted in IMPL_PROGRESS.
+        """
+        if not getattr(self, "_session_ids", None):
+            self._session_ids = set()
+        return {sid: self for sid in self._session_ids}
+
+    def feed(self, text: str, session_id: str, history: list = None,
+             cognitive_hints: dict = None) -> object:
+        """A-compatible ``feed(text, session_id)`` → B kernel ``ingest_turn``.
+
+        Returns a minimal RouteResult-compatible object so the A wiring
+        (engine/subscribers) keeps working unchanged. ``history`` is accepted
+        for signature parity; B's header injector maintains its own entity
+        cache across turns.
+        """
+        if not getattr(self, "_session_ids", None):
+            self._session_ids = set()
+        self._session_ids.add(session_id)
+        # C4 (R6): semantic wake — semantically-close sleeping blocks return
+        # to Hot before this turn's segmentation.
+        try:
+            self.summary_engine.semantic_wake(self.blocks, text)
+        except Exception:
+            pass
+        block_ids = self.ingest_turn(self.turn_count + 1, text,
+                                     cognitive_hints=cognitive_hints)
+        # 多会话隔离（B 内核单实例共享 blocks）: 给本回合块打会话标签，
+        # 供图/树按会话过滤（TREE_TIERING 2026-08-07）
+        for bid in block_ids or []:
+            blk = self.blocks.get(bid)
+            if blk is not None:
+                blk._session_id = session_id
+        # TREE_TIERING: feed 后自动 Hot→Warm 落盘（engine 侧 debounce）
+        hook = getattr(self, "_persist_hook", None)
+        if hook:
+            try:
+                hook(session_id)
+            except Exception:
+                pass
+        decision = "continue"
+        try:
+            if getattr(self, "_last_switch", None) and self._last_switch[0]:
+                decision = "fork"
+        except Exception:
+            pass
+        return _RouteResultCompat(decision=decision, block_ids=block_ids or [])
+
+    def get_block_relations(self, session_id: str) -> dict:
+        """A-compatible block relationship graph for the association chain."""
+        blocks_info = {}
+        for bid, b in self.blocks.items():
+            blocks_info[bid] = {
+                "parent": b.parent_id,
+                "children": list(b.child_ids),
+                "edus": len(b.atomic_units),
+                "entities": list(
+                    dict.fromkeys(
+                        str(e.text) if hasattr(e, "text") else str(e)
+                        for e in getattr(b, "entities", [])
+                    )
+                ),
+                "temperature": getattr(b, "status", "active"),
+                # TREE_TIERING（2026-08-07）: 导入块用落盘文本；活块用 summary
+                "summary": (
+                    getattr(b, "_summary_text", "") or
+                    (b.summary.get_best() if getattr(b, "summary", None) else "")
+                )[:200],
+                "raw_text": (
+                    getattr(b, "_raw_text", "") or " ".join(
+                        getattr(u, "raw_text", "") for u in getattr(b, "atomic_units", [])
+                    )
+                ),
+                "intent": getattr(b, "primary_intent", "unknown"),
+                "depth": getattr(b, "depth", 0),
+            }
+        relations = []
+        for bid, b in self.blocks.items():
+            if b.parent_id:
+                relations.append({"from": bid, "to": b.parent_id, "type": "child_of"})
+            for child in b.child_ids:
+                relations.append({"from": bid, "to": child, "type": "parent_of"})
+        return {"session_id": session_id, "blocks": blocks_info, "relations": relations}
+
+    # ── OS 式分层持久化（TREE_TIERING_DECISION_20260807）────────────
+    # Hot=内存 blocks / Warm=序列化 JSON / Cold=v3_sessions 原文（重建）。
+    # export=Hot→Warm（page-out），import=Warm→Hot（page-in）。
+
+    def export_blocks(self, session_id: Optional[str] = None) -> dict:
+        """Hot→Warm 落盘序列化（含结构 + 文本，足够重建图与详情视图）。
+
+        session_id 给定 → 只导出该会话的块（Warm 文件按会话隔离）。
+        """
+        blocks = []
+        for bid, b in self.blocks.items():
+            if session_id is not None and getattr(b, "_session_id", "") != session_id:
+                continue
+            blocks.append({
+                "block_id": bid,
+                "session_id": getattr(b, "_session_id", ""),
+                "name": b.name,
+                "parent_id": b.parent_id,
+                "child_ids": list(b.child_ids),
+                "status": b.status,
+                "depth": b.depth,
+                "created_at_turn": b.created_at_turn,
+                "last_active_turn": b.last_active_turn,
+                "primary_intent": b.primary_intent,
+                "summary": (
+                    getattr(b, "_summary_text", "") or
+                    (b.summary.get_best() if getattr(b, "summary", None) else "")
+                ),
+                "raw_text": getattr(b, "_raw_text", "") or " ".join(
+                    getattr(u, "raw_text", "") for u in getattr(b, "atomic_units", [])
+                ),
+                "entities": [
+                    str(e.text) if hasattr(e, "text") else str(e)
+                    for e in getattr(b, "entities", [])
+                ],
+                "cross_refs": [
+                    {"target": r.target_block_id, "type": r.ref_type,
+                     "strength": r.strength}
+                    for r in getattr(b, "cross_refs", [])
+                ],
+            })
+        return {
+            "blocks": blocks,
+            "turn_count": self.turn_count,
+            "current_block_id": self.current_block_id,
+            "session_ids": list(getattr(self, "_session_ids", set())),
+        }
+
+    def import_blocks(self, payload: dict) -> int:
+        """Warm→Hot 换入（page-in）。重建结构块，文本挂扩展字段。"""
+        from .models import DiscourseBlock
+        entries = (payload or {}).get("blocks", []) or []
+        for e in entries:
+            b = DiscourseBlock(
+                block_id=e["block_id"],
+                name=e.get("name", ""),
+                parent_id=e.get("parent_id"),
+                child_ids=list(e.get("child_ids", [])),
+                status=e.get("status", "active"),
+                depth=int(e.get("depth", 0)),
+                created_at_turn=int(e.get("created_at_turn", 0)),
+                last_active_turn=int(e.get("last_active_turn", 0)),
+                primary_intent=e.get("primary_intent", "unknown"),
+            )
+            b._session_id = e.get("session_id", "")
+            b._summary_text = e.get("summary", "")
+            b._raw_text = e.get("raw_text", "")
+            b._exported_entities = list(e.get("entities", []))
+            b._exported_cross_refs = list(e.get("cross_refs", []))
+            self.blocks[b.block_id] = b
+        self.turn_count = int((payload or {}).get("turn_count", 0))
+        self.current_block_id = (payload or {}).get("current_block_id")
+        sids = (payload or {}).get("session_ids")
+        if sids:
+            self._session_ids = set(sids)
+        return len(entries)
+
+    def get_tree(self, session_id: str):
+        """A-compatible ``get_tree`` — returns the shared B kernel instance."""
+        return self
+
+    # ── A-compatible read helpers (R6 D3: A wiring reads these) ────────────
+
+    @property
+    def root_id(self):
+        """A-compatible root node id (first block with no parent, else first)."""
+        for bid, b in self.blocks.items():
+            if not b.parent_id:
+                return bid
+        return next(iter(self.blocks), "_root")
+
+    @property
+    def current_branch(self):
+        """A-compatible current branch = current block id."""
+        return self.current_block_id
+
+    def get_stats(self, session_id: str) -> dict:
+        """A-compatible stats dict (CLI cmd_show / batch3 memory)."""
+        return {
+            "total_blocks": len(self.blocks),
+            "root_id": self.root_id,
+            "current_branch": self.current_block_id,
+            "max_depth": max(
+                (getattr(b, "depth", 0) for b in self.blocks.values()), default=0
+            ),
+            "turn": self.turn_count,
+            # P5: Track A 认知状态（白盒 A19 — 组块边界判据可观测）
+            "cognitive_hints": getattr(self, "_last_cognitive_hints", {}),
+        }
+
+    def find_block_by_reference(self, session_id: str, reference: str):
+        """A-compatible entity/phrase search → block_id or None."""
+        ref_lower = (reference or "").lower()
+        if not ref_lower:
+            return None
+        for bid, b in self.blocks.items():
+            name = str(getattr(b, "name", "") or "").lower()
+            if name and ref_lower in name:
+                return bid
+            for e in getattr(b, "entities", []):
+                ent = str(getattr(e, "text", "") or "").lower()
+                if ent and ref_lower in ent:
+                    return bid
+            for edu in getattr(b, "atomic_units", []):
+                raw = str(getattr(edu, "raw_text", "") or "").lower()
+                if raw and ref_lower in raw:
+                    return bid
+        return None
+
+    # ── A-compatible write ops (CLI write_cmd / p7_cmd / api_viz_edit) ─────
+
+    def split_block(self, session_id: str, block_id: str, position: int = 0) -> bool:
+        """Split a B block at an EDU position. Returns True on success."""
+        b = self.blocks.get(block_id)
+        if not b or len(b.atomic_units) <= 1:
+            return False
+        split_at = max(1, min(position, len(b.atomic_units) - 1))
+        left = b.atomic_units[:split_at]
+        right = b.atomic_units[split_at:]
+        b.atomic_units = left
+        import hashlib
+        nb = DiscourseBlock(
+            block_id="blk_" + hashlib.md5(
+                " ".join(getattr(e, "raw_text", "") for e in right).encode()
+            ).hexdigest()[:8],
+            name=getattr(right[0], "raw_text", "split")[:30],
+        )
+        for edu in right:
+            nb.add_edu(edu)
+        nb.parent_id = b.parent_id
+        self.blocks[nb.block_id] = nb
+        b.child_ids.append(nb.block_id)
+        return True
+
+    def merge_blocks(self, session_id: str, block_ids: list) -> bool:
+        """Merge sibling blocks into the first one. Returns True on success."""
+        if not block_ids or len(block_ids) < 2:
+            return False
+        target = self.blocks.get(block_ids[0])
+        if not target:
+            return False
+        for bid in block_ids[1:]:
+            b = self.blocks.get(bid)
+            if not b:
+                continue
+            for edu in b.atomic_units:
+                target.add_edu(edu)
+            if b.parent_id and b.parent_id in self.blocks:
+                parent = self.blocks[b.parent_id]
+                if bid in parent.child_ids:
+                    parent.child_ids.remove(bid)
+            del self.blocks[bid]
+        return True
+
+    def delete_block(self, session_id: str, block_id: str) -> bool:
+        """Delete a block; children are reparented to its parent."""
+        b = self.blocks.get(block_id)
+        if not b:
+            return False
+        parent_id = b.parent_id
+        for child in list(b.child_ids):
+            child_b = self.blocks.get(child)
+            if child_b:
+                child_b.parent_id = parent_id
+        if parent_id and parent_id in self.blocks:
+            parent = self.blocks[parent_id]
+            if block_id in parent.child_ids:
+                parent.child_ids.remove(block_id)
+        del self.blocks[block_id]
+        if self.current_block_id == block_id:
+            self.current_block_id = next(iter(self.blocks), None)
+        return True
+
+    def promote_block(self, session_id: str, block_id: str, levels: int = 1) -> bool:
+        """Move block up in hierarchy. Returns True on success."""
+        b = self.blocks.get(block_id)
+        if not b:
+            return False
+        for _ in range(max(1, levels)):
+            parent = self.blocks.get(b.parent_id) if b.parent_id else None
+            if not parent:
+                break
+            b.parent_id = parent.parent_id
+        return True
+
+    def demote_block(self, session_id: str, block_id: str, levels: int = 1) -> bool:
+        """Move block under its first sibling. Returns True on success."""
+        b = self.blocks.get(block_id)
+        if not b:
+            return False
+        for _ in range(max(1, levels)):
+            parent = self.blocks.get(b.parent_id) if b.parent_id else None
+            if not parent:
+                break
+            siblings = [c for c in parent.child_ids
+                        if c != block_id and c in self.blocks]
+            if siblings:
+                b.parent_id = siblings[0]
+        return True
+
+    def compress_cold_blocks(self, session_id: str, llm=None) -> int:
+        """Upgrade cold/frozen blocks to v4 summary. Returns upgraded count."""
+        upgraded = 0
+        current = self.turn_count
+        for block in list(self.blocks.values()):
+            if getattr(block, "status", "active") not in ("cold", "frozen"):
+                continue
+            try:
+                if self.summary_engine.check_upgrade(block, current):
+                    upgraded += 1
+            except Exception:
+                continue
+        return upgraded
+
+    def set_block_summary(self, block_id: str, text: str) -> bool:
+        """Set a block's summary text (A-compatible cmd_summary)."""
+        b = self.blocks.get(block_id)
+        if not b:
+            return False
+        b.summary.v1_raw = (text or "")[:200]
+        if b.summary.version < 2:
+            b.summary.version = 2
+        return True
+
+
+class _RouteResultCompat:
+    """Minimal stand-in for A's RouteResult (decision + block_ids)."""
+
+    def __init__(self, decision: str = "continue", block_ids: list = None):
+        self.decision = decision
+        self.block_ids = block_ids or []
+
+    def __repr__(self):
+        return f"_RouteResultCompat(decision={self.decision!r}, blocks={len(self.block_ids)})"

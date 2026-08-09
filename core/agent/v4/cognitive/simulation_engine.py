@@ -121,7 +121,9 @@ class InternalSimulationEngine:
         try:
             from core.agent.llm_providers.base import GenerateRequest
             result = self._llm.generate(GenerateRequest(
-                prompt=prompt, max_tokens=400, temperature=0.3,
+                # JSON 结构化输出：prompt 已约束格式与条数，max_tokens 只做
+                # 保险丝（thinking 模型需先烧 reasoning token，太小会空回复）。
+                prompt=prompt, max_tokens=2048, temperature=0.3,
             ))
             text = result.text if hasattr(result, 'text') else str(result)
 
@@ -150,7 +152,9 @@ class InternalSimulationEngine:
         """Topic-transition fallback when LLM unavailable."""
         from core.agent.tiered.jieba_parser import JiebaRelationParser
         parser = JiebaRelationParser()
-        entities = parser.extract_relations(last_answer)
+        rels = parser.extract(last_answer)
+        entities = [r.get("subject") or r.get("object") for r in rels[:3] if r]
+        entities = [e for e in entities if e]
         qs = [f"Can you explain more about {e}?" for e in entities[:3]]
         return SimulationResult(
             simulated_questions=qs or ["What else should I know?"],

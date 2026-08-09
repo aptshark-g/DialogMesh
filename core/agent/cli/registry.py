@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -82,17 +83,22 @@ class SubsystemRegistry:
         except (ValueError, TypeError):
             return cls()
 
-        if all(
-            p.default is not inspect.Parameter.empty
-            for p in sig.parameters.values()
-            if p.name != "self"
-        ):
-            return cls()  # all params have defaults
-
         injectable = {
             dep: inst for dep, inst in self._instances.items()
             if inst is not None
         }
+
+        # Fast path ONLY when there is nothing injectable. If the class has
+        # all-default params but an injectable (engine, provider, ...) exists,
+        # we must still attempt injection — otherwise subsystems like
+        # SubgraphCompiler(engine=None, budget=...) silently construct with
+        # engine=None and compile empty output.
+        if not injectable and all(
+            p.default is not inspect.Parameter.empty
+            for p in sig.parameters.values()
+            if p.name != "self"
+        ):
+            return cls()  # all params have defaults, nothing to inject
         kwargs = {}
         for pname, p in sig.parameters.items():
             if pname == "self" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
@@ -247,31 +253,38 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
         engine: The CognitiveRuntimeEngine instance (for factory closures).
     """
     r = SubsystemRegistry()
+    # Provide engine for constructor injection (e.g. SubgraphCompiler(engine=),
+    # OCEANProfile, etc.). Without this, _instantiate_with_deps sees no
+    # "engine" in injectable and subsystems that need the engine silently
+    # construct with engine=None — compiled output is then empty.
+    if engine is not None:
+        r._instances["engine"] = engine
 
     # ── Tier 0: Core infrastructure (init_order 0-10) ──
     r.register("event_log", "core.agent.api.api_event_log:EventLog",
                required=True, init_order=0, description="EventLog (SQLite append-only)")
-    r.register("event_bus", "core.agent.events.event_bus:EventBus",
-               required=True, init_order=0, description="EventBus (ring buffer pub/sub)")
+    r.register("event_bus", "core.agent.event.event_bus:EventBus",
+               required=True, init_order=0, description="EventBus v2 (NATS-patterned, NEVER drop)")
     r.register("decider", "core.agent.state.global_decider:GlobalDecider",
                required=True, init_order=0, description="GlobalDecider (state machine)")
 
     # ── Tier 1: PCR + Intent (init_order 10-20) ──
     def _pcr_factory():
-        from core.agent.llm_providers.llm_instances.pcr_llm import PCRLLM
-        return PCRLLM(provider=getattr(engine, '_llm_provider', None))
+        from core.agent.pcr_router_v2 import PCRRouterV2
+        return PCRRouterV2()
     r.register("pcr_router", "", required=False, init_order=10,
                description="Pre-Cognitive Router", factory=_pcr_factory)
-    r.register("topic_tree", "core.agent.topic_tree.manager:TopicTreeManager",
-               required=False, init_order=15, description="TopicTree")
-    r.register("discourse_tree", "core.agent.compiler.discourse_block_tree:DiscourseBlockTreeManager",
+    r.register("topic_tree", "core.agent.topic_tree.manager_v2:TopicTreeManagerV2",
+               required=False, init_order=15, description="TopicTree V2 (唯一内核, T4 归一)")
+    r.register("discourse_tree", "core.agent.discourse_block_tree.manager:DiscourseBlockTreeManager",
                required=False, init_order=18, description="DiscourseBlockTree (3-stage compiler)")
     r.register("granularity", "core.agent.compiler.discourse_block_tree:DiscourseBlockGranularityRegulator",
                required=False, init_order=19, description="Granularity (BDI+BOR)")
 
     # ── Tier 2: Intent + Planning (init_order 20-30) ──
-    r.register("intent_parser", "core.agent.v3_common.intent_parser:IntentParser",
-               required=False, init_order=20, description="Intent Parser v3")
+    r.register("intent_parser", "core.agent.intent.dual_track:DualTrackIntentPipeline",
+               required=False, init_order=20,
+               description="Intent Agent-Native pipeline (I3/R3: T1 5链验证)")
     r.register("planner", "core.agent.causal.planner:CausalPlanner",
                required=False, init_order=25, description="Causal Task Planner")
 
@@ -373,8 +386,24 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
                deps=[], factory=lambda: __import__("core.agent.engine.semantic_pipeline", fromlist=["SemanticObjectPipeline"]).SemanticObjectPipeline())
 
     # ── Tier 9: Phase 1-3 storage + coref (init_order 110-130) ──
-    r.register("chunk_store", "core.agent.storage.chunk_store:ChunkStore",
-               required=False, init_order=110, description="Semantic atom vector store")
+    def _chunk_store_factory():
+        """ChunkStore backend 可配置 (G10-P1): DM_CHUNK_BACKEND=unified|in_memory.
+        unified 接 UnifiedStore (BGE+LSH)；BGE 未就绪时退化关键词检索。"""
+        from core.agent.storage.chunk_store import ChunkStore
+        backend = os.environ.get("DM_CHUNK_BACKEND", "in_memory")
+        bge = None
+        if backend == "unified":
+            try:
+                from core.infrastructure.model_service import get_model_service
+                svc = get_model_service()
+                if svc.status == "warm":
+                    bge = svc
+            except Exception:
+                bge = None
+        return ChunkStore(backend=backend, bge_model=bge)
+    r.register("chunk_store", "", required=False, init_order=110,
+               description="Semantic atom vector store (in_memory|chromadb|unified)",
+               factory=_chunk_store_factory)
     r.register("semantic_splitter", "core.agent.storage.semantic_splitter:SemanticSplitter",
                required=False, init_order=110, description="Recursive splitter with overlap")
     r.register("context_window", "core.agent.storage.context_window:ContextWindow",

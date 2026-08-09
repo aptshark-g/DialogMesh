@@ -11,12 +11,24 @@
 引用数复核 (用户): graph_store 实测 19 (我写 22) · unified_graph_store 8 (我写 10)
 faiss 状态 (双环境核查): anaconda3 (pytest 环境) ✅ 已装 / .venv ❌ 未装 / hermes venv ❌
   → 两环境不一致, "阶段 1 可选 faiss" 结论不变, 但原因 = 环境不一致 (非全未装)
-壳 vs 实现核查 (修正版 — 我此前把 grep -c 定义数 16/21 误当行数):
+壳 vs 实现核查 (用户 2026-08-04 修正 — grep -c 数的是定义数 16/21, 非行数):
   tiered_storage.py: 344 行, TieredStorageManager (Hot/Warm/Cold 分层迁移) ✅ 真实实现
   unified_store.py:  248 行, UnifiedStore (BGE 向量 + LSH 剪枝) ✅ 真实实现 — 且是向量能力!
   unified_graph_store.py: 148 行, 有真实 SQLite 建表逻辑 ⚠️ 半实现
   graph_store.py: 472 行真实实现 ✅ / sqlite_store.py: 328 行真实实现 ✅
   → 无"壳文件"! 之前"16/21 行壳"结论错误, 已废除
+
+> ⚠️ 2026-08-04 用户再修正（连带发现，比修正更有价值）:
+> UnifiedStore 是现成轻量向量索引 (BGE+LSH, 248 行, 7 引用含 stubs_api/CLI 系列)
+> → 比 chromadb (79MB 模型) 更适合阶段 1, 变为首选向量后端
+> TieredStorageManager 是现成分层迁移 (344 行, Hot/Warm/Cold)
+> → 阶段 1 直接启用, 不用等"分层设计落地"
+> → G10 从"选型"变成"盘点 + 接线":
+>    向量能力已有 (UnifiedStore), 缺的是接进 ChunkStore backend
+>    分层能力已有 (TieredStorageManager), 缺的是接入主存储路径
+> faiss 三环境: anaconda3 (pytest) ✅ / .venv ❌ / hermes venv ❌
+> 真正冗余: 仅 1-2 引用的孤儿后端 (faiss_store/milvus_store/hnsw_index/lsm_store)
+>          + 半实现 unified_graph_store — 比"6 套归一"规模小得多
 ```
 
 ---
@@ -33,15 +45,16 @@ GraphBackend Protocol 已存在（relation_graph.py:27）——换后端是配�
 主存储:
   事实+事件 → sqlite_store (328行, 9 引用, 真实实现) ✅
   图        → graph_store (472行, 19 引用, 真实实现, SQLite 持久化) ✅
-  向量      → UnifiedStore (248行, BGE+LSH, 已存在! 轻量替代 chromadb) ✅
-              或 chromadb (已装) 或 faiss (anaconda3 有 / .venv 无)
-  分层      → TieredStorageManager (344行, Hot/Warm/Cold 迁移) ✅ 可直接启用
+  向量      → UnifiedStore (248行, BGE+LSH, 已存在, 7 引用) ✅ **首选**
+              （轻量替代 chromadb 79MB; chromadb/faiss 为可选后端）
+  分层      → TieredStorageManager (344行, Hot/Warm/Cold 迁移) ✅ **直接启用**
 归一: 收敛到 GraphBackend Protocol 之下的多个实现 — 不是"合并成 1 套"
-  保留: sqlite_store / graph_store / unified_store / tiered_storage (全是真实实现)
+  保留: sqlite_store / graph_store / unified_store / tiered_storage (真实实现, 全部保留)
+  接线: UnifiedStore → ChunkStore backend（向量能力接入, 当前缺）
+  接线: TieredStorageManager → 主存储路径（分层迁移接入, 当前缺）
   处置: faiss_store / milvus_store / hnsw_index / lsm_store (1-2 引用孤儿) —
         归档或吸收进 UnifiedStore 后端 (拍板)
   处置: unified_graph_store (148行半实现) — 吸收进 graph_store 或归档, 拍板
-  注: 无"壳文件" — 之前分类错误已废除; 真正的冗余是 1-2 引用的孤儿后端
 ```
 
 ### 阶段 2（数据 >100MB 或 图节点 >10K 或 图扩散深度>2 跳延迟敏感）: Kuzu
@@ -90,11 +103,14 @@ A17 记录永不可删 → SQLite 事件日志保留 (阶段 1 已是)
 ## 五、拍板项（3 项）
 
 ```
-G10-1 ✅ 阶段 1 = sqlite_store + graph_store + chromadb/faiss, 零新依赖
-       (归一: 归档 6 个壳/孤儿, 保留 2 个真实实现 + Protocol 抽象)
+G10-1 ✅ 阶段 1 = sqlite_store + graph_store + UnifiedStore(向量首选) +
+       TieredStorageManager(分层), 零新依赖
+       (归一: 保留 4 个真实实现 + Protocol 抽象; 处置 4 孤儿后端 + 1 半实现)
+       接线: UnifiedStore→ChunkStore backend / TieredStorageManager→主存储路径
 G10-2 ✅ 阶段 2 = Kuzu (嵌入式向量图), 实现 Protocol 新后端
 G10-3 ✅ 触发条件 = 体量 (100MB/10K) + 行为 (扩散深度/召回退化) + 并发 (与 G5)
 ```
 
 > 关联: G10 与 I1-9 (三套 chroma 入口归一) 一并拍——chroma 入口收敛到
-> ChunkStore backend 一个配置点。
+> ChunkStore backend 一个配置点；UnifiedStore 可选替代 chromadb 后，
+> chroma 三入口问题可能直接消解（统一用 UnifiedStore 或统一用 chromadb）。

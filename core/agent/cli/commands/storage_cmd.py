@@ -3,6 +3,7 @@
 dm chunk stats|search|add
 dm graph entities|traverse
 dm meta show|tag|cluster
+dm tiered stats|archive|rehydrate   (G10-P2 分层存储)
 """
 from __future__ import annotations
 
@@ -40,6 +41,22 @@ def register_cmds(sp):
     p_c = p2.add_parser("cluster", help="Recluster blocks")
     p_c.add_argument("cluster_id")
     p_c.add_argument("blocks", nargs="+")
+
+    # ── tiered (G10-P2: TieredStorageManager) ──
+    p = sp.add_parser("tiered", help="Tiered storage (Hot/Warm/Cold)")
+    p2 = p.add_subparsers(dest="subcommand")
+    p2.add_parser("stats", help="Tiered storage statistics")
+    p_a = p2.add_parser("archive", help="Archive expired warm sessions to cold")
+    p_a.add_argument("--dry-run", action="store_true")
+    p_r = p2.add_parser("rehydrate", help="Rehydrate cold session to warm")
+    p_r.add_argument("session_id")
+
+    # ── recall (B2-3 P1: 统一召回接口) ──
+    p = sp.add_parser("recall", help="统一召回 (混合锚点+扩散+融合)")
+    p.add_argument("query", nargs="+")
+    p.add_argument("--top-k", type=int, default=10)
+    p.add_argument("--weights", action="store_true",
+                   help="显示各源置信度 (A18 参数白盒)")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -169,3 +186,95 @@ def cmd_meta_cluster(args=None):
         return "Usage: dm meta cluster <cluster_id> <block_id1> [block_id2...]"
     bm.recluster(blocks, cluster_id)
     return f"Clustered {len(blocks)} blocks → {cluster_id}"
+
+
+# ═══════════════════════════════════════════════════════════
+# G10-P2: Tiered storage commands
+# ═══════════════════════════════════════════════════════════
+
+def cmd_tiered_stats(args=None):
+    """dm tiered stats — TieredStorageManager statistics."""
+    e = _engine()
+    sl = getattr(e, '_storage', None)
+    if not sl:
+        return "StorageLayer not available"
+    stats = sl.tiered_stats()
+    if not stats.get("enabled"):
+        return f"Tiered storage disabled ({stats.get('error') or 'not wired'})"
+    lines = [
+        "Hot:   sessions=%d max=%d" % (
+            stats["hot"]["sessions"], stats["hot"]["max"]),
+        "Warm:  sessions=%d turns=%d db=%s" % (
+            stats["warm"]["sessions"], stats["warm"]["turns"],
+            stats["warm"]["db_path"]),
+        "Cold:  files=%d size_mb=%.2f dir=%s" % (
+            stats["cold"]["files"], stats["cold"]["size_mb"],
+            stats["cold"]["dir"]),
+    ]
+    return "\n".join(lines)
+
+
+def cmd_tiered_archive(args=None):
+    """dm tiered archive [--dry-run] — archive expired sessions."""
+    e = _engine()
+    sl = getattr(e, '_storage', None)
+    if not sl:
+        return "StorageLayer not available"
+    dry = bool(getattr(args, "dry_run", False))
+    result = sl.archive_tiered(dry_run=dry)
+    if not result.get("enabled"):
+        return "Tiered storage disabled"
+    prefix = "[DRY-RUN] " if dry else ""
+    return (f"{prefix}Archived {result['archived_sessions']} sessions, "
+            f"{result['archived_turns']} turns")
+
+
+def cmd_tiered_rehydrate(args=None):
+    """dm tiered rehydrate <session_id> — restore cold session to warm."""
+    e = _engine()
+    sl = getattr(e, '_storage', None)
+    if not sl:
+        return "StorageLayer not available"
+    sid = getattr(args, "session_id", "")
+    if not sid:
+        return "Usage: dm tiered rehydrate <session_id>"
+    session = sl.rehydrate_tiered(sid)
+    if session is None:
+        return f"No archived session found: {sid}"
+    return f"Rehydrated session {sid} (turns={session.turn_count})"
+
+
+def cmd_recall(args=None):
+    """dm recall <query> [--top-k N] [--weights] — 统一召回接口。"""
+    e = _engine()
+    if getattr(args, "weights", False):
+        try:
+            from core.agent.recall import RecallService
+            svc = RecallService(engine=e)
+            return "\n".join(
+                f"  {k}: {v}" for k, v in svc.weights().items())
+        except Exception as exc:
+            return f"RecallService error: {exc}"
+    query = " ".join(getattr(args, "query", []) or [])
+    if not query:
+        return "Usage: dm recall <query> [--top-k N] [--weights]"
+    top_k = int(getattr(args, "top_k", 10))
+    try:
+        from core.agent.recall import RecallService
+        svc = RecallService(engine=e)
+        result = svc.recall(query, top_k=top_k)
+        if not result.hits:
+            return f"No recall hits for: {query} (latency {result.latency_ms:.0f}ms)"
+        lines = [f"Recall: {query} | {len(result.hits)} hits | "
+                 f"expanded={len(result.expanded_queries)} | "
+                 f"latency {result.latency_ms:.0f}ms"]
+        for i, h in enumerate(result.hits, 1):
+            spo = ""
+            if h.spo and h.spo.get("predicate"):
+                spo = f" SPO[{h.spo.get('subject')}|{h.spo.get('predicate')}|{h.spo.get('obj')}]"
+            lines.append(
+                f"  {i}. [{h.source:<9}] fused={h.fused():.3f} "
+                f"conf={h.confidence:.2f} hops={h.hops}{spo} {h.text[:46]}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"RecallService error: {exc}"

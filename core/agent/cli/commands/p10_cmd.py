@@ -107,12 +107,34 @@ def cmd_profile_analyze(args):
     if not ocean:
         return print('{"error":"ocean_analyst not loaded"}')
     sid = getattr(args, 'sid', get_session()) if hasattr(args, 'sid') else get_session()
-    if hasattr(ocean, 'analyze'):
-        result = ocean.analyze(session_id=sid)
-        dims = getattr(getattr(result, 'dims', {}), '__dict__', {}) if hasattr(result, 'dims') else {}
-        print(json.dumps({"dims": dims, "mbti": getattr(result, 'mbti', '?')}, ensure_ascii=False, default=str))
-    else:
+    if not hasattr(ocean, 'analyze'):
         print('{"error":"analyze method not available"}')
+        return
+    # P11: 签名对齐 — analyze(engine, turn_text, llm_response)。
+    # 从会话历史（conversation tracker）取最近轮次喂入，而不是传 session_id。
+    tracker = getattr(e, '_conversation_tracker', None)
+    history = tracker.get_history_entries(max_entries=8) if tracker and hasattr(tracker, 'get_history_entries') else []
+    if not history:
+        print('{"error":"no conversation history — send a message first"}')
+        return
+    last_reply = getattr(e, '_last_llm_response', "") or ""
+    analyzed = 0
+    for entry in history:
+        text = entry.get("text", "")
+        if not text:
+            continue
+        try:
+            ocean.analyze(e, text, last_reply)
+            analyzed += 1
+        except Exception as err:
+            print(json.dumps({"error": f"analyze turn failed: {err}"}, ensure_ascii=False))
+            return
+    snap = ocean.snapshot() if hasattr(ocean, 'snapshot') else {}
+    print(json.dumps({
+        "dims": snap.get("dims", {}),
+        "mbti": snap.get("mbti", "?"),
+        "turns_analyzed": analyzed,
+    }, ensure_ascii=False, default=str))
 
 
 # ═══════════════════════════════════════════════════════════
@@ -217,6 +239,39 @@ def cmd_trace_show(args):
         return print('{"error":"tracer not loaded"}')
     traces = tracer.recent(limit=getattr(args, 'limit', 10) if hasattr(args, 'limit') else 10)
     print(json.dumps({"traces": traces, "stats": tracer.stats()}, ensure_ascii=False, default=str))
+
+def cmd_trace_errors(args):
+    """dm alg trace-errors -- show structured error aggregation (B3 whitebox)."""
+    e = get_engine()
+    tracer = getattr(e, '_tracer', None)
+    if not tracer:
+        return print('{"error":"tracer not loaded"}')
+    if not hasattr(tracer, "error_report"):
+        return print('{"error":"error_report unavailable"}')
+    window = getattr(args, 'window', 200) if hasattr(args, 'window') else 200
+    print(json.dumps(tracer.error_report(window=window), ensure_ascii=False, default=str))
+
+
+def cmd_trace_turn(args):
+    """dm alg trace-turn <trace_id> -- show per-phase detail of one turn."""
+    e = get_engine()
+    tracer = getattr(e, '_tracer', None)
+    if not tracer:
+        return print('{"error":"tracer not loaded"}')
+    if not hasattr(tracer, "turn_detail"):
+        return print('{"error":"turn_detail unavailable"}')
+    tid = getattr(args, 'trace_id', None)
+    limit = getattr(args, 'limit', 100) if hasattr(args, 'limit') else 100
+    if not tid:
+        # default: latest trace
+        recent = tracer.recent(limit=1)
+        tid = recent[0]["trace_id"] if recent else None
+        if not tid:
+            return print('{"error":"no traces yet"}')
+    steps = tracer.turn_detail(trace_id=tid, limit=limit)
+    print(json.dumps({"trace_id": tid, "steps": steps, "step_count": len(steps)},
+                     ensure_ascii=False, default=str))
+
 
 def cmd_trace_metrics(args):
     """dm alg trace-metrics — show per-subsystem metrics."""

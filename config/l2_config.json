@@ -25,7 +25,16 @@
   "l3": {
     "profile_c_threshold": 0.6,
     "assoc_max_causal_for_venting": 3,
-    "assoc_stability_min": 0.8
+    "assoc_stability_min": 0.8,
+    "zone_intent_map": {
+      "ATOMIC": "信息查询",
+      "PSYCHE": "吐槽",
+      "EXPLORE": "探索",
+      "PRECISION": "诊断",
+      "ABYSS": "修复",
+      "MIXED": "信息查询"
+    },
+    "description": "D-14: PCR zone → L3 intent prior. Zone from coordinate router (V4.0), intent hypothesis for MultiPerspectiveValidator."
   },
   "l3_behavior_map": {
     "诊断": "diagnostic",

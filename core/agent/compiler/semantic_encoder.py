@@ -87,9 +87,15 @@ class SemanticEncoder:
         logger.info(f"SemanticEncoder loaded: {self.model_path} on {self.device}")
 
     def _is_chinese(self, text: str) -> bool:
-        """Detect if text is primarily Chinese (>30% CJK characters)."""
+        """Detect if text is primarily Chinese (>=1 CJK char).
+
+        2026-08-08 修复: 原阈值 >30% 导致中英混合文本(如 "pi agent 怎么做")
+        被判为 "other" → 走 384 维 n-gram 分支, 与 512 维 BGE 向量维度
+        不一致, 余弦恒 0, vector 召回路全线失效。BGE-zh 支持中英混合
+        token, 含任一 CJK 字符即走 zh 模型, 统一 512 维。
+        """
         cjk = sum(1 for ch in text if '\u4e00' <= ch <= '\u9fff' or '\u3040' <= ch <= '\u30ff')
-        return cjk > max(0, len(text)) * 0.3
+        return cjk > 0
 
     def _load_multilingual(self):
         """Lazy-load multilingual/English encoder for non-Chinese text.

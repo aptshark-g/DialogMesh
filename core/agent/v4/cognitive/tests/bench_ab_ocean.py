@@ -1,4 +1,4 @@
-"""AB Test: replay previous session with CoT+BFI fix, compare results.
+﻿"""AB Test: replay previous session with CoT+BFI fix, compare results.
 
 Feeds same 10 questions into new engine. Shows before/after OCEAN + MBTI.
 """
@@ -10,7 +10,7 @@ from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.events.event_ir import DialogAdapter
 
-KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
+KEY = "sk-REPLACE_WITH_YOUR_KEY"
 
 # Your 10 questions from previous session
 QUESTIONS = [

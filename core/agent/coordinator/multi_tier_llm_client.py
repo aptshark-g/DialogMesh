@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIER1_CONFIG = {
     "name": "fast",
-    "base_url": "http://localhost:1234/v1",
+    # B8-4 (2026-08-04): 统一走 switch 网关，分层由网关模型路由实现
+    "base_url": "http://127.0.0.1:8080/v1",
     "api_key": "lmstudio",
     "model": "auto",
     "timeout": 10.0,
@@ -41,7 +42,8 @@ DEFAULT_TIER1_CONFIG = {
 
 DEFAULT_TIER2_CONFIG = {
     "name": "premium",
-    "base_url": "https://api.deepseek.com/v1",
+    # B8-4 (2026-08-04): 统一走 switch 网关
+    "base_url": "http://127.0.0.1:8080/v1",
     "api_key": "${DEEPSEEK_API_KEY}",
     "model": "deepseek-v4",
     "timeout": 60.0,

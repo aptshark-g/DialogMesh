@@ -6,7 +6,10 @@ export interface ApiConfig {
 }
 
 const DEFAULT_CONFIG: ApiConfig = {
-  restBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  // B5（2026-08-07）: 默认相对路径 → 同源请求走 dev/prod 代理，
+  // 绕开系统 Chrome 剥离 CORS 响应头的环境问题（B5_UI_TEST_PLAN）。
+  // 显式 VITE_API_BASE_URL 或 localStorage 配置仍可覆盖（远程/独立部署）。
+  restBaseUrl: import.meta.env.VITE_API_BASE_URL || '',
   wsBaseUrl: import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000',
 };
 

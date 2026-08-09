@@ -112,6 +112,7 @@ class TestPathStateMachine:
     def test_all_states_snapshot(self):
         sm = PathStateMachine()
         sm.transition("async", PathState.RUNNING)
+        sm.transition("slow", PathState.RUNNING)  # IDLE → RUNNING 合法
         sm.transition("slow", PathState.BACKLOGGED)
         states = sm.all_states()
         assert states["async"] == PathState.RUNNING
@@ -266,7 +267,9 @@ class TestPathAwareScheduler:
 
     def test_submit_task_to_queue(self):
         scheduler = PathAwareScheduler()
-        task = PathTask(task_id="test_1", path=PathType.ASYNC, priority=5)
+        # PathTask 是抽象类（abstract execute）— 用 CallablePathTask 具体实现
+        from core.agent.v4.cognitive_scheduler.path_models import CallablePathTask
+        task = CallablePathTask(fn=lambda: "ok", path=PathType.ASYNC, priority=5)
         scheduler.submit_to_path(task)
         assert len(scheduler.get_queue(PathType.ASYNC)) == 1
 

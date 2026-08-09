@@ -5,7 +5,8 @@ import { FlowchartCanvas } from '@/components/task/FlowchartCanvas';
 import type { FNode, FEdge } from '@/components/task/FlowchartCanvas';
 import { useChatStore } from '@/stores/chatStore';
 import { useTaskStore } from '@/stores/taskStore';
-import { getTaskGraph, saveTaskGraph } from '@/api/session';
+import { getTaskGraph, saveTaskGraph, TaskGraphConflictError } from '@/api/session';
+import { AlertTriangle } from 'lucide-react';
 
 /* ── Backend JSON → Canvas nodes ── */
 function apiNodesToCanvas(apiNodes: any[]): FNode[] {
@@ -39,12 +40,20 @@ export function TaskPlanningPage() {
   const [edges, setEdges] = useState<FEdge[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState<{ currentVersion: number } | null>(null);
+  const versionRef = useRef(0);
 
-  // Load from backend on mount
+  // Load from backend on mount.
+  // B5（2026-08-07）: 不再用 `if (!loaded) return 加载中` 阻塞整页 —
+  // 无 sessionId 时回退 default（后端对未知 session 优雅返回空），
+  // 页面壳立即渲染，避免"任务页面一直在加载"。
   useEffect(() => {
-    if (!sessionId || loaded) return;
-    getTaskGraph(sessionId)
+    const sid = sessionId || 'default';
+    let cancelled = false;
+    getTaskGraph(sid)
       .then(data => {
+        if (cancelled) return;
+        versionRef.current = data.version ?? 0;
         const apiNodes = data.nodes || [];
         if (apiNodes.length > 0) {
           setNodes(apiNodesToCanvas(apiNodes));
@@ -62,15 +71,17 @@ export function TaskPlanningPage() {
           });
           setEdges(apiEdges);
         }
-        setLoaded(true);
       })
-      .catch(() => setLoaded(true));
-  }, [sessionId, loaded]);
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
 
   // ── Save to backend ──
   const lastSaveRef = useRef(0);
   useEffect(() => {
-    if (!sessionId || !loaded || nodes.length === 0) return;
+    const sid = sessionId || 'default';
+    if (!loaded || nodes.length === 0) return;
     const now = Date.now();
     if (now - lastSaveRef.current < 2000) return;
     lastSaveRef.current = now;
@@ -78,16 +89,18 @@ export function TaskPlanningPage() {
     const apiEdges = canvasEdgesToApi(edges);
     // Update Zustand store
     useTaskStore.getState().setTaskGraph({
-      id: `tg_${sessionId}`, version: '1.0', nodes: apiNodes as any, edges: apiEdges as any,
+      id: `tg_${sid}`, version: '1.0', nodes: apiNodes as any, edges: apiEdges as any,
       rootNodeId: apiNodes[0]?.id || '', createdAt: '', updatedAt: new Date().toISOString(),
       executionStatus: 'idle' as any, overallProgress: 0,
     });
-    saveTaskGraph(sessionId, apiNodes, apiEdges).catch(() => {});
-  }, [nodes, edges, sessionId, loaded]);
-
-  if (!loaded) return (
-    <div className="flex-1 flex items-center justify-center text-text-muted text-sm bg-surface">加载中...</div>
-  );
+    saveTaskGraph(sid, apiNodes, apiEdges, versionRef.current)
+      .then(r => { versionRef.current = r.version ?? versionRef.current; })
+      .catch((e) => {
+        if (e instanceof TaskGraphConflictError) {
+          setConflict({ currentVersion: e.currentVersion });
+        }
+      });
+  }, [nodes, edges, loaded]);
 
   const handleExport = () => {
     const json = JSON.stringify({ nodes: canvasNodesToApi(nodes, edges), edges: canvasEdgesToApi(edges) }, null, 2);
@@ -126,7 +139,10 @@ export function TaskPlanningPage() {
     const apiNodes = canvasNodesToApi(nodes, edges);
     const apiEdges = canvasEdgesToApi(edges);
     try {
-      await saveTaskGraph(sessionId!, apiNodes, apiEdges);
+      // 冲突未解决时确认 = 强制覆盖（不带 version）
+      const r = await saveTaskGraph(sessionId!, apiNodes, apiEdges, conflict ? undefined : versionRef.current);
+      versionRef.current = r.version ?? versionRef.current;
+      setConflict(null);
       // Store confirmed state for next chat turn
       sessionStorage.setItem(`confirmed_tg_${sessionId}`, JSON.stringify({ nodes: apiNodes, edges: apiEdges }));
     } catch {}
@@ -134,8 +150,56 @@ export function TaskPlanningPage() {
     navigate('/chat');
   };
 
+  const handleForceOverwrite = async () => {
+    const apiNodes = canvasNodesToApi(nodes, edges);
+    const apiEdges = canvasEdgesToApi(edges);
+    try {
+      const r = await saveTaskGraph(sessionId!, apiNodes, apiEdges);
+      versionRef.current = r.version ?? versionRef.current;
+      setConflict(null);
+    } catch {}
+  };
+
+  const handleDiscardLocal = async () => {
+    if (!sessionId) return;
+    try {
+      const data = await getTaskGraph(sessionId);
+      setNodes(apiNodesToCanvas(data.nodes || []));
+      const apiEdges: FEdge[] = [];
+      (data.nodes || []).forEach((n: any) => {
+        (n.dependencies || []).forEach((depId: string) => {
+          apiEdges.push({
+            id: `e_${depId}_${n.id}`,
+            source: depId, target: n.id,
+            sourceHandle: 'bottom', targetHandle: 'top',
+            mode: 'auto' as const,
+          });
+        });
+      });
+      setEdges(apiEdges);
+      versionRef.current = data.version ?? versionRef.current;
+      setConflict(null);
+    } catch {}
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface">
+      {conflict && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 shrink-0">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1">
+            服务端规划已更新（v{conflict.currentVersion}），你的本地编辑保留中。
+          </span>
+          <button onClick={handleForceOverwrite}
+            className="px-2.5 py-1 rounded bg-amber-500 text-white font-medium hover:bg-amber-600">
+            覆盖服务端
+          </button>
+          <button onClick={handleDiscardLocal}
+            className="px-2.5 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-100">
+            放弃本地
+          </button>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-subtle bg-surface-card/50 shrink-0">
         <h1 className="text-sm font-semibold text-primary">任务规划</h1>

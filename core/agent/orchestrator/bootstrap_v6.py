@@ -95,6 +95,14 @@ def bootstrap(pcr_router=None, intent_pipeline=None, l4_engine=None,
         reactor=reactor,
     )
 
+    # Unified async prewarm: BGE model loads in background so the first API
+    # request does not pay cold-load latency (DESIGN_DEEP_AUDIT §7.7).
+    try:
+        from core.infrastructure.model_service import prewarm_models
+        prewarm_models(blocking=False)
+    except Exception:
+        pass
+
     logger.info("DialogMesh v6 bootstrap complete")
     _log_module_status(orch)
     return orch
@@ -146,8 +154,23 @@ def _load_cognitive_bridge():
 
 
 def _auto_detect_llm():
-    """Auto-detect available LLM: check env key first, then quick connectivity."""
+    """Auto-detect available LLM: switch gateway first (B8-4 主路径),
+    then direct DeepSeek key, then None (structural mode)."""
     import os
+
+    # B8-4: 主路径 = switch 网关（唯一内核）
+    try:
+        from core.agent.llm_providers.gateway_provider import GatewayLLMProvider
+        switch_url = os.environ.get("SWITCH_GATEWAY_URL", "http://127.0.0.1:8080")
+        gw = GatewayLLMProvider(base_url=switch_url)
+        if gw.health_check():
+            logger.info("LLM: switch gateway (%s)", switch_url)
+            return gw
+        logger.info("LLM: switch gateway unreachable (%s)", switch_url)
+    except Exception as e:
+        logger.debug("Switch gateway: %s", e)
+
+    # 降级: DeepSeek 直连（switch 离线时 fallback）
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         logger.info("LLM: none (set DEEPSEEK_API_KEY for DeepSeek)")
@@ -197,7 +220,18 @@ def _load_execution_pipeline():
 def _load_file_sandbox():
     try:
         from core.agent.execution.sandbox import FileSandbox
-        return FileSandbox(os.getcwd())
+        try:
+            from core.agent.execution.semantic_diff import (
+                SemanticConstraint,
+                SemanticDiffer,
+            )
+            return FileSandbox(
+                os.getcwd(),
+                semantic_differ=SemanticDiffer(),
+                semantic_constraint=SemanticConstraint(),
+            )
+        except Exception:
+            return FileSandbox(os.getcwd())
     except Exception as e:
         logger.debug("FileSandbox: %s", e)
         return None

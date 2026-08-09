@@ -2,7 +2,6 @@ import time
 from .models import Candidate, PredictionResult, ValueBreakdown
 from .candidate_generator import CandidateGenerator
 from .value_ranker import ValueRanker
-from .training_loop import TrainingFeedbackLoop
 
 class BehaviorPredictor:
     MODE_FULL = "full"; MODE_NO_GRAPH = "no_graph"
@@ -14,12 +13,37 @@ class BehaviorPredictor:
         self.ranker = value_ranker
         self.prof = profile_matcher
         self.cold_start = cold_start
-        self.training = TrainingFeedbackLoop()
 
-    async def predict(self, chain_summary, current_step_id, profile):
+    async def predict(self, chain_summary, current_step_id, profile, mode_hint=None):
+        """Predict the next action.
+
+        ``mode_hint`` (BC05 §3 executor contract) forces the execution path
+        chosen by BehaviorScheduler:
+          - None / "llm"  → full pipeline (LLM + graph hints)
+          - "stats"       → graph-only fast path (0 tokens)
+          - "ask"         → ask_clarification (no prediction)
+        """
         start = time.monotonic()
         hints = self._get_graph_hints(current_step_id)
-        llm_cands = await self.gen.generate(chain_summary, profile, hints)
+
+        if mode_hint == "ask":
+            fb = self._fallback() if not hints else [
+                Candidate(h[0], "", expected_value=h[1]) for h in hints[:1]
+            ]
+            return self._result(fb, "ask", start)
+
+        llm_cands = []
+        if mode_hint != "stats":
+            try:
+                llm_cands = await self.gen.generate(chain_summary, profile, hints)
+            except Exception as e:
+                # LLM failure must not kill the prediction — fall back to the
+                # graph-only / cold-start path (BC05 §2 成本悖论: 故障降级).
+                llm_cands = []
+                import logging
+                logging.getLogger(__name__).debug(
+                    "Behavior LLM candidate generation failed: %s", e,
+                )
 
         if llm_cands and hints:
             cands = [Candidate(a, "", p) for a, p in llm_cands]
@@ -29,9 +53,10 @@ class BehaviorPredictor:
         if llm_cands:
             cands = [Candidate(a, "", llm_probability=p) for a, p in llm_cands]
             for c in cands:
-                c.expected_value = c.llm_probability * 0.7 + 0.0
+                c.success_rate = 0.5
                 if self.prof:
                     c.profile_match = await self.prof.match("", c.action_summary, profile)
+                c.compute_value()
             return self._result(cands, "no_graph", start)
 
         if hints:

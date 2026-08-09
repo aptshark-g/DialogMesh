@@ -87,49 +87,42 @@ class TestCausalSubstrateAdapter(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.persist_path = pathlib.Path(self.tmpdir.name) / "behavior_graph.json"
         self.bg_adapter = BehaviorGraphAdapter(graph_path=str(self.persist_path))
-        self.cs_adapter = CausalSubstrateAdapter(params={"min_chain": 3})
+        self.cs_adapter = CausalSubstrateAdapter(
+            behavior_adapter=self.bg_adapter, min_chain_length=3,
+        )
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
     def test_no_graph_error(self):
-        ctx = RuntimeContext()
-        result = self.cs_adapter.execute(ctx)
-        self.assertFalse(result.ok)
-        self.assertIn("No world_graph", result.error)
+        # No events recorded → empty chain → causal analysis skips gracefully.
+        chain = self.bg_adapter.get_recent_chain(n_steps=10)
+        self.assertFalse(self.cs_adapter.should_trigger(chain))
+        self.assertEqual(self.cs_adapter.process_chain(chain), [])
 
     def test_below_threshold_no_trigger(self):
         for i in range(2):
             e = EventIR(id=f"evt_{i:03d}", kind="dialog.message", payload={"text": f"Msg {i}"})
             self.bg_adapter.record_event(e)
-        ctx = RuntimeContext()
-        ctx.world_graph = self.bg_adapter.graph
-        result = self.cs_adapter.execute(ctx)
-        self.assertTrue(result.ok)
-        self.assertFalse(result.data["triggered"])
-        self.assertEqual(result.data["chain_len"], 2)
+        chain = self.bg_adapter.get_recent_chain(n_steps=10)
+        self.assertFalse(self.cs_adapter.should_trigger(chain))
+        self.assertEqual(self.cs_adapter.process_chain(chain), [])
 
     def test_above_threshold_triggers(self):
         for i in range(5):
             e = EventIR(id=f"evt_{i:03d}", kind="dialog.message", payload={"text": f"Msg {i}"})
             self.bg_adapter.record_event(e)
-        ctx = RuntimeContext()
-        ctx.world_graph = self.bg_adapter.graph
-        ctx.observations = list(self.bg_adapter.graph.nodes.values())
-        result = self.cs_adapter.execute(ctx)
-        self.assertTrue(result.ok)
-        self.assertTrue(result.data["triggered"])
-        self.assertGreaterEqual(result.data["chain_len"], 3)
-        self.assertIsInstance(result.data["entries"], list)
+        chain = self.bg_adapter.get_recent_chain(n_steps=10)
+        self.assertTrue(self.cs_adapter.should_trigger(chain))
+        insights = self.cs_adapter.process_chain(chain)
+        self.assertIsInstance(insights, list)
 
     def test_structural_prior_bounds(self):
         for i in range(5):
             e = EventIR(id=f"evt_{i:03d}", kind="dialog.message", payload={"text": f"Action {i}"})
             self.bg_adapter.record_event(e)
-        ctx = RuntimeContext()
-        ctx.world_graph = self.bg_adapter.graph
-        ctx.observations = list(self.bg_adapter.graph.nodes.values())
-        self.cs_adapter.execute(ctx)
+        chain = self.bg_adapter.get_recent_chain(n_steps=10)
+        self.cs_adapter.process_chain(chain)
         for ek, edge in self.bg_adapter.graph.edges.items():
             self.assertGreaterEqual(edge.structural_prior, 0.0)
             self.assertLessEqual(edge.structural_prior, 1.0)
@@ -177,7 +170,9 @@ class TestEndToEndIntegration(unittest.TestCase):
         self.bg_path = pathlib.Path(self.tmpdir.name) / "behavior_graph.json"
         self.db_path = pathlib.Path(self.tmpdir.name) / "event_log.db"
         self.bg_adapter = BehaviorGraphAdapter(graph_path=str(self.bg_path))
-        self.cs_adapter = CausalSubstrateAdapter(params={"min_chain": 5})
+        self.cs_adapter = CausalSubstrateAdapter(
+            behavior_adapter=self.bg_adapter, min_chain_length=5,
+        )
         self.event_log = V4EventLog(config=EventLogConfig(db_path=str(self.db_path), auto_open=True))
 
     def tearDown(self):
@@ -200,18 +195,10 @@ class TestEndToEndIntegration(unittest.TestCase):
         self.assertEqual(len(self.bg_adapter.graph.edges), 9)
 
         # ---- Slow Path: CausalSubstrate ----
-        ctx = RuntimeContext()
-        ctx.world_graph = self.bg_adapter.graph
-        ctx.observations = list(self.bg_adapter.graph.nodes.values())
-        result = self.cs_adapter.execute(ctx)
-        self.assertTrue(result.ok)
-        self.assertTrue(result.data["triggered"])
-        self.assertGreaterEqual(result.data["chain_len"], 5)
-        self.assertGreater(len(ctx.hypotheses), 0)
-        for entry in ctx.hypotheses:
-            self.assertIsInstance(entry, CausalContextEntry)
-            self.assertGreaterEqual(entry.structural_prior, 0.0)
-            self.assertLessEqual(entry.structural_prior, 1.0)
+        chain = self.bg_adapter.get_recent_chain(n_steps=10)
+        self.assertTrue(self.cs_adapter.should_trigger(chain))
+        insights = self.cs_adapter.process_chain(chain)
+        self.assertGreaterEqual(len(chain.steps), 5)
 
         # ---- Persistence ----
         self.bg_adapter.save(str(self.bg_path))

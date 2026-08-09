@@ -62,6 +62,7 @@ class CausalSubstrateAdapter(ContextSource):
             graph=behavior_adapter.graph,
             lib=SkeletonLibrary(),
             adj=DeltaAdjuster(),
+            min_chain=min_chain_length,
         )
         self._min_chain_length = min_chain_length
         self._last_insights: List[CausalInsight] = []
@@ -122,6 +123,16 @@ class CausalSubstrateAdapter(ContextSource):
         for result in results:
             edge_key = result.get("edge_key", "")
             prior = result.get("structural_prior", 0.0)
+            blocked = result.get("blocked", False)
+
+            # D-10: HARD_BLOCK edges must not receive causal weight updates.
+            if blocked:
+                self._substrate.update_edge_prior(edge_key, 0.0)
+                logger.info(
+                    "Causal HARD_BLOCK: edge %s excluded (do-calculus negative)",
+                    edge_key,
+                )
+                continue
 
             # Update graph edge
             updated = self._substrate.update_edge_prior(edge_key, prior)

@@ -150,7 +150,8 @@ class UnifiedStore:
     """Unified vector index with BGE embeddings + LSH pruning.
 
     Single interface for: BGE retrieval, LSH candidate selection,
-    object name → embedding lookup.
+    object name → embedding lookup, and text-level atom retrieval
+    (ChunkStore backend).
 
     Wraps: BGE model (semantic_encoder), LSH index, object store.
     """
@@ -213,6 +214,111 @@ class UnifiedStore:
             logger.debug("UnifiedStore retrieve skipped: %s", e)
             return []
 
+    # ── Text-level API (G10-P1: ChunkStore vector backend) ──────────────
+
+    def index_texts(self, texts: List[str], ids: Optional[List[str]] = None,
+                    metadatas: Optional[List[dict]] = None) -> int:
+        """Batch-index raw texts for semantic retrieval (atom-level).
+
+        BGE-encodes ``texts`` and keeps id/text/metadata aligned in the
+        in-memory cache. Returns count indexed (0 if BGE unavailable).
+        """
+        if not self._bge or not texts:
+            return 0
+        try:
+            import numpy as np
+            if ids is None:
+                ids = [f"t{i}" for i in range(len(texts))]
+            if metadatas is None:
+                metadatas = [{} for _ in texts]
+            embeddings = getattr(self._bge, "encode", lambda x: None)(texts)
+            if embeddings is None:
+                return 0
+            arr = np.asarray(embeddings)
+            self._cache["text_embeddings"] = arr
+            self._cache["text_ids"] = list(ids)
+            self._cache["texts"] = list(texts)
+            self._cache["text_metadatas"] = [dict(m or {}) for m in metadatas]
+            logger.info("UnifiedStore: indexed %d texts (dim=%s)", len(texts), arr.shape[1] if arr.ndim == 2 else "?")
+            return len(texts)
+        except Exception as e:
+            logger.debug("UnifiedStore text index skipped: %s", e)
+            return 0
+
+    def add_text(self, text: str, text_id: Optional[str] = None,
+                 metadata: Optional[dict] = None) -> bool:
+        """Incrementally append one text to the text index (dedup by id)."""
+        if not self._bge or not text:
+            return False
+        try:
+            import numpy as np
+            vec = getattr(self._bge, "encode", lambda x: None)([text])
+            if vec is None:
+                return False
+            emb = np.asarray(vec)[0]
+            cache = self._cache
+            tid = text_id or f"t{len(cache.get('text_ids', []))}"
+            if tid in cache.get("text_ids", []):
+                return False
+            cache.setdefault("text_embeddings", np.zeros((0, emb.shape[0])))
+            cache.setdefault("text_ids", [])
+            cache.setdefault("texts", [])
+            cache.setdefault("text_metadatas", [])
+            cache["text_embeddings"] = np.vstack([cache["text_embeddings"], emb])
+            cache["text_ids"].append(tid)
+            cache["texts"].append(text)
+            cache["text_metadatas"].append(dict(metadata or {}))
+            return True
+        except Exception as e:
+            logger.debug("UnifiedStore add_text skipped: %s", e)
+            return False
+
+    def search_texts(self, query: str, top_k: int = 10,
+                     candidate_set: Optional[set] = None) -> List[Dict[str, Any]]:
+        """BGE semantic search over indexed texts.
+
+        Returns list of ``{id, text, score, metadata}`` ordered by descending
+        similarity. Empty list when BGE/text index unavailable.
+        """
+        cache = self._cache
+        if "text_embeddings" not in cache or not self._bge:
+            return []
+        try:
+            import numpy as np
+            query_vec = getattr(self._bge, "encode", lambda x: None)([query])
+            if query_vec is None:
+                return []
+            q = np.asarray(query_vec)[0]
+            qn = q / (np.linalg.norm(q) + 1e-8)
+            embeddings = cache["text_embeddings"]
+            ids = cache["text_ids"]
+            texts = cache["texts"]
+            metas = cache.get("text_metadatas", [{}] * len(ids))
+            if candidate_set:
+                indices = [i for i, tid in enumerate(ids) if tid in candidate_set]
+                if not indices:
+                    return []
+                sub = embeddings[indices]
+                norms = np.linalg.norm(sub, axis=1, keepdims=True) + 1e-8
+                scores = (sub / norms) @ qn
+                order = np.argsort(scores)[::-1][:top_k]
+                return [
+                    {"id": ids[indices[i]], "text": texts[indices[i]],
+                     "score": float(scores[i]), "metadata": metas[indices[i]]}
+                    for i in order if scores[i] > 0.4
+                ]
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8
+            scores = (embeddings / norms) @ qn
+            order = np.argsort(scores)[::-1][:top_k]
+            return [
+                {"id": ids[i], "text": texts[i],
+                 "score": float(scores[i]), "metadata": metas[i]}
+                for i in order if scores[i] > 0.4
+            ]
+        except Exception as e:
+            logger.debug("UnifiedStore search_texts skipped: %s", e)
+            return []
+
     def save(self, path: str = "data/vectors/unified_index.npz") -> None:
         """Persist vector index to disk."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -220,7 +326,11 @@ class UnifiedStore:
         try:
             np.savez_compressed(path,
                 embeddings=self._cache.get("object_embeddings", np.array([])),
-                names=np.array(self._cache.get("object_names", []), dtype=object))
+                names=np.array(self._cache.get("object_names", []), dtype=object),
+                text_embeddings=self._cache.get("text_embeddings", np.array([])),
+                text_ids=np.array(self._cache.get("text_ids", []), dtype=object),
+                texts=np.array(self._cache.get("texts", []), dtype=object),
+                text_metadatas=np.array(self._cache.get("text_metadatas", []), dtype=object))
             logger.info("UnifiedStore: saved %d vectors", len(self._cache.get("object_names", [])))
         except Exception as e:
             logger.debug("UnifiedStore save skipped: %s", e)
@@ -234,6 +344,11 @@ class UnifiedStore:
             data = np.load(path, allow_pickle=True)
             self._cache["object_embeddings"] = data["embeddings"]
             self._cache["object_names"] = list(data["names"])
+            if "text_embeddings" in data:
+                self._cache["text_embeddings"] = data["text_embeddings"]
+                self._cache["text_ids"] = list(data["text_ids"])
+                self._cache["texts"] = list(data["texts"])
+                self._cache["text_metadatas"] = list(data["text_metadatas"])
             logger.info("UnifiedStore: loaded %d vectors", len(self._cache["object_names"]))
             return True
         except Exception as e:
@@ -243,6 +358,7 @@ class UnifiedStore:
     def stats(self) -> Dict[str, Any]:
         return {
             "indexed_objects": len(self._cache.get("object_names", [])),
+            "indexed_texts": len(self._cache.get("text_ids", [])),
             "dim": self._dim,
             "cache_size": sum(len(str(v)) for v in self._cache.values()),
         }

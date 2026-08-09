@@ -19,17 +19,9 @@ class StrategySwitch(BaseModel):
 
 @router.get("/v6/parameters")
 async def get_parameters():
-    try:
-        from core.agent.compiler.parameter_registry import get_registry
-        reg = get_registry()
-        return {
-            "parameters": reg.all(),
-            "namespaces": list(reg._namespace_index.keys()),
-            "adaptive_count": sum(1 for p in reg._params.values() if p.adaptive),
-        }
-    except Exception as e:
-        logger.debug("ParameterRegistry: %s", e)
-        return {"parameters": {}, "namespaces": [], "adaptive_count": 0}
+    """B4-5: 转发命令内核（唯一数据源）。"""
+    from core.agent.kernel import kernel_parameters
+    return kernel_parameters()
 
 
 @router.post("/v6/parameters/edit")
@@ -56,4 +48,6 @@ async def switch_strategy(req: StrategySwitch):
 
 @router.get("/v6/context")
 async def get_context_config():
-    return {"context": {"assembler": "active", "budget_limit": 4000, "pruner": "enabled"}}
+    """B4-5: 转发命令内核（消假数据 — 原硬编码 assembler 状态）。"""
+    from core.agent.kernel import kernel_context
+    return kernel_context()

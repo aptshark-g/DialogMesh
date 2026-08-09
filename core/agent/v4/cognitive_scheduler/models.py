@@ -7,11 +7,8 @@ from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional
 
 
-class PathState(Enum):
-    """Finite state machine states for a cognitive path."""
-    IDLE = auto()
-    RUNNING = auto()
-    BACKLOGGED = auto()
+# PathState 唯一来源: path_models（str, Enum）— 三处重复定义归一（2026-08-06）
+from .path_models import PathState
 
 
 class PathStateMachine:

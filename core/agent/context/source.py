@@ -817,19 +817,15 @@ class CausalSource(ContextSource):
         )
 
 
-class CausalSubstrateAdapter:
-    """Lazy initializer for CausalSubstrate from BehaviorGraph."""
+def __getattr__(name: str):
+    """D-7: single kernel + two facades — no third inline adapter here.
 
-    def __init__(self, behavior_graph):
-        self._graph = behavior_graph
-        self._substrate = None
-
-    @property
-    def substrate(self):
-        if self._substrate is None and self._graph is not None:
-            try:
-                from core.agent.association.causal_substrate import CausalSubstrate
-                self._substrate = CausalSubstrate(self._graph)
-            except Exception as e:
-                logger.warning("Failed to create CausalSubstrate: %s", e)
-        return self._substrate
+    ``CausalSubstrateAdapter`` is the ContextSource facade owned by
+    ``core.agent.behavior.causal_adapter``. We re-export it lazily to keep the
+    ``core.agent.context.source.CausalSubstrateAdapter`` import path working
+    without a circular import (behavior.causal_adapter imports ContextSource).
+    """
+    if name == "CausalSubstrateAdapter":
+        from core.agent.behavior.causal_adapter import CausalSubstrateAdapter
+        return CausalSubstrateAdapter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

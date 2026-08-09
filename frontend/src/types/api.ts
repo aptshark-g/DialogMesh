@@ -428,7 +428,17 @@ export interface V6MindResponse {
 // Graph
 export interface V6GraphNode {
   id: string;
-  state: Record<string, unknown>;
+  label?: string;
+  type?: string;
+  size?: number;
+  temperature?: string;
+  entities?: string[];
+  state?: Record<string, unknown>;
+  // B5（2026-08-07）: 对话树块扩展字段（TREE_TIERING）
+  intent?: string;
+  depth?: number;
+  raw_text?: string;
+  summary?: string;
 }
 
 export interface V6GraphEdge {
@@ -442,6 +452,7 @@ export interface V6GraphResponse {
   nodes: V6GraphNode[];
   edges: V6GraphEdge[];
   subgraph_nodes: string[];
+  version?: number;
 }
 
 // Discourse Tree
@@ -458,6 +469,7 @@ export interface V6DiscourseBlock {
 export interface V6DiscourseTreeResponse {
   blocks: V6DiscourseBlock[];
   total: number;
+  version?: number;
 }
 
 // Objects
@@ -477,6 +489,7 @@ export interface V6ObjectsResponse {
   nodes: V6ObjectNode[];
   edges: V6ObjectEdge[];
   total_objects: number;
+  version?: number;
 }
 
 // Rules
@@ -581,6 +594,8 @@ export interface V6ProvidersResponse {
     active_idx: number;
     failures: number;
   };
+  active_provider?: string;
+  active_model?: string;
 }
 
 export interface V6ProviderSwitchRequest {
@@ -603,6 +618,10 @@ export interface V6TokensResponse {
 }
 
 export interface V6MetricsResponse {
+  engine_uptime?: number;
+  subsystems_loaded?: number;
+  subsystems_total?: number;
+  total_turn_count?: number;
   [key: string]: unknown;
 }
 
@@ -650,6 +669,7 @@ export interface V6RouterModesRequest {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface V6RelationsResponse {
+  version?: number;
   [key: string]: unknown;
 }
 
@@ -1087,6 +1107,7 @@ export interface V6GraphEditRequest {
   edge_type?: string;
   node_id?: string;
   node_state?: Record<string, unknown>;
+  version?: number;
 }
 
 export interface V6GraphEditResponse {
@@ -1105,6 +1126,7 @@ export interface V6DiscourseTreeEditRequest {
   temperature?: string;
   topic?: string;
   parent_id?: string;
+  version?: number;
 }
 
 export interface V6DiscourseTreeEditResponse {
@@ -1122,6 +1144,7 @@ export interface V6ObjectEditRequest {
   relation_type?: string;
   lifespan?: string;
   new_name?: string;
+  version?: number;
 }
 
 export interface V6ObjectEditResponse {
@@ -1139,6 +1162,7 @@ export interface V6RelationEditRequest {
   target?: string;
   kind?: string;
   strength?: number;
+  version?: number;
 }
 
 export interface V6RelationEditResponse {
@@ -1153,6 +1177,7 @@ export interface V6IrEditRequest {
   entry_type?: string;
   content: string;
   confidence?: number;
+  version?: number;
 }
 
 export interface V6IrEditResponse {
@@ -1160,6 +1185,67 @@ export interface V6IrEditResponse {
   domain?: string;
   type?: string;
   error?: string;
+}
+
+// 二阶抽象（A24）— 启发库存白盒视图（A19）
+export interface V6HeuristicItem {
+  heuristic_id: string;
+  pattern_desc: string;
+  conditions: string;
+  counterexample: string;
+  reasoning_path: string;
+  coverage: number;
+  support: number;
+  insight_score: number;
+  source: 'seed' | 'axiom' | 'distilled' | 'rule';
+  active: boolean;
+  ts: number;
+}
+
+export interface V6HeuristicsResponse {
+  heuristics: V6HeuristicItem[];
+  stats: {
+    total: number;
+    active: number;
+    by_source: Record<string, number>;
+    avg_coverage: number;
+    avg_insight: number;
+  };
+}
+
+// GAP-F1 — 变更日志（决策事件流, git log + PR review 语义）
+export interface V6ChangelogEvent {
+  kind: 'strategy_switch' | 'plan_gate' | 'meta_advice' | 'user_correction' | string;
+  dimension: string;
+  attribution?: string;
+  before?: unknown;
+  after?: unknown;
+  reason?: string;
+  actor?: string;
+  turn?: number;
+  ts: number;
+  comment?: string;
+  status?: 'applied' | 'proposed' | 'rejected' | 'reverted' | string;
+  request_id?: string;
+  trace_id?: string;
+}
+
+export interface V6ChangelogResponse {
+  events: V6ChangelogEvent[];
+  stats: {
+    total: number;
+    proposed: number;
+    applied: number;
+    rejected: number;
+    reverted: number;
+  };
+}
+
+export interface V6InterveneRequest {
+  status: 'applied' | 'rejected';
+  comment?: string;
+  dimension?: string;
+  kind?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

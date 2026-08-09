@@ -15,6 +15,31 @@ import time, logging, math
 logger = logging.getLogger(__name__)
 
 
+def select_belief_mode(intent_context=None, ambiguity_score: float = None) -> str:
+    """A13 gate: pick the belief machinery for this turn.
+
+    - ``single_step``: evidence is decisive here and now → 7D vote directly
+      (explainable, no cross-turn accumulation needed).
+    - ``bayesian``: evidence is weak/ambiguous/noisy → sequential Bayesian
+      accumulation across turns (mathematically rigorous).
+
+    Signals come from existing components only (D-4 — no new module):
+    PCR ``IntentContext`` (complexity/noise) + ambiguity score from the
+    multi-intent split pipeline.
+    """
+    complexity = 0.0
+    noise = 0.0
+    if intent_context is not None:
+        complexity = getattr(intent_context, "complexity_level", 0.0) or 0.0
+        noise = getattr(intent_context, "noise_level", 0.0) or 0.0
+    amb = ambiguity_score if ambiguity_score is not None else 0.0
+
+    # High complexity / noise / ambiguity → cross-turn Bayesian accumulation.
+    if complexity > 0.8 or noise > 0.7 or amb > 0.5:
+        return "bayesian"
+    return "single_step"
+
+
 @dataclass
 class Evidence:
     """Single piece of evidence from L2 ontology graph."""
@@ -137,6 +162,7 @@ class BeliefAccumulator:
         
         self.turn_count += 1
         prior_snapshot = dict(self.priors)
+        best_intent = self._best_intent()
         
         # Step 1: Bayesian update
         self.priors = self.bayesian.update(self.priors, evidence)
@@ -145,7 +171,7 @@ class BeliefAccumulator:
         for intent in self.intents:
             b7d = self._belief_7d[intent]
             # Find best-matching intent
-            if intent == self._best_intent():
+            if intent == best_intent:
                 b7d["support"] += 1
                 b7d["recency"] = 1.0
                 b7d["novelty"] = max(0.0, b7d["novelty"] - 0.2)
@@ -167,11 +193,11 @@ class BeliefAccumulator:
             evidence=evidence,
             probability_before=prior_snapshot,
             probability_after=dict(self.priors),
-            hypothesis_updated=self._best_intent(),
+            hypothesis_updated=best_intent,
         ))
-        
+
         # Step 4: Check lock threshold
-        best = self._best_intent()
+        best = best_intent
         if self.priors[best] >= self.LOCK_THRESHOLD:
             self.locked_intent = best
             logger.info("Intent locked: %s (p=%.3f)", best, self.priors[best])
@@ -180,6 +206,42 @@ class BeliefAccumulator:
         if self.turn_count >= self.FORCE_CRYSTAL_TURNS and not self.locked_intent:
             self.locked_intent = best
             logger.info("Force crystal: %s after %d turns", best, self.turn_count)
+
+    def select_mode(self, intent_context=None, ambiguity_score: float = None) -> str:
+        """A13: which belief machinery for the current turn (single-step vs bayesian)."""
+        return select_belief_mode(intent_context, ambiguity_score)
+
+    def belief_dimension_score(self, intent: str) -> float:
+        """A4: 7D belief as a real decision dimension, not a label field.
+
+        Combines stability / support / conflict / coverage / recency / novelty /
+        entropy into a 0..1 score. Bayesian probability stays the backbone
+        (``_best_intent`` blends both, see below).
+        """
+        b7d = self._belief_7d.get(intent, {})
+        stability = b7d.get("stability", 0.5)
+        support = min(1.0, b7d.get("support", 0) / 8.0)
+        conflict = min(1.0, b7d.get("conflict", 0) / 8.0)
+        coverage = b7d.get("coverage", 0.0)
+        recency = b7d.get("recency", 1.0)
+        novelty = b7d.get("novelty", 1.0)
+        entropy = min(1.0, b7d.get("entropy", 0.0))
+        return (
+            0.25 * stability
+            + 0.25 * support
+            + 0.15 * (1.0 - conflict)
+            + 0.15 * coverage
+            + 0.10 * recency
+            + 0.05 * novelty
+            + 0.05 * (1.0 - entropy)
+        )
+
+    def decision_scores(self) -> Dict[str, float]:
+        """A4: per-intent decision score = 0.55 * Bayesian prob + 0.45 * 7D."""
+        return {
+            i: 0.55 * self.priors.get(i, 0.0) + 0.45 * self.belief_dimension_score(i)
+            for i in self.intents
+        }
     
     def needs_llm(self) -> bool:
         """True when Bayesian update is stuck — entropy > threshold and not locked."""
@@ -265,7 +327,11 @@ Return JSON: {{"resolved": "intent_name", "reason": "..."}}"""
         }
 
     def _best_intent(self) -> str:
-        return max(self.priors, key=self.priors.get)
+        # A4: decision looks at 7D belief, not a single probability.
+        # Bayesian probability remains the backbone (0.55) — 7D breaks ties
+        # and surfaces stability/coverage/entropy evidence (0.45).
+        scores = self.decision_scores()
+        return max(scores, key=scores.get)
     
     def status(self) -> dict:
         """Full status: probabilities + 7D belief + trace summary."""
@@ -273,6 +339,7 @@ Return JSON: {{"resolved": "intent_name", "reason": "..."}}"""
             "locked": self.locked_intent,
             "probabilities": dict(self.priors),
             "belief_7d": {i: dict(b) for i, b in self._belief_7d.items()},
+            "decision_scores": self.decision_scores(),
             "turn_count": self.turn_count,
             "entropy": self.bayesian.entropy(self.priors),
             "needs_llm": self.needs_llm(),

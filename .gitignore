@@ -75,6 +75,7 @@ config/user_config.yaml
 # ── 其他 ──
 tmp/
 temp/
+vendor/
 
 # ── 临时测试脚本（开发用，不提交）──
 test_*.py
@@ -97,6 +98,8 @@ self.max_turns
 
 # --- Runtime artifacts (v32 sessions, graphs, debug outputs) ---
 _artifacts/
+.codegraph/
+uploads/
 v32_graph*.json
 v32_logs_*/
 v32_test/
@@ -111,3 +114,10 @@ _artifacts/
 .hermes/
 persistence_rs/target/
 persistence_rs/target/
+__pycache__/
+
+# --- Gateway config (B8-4: keys never committed) ---
+gateway/provider.yaml
+gateway/provider.yaml.bak
+gateway/gateway.state.json
+gateway/selftest_out.json

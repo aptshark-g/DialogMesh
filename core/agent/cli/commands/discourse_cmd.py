@@ -54,13 +54,16 @@ def cmd_block(args):
         print(json.dumps({"error": f"Block {args.id} not found"}, ensure_ascii=False))
         return
     b = t.blocks[args.id]
+    summary = getattr(b, 'summary', '')
+    if hasattr(summary, 'get_best'):
+        summary = summary.get_best()
     info = {
         "id": b.block_id if hasattr(b, 'block_id') else args.id,
         "edus": len(b.edus) if hasattr(b, 'edus') else 0,
         "parent": b.parent if hasattr(b, 'parent') else "",
         "children": list(b.children if hasattr(b, 'children') else []),
         "temperature": b.temperature if hasattr(b, 'temperature') else 0,
-        "summary": getattr(b, 'summary', '')[:200] if hasattr(b, 'summary') else "",
+        "summary": str(summary)[:200],
     }
     print(json.dumps(info, indent=2, ensure_ascii=False))
 
@@ -74,8 +77,17 @@ def cmd_feed(args):
     sid = get_session(args.sid if hasattr(args, 'sid') else None)
     text = " ".join(args.text) if isinstance(args.text, list) else args.text
     result = tree.feed(text, sid)
-    print(json.dumps({"status": "fed", "decision": result.decision.value if result else "?",
-                       "block_id": result.target_block_id if result else ""}, ensure_ascii=False))
+    decision = "?"
+    block_id = ""
+    if result is not None:
+        d = getattr(result, 'decision', None)
+        decision = getattr(d, 'value', d) if d is not None else "?"
+        block_id = getattr(result, 'target_block_id', None)
+        if not block_id:
+            bids = getattr(result, 'block_ids', None) or []
+            block_id = bids[0] if bids else ""
+    print(json.dumps({"status": "fed", "decision": decision,
+                       "block_id": block_id}, ensure_ascii=False))
 
 
 def cmd_search(args):
@@ -171,11 +183,18 @@ def cmd_summary(args):
     dt = getattr(e, '_discourse_tree', None)
     if not dt: return print(json.dumps({"error": "not loaded"}))
     sid = get_session(getattr(args, 'sid', None))
+    text = " ".join(args.text) if isinstance(args.text, list) else args.text
+    if hasattr(dt, 'set_block_summary'):
+        ok = dt.set_block_summary(args.block_id, text)
+        if not ok:
+            return print(json.dumps({"error": "block not found"}, ensure_ascii=False))
+        print(json.dumps({"status": "ok", "block_id": args.block_id}, ensure_ascii=False))
+        return
     tree = dt.get_tree(sid)
     if not tree or args.block_id not in tree.blocks:
         return print(json.dumps({"error": "block not found"}, ensure_ascii=False))
     block = tree.blocks[args.block_id]
-    block.summary = " ".join(args.text)
+    block.summary = text
     print(json.dumps({"status": "ok", "block_id": args.block_id}, ensure_ascii=False))
 
 

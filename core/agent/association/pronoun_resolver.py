@@ -33,8 +33,8 @@ class StanzaCorefResolver:
         try:
             import stanza
             return True
-        except ImportError:
-            logger.info("Stanza not installed. Install: pip install stanza")
+        except Exception as e:  # ImportError or broken transitive deps (e.g. numpy)
+            logger.info("Stanza unavailable (%s). Falling back to structural resolution.", e)
             return False
 
     def resolve(self, text: str, lang: str = "zh",

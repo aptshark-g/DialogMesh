@@ -83,3 +83,14 @@ class MockProvider(LLMProvider):
 
     def estimate_latency_ms(self, prompt_tokens: int, output_tokens: int) -> float:
         return float(self.latency_ms)
+
+
+# ── v3 backward-compat alias (B8-4: v3_0/llm_providers 归档后根级唯一) ──
+
+class MockProvider_v3(MockProvider):
+    """v3 兼容别名：接受 ProviderConfig(pydantic) 单参数构造。"""
+
+    def __init__(self, config):
+        from core.agent.llm_providers.models import ProviderConfig
+        cfg = config if isinstance(config, ProviderConfig) else ProviderConfig(**config)
+        super().__init__(cfg.name, {})

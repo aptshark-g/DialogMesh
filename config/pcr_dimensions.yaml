@@ -1,0 +1,41 @@
+# PCR dimension weights (DESIGN_PCR §8.1) — declarative, not hardcoded.
+# Baseline = current code behaviour (2026-08-01); tuning happens against the
+# golden set, not by eyeballing.
+#
+# zone_thresholds: design baseline (aligned with coordinate_router).
+
+dimensions:
+  x_distance:
+    enabled: true
+    weight: 1.0
+    calculators:
+      - { name: x_semantic_prior, weight: 0.7, enabled: true }
+      - { name: x_svo_nomic,      weight: 0.7, enabled: true }
+      - { name: x_nrc_rarity,     weight: 0.7, enabled: true }
+      - { name: x_entity_density, weight: 0.5, enabled: true }
+  y_granularity:
+    enabled: true
+    weight: 1.0
+    formula: { verb: 0.4, entity: 0.3, wordcount: 0.3, caps: [5, 5, 20] }
+    calculators:
+      - { name: y_structural, weight: 1.0, enabled: true }
+      - { name: y_llm_entity, weight: 1.0, enabled: true }
+  z_temperature:
+    enabled: true
+    weight: 1.0
+    calculators:
+      - { name: z_mood,       weight: 1.0, enabled: true }
+      - { name: z_nrc_vad,    weight: 1.0, enabled: true }
+      - { name: z_structural, weight: 1.0, enabled: true }
+    softmax_temp: 0.15
+
+zone_thresholds:
+  atomic: { x: 0.2, y: 0.2, adaptive: true, vmin: 0.05, vmax: 0.35 }
+  abyss:  { x: 0.7, y: 0.7, z: 0.5, adaptive: true, vmin: 0.55, vmax: 0.85 }
+
+adaptive:
+  engine: parameter_registry
+  tier: hot|warm|cold
+  cooldown_sec: { hot: 60, warm: 600, cold: 3600 }
+  min_samples: 3
+  step: 0.02

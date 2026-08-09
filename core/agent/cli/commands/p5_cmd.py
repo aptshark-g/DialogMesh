@@ -58,7 +58,43 @@ def cmd_rules_show(args):
 
 
 def cmd_rules_delete(args):
-    print(json.dumps({"deleted": True, "msg": "rule deletion queued"}, ensure_ascii=False))
+    e = get_engine()
+    abc = getattr(e, '_abc', None)
+    if abc is not None and hasattr(abc, 'remove_rule'):
+        try:
+            res = abc.remove_rule(args.rule_id)
+            deleted = bool(res) if res is not None else True
+            print(json.dumps({"deleted": deleted, "rule_id": args.rule_id,
+                              "result": str(res)[:120]}, ensure_ascii=False))
+            return
+        except Exception as ex:
+            print(json.dumps({"deleted": False, "error": str(ex)[:120]}, ensure_ascii=False))
+            return
+    # 兜底: 从 neuro_symbolic_rules.json 真实删除
+    import os as _os
+    root = _os.path.dirname(_os.path.dirname(_os.path.dirname(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))))
+    fp = _os.path.join(root, "data", "neuro_symbolic_rules.json")
+    if _os.path.exists(fp):
+        try:
+            import json as _json
+            with open(fp, encoding="utf-8") as f:
+                data = _json.load(f)
+            if isinstance(data, dict):
+                removed = data.get("rules", {}).pop(args.rule_id, None)
+                if removed is None and isinstance(data.get("rules"), list):
+                    data["rules"] = [r for r in data["rules"]
+                                     if r.get("id") != args.rule_id and r.get("name") != args.rule_id]
+                    removed = True
+                with open(fp, "w", encoding="utf-8") as f:
+                    _json.dump(data, f, indent=2, ensure_ascii=False)
+                print(json.dumps({"deleted": bool(removed), "rule_id": args.rule_id},
+                                 ensure_ascii=False))
+                return
+        except Exception as ex:
+            print(json.dumps({"deleted": False, "error": str(ex)[:120]}, ensure_ascii=False))
+            return
+    print(json.dumps({"deleted": False, "error": "no abc engine"}, ensure_ascii=False))
 
 
 def cmd_rules_search(args):

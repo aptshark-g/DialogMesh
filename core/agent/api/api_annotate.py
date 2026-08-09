@@ -140,17 +140,25 @@ Respond in Chinese (中文), be specific and data-driven."""
 
 @router.get("/stats")
 async def annotation_stats():
-    """Get annotation statistics — counts by domain, severity, trends."""
+    """Get annotation statistics — counts by author/date (前端契约) + domain/severity."""
     entries = _load_annotations("", 99999)
     by_domain = {}
     by_severity = {}
+    by_author = {}
+    by_date = {}
     for e in entries:
         d = e.get("domain", "other")
         s = e.get("severity", "info")
+        author = str(e.get("author", e.get("domain", "user")))
+        date = str(e.get("ts", ""))[:10] if e.get("ts") else "?"
         by_domain[d] = by_domain.get(d, 0) + 1
         by_severity[s] = by_severity.get(s, 0) + 1
+        by_author[author] = by_author.get(author, 0) + 1
+        by_date[date] = by_date.get(date, 0) + 1
     return {
         "total": len(entries),
+        "by_author": by_author,
+        "by_date": by_date,
         "by_domain": by_domain,
         "by_severity": by_severity,
         "with_llm_response": sum(1 for e in entries if e.get("llm_response")),

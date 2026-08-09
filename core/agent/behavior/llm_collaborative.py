@@ -24,6 +24,8 @@ class BehaviorLLMCollaborator:
 
     def __init__(self, llm=None):
         self.llm = llm
+        self._observations: List[dict] = []
+        self._max_observations = 200
 
     def explain_drift(self, edge, llm=None) -> dict:
         """LLM解释为什么某个行为边的成功率/稳定性发生了变化。
@@ -144,33 +146,6 @@ Output JSON: {{"success_threshold": 0.0-1.0, "instability_threshold": 0.0-1.0, "
                         getattr(edge, 'instability_threshold', 0.3))
         
         return suggestion
-        """LLM建议调整行为判定阈值。
-
-        statistics: {"false_positives": N, "false_negatives": N, 
-                     "current_success_threshold": 0.7, "current_instability_threshold": 0.3}
-        Returns: {"success_threshold": 0.65, "instability_threshold": 0.25, "reason": "..."}
-        """
-        llm = llm or self.llm
-        if not llm:
-            return statistics
-
-        import json
-        prompt = f"""Behavior prediction thresholds need tuning based on observed errors.
-
-STATS: {json.dumps(statistics, ensure_ascii=False)}
-
-Should we adjust thresholds? More FP → lower success threshold. More FN → raise it.
-Output JSON: {{"success_threshold": 0.0-1.0, "instability_threshold": 0.0-1.0, "reason": "brief"}}"""
-
-        try:
-            import re
-            resp = llm.generate(prompt, max_tokens=_LLM_CFG.max_tokens, temperature=_LLM_CFG.temperature)
-            cleaned = re.sub(r'```(?:json)?\s*\n?', '', str(resp))
-            cleaned = re.sub(r'\n?```', '', cleaned).strip()
-            s = cleaned.find('{'); e = cleaned.rfind('}')
-            return json.loads(cleaned[s:e+1]) if s >= 0 and e > s else statistics
-        except Exception:
-            return statistics
 
     def analyze_correction_chain(self, corrections: List[dict], llm=None) -> dict:
         """LLM分析连续修正序列, 发现根因。
@@ -199,3 +174,18 @@ Output JSON: {{"root_cause": "explanation", "suggested_fix": "what to change", "
             return json.loads(cleaned[s:e+1]) if s >= 0 and e > s else {}
         except Exception:
             return {"root_cause": "LLM unavailable", "suggested_fix": "", "confidence": 0.0}
+
+    # ── BehaviorGraphBridge contract (发现→审核→吸收, SUPPLEMENT) ──────────
+
+    def record_observation(self, pattern: dict) -> None:
+        """Record a discovered behavior pattern for later review/distillation."""
+        self._observations.append({
+            "pattern": pattern,
+            "ts": __import__("time").time(),
+        })
+        if len(self._observations) > self._max_observations:
+            self._observations = self._observations[-self._max_observations:]
+
+    def get_patterns(self) -> list:
+        """Return accumulated observations (empty list = no data)."""
+        return list(self._observations)

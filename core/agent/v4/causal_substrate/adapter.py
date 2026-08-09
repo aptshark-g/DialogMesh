@@ -104,6 +104,16 @@ class CausalSubstrateAdapter(RuntimeAdapter):
         for i, result in enumerate(results):
             edge_key = result.get("edge_key", "")
             prior = result.get("structural_prior", 0.0)
+            blocked = result.get("blocked", False)
+
+            # D-10: HARD_BLOCK edges never receive causal weight updates.
+            if blocked:
+                self._substrate.update_edge_prior(edge_key, 0.0)
+                logger.info(
+                    "Causal HARD_BLOCK: edge %s excluded (do-calculus negative)",
+                    edge_key,
+                )
+                continue
 
             # Update graph edge
             self._substrate.update_edge_prior(edge_key, prior)

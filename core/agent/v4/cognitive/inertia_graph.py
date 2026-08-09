@@ -111,6 +111,36 @@ class InertiaWeightGraph:
         if p.weight > p.peak_weight:
             p.peak_weight = p.weight
 
+    # ── Batch Feed (P7 / R2 shared lifecycle) ──────────────────────────
+
+    def feed_evidence(self, pattern_id: str, sources: Dict[str, float]) -> InertiaPattern:
+        """Feed one evidence round from multiple perspectives (P7).
+
+        Wires the R2 category-extraction lifecycle: behavior-chain patterns
+        propose candidates; multi-perspective evidence (behavior/association/
+        discourse/meta/llm/engineering) confirms or weakens them.
+
+        ``sources`` maps perspective name → signal strength (0..1). Every
+        entry records the CURRENT observation strength for that perspective
+        (this is a consensus round, not a time series — EMA is for
+        ``record_stable_round`` continuous flow). A missing pattern is
+        auto-registered (candidate seed).
+        """
+        p = self.register(pattern_id, pattern_id)
+        p.rounds_stable += 1
+        for source, value in sources.items():
+            p.evidence[source] = max(p.evidence.get(source, 0.0), float(value))
+            p.last_verified = time.time()
+        self._update_state(p)
+        return self._patterns[pattern_id]
+
+    def feed_counter(self, pattern_id: str, source: str) -> InertiaPattern:
+        """Feed one counter-example (user correction / behavior reversal)."""
+        if pattern_id not in self._patterns:
+            self.register(pattern_id, pattern_id)
+        self.record_counter(pattern_id, source)
+        return self._patterns[pattern_id]
+
     # ── State Machine ──
 
     def _update_state(self, p: InertiaPattern):

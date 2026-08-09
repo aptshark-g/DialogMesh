@@ -65,7 +65,7 @@ class ConsolidationCycle:
         return pruned
 
     def search_with_cold(self, query_tokens, top_k=5, flat_data_provider=None):
-        from .behavior_graph.models import BehaviorEdge
+        from .behavior.models import BehaviorEdge
         hits = []
         for ek, e in list(self.graph.edges.items()):
             fs = getattr(e, 'action_summary', '')

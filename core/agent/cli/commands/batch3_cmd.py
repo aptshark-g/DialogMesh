@@ -70,10 +70,17 @@ def cmd_memory_real_show(args):
     sid = get_session()
     t = tree.get_tree(sid) if hasattr(tree, 'get_tree') else None
     stats = tree.get_stats(sid) if hasattr(tree, 'get_stats') else {}
+    def _tier(b):
+        # B 内核 status 字符串 / A 旧版 temperature int 兼容
+        t = getattr(b, 'temperature', None)
+        if isinstance(t, int):
+            return {0: "hot", 1: "warm", 2: "cold", 3: "cold"}.get(t, "warm")
+        s = str(getattr(b, 'status', 'active') or 'active')
+        return {"active": "hot", "paused": "warm", "cold": "cold", "frozen": "cold"}.get(s, "warm")
     info = {
-        "hot": sum(1 for b in (t.blocks.values() if t else []) if getattr(b,'temperature',2) == 0),
-        "warm": sum(1 for b in (t.blocks.values() if t else []) if 1 <= getattr(b,'temperature',2) <= 2),
-        "cold": sum(1 for b in (t.blocks.values() if t else []) if getattr(b,'temperature',2) >= 3),
+        "hot": sum(1 for b in (t.blocks.values() if t else []) if _tier(b) == "hot"),
+        "warm": sum(1 for b in (t.blocks.values() if t else []) if _tier(b) == "warm"),
+        "cold": sum(1 for b in (t.blocks.values() if t else []) if _tier(b) == "cold"),
         "total_blocks": stats.get("total_blocks", 0),
         "max_depth": stats.get("max_depth", 0),
     }

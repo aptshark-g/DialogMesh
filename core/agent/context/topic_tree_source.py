@@ -1,14 +1,14 @@
-"""TopicTreeContextSource: discourse tree context with backtracking support.
+"""TopicTreeContextSource: topic tree context with backtracking support.
 
-Wraps TopicTreeManager as a ContextAssembler source.
+Wraps TopicTreeManagerV2（唯一内核，T4 归一）as a ContextAssembler source.
 Provides hierarchical conversation context:
   - Current topic and its ancestors (upward pointers — macro view)
-  - Sibling topics (breadth)
-  - Topic routing decisions (fork/attach/continue)
+  - Active path from root to current (backtracking)
+  - Sub-topics (breadth)
 
-This is how the discourse tree integrates into v4's Context IR.
-Replaces the flat ConversationTracker history injection with
-hierarchical topic tree traversal.
+T2/T4 修复（2026-08-05）: 原实现调用 V1 不存在的 API（current_topic_id / tree.nodes
+/ _get_ancestors），从未产生上下文；现改为 V2 公开 API（get_current_node /
+get_active_path / get_node）。
 """
 from __future__ import annotations
 import logging
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class TopicTreeContextSource(ContextSource):
-    """Conversation context from the discourse topic tree.
+    """Conversation context from the topic tree (V2 内核).
 
     Name="topic_tree" — injected into ContextAssembler as an additional source.
     DomainSelector's C domain will prefer this over flat ObservationSource
@@ -33,7 +33,7 @@ class TopicTreeContextSource(ContextSource):
     """
 
     def __init__(self, topic_tree=None, discourse_manager=None):
-        self._topic_tree = topic_tree        # TopicTreeManager instance
+        self._topic_tree = topic_tree        # TopicTreeManagerV2 instance
         self._discourse = discourse_manager  # DiscourseBlockTreeManager instance
 
     @property
@@ -62,50 +62,39 @@ class TopicTreeContextSource(ContextSource):
 
     def _from_topic_tree(self, query: str, top_k: int,
                          expand_macro: bool) -> List[ContextItem]:
-        """Extract context from TopicTreeManager."""
+        """Extract context from TopicTreeManagerV2（V2 公开 API）。"""
         tm = self._topic_tree
+        if tm is None:
+            return []
         items = []
 
         # Current topic
-        current_id = tm.current_topic_id if hasattr(tm, 'current_topic_id') else None
-        if not current_id and hasattr(tm, 'tree') and tm.tree:
-            current_id = tm.current_topic_id if hasattr(tm, 'current_topic_id') else None
+        current = tm.get_current_node()
+        if current is None:
+            return items
+        items.append(ContextItem(
+            source=self.name,
+            content=current.to_dict() if hasattr(current, "to_dict") else current,
+            text=f"[Current Topic] {getattr(current, 'name', '') or current.id}",
+            relevance=0.95,
+            metadata={
+                "type": "current_topic",
+                "node_id": current.id,
+                "intent": getattr(current, "intent_category", ""),
+                "depth": getattr(current, "depth", 0),
+            },
+        ))
 
-        if current_id and hasattr(tm, 'tree') and hasattr(tm.tree, 'nodes'):
-            node = tm.tree.nodes.get(current_id)
-            if node:
-                items.append(ContextItem(
-                    source=self.name,
-                    content=node,
-                    text=f"[Current Topic] {getattr(node, 'title', str(node))}",
-                    relevance=0.95,
-                    metadata={"type": "current_topic", "node_id": current_id},
-                ))
-
-        # Macro expansion: walk up to ancestors
-        if expand_macro and current_id:
+        # Active path (root → current) for backtracking
+        if expand_macro:
             try:
-                ancestors = tm._get_ancestors(current_id, depth=3)
-                for i, ancestor in enumerate(ancestors):
+                path = tm.get_active_path()
+                if len(path) > 1:
                     items.append(ContextItem(
                         source=self.name,
-                        content=ancestor,
-                        text=f"[Ancestor L{i+1}] {getattr(ancestor, 'title', str(ancestor))}",
-                        relevance=0.85 - i * 0.1,
-                        metadata={"type": "ancestor", "depth": i+1},
-                    ))
-            except Exception:
-                pass
-
-            # Path to root for full backtracking
-            try:
-                path = tm._get_path_to_root(current_id)
-                if len(path) > 2:
-                    items.append(ContextItem(
-                        source=self.name,
-                        content=path,
+                        content=[n.to_dict() if hasattr(n, "to_dict") else str(n) for n in path],
                         text="Topic path: " + " → ".join(
-                            getattr(n, 'title', str(n)) for n in path
+                            getattr(n, "name", "") or n.id for n in path
                         ),
                         relevance=0.80,
                         metadata={"type": "topic_path", "length": len(path)},
@@ -113,20 +102,20 @@ class TopicTreeContextSource(ContextSource):
             except Exception:
                 pass
 
-        # Descendants for breadth
-        if current_id:
-            try:
-                children = tm._get_descendants(current_id, depth=1)
-                for child in children[:3]:
-                    items.append(ContextItem(
-                        source=self.name,
-                        content=child,
-                        text=f"[Sub-topic] {getattr(child, 'title', str(child))}",
-                        relevance=0.6,
-                        metadata={"type": "sub_topic"},
-                    ))
-            except Exception:
-                pass
+        # Sub-topics for breadth
+        try:
+            children = [tm.get_node(cid) for cid in getattr(current, "children_ids", [])]
+            children = [c for c in children if c is not None][:3]
+            for child in children:
+                items.append(ContextItem(
+                    source=self.name,
+                    content=child.to_dict() if hasattr(child, "to_dict") else child,
+                    text=f"[Sub-topic] {getattr(child, 'name', '') or child.id}",
+                    relevance=0.6,
+                    metadata={"type": "sub_topic", "node_id": child.id},
+                ))
+        except Exception:
+            pass
 
         return items
 

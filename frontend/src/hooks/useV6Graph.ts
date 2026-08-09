@@ -21,7 +21,8 @@ interface GraphData {
   error: string | null;
 }
 
-export function useV6Graph() {
+// B5（2026-08-07）: 支持按会话取数 — 对话树图按当前聊天会话渲染
+export function useV6Graph(sid?: string) {
   const [data, setData] = useState<GraphData>({
     graph: null,
     discourseTree: null,
@@ -34,8 +35,8 @@ export function useV6Graph() {
     setData(prev => ({ ...prev, loading: true, error: null }));
     try {
       const [graph, discourseTree, objects] = await Promise.all([
-        getGraph().catch(() => null),
-        getDiscourseTree().catch(() => null),
+        getGraph(sid).catch(() => null),
+        getDiscourseTree(sid).catch(() => null),
         getObjects().catch(() => null),
       ]);
       setData({ graph, discourseTree, objects, loading: false, error: null });
@@ -43,7 +44,7 @@ export function useV6Graph() {
       const msg = err instanceof Error ? err.message : '获取图谱失败';
       setData(prev => ({ ...prev, loading: false, error: msg }));
     }
-  }, []);
+  }, [sid]);
 
   useEffect(() => {
     fetchAll();

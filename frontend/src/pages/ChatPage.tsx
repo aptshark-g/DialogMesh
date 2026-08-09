@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import ChatPanel from '../components/ChatPanel';
-import type { _ConnectionState } from '../types/ui';
 import { createSession, sendMessage } from '../api/session';
 import { useChatStore } from '../stores/chatStore';
 
@@ -26,7 +25,6 @@ export function ChatPage() {
     let sid = useChatStore.getState().sessionId;
     if (!sid) {
       try {
-        const { createSession } = await import('../api/session');
         const resp = await createSession();
         sid = resp.session_id;
         useChatStore.getState().setSessionId(sid);
@@ -41,7 +39,10 @@ export function ChatPage() {
       const resp = await sendMessage(sid, content);
       const reply = resp.content || '';
       if (reply && reply !== '(no reply)' && reply !== '(empty)')
-        addAI(reply, { taskGraph: resp.task_graph, metadata: { taskGraph: resp.task_graph, latencyMs: resp.latency_ms } });
+        addAI(reply, {
+          taskGraph: resp.task_graph ?? undefined,
+          metadata: { taskGraph: resp.task_graph ?? undefined, latencyMs: resp.latency_ms },
+        });
     } catch (e: any) { console.error('Send failed:', e); } finally { setThinking(false); }
   };
 

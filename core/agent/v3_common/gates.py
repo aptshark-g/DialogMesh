@@ -227,8 +227,10 @@ class OrchestrationGate:
 
     def __init__(self, executor: Optional[BlueprintExecutor] = None,
                  router_llm_fn: Optional[Any] = None):
-        self.executor = executor or BlueprintExecutor()
+        self.executor = executor or BlueprintExecutor(
+            gate_resolver=_default_permission_resolver())
         self.router_llm_fn = router_llm_fn  # 可选：LLM 调用函数
+
 
     def evaluate(self, text: str, history: List[Any],
                  pcr_out: PCROutput_v1,
@@ -346,6 +348,35 @@ class OrchestrationGate:
             return decision
         except Exception:
             return None
+
+
+def _default_permission_resolver():
+    """F1（2026-08-08）: OrchestrationGate 默认挂权限 gate_resolver。
+    与 decider._permission_resolver 同构 — 生产路径工具权限生效。"""
+    from core.agent.blueprint.permission_engine import PermissionEngine
+    pe = PermissionEngine()
+
+    def resolver(node, outputs):
+        if getattr(node, "chain", "") != "tool":
+            return {"status": "approved"}
+        tool = node.params.get("tool", "")
+        args = node.params.get("args", {}) or {}
+        decision = pe.evaluate(tool, args)
+        if not decision.allowed:
+            if ("writable root" in decision.reason
+                    or "read-only" in decision.reason):
+                return {"status": "rejected",
+                        "comment": "permission: " + decision.reason}
+            if tool == "run_shell" or tool.startswith("shell:"):
+                command = str(args.get("command", ""))
+                from core.agent.blueprint.permission_engine import (
+                    has_shell_operators)
+                if has_shell_operators(command):
+                    return {"status": "rejected",
+                            "comment": "permission: shell chaining blocked"}
+        return {"status": "approved"}
+
+    return resolver
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,4 +1,4 @@
-"""Benchmark runner — tests DialogMesh with real LLM against benchmark scenarios.
+﻿"""Benchmark runner — tests DialogMesh with real LLM against benchmark scenarios.
 
 Scenarios:
   - persona_chat: personality tracking (INTJ vs ENFP)
@@ -18,7 +18,7 @@ from core.agent.events.event_ir import DialogAdapter
 from core.agent.v4.cognitive.internal_monitor import InternalStateMonitor
 
 
-DEEPSEEK_KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
+DEEPSEEK_KEY = "sk-REPLACE_WITH_YOUR_KEY"
 
 
 def create_engine():

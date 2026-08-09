@@ -41,7 +41,10 @@ class SummaryEngine:
         return False
 
     def _v2_upgrade(self, block, turn: int):
-        entities = [e.name for e in getattr(block, 'entities', [])][:5]
+        entities = [
+            getattr(e, "text", "") or getattr(e, "name", "")
+            for e in getattr(block, 'entities', [])
+        ][:5]
         intent = getattr(block, 'primary_intent', '')
         block.summary.version = 2
         block.summary.v2_entity = f"entities: {', '.join(entities)} | intent: {intent}"
@@ -50,7 +53,7 @@ class SummaryEngine:
     def _v3_upgrade(self, block, turn: int):
         milestones = self._extract_milestones(block)
         block.summary.version = 3
-        block.summary.v3_milestone = " → ".join(milestones[:5])
+        block.summary.v3_evolution = " → ".join(milestones[:5])
         block.summary.last_updated_turn = turn
 
     def _v4_upgrade(self, block, turn: int):
@@ -87,7 +90,8 @@ class SummaryEngine:
             actions = [getattr(e, 'predicate', '') or getattr(e, 'raw_text', '')[:20]
                       for e in edus[-5:] if getattr(e, 'predicate', '')]
             
-            v3 = (getattr(block.summary, 'v3_milestone', '') or
+            v3 = (getattr(block.summary, 'v3_evolution', '') or
+                  getattr(block.summary, 'v3_milestone', '') or
                   getattr(block.summary, 'v2_entity', '') or
                   getattr(block.summary, 'v1_raw', '')[:200])
             
@@ -121,7 +125,8 @@ Output only the compressed sentence."""
                 v2 = getattr(getattr(b, 'summary', None), 'v2_entity', '') or ''
                 parts.append(f"[Warm] {v2[:150]}")
             elif t == 2:  # Cold
-                v3 = getattr(getattr(b, 'summary', None), 'v3_milestone', '') or ''
+                v3 = (getattr(getattr(b, 'summary', None), 'v3_evolution', '') or
+                      getattr(getattr(b, 'summary', None), 'v3_milestone', '') or '')
                 parts.append(f"[Cold] {v3[:100]}")
             # Frozen (t=3): skip — retrieval only
 
@@ -131,6 +136,61 @@ Output only the compressed sentence."""
         """Map block status to temperature tier."""
         status = getattr(block, 'status', 'active')
         return {"active": 0, "paused": 1, "cold": 2, "frozen": 3}.get(status, 0)
+
+    def semantic_wake(self, blocks: dict, query: str) -> int:
+        """C4 (R6): BGE>0.8 semantic wake — frozen/cold blocks return to Hot.
+
+        A query that is semantically close to a sleeping block (cosine > 0.8)
+        wakes it back to ``active`` so the temperature field behaves like a
+        multi-factor field (time×access×semantics) instead of a pure clock.
+        Returns the number of blocks woken. Best-effort: a missing encoder
+        (broken numpy, no model) silently degrades to zero wakes.
+        """
+        if not query or not blocks:
+            return 0
+        woken = 0
+        try:
+            candidates = [
+                bid for bid, b in blocks.items()
+                if getattr(b, "status", "active") in ("frozen", "cold")
+            ]
+            if not candidates:
+                return 0
+            # 7.7 统一预加载: 复用 ModelService 全局单例（避免每轮重建 encoder，
+            # 100 轮压测从 ~18s 降到模型一次加载 + 热查询）。
+            enc = self._get_encoder()
+            if enc is None:
+                return 0
+            texts = []
+            for bid in candidates:
+                b = blocks[bid]
+                texts.append(
+                    str(getattr(getattr(b, "summary", None), "v3_evolution", "") or "")
+                    or str(getattr(b, "name", ""))
+                )
+            qv = enc.encode(query)[0]
+            if not texts:
+                return 0
+            bvs = enc.encode(texts)
+            import numpy as np
+            for idx, bid in enumerate(candidates):
+                sim = float(np.dot(qv, bvs[idx]))
+                if sim > 0.8:
+                    blocks[bid].status = "active"
+                    woken += 1
+        except Exception as e:
+            logger.debug("Semantic wake skipped: %s", e)
+        return woken
+
+    def _get_encoder(self):
+        """惰性复用全局编码器单例（对齐 7.7 统一异步预加载）。"""
+        if getattr(self, "_semantic_encoder", None) is None:
+            try:
+                from core.agent.compiler.semantic_encoder import SemanticEncoder
+                self._semantic_encoder = SemanticEncoder()
+            except Exception:
+                self._semantic_encoder = False
+        return self._semantic_encoder or None
 
 
 SUMMARY_ENGINE = SummaryEngine()

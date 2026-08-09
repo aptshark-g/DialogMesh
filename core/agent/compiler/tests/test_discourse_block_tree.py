@@ -23,7 +23,9 @@ class TestHeaderInjector:
         inj = HeaderInjector()
         inj._update_cache("s1", ["DomainSelector handles domain routing"])
         result = inj.inject("这个模块很重要", "s1")
-        assert "[DomainSelector]" in result
+        # C1 (R6): A facade delegates to the B kernel HeaderInjector; the
+        # injected format is the resolved entity (no bracket wrapper).
+        assert "DomainSelector" in result
 
 
 class TestSyntacticDecomposer:
@@ -95,7 +97,9 @@ class TestDiscourseBlockTreeManager:
         mgr.feed("有记忆吗", "s1")
         mgr.feed("递归图和封装", "s1")
         ctx = mgr.build_context("s1")
-        assert "Active Branch" in ctx
+        # Temperature tags are B-kernel style ([Hot]/[Warm]/[Cold]); the A
+        # facade bridges A blocks into B-compatible views (C4/R6).
+        assert "[Hot]" in ctx
         assert len(ctx) > 0
 
     def test_empty_context(self):

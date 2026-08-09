@@ -27,7 +27,6 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   const [vx, setVx] = useState(0);
   const [vy, setVy] = useState(0);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
-  const [clickMode, setClickMode] = useState<'select' | 'delete'>('select');
   const theme = useThemeStore(s => s.theme);
   // Force colors to update: derive from theme every render
   const isLight = theme === 'light';
@@ -60,17 +59,11 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
   /* ── Node drag ── */
   const onNodeDown = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (clickMode === 'delete') {
-      onNodesChange(nodes.filter(n => n.id !== id));
-      onEdgesChange(edges.filter(e => e.source !== id && e.target !== id));
-      setSel(null);
-      return;
-    }
     const n = nodes.find(x => x.id === id); if (!n) return;
     dragNode.current = { id, mx: e.clientX, my: e.clientY, nx: n.x, ny: n.y };
     setSel(id); setSelEdge(null);
     selRef.current = id;  // <-- sync ref immediately, before next render
-  }, [nodes, edges, clickMode, onNodesChange, onEdgesChange]);
+  }, [nodes, edges, onNodesChange, onEdgesChange]);
 
   useEffect(() => {
     const mm = (e: MouseEvent) => {
@@ -240,7 +233,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
         backgroundSize: `${40 * zoom}px ${40 * zoom}px`, backgroundPosition: `${vx}px ${vy}px`,
       }} />
       <svg ref={svgRef} width="100%" height="100%" tabIndex={0}
-        style={{ cursor: connecting ? 'crosshair' : clickMode === 'delete' ? 'crosshair' : 'grab', outline: 'none' }}
+        style={{ cursor: connecting ? 'crosshair' : 'grab', outline: 'none' }}
         onWheel={onWheel} onClick={() => { setSel(null); setSelEdge(null); }}
         onKeyDown={e => {
           if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -274,7 +267,7 @@ export function FlowchartCanvas({ nodes, edges, onNodesChange, onEdgesChange }: 
               onMouseDown={e => onNodeDown(e, n.id)}
               onDoubleClick={() => setEditing(n.id)}
               onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(p => p === n.id ? null : p)}
-              style={{ cursor: clickMode === 'delete' ? 'pointer' : 'move' }}
+              style={{ cursor: 'move' }}
             >
               {showHandles(n.id) && (['top', 'bottom', 'left', 'right'] as const).map(h => {
                 const hp = HANDLES[h](n.w, n.h);

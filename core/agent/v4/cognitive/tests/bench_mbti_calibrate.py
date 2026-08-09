@@ -1,4 +1,4 @@
-"""MBTI Calibration v3 — 93 real standard questions + 16 personality descriptions.
+﻿"""MBTI Calibration v3 — 93 real standard questions + 16 personality descriptions.
 
 Each personality type answers all 93 questions from their perspective.
 Expected: T-types (INTJ/ISTJ/INTP/ENTJ...) → low WEAKEN
@@ -13,7 +13,7 @@ from core.agent.runtime.engine import CognitiveRuntimeEngine
 from core.agent.llm_providers.openai_provider import OpenAIProvider
 from core.agent.events.event_ir import DialogAdapter
 
-KEY = "sk-20d76b2a00314beabb73dd8ab9d5743d"
+KEY = "sk-REPLACE_WITH_YOUR_KEY"
 
 # Section 九 — 16 personality descriptions (abbreviated for prompt length)
 PERSONA_DESCRIPTIONS = {

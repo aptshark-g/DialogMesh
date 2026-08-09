@@ -32,7 +32,7 @@ def _health_check(engine):
 
     # 2. SQLite database
     try:
-        from core.agent.persistence.unified_store import UnifiedGraphStore
+        from core.agent.persistence.unified_graph_store import UnifiedGraphStore
         store = UnifiedGraphStore("data/dialogmesh.db")
         store.open()
         stats = store.stats

@@ -13,8 +13,11 @@
     "@reactflow/background": "^11.3.14",
     "@reactflow/core": "^11.11.4",
     "@reactflow/minimap": "^11.7.14",
+    "@types/dagre": "^0.7.54",
+    "dagre": "^0.8.5",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.23.0",
+    "mermaid": "^11.16.0",
     "prism-themes": "^1.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -25,6 +28,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

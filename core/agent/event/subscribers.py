@@ -93,28 +93,47 @@ class ProfileSubscriber:
 
 
 class AssociationSubscriber:
-    """Receives intent_parsed → feeds L1 modifier + L2.5 belief."""
+    """Receives intent_parsed → L1 resolve (pronoun) + L2.5 belief ingest.
+
+    Aligned with D-6: the L1 contract is PronounResolver.resolve(text)
+    (not the legacy stanza-Document ModifierExtractor). BeliefAccumulator
+    receives a proper Evidence dataclass, not a bare dict.
+
+    Phase 6 (蓝图 §7.3): 关联链改为独立服务（M→1 定向通道 + EventLog），
+    不再通过全广播订阅。此类保留仅供兼容引用，wire_subscribers 不再注册它。
+    """
     def __init__(self, engine=None):
         self._engine = engine
         self.events = 0
+        self._turn = 0
 
     def handle(self, kind: str, payload: dict):
         e = self._engine
         text = payload.get("text", "")
         if not text:
             return
-        l1 = getattr(e, '_l1_modifier', None)
+        resolver = getattr(e, '_pronoun_resolver', None)
         l2 = getattr(e, '_l2_5_belief', None)
         results = {}
-        if l1 and hasattr(l1, 'extract'):
+        if resolver and hasattr(resolver, 'resolve'):
             try:
-                mods = l1.extract(text)
-                results["modifiers"] = len(mods) if mods else 0
+                enriched = resolver.resolve(text)
+                results["enriched"] = enriched != text
+                results["entities"] = len(resolver.recent_entities())
             except Exception:
                 pass
         if l2 and hasattr(l2, 'ingest'):
             try:
-                l2.ingest({"text": text, "ts": time.time()})
+                from core.agent.association.l2_5_belief import Evidence
+                self._turn += 1
+                l2.ingest(Evidence(
+                    entity_id=f"event:{kind}:{self._turn}",
+                    entity_name=text[:32],
+                    relation_type="co_occurrence",
+                    confidence=0.5,
+                    turn_num=self._turn,
+                    source="event_subscriber",
+                ))
                 results["belief_updated"] = True
             except Exception:
                 pass
@@ -169,12 +188,13 @@ def _trace_handle(name, handler, engine, kind, payload):
 
 def wire_subscribers(engine) -> dict:
     """Create all subscribers, wrap with tracing, register with EventBus."""
+    # Phase 6（蓝图 §7.3）: 关联链 = 独立服务，不做全广播订阅（防广播风暴）。
+    # 关联链事件经 engine._publish 定向投递到 AssociationService。
     subs = {
         "discourse": DiscourseSubscriber(engine),
         "behavior": BehaviorSubscriber(engine),
         "meta": MetaSubscriber(engine),
         "profile": ProfileSubscriber(engine),
-        "association": AssociationSubscriber(engine),
         "persistence": PersistenceSubscriber(engine),
     }
 
@@ -199,20 +219,24 @@ def wire_subscribers(engine) -> dict:
 
     engine._event_subscribers = subs
 
-    # Register with EventBus if available
+    # Register with EventBus if available（G2-P6: 统一到 v2 总线，同步桥订阅）
     bus = getattr(engine, '_event_bus', None)
     if bus:
-        # Wire each subscriber to their event pattern
+        # Wire each subscriber to their event pattern.
+        # v2 EventBus 回调收到 Event(subject, data) —— 解包为 (kind, payload)。
         for name, handler in [
             ("discourse", subs["discourse"]),
             ("behavior", subs["behavior"]),
             ("meta", subs["meta"]),
             ("profile", subs["profile"]),
-            ("association", subs["association"]),
             ("persistence", subs["persistence"]),
         ]:
             try:
-                bus.subscribe(f"{name}.*", handler.handle)
+                sub = getattr(bus, "subscribe_sync", None)
+                if sub is None:
+                    continue
+                sub(f"{name}.*",
+                    lambda ev, h=handler: h.handle(ev.subject, ev.data or {}))
             except Exception:
                 pass
 

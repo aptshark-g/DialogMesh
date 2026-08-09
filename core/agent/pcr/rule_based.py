@@ -6,9 +6,18 @@ class RuleBasedPCR(PCRRouterV2):
     """Backward-compatible wrapper. All logic in PCRRouterV2."""
     name = "rule_based_v2"
 
-    def evaluate(self, query: str):
-        """Old API — maps to route()."""
-        result = self.route(query)
+    def evaluate(self, query):
+        """Old API — maps to route().
+
+        Compatible with both str (legacy) and PCRInput_v1 object (PCRGate
+        contract). PCRGate.evaluate passes PCRInput_v1(query=text, ...);
+        we must extract .query before route, otherwise route receives the
+        object and StructuralFeatures crashes ('PCRInput_v1' has no strip).
+        """
+        text = query
+        if not isinstance(query, str):
+            text = getattr(query, "query", "") or ""
+        result = self.route(text)
         return _PCRLegacyOutput(result)
 
 

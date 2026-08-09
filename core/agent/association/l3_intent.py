@@ -58,7 +58,14 @@ class MultiPerspectiveValidator:
         pcr_zone: str = "MIXED",
         entity_relations: List[str] = None,
     ) -> IntentResult:
-        """Multi-perspective validation of an intent hypothesis."""
+        """Multi-perspective validation of an intent hypothesis.
+
+        D-14: ``pcr_zone`` supplies a config-driven intent prior
+        (``l3.zone_intent_map``); when the caller has no hypothesis yet, the
+        zone mapping seeds it (PCR coarse judgment → L3 fine validation).
+        """
+        if not intent_hypothesis and pcr_zone:
+            intent_hypothesis = self.zone_intent_prior(pcr_zone) or "信息查询"
 
         votes: List[PerspectiveVote] = []
         discourse_topics = discourse_topics or []
@@ -112,6 +119,65 @@ class MultiPerspectiveValidator:
             votes=votes,
             feedback=feedback,
         )
+
+    def zone_intent_prior(self, zone: str) -> Optional[str]:
+        """D-14: PCR zone → intent prior from config (no hardcoded mapping)."""
+        from .l2_config import get as cfg_get
+        mapping = cfg_get('l3.zone_intent_map', {})
+        return mapping.get(zone)
+
+    # ── D-11: multi-intent split validation ──
+
+    def validate_split(
+        self,
+        sub_intents: List[str],
+        belief_7d: dict,
+        discourse_topics: List[str] = None,
+        profile_traits: Dict[str, float] = None,
+        pcr_zone: str = "MIXED",
+        entity_relations: List[str] = None,
+        split_threshold: float = 0.5,
+    ) -> dict:
+        """Validate a multi-intent split hypothesis (ENGINEERING_MULTI_INTENT_SPLIT).
+
+        Each proposed sub-intent goes through the same 4-perspective vote as a
+        single intent; the split is accepted when the accepted ratio passes
+        ``split_threshold``. Returns per-segment results plus the verdict.
+        """
+        segments = sub_intents or []
+        if not segments:
+            return {"accepted": False, "ratio": 0.0, "segments": []}
+
+        results = []
+        accepted = 0
+        for seg in segments:
+            r = self.validate(
+                intent_hypothesis=seg,
+                belief_7d=belief_7d,
+                discourse_topics=discourse_topics,
+                profile_traits=profile_traits,
+                pcr_zone=pcr_zone,
+                entity_relations=entity_relations,
+            )
+            results.append({
+                "segment": seg,
+                "accepted": r.consensus,
+                "intent": r.intent,
+                "confidence": r.confidence,
+                "votes": [{"source": v.source, "vote": v.vote.value} for v in r.votes],
+            })
+            if r.consensus:
+                accepted += 1
+
+        ratio = accepted / len(segments)
+        return {
+            "accepted": ratio >= split_threshold,
+            "ratio": round(ratio, 3),
+            "accepted_count": accepted,
+            "total": len(segments),
+            "segments": results,
+            "pcr_zone": pcr_zone,
+        }
 
     # ── Perspective voters ──
 

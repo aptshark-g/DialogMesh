@@ -219,8 +219,10 @@ class DiscourseManager:
                                     return vec.tolist()
                             except Exception:
                                 pass
-                            return EmbeddingEngine._hash_embedding(text)
-                        EmbeddingEngine.encode = staticmethod(_bge_encode)
+                            # T7: 失败返回 None，由引擎统一回退 hash 并正确标记编码器身份
+                            return None
+                        # T7: 编码器契约 — 注册而非裸 monkey-patch（引擎统一管理身份/维度）
+                        EmbeddingEngine.register_encoder("bge", _bge_encode)
                         logger.info("TopicTreeManagerV2 using BGE encoder (512-dim) instead of hash fallback")
                 except Exception as e:
                     logger.warning(f"Failed to patch BGE encoder for TopicTreeManagerV2: {e}")

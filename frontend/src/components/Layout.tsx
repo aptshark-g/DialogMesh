@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { PageLoader } from './PageLoader.tsx';
-import { RightPanel } from './RightPanel.tsx';
+import { RightDock } from './dock/RightDock';
+import { CenterDock } from './dock/CenterDock';
 import { MobileBottomNav } from './MobileBottomNav.tsx';
 import { SidePanel } from './ui/SidePanel.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
@@ -48,8 +49,11 @@ export function Layout() {
 
           {/* Right Panel */}
           <SidePanel>
-            <RightPanel lastUpdated="14:32:18" />
+            <RightDock />
           </SidePanel>
+
+          {/* Center Dock — 内容坞"中间显示"浮层（B5） */}
+          <CenterDock />
         </div>
       </div>
 

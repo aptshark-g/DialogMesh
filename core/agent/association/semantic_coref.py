@@ -32,7 +32,7 @@ class SemanticCorefScorer:
 
     def __init__(self):
         self._model = None
-        self._available = self._init_model()
+        self._available = False  # lazy — loaded on first use
 
     def _init_model(self) -> bool:
         try:
@@ -53,6 +53,8 @@ class SemanticCorefScorer:
 
         Returns 0-1 cosine similarity. Higher = more likely same entity.
         """
+        if not self._available:
+            self._available = self._init_model()
         if not self._available:
             return 0.5  # neutral when model unavailable
 

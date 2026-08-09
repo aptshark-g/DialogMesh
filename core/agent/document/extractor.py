@@ -36,6 +36,8 @@ class ObservationExtractor:
         (r"(?:例如|示例|比如|e\.g\.|eg\.|Example|譬如|举例|比方说)\s*[:：]?", "example", 0.5),
         (r"(?:依赖|基于|导致|引起|造成|结果|result|depend|引用|关联|触发|影响)\s*[:：]?", "relation", 0.5),
         (r"(?:参数|阈值|默认值|配置|设置|parameter|threshold|default|属性|字段|配置项)\s*[:：=]?", "parameter", 0.5),
+        # 英文键值对: "community_resolution: 1.0" / "max_depth = 5" — 参数配置模式
+        (r"^[A-Za-z][A-Za-z0-9_.\-]*\s*[:：=]\s*\S+", "parameter", 0.6),
     ]
 
     def extract(self, node: DocumentNode, event_id: str) -> List[DocumentObservation]:

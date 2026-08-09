@@ -53,11 +53,21 @@ class RequestQueue:
         self.per_session_max_depth = per_session_max_depth
         self.default_timeout = default_timeout_seconds
 
-        self._queue: asyncio.PriorityQueue[QueuedRequest] = asyncio.PriorityQueue()
+        # 惰性初始化: PriorityQueue/Lock 都绑定事件循环，模块级/主线程创建会炸
+        # （B4-1-P1 薄中间件 v6_app 导入实测暴露）。
+        self._queue: Optional[asyncio.PriorityQueue] = None
         self._session_depths: Dict[str, int] = {}
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._worker_task: Optional[asyncio.Task] = None
         self._running = False
+
+    def _ensure_queue(self) -> asyncio.PriorityQueue:
+        """在事件循环内创建队列+锁（首次 async 调用时）。"""
+        if self._queue is None:
+            self._queue = asyncio.PriorityQueue()
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._queue
 
     async def start(self, processor: Callable[[QueuedRequest], Awaitable[Dict[str, Any]]]) -> None:
         """启动处理工作协程。"""
@@ -91,6 +101,7 @@ class RequestQueue:
         timeout = timeout or self.default_timeout
         request_id = f"{session_id}-{time.time()}-{id(payload)}"
         future = asyncio.get_running_loop().create_future()
+        self._ensure_queue()
 
         async with self._lock:
             global_depth = self._queue.qsize()
@@ -123,6 +134,7 @@ class RequestQueue:
 
     async def _process_loop(self) -> None:
         """处理循环。"""
+        self._ensure_queue()
         while self._running:
             try:
                 item = await self._queue.get()
@@ -159,9 +171,11 @@ class RequestQueue:
 
     async def get_stats(self) -> Dict[str, Any]:
         """获取队列统计。"""
+        self._ensure_queue()
         async with self._lock:
-            return {
+            stats = {
                 "global_depth": self._queue.qsize(),
                 "session_depths": dict(self._session_depths),
                 "running": self._running,
             }
+            return stats

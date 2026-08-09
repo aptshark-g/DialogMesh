@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
@@ -15,6 +15,26 @@ export function SidePanel({ children, className }: SidePanelProps) {
   const width = useUIStore((s) => s.sidePanel.width);
   const closeSidePanel = useUIStore((s) => s.closeSidePanel);
   const toggleSidePanel = useUIStore((s) => s.toggleSidePanel);
+  const setSidePanelWidth = useUIStore((s) => s.setSidePanelWidth);
+  const resizingRef = useRef(false);
+
+  const onResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = useUIStore.getState().sidePanel.width;
+    const onMove = (ev: PointerEvent) => {
+      if (!resizingRef.current) return;
+      setSidePanelWidth(startWidth + (startX - ev.clientX));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -46,17 +66,23 @@ export function SidePanel({ children, className }: SidePanelProps) {
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.aside
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            initial={false}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
             className={cn(
-              'bg-surface-sidebar border-l border-subtle flex flex-col shrink-0 overflow-hidden',
+              'bg-surface-sidebar border-l border-subtle flex flex-col shrink-0 overflow-hidden relative',
               'fixed inset-y-0 right-0 z-drawer lg:static lg:z-auto',
               className
             )}
             style={{ width }}
           >
+            {/* Resize handle — drag left edge to adjust width (desktop) */}
+            <div
+              onPointerDown={onResizeStart}
+              className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/40 hidden lg:block z-10"
+              aria-label="调整右栏宽度"
+            />
             <div className="h-full flex flex-col" style={{ width }}>
               {children}
             </div>
