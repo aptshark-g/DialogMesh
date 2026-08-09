@@ -226,6 +226,80 @@ class SubgraphCompiler:
                                strategy, intent_category,
                                [conflict] if conflict else [])
 
+    # ── recall→subgraph 桥（2026-08-09, RECALL_EXECUTION_BRIDGE §三）───────
+
+    def compile_from_anchors(self, anchors, event_id: str = None,
+                             extra_budget: int = 0,
+                             max_anchors: int = 8) -> SubgraphContext:
+        """召回锚点作为 seed 的子图编译: 概念 → 完整内容 + 生产情景。
+
+        三路合并:
+          1. 锚点条目（域 R, 带 path 索引 → 执行层精确查阅）
+          2. 事件溯源（_expand_from_event: 同 trace 生产轨迹 =
+             写文稿的会话要求/查过的源/写的代码 —— "情景再现"）
+          3. 图扩展（expand_from_graph: ConceptGraph 关联边波浪展开）
+        """
+        budget = self._budget + extra_budget
+        alloc = self._alloc_for_intent("query")
+        entries: List[DomainEntry] = []
+        for h in (anchors or [])[:max_anchors]:
+            text = (getattr(h, "text", "") or "")[:300]
+            if not text.strip():
+                continue
+            fused = 0.5
+            try:
+                fused = float(getattr(h, "fused", lambda: 0.5)() or 0.5)
+            except Exception:
+                pass
+            cross = []
+            path = getattr(h, "path", None) or []
+            if path:
+                cross.append({"target_domain": "file",
+                              "note": ",".join(str(p) for p in path[:3])})
+            entries.append(DomainEntry(
+                "R", text, fused, "recall", len(text) // 2,
+                cross_refs=cross))
+        if event_id:
+            entries += self._expand_from_event(event_id)
+            entries += self._expand_from_trace(event_id)
+        query = " ".join((getattr(h, "text", "") or "")[:100]
+                         for h in (anchors or [])[:3])
+        graph_entries = self.expand_from_graph(query)
+        if graph_entries:
+            entries += graph_entries
+        return SubgraphContext(
+            "dialogue", entries, self._count_tokens(entries), budget, alloc,
+            "anchors", "query")
+
+    def _expand_from_trace(self, request_id: str) -> List[DomainEntry]:
+        """生产轨迹（写的代码/工具调用序列）: 从 engine learning_bridge 的
+        trace_store 按 request_id 反查（"情景再现"的代码轨迹支线）。
+
+        ExecutionTrace{tool_sequence} = 该请求实际执行的工具链
+        （write_file/run_shell/...）——文稿对应的"写的代码/操作"。
+        无 engine / 无 trace_store / 无匹配 → 返回 []（容错）。
+        """
+        if not request_id or not self._engine:
+            return []
+        lb = getattr(self._engine, "_learning_bridge", None)
+        ts = getattr(lb, "trace_store", None) if lb is not None else None
+        if ts is None:
+            return []
+        try:
+            out: List[DomainEntry] = []
+            for t in ts.get_all():
+                seq = getattr(t, "tool_sequence", None) or []
+                if getattr(t, "request_id", "") == request_id and seq:
+                    out.append(DomainEntry(
+                        "T", f"trace[{getattr(t, 'strategy', '?')}] 工具序列: "
+                             + " → ".join(str(s) for s in seq[:12]),
+                        0.85, "execution_trace", len(seq) * 6,
+                        source_events=[request_id]))
+            return out
+        except Exception as exc:
+            logger.debug("trace expansion failed for %s: %s", request_id, exc)
+            return []
+
     # ── Perspective 2: Meta Subgraph ──
 
     def compile_meta(self, review_target: str = "", extra_budget: int = 0) -> SubgraphContext:

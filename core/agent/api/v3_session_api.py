@@ -465,6 +465,19 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     _rs = RecallService(engine=_eng2)
                     _rr = _rs.recall(req.content, top_k=5, sid=session_id)
                     anchors = format_anchors(_rr, max_chars=1200)
+                    # recall→subgraph 桥: 锚点作为 seed 编译子图
+                    # （含事件溯源=生产情景 + 图扩展=关联内容）
+                    try:
+                        from core.agent.v4.cognitive.subgraph_compiler import (
+                            SubgraphCompiler)
+                        _sc = SubgraphCompiler(engine=_eng2)
+                        _sctx = _sc.compile_from_anchors(
+                            _rr.hits, event_id=msg_id)
+                        _sub = _sc.assemble_prompt(_sctx)
+                        if _sub and _sub.strip():
+                            anchors = anchors + "\n\n" + _sub
+                    except Exception:
+                        pass
                 except Exception:
                     anchors = ""
                 _tr = _runner.run(
