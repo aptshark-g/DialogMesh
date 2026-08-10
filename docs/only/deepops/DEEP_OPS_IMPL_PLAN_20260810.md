@@ -95,42 +95,87 @@
 
 ## 四、阶段 C：UI 自动化（策略 2）
 
-### C.1 page-agent（DOM，web 优先 — 你们前端是 React）
+### C.0 双引擎定位（OmniParser v2 vs UI-TARS — 互补不互斥）
 
 ```
-来源: alibaba/page-agent (⭐28.5K)
-方式: JS 注入页面 → 直接操控 DOM → 自然语言指令
-验证: 对 frontend/ 起的 vite dev server 做 UI 测试
+┌────────────────────────────────────────────────────┐
+│ 引擎 A: OmniParser v2 (微软, ⭐25.2K, MIT) — 白盒    │
+│   定位: "把任意 LLM 变成 GUI agent" 的解析器         │
+│   架构: icon_detect (YOLOv9-E) + icon_caption       │
+│         → 截图 → 结构化元素 (bbox + 语义)           │
+│   决策: 由 DialogMesh 的 LLM 栈做 (DeepSeek/本地)    │
+│   优势: ✅ 轻 (YOLO 级, 16G 无压力, 秒级)           │
+│         ✅ 白盒 — 解析结果结构化, 决策在认知层       │
+│         ✅ 契合"行为一等公民" (A9): 操作历史可记录   │
+│         ✅ MIT 协议                                  │
+├────────────────────────────────────────────────────┤
+│ 引擎 B: UI-TARS (字节, ⭐11.3K, Apache-2.0) — 连贯   │
+│   定位: 端到端 GUI agent (看+想+动 一体)             │
+│   架构: Qwen2.5VL-7B 全包 (识别+决策+动作生成)       │
+│   决策: 模型自己 (RL 推理, Thought→Action)           │
+│   优势: ✅ 连贯性 — 多步任务不中断, 上下文自持       │
+│         ✅ 异步外置脚本 — 独立进程调用, 不占主链路   │
+│         ✅ 能力全包 — 复杂 GUI 任务一步到位          │
+│   劣势: ⚠️ 7B 需量化 (3080m 16G: Q4/Q8)             │
+│         ⚠️ 黑盒决策 — 认知层插不进去 (行为不可见)    │
+└────────────────────────────────────────────────────┘
+
+分工建议:
+  白盒场景 (测试/学习/调试) → OmniParser (解析+认知层决策)
+  快路径 (复杂多步 GUI 任务, 异步) → UI-TARS (外置脚本)
+  → 两个都注册, 蓝图按场景选 (A7 分治)
+```
+
+### C.1 OmniParser v2（白盒引擎 — 优先）
+
+```
+来源: microsoft/OmniParser (⭐25.2K, MIT, 权重 HF microsoft/OmniParser-v2.0)
+安装: pip install + huggingface-cli download (YOLOv9-E detector)
+本地: 16G 无压力 (YOLO 级, 非 LLM)
 
 工具注册:
-  ui_test (DOM 模式): 点击/输入/断言 → page-agent
+  omni_parse: 截图 → 结构化元素 (bbox + 语义标签)
+  → 蓝图: [omni_parse] → [llm_decide (你们 LLM)] → [pyautogui 执行]
+  → 操作历史 = 结构化事件 (白盒, A9/A19)
+
+验收 (C1):
+  [ ] OmniParser v2 安装 + 权重下载成功
+  [ ] 对 DialogMesh 前端截图 → 解析出元素 (按钮/输入框 + 坐标)
+  [ ] omni_parse 工具注册 + 蓝图三段式 (parse→decide→act)
+  [ ] 操作历史结构化记录 (行为链可学习)
 ```
 
-### C.2 UI-TARS（视觉，通用兜底）
+### C.2 UI-TARS（连贯引擎 — 异步外置脚本）
 
 ```
 来源: bytedance/UI-TARS (⭐11.3K, Apache-2.0) + UI-TARS-desktop (⭐38.5K)
+模型: HF ByteDance-Seed/UI-TARS-1.5-7B (开源, 本地可跑, 无需 key)
 轻量验证: pip install ui-tars → parse_action_to_structure_output
   (只测解析器, 不跑视觉模型 — 验证链路)
-完整验证: 视觉模型 (qwen25vl) → 截图 → 动作序列
+完整验证: 7B 量化 (Q4/Q8) + vLLM/llama.cpp → 截图 → 动作序列
+异步外置: 独立进程/subprocess 调用 → 不占 DialogMesh 主链路
 
 工具注册:
-  ui_test (视觉模式): 截图 → UI-TARS → pyautogui 执行
+  ui_tars_run: 截图+指令 → 端到端动作序列 → pyautogui 执行
+  (异步: 后台进程跑, 完成回调)
+
+验收 (C2):
+  [ ] pip install ui-tars 成功, 解析器测试通过 (零模型)
+  [ ] UI-TARS-1.5-7B 量化 + vLLM 本地推理跑通 (16G)
+  [ ] 对一个复杂 GUI 任务 (多步) 端到端跑通
+  [ ] ui_tars_run 异步外置调用 (subprocess + 回调)
 ```
 
 ### C.3 工具合并策略
 
 ```
-ui_test 一个工具, 两种模式 (参数切换):
-  mode="dom"  → page-agent (快, web)
-  mode="vision" → UI-TARS (通用, 慢)
+ui_test 一个工具, 三模式 (参数切换):
+  mode="dom"    → page-agent (快, web)
+  mode="white"  → OmniParser + 认知层决策 (白盒, 默认)
+  mode="vision" → UI-TARS (连贯, 异步外置, 快路径)
   → discover 按关键词命中后, 蓝图选模式 (A7 信息论分治)
 
-验收 (C):
-  [ ] pip install ui-tars 成功, 解析器测试通过
-  [ ] page-agent 对 DialogMesh 前端跑通一个 UI 用例
-  [ ] ui_test 工具注册 (双模式) + 蓝图 tool 节点
-  [ ] 层间降级: ui_test 失败 → 提示降级 hook_probe
+层间降级: ui_test 失败 → 提示降级 hook_probe (Frida)
 ```
 
 ---
@@ -243,10 +288,11 @@ ui_test 一个工具, 两种模式 (参数切换):
    ├─ CLI-Anything clone + install
    └─ 验收 B1/B2
 
-第 3 步: 阶段 C — UI 自动化 (~2h)
-   ├─ pip install ui-tars (轻量解析器)
+第 3 步: 阶段 C — UI 自动化 (~3h)
+   ├─ OmniParser v2 安装 + 权重 (白盒引擎, 优先)
+   ├─ pip install ui-tars (轻量解析器验证链路)
    ├─ page-agent 对 frontend 跑通一个用例
-   └─ 验收 C
+   └─ 验收 C1 (OmniParser) + C2 轻量部分 (UI-TARS 解析器)
 
 第 4 步: 阶段 E — 工具族接入蓝图 (~2h)
    ├─ 9 工具注册 + discover 验证
