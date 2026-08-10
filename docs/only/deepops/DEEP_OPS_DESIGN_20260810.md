@@ -6,11 +6,17 @@
 > 由蓝图编排 + 行为链学习 + 白盒记录——DialogMesh 是能驾驭工具的认知体。
 > 状态：设计草案，待讨论拍板。前置：工具层已有 ToolRegistry/ToolAdapter/蓝图 tool 节点。
 >
-> **2026-08-10 重大更新：发现前身资产（MemoryGraph_old）**
+> **2026-08-10 重大更新①：发现前身资产（MemoryGraph_old）**
 > MemoryGraph_old 是 DialogMesh 的前身（操作助手独立出来的项目）。
-> 其逆向工具层（L3/L5/L6）**全部现成可用**——Ghidra Bridge 1597 行、
+> 其逆向工具层（策略 4）**全部现成可用**——Ghidra Bridge 1597 行、
 > Frida Bridge 356 行、Angr 符号执行 847 行、Capstone/Zydis 反汇编、
 > mg_engine.dll 断点引擎。实施从"从零调研"改为"移植 + 适配"。
+>
+> **2026-08-10 重大更新②：策略总纲修正——反汇编是兜底不是默认**
+> 用户提出操作策略分层：源码优先（repomix）→ CLI 化（CLI-Anything，
+> "CLI 即运维控制"，非"CLI 即内核"——那是 DialogMesh 自己的 B4-5 哲学）
+> → UI 自动化 → 注入观测 → 逆向兜底（前身资产）。反汇编从默认手段降级为
+> 闭源+高频的最后手段。CLI 控制层未来可 RPC 化（B4-5 外部版）。
 
 ---
 
@@ -33,11 +39,62 @@
 
 ```
 理由:
-  ① 每一层都有成熟开源 (page-agent/UI-TARS/Frida/mitmproxy/Ghidra)
+  ① 每一层都有成熟开源 (repomix/CLI-Anything/page-agent/UI-TARS/Frida/Ghidra)
   ② 缺的不是工具, 是"统一编排 + 层间降级" — 这是蓝图能干的事
   ③ 各层操作历史 = 行为数据 (A9) → 学习 + 白盒回看 (A19)
   ④ 层间降级 = 信息论分治实例化 (A7)
 ```
+
+---
+
+## 一.5 操作策略总纲（反汇编是兜底，不是默认）
+
+**核心修正（用户 2026-08-10）**：不是"UI 泛化 → 逆向逼近"一条道，
+而是**五层策略按成本优先**——能读源码就不逆向。
+
+```
+┌────────────────────────────────────────────────────┐
+│ 策略 0: 源码层 (最优先, 零风险零成本)                │
+│   repomix (⭐27.7K) 打包仓库 → LLM 理解 → CLI 操作   │
+│   "能读源码就直接读, 别碰界面"                      │
+├────────────────────────────────────────────────────┤
+│ 策略 1: CLI 化 (CLI-Anything HKUDS, ⭐46.8K)         │
+│   "CLI 即运维控制" (非"CLI 即内核" — 那是 DialogMesh │
+│   自己的 B4-5 哲学)                                  │
+│   任何软件 → 自动生成 Python CLI → agent-native      │
+│   CLI-Hub (clianything.cc) 现成包装集散地            │
+│   演进: 常用操作 → RPC 化 (B4-5 外部版, 更高效率)    │
+├────────────────────────────────────────────────────┤
+│ 策略 2: UI 自动化 (page-agent DOM / UI-TARS 视觉)   │
+│   无 CLI 但有界面 → 视觉/DOM 操作                   │
+├────────────────────────────────────────────────────┤
+│ 策略 3: 注入观测 (Frida hook — 前身资产)            │
+│   UI 不够 → 看真实状态 (内存/函数调用)              │
+├────────────────────────────────────────────────────┤
+│ 策略 4: 逆向兜底 (Ghidra/angr/Zydis — 前身资产)     │
+│   闭源 + 频繁使用 → 反汇编 → 代码级操作             │
+│   (最后手段, 高成本, 高风控, PlanGate 显式)          │
+└────────────────────────────────────────────────────┘
+
+→ 80% 场景死在策略 0/1 (源码/CLI)
+→ 策略 2 (UI) 覆盖"有界面无 CLI"
+→ 策略 3/4 (hook/逆向) 只留给闭源高频
+```
+
+**CLI-Anything 的定位澄清**：
+```
+不是"CLI 即内核" — 那是 DialogMesh 内部的 B4-5 架构哲学
+是"CLI 即运维控制" — 对外部软件的操作控制层
+
+演进路径:
+  阶段 1: CLI 包装 (现在) — "操作 X" → cli_gen 生成 CLI → 控制
+  阶段 2: RPC 化 (可行后) — 常用操作 → RPC 调用 → 比 CLI 更高效
+    (B4-5 外部版: CLI 轻量起步, RPC 高效升级 — 同一哲学)
+```
+
+**CLI-Anything 与蓝图哲学同源**："Making ALL Software Agent-Native"
+≈ 你们的"CLI 即内核"哲学在外部软件上的应用——它证明了架构方向正确，
+且给了现成的工具生成器（自动把软件变 CLI）。
 
 ---
 
@@ -104,9 +161,25 @@ flowchart LR
 
 ## 三、与 DialogMesh 的集成
 
-### 3.1 工具注册（L1 先行）
+### 3.1 工具注册（策略 0/1 优先）
 
 ```python
+ToolRegistry.register(ToolAdapter(
+    name="repo_scan",
+    description="打包开源仓库为单个 LLM 文件 (repomix)",
+    keywords_zh=["扫源码", "仓库打包", "读源码", "项目理解"],
+    execute=run_repomix,          # 调 repomix
+    validate=validate_repo_cmd,
+))
+
+ToolRegistry.register(ToolAdapter(
+    name="cli_gen",
+    description="为软件生成 agent-native CLI 包装 (CLI-Anything)",
+    keywords_zh=["生成CLI", "CLI化", "软件控制", "操作接口"],
+    execute=run_cli_anything,     # 调 CLI-Anything
+    validate=validate_cli_gen_cmd,
+))
+
 ToolRegistry.register(ToolAdapter(
     name="ui_test",
     description="UI 自动化测试 (page-agent DOM / UI-TARS 视觉)",
@@ -229,12 +302,20 @@ FLOW_SELF_GROWTH: 每加一个工具 = 系统能力增长
   ├─ 确认 mg_engine.dll 的 C++ 源码完整性 (ScannerEngine.cpp 155 行是主源?)
   └─ 移植目录: core/agent/tools/reverse/ (只搬工具层, 不搬业务层)
 
-阶段 1 (现在): L1 — UI-TARS/page-agent 注册 (前身无此层, 新补)
+阶段 0.5 (策略 0/1 — 最高优先): repomix + CLI-Anything
+  ├─ repomix 安装/验证 (打包仓库 → LLM 理解)
+  ├─ CLI-Anything 安装/验证 (软件 → CLI 包装 → agent 控制)
+  ├─ repo_scan + cli_gen 工具注册
+  ├─ 蓝图 tool 节点接入 (T2/T3/T4)
+  └─ 验收: "操作 X" → repo_scan 看源码? → cli_gen 生成 CLI? → 控制成功
+
+阶段 1: L1 — UI-TARS/page-agent 注册 (前身无此层, 新补)
   ├─ pip install ui-tars (轻量解析器, 验证链路)
   ├─ page-agent 调研 (web 前端测试 — 你们前端是 React)
   ├─ ToolRegistry 注册 ui_test 工具
-  ├─ 蓝图 tool 节点接入 (T2/T3/T4)
   └─ 验收: "帮我点这个按钮" → ui_test 执行 → 结果回灌
+  └─ (用户建议: 可先在 MemoryGraph_old 验证 UI 链路 — 它已有逆向层,
+      加 UI = 完整闭环; DialogMesh 做认知层)
 
 阶段 2: L3/L5 — 前身资产直接注册 (不用从零调研!)
   ├─ 移植 core/frida_bridge.py → hook_probe 工具 (目标进程白名单)
@@ -253,10 +334,16 @@ FLOW_SELF_GROWTH: 每加一个工具 = 系统能力增长
   ├─ patch_build 工具 (显式高风控)
   ├─ mg_engine.dll 断点追踪接入 (tracer_v2)
   └─ 验收: 反汇编确认偏移 → 近源码级修改 → 重打包
+
+阶段 5 (未来): CLI 控制层 RPC 化
+  ├─ 常用操作 → RPC 调用 (B4-5 外部版)
+  ├─ 比 CLI 更高效 (长连接/批量/结构化)
+  └─ 触发: 常用控制路径稳定后
 ```
 
 > 注: 阶段 2 原计划"从零调研 Frida/Ghidra"→ 因前身资产发现改为"移植 + 适配"。
-> 阶段 1 和阶段 3 (L1/L4) 是前身没有的, 保持新补。
+> 阶段 0.5 (repomix/CLI-Anything) 是用户补充的最高优先层——80% 场景在此解决。
+> 阶段 1/3 (L1/L4) 是前身没有的, 保持新补。
 
 ---
 
@@ -277,15 +364,19 @@ FLOW_SELF_GROWTH: 每加一个工具 = 系统能力增长
 ## 七、待拍板问题
 
 ```
-P1  默认边界确认: L1-L4 默认, L5/L6 高风控显式 — 认可?
+P1  默认边界确认: 策略 0-3 默认, 策略 4 (逆向) 高风控显式 — 认可?
     (用户已表态: 技术本身合理, 单用户 + 显式操作 + PlanGate, 风险可控)
-P2  阶段顺序: 阶段0(移植盘点) → L1 → L3/L5(前身资产) → L4 → L6 — 认可?
+P2  阶段顺序: 阶段0(移植盘点) → 0.5(repomix/CLI-Anything) → L1(UI)
+    → L3/L5(前身资产) → L4 → L6 — 认可?
     (L2 黑盒触发并入 L1 基础设施)
 P3  UI 选型: 先 page-agent (DOM, web 前端) 还是 UI-TARS (视觉, 通用)?
     建议: 两者都注册, page-agent 优先 (你们前端是 web)
-P4  工具命名: ui_test / hook_probe / net_trace / disasm_lib / xref /
-    dataflow / sym_exec — 命名 OK? (后三个是前身资产直接映射)
+P4  工具命名: repo_scan / cli_gen / ui_test / hook_probe / net_trace /
+    disasm_lib / xref / dataflow / sym_exec — 命名 OK?
+    (xref/dataflow/sym_exec 是前身资产直接映射)
 P5  前身资产移植范围: 只搬工具层 (core/frida_bridge 等 + disasm/) —
     不搬业务层 (agent/ai_assistant 等) — 认可?
-P6  是否现在开始阶段 0 (前身资产移植盘点) + 阶段 1 (ui-tars/page-agent)?
+P6  UI 验证位置: 先在 MemoryGraph_old 验证 UI 链路 (用户建议) —
+    还是直接在 DialogMesh 装? 
+P7  是否现在开始阶段 0.5 (repomix + CLI-Anything 安装验证)?
 ```
