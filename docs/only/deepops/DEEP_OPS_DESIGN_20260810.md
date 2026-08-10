@@ -5,6 +5,12 @@
 > 结论先行：**不做独立项目**，作为 DialogMesh 的工具族（ToolRegistry 注册），
 > 由蓝图编排 + 行为链学习 + 白盒记录——DialogMesh 是能驾驭工具的认知体。
 > 状态：设计草案，待讨论拍板。前置：工具层已有 ToolRegistry/ToolAdapter/蓝图 tool 节点。
+>
+> **2026-08-10 重大更新：发现前身资产（MemoryGraph_old）**
+> MemoryGraph_old 是 DialogMesh 的前身（操作助手独立出来的项目）。
+> 其逆向工具层（L3/L5/L6）**全部现成可用**——Ghidra Bridge 1597 行、
+> Frida Bridge 356 行、Angr 符号执行 847 行、Capstone/Zydis 反汇编、
+> mg_engine.dll 断点引擎。实施从"从零调研"改为"移植 + 适配"。
 
 ---
 
@@ -54,16 +60,17 @@ flowchart TD
     style L6 fill:#fce4ec,stroke:#e91e63
 ```
 
-### 2.2 每层选型与状态
+### 2.2 每层选型与状态（含前身资产）
 
-| 层 | 能力 | 开源选型 | 现状 | 接入方式 |
-|---|------|---------|:---:|---------|
-| L1 | UI 自动化 | page-agent (DOM) / UI-TARS (视觉) / Playwright | 调研完成 | ToolRegistry |
-| L2 | 黑盒触发 | 自定义事件注入 (基于 L1 基础设施) | 待设计 | ToolRegistry |
-| L3 | 注入/Hook | Frida (跨平台事实标准) | 待调研 | ToolRegistry + 子进程 |
-| L4 | IPC/网络 | mitmproxy (Python, 可嵌入) | 待调研 | ToolRegistry |
-| L5 | 反汇编 | Ghidra headless (NSA, 开源) | 待调研 | ToolRegistry + headless |
-| L6 | 近源码修改 | frida patch / detours / apktool | 待设计 | **显式高风控** (PlanGate) |
+| 层 | 能力 | 开源选型 | 前身资产 (MemoryGraph_old) | 现状 | 接入方式 |
+|---|------|---------|--------------------------|:---:|---------|
+| L1 | UI 自动化 | page-agent (DOM) / UI-TARS (视觉) / Playwright | — (前身无 UI 自动化, 新补) | 调研完成 | ToolRegistry |
+| L2 | 黑盒触发 | 自定义事件注入 (基于 L1 基础设施) | — | 待设计 | ToolRegistry |
+| L3 | 注入/Hook | Frida | **`core/frida_bridge.py` (356 行)** — FridaBridge: attach/hook 脚本生成/内存扫描/栈追踪 | ✅ 现成 | 移植 + ToolRegistry |
+| L4 | IPC/网络 | mitmproxy (Python, 可嵌入) | — | 待调研 | ToolRegistry |
+| L5 | 反汇编 | Ghidra headless | **`core/ghidra_bridge.py` (1597 行)** — headless 分析/伪代码/PCode/结构导出<br/>**`core/angr_bridge.py` (847 行)** — 符号执行<br/>**`disasm/` (2858 行)** — Capstone 封装 + CodeScanner 交叉引用 + DataDepGraph 数据流<br/>**`core/capstone_disasm.py` (397 行)** | ✅ 现成 | 移植 + ToolRegistry |
+| L6 | 近源码修改 | frida patch / detours / apktool | **`analysis/zydis_engine.py` (929 行)** + ScannerEngine.cpp + build_zydis.bat<br/>**`core/deobfuscator.py` / `junk_code.py` / `anti_debug.py` / `dfg.py` (1665 行)**<br/>**`mg_engine.dll` (84KB) + lib/Release** — int3 断点引擎 | ✅ 现成 | 移植 + **显式高风控** (PlanGate) |
+| 执行追踪 | Ghidra 引导断点 | — | **`disasm/tracer_v2.py` (327 行)** — Ghidra 语义标签 → int3 断点 → 运行时执行流 | ✅ 现成 | 移植 |
 
 ### 2.3 层间降级协议（自适应）
 
@@ -126,13 +133,43 @@ ToolRegistry.register(ToolAdapter(
 
 ToolRegistry.register(ToolAdapter(
     name="disasm_lib",
-    description="Ghidra 反汇编/伪代码/交叉引用",
+    description="Ghidra 反汇编/伪代码/交叉引用 (前身资产移植)",
     keywords_zh=["反汇编", "伪代码", "交叉引用", "偏移"],
-    execute=run_ghidra_headless,
+    execute=run_ghidra_headless,  # 移植 core/ghidra_bridge.py
     validate=validate_disasm_cmd,
     risk="high",                  # L5/L6 高风险
 ))
+
+ToolRegistry.register(ToolAdapter(
+    name="xref",
+    description="交叉引用: 哪些指令触碰目标地址 (前身资产移植)",
+    keywords_zh=["交叉引用", "谁调用", "触碰", "引用"],
+    execute=run_xref,             # 移植 disasm/code_scanner.py find_instructions_touching
+    validate=validate_xref_cmd,
+    risk="high",
+))
+
+ToolRegistry.register(ToolAdapter(
+    name="dataflow",
+    description="数据流因果链: 数据怎么流到目标 (前身资产移植)",
+    keywords_zh=["数据流", "因果链", "流向", "来源"],
+    execute=run_dataflow,         # 移植 disasm/depgraph.py
+    validate=validate_dataflow_cmd,
+    risk="high",
+))
+
+ToolRegistry.register(ToolAdapter(
+    name="sym_exec",
+    description="符号执行: 自动探索路径/约束求解 (前身资产移植)",
+    keywords_zh=["符号执行", "路径探索", "约束求解"],
+    execute=run_sym_exec,         # 移植 core/angr_bridge.py
+    validate=validate_sym_exec_cmd,
+    risk="high",
+))
 ```
+
+> 注: hook_probe / disasm_lib / xref / dataflow / sym_exec 五个工具
+> 全部移植自前身 MemoryGraph_old 逆向层 (core/ 和 disasm/), 非从零实现。
 
 ### 3.2 蓝图 tool 节点（全复用）
 
@@ -182,33 +219,44 @@ FLOW_SELF_GROWTH: 每加一个工具 = 系统能力增长
 
 ---
 
-## 五、实施计划（阶段化）
+## 五、实施计划（阶段化，移植优先）
 
 ```
-阶段 1 (现在): L1 — UI-TARS/page-agent 注册
+阶段 0 (前置): 前身资产移植盘点
+  ├─ 盘点 MemoryGraph_old 逆向层完整清单 (core/frida_bridge + ghidra_bridge +
+  │   angr_bridge + capstone_disasm + disasm/ + analysis/zydis + mg_engine.dll)
+  ├─ 确认依赖: capstone / angr / frida / ghidra 12.1.2 (zip 在仓库)
+  ├─ 确认 mg_engine.dll 的 C++ 源码完整性 (ScannerEngine.cpp 155 行是主源?)
+  └─ 移植目录: core/agent/tools/reverse/ (只搬工具层, 不搬业务层)
+
+阶段 1 (现在): L1 — UI-TARS/page-agent 注册 (前身无此层, 新补)
   ├─ pip install ui-tars (轻量解析器, 验证链路)
-  ├─ page-agent 调研 (web 前端测试)
+  ├─ page-agent 调研 (web 前端测试 — 你们前端是 React)
   ├─ ToolRegistry 注册 ui_test 工具
   ├─ 蓝图 tool 节点接入 (T2/T3/T4)
   └─ 验收: "帮我点这个按钮" → ui_test 执行 → 结果回灌
 
-阶段 2: L3 — Frida 封装
-  ├─ frida 调研 (Windows 支持)
-  ├─ hook_probe 工具注册
-  ├─ 目标进程白名单机制
-  └─ 验收: hook 观测函数调用 → 结果回灌
+阶段 2: L3/L5 — 前身资产直接注册 (不用从零调研!)
+  ├─ 移植 core/frida_bridge.py → hook_probe 工具 (目标进程白名单)
+  ├─ 移植 core/ghidra_bridge.py → disasm_lib 工具 (高风控)
+  ├─ 移植 disasm/code_scanner.py → xref 工具 (交叉引用)
+  ├─ 移植 disasm/depgraph.py → dataflow 工具 (数据流因果链)
+  └─ 验收: hook 观测函数调用 + 反汇编确认逻辑 → 结果回灌
 
-阶段 3: L4 — mitmproxy 封装
+阶段 3: L4 — mitmproxy 封装 (前身无此层, 新补)
   ├─ net_trace 工具注册
   ├─ 执行流捕获 → 结构化事件
   └─ 验收: 抓 IPC/网络流 → 分析回灌
 
-阶段 4 (可选): L5/L6 — Ghidra 集成
-  ├─ Ghidra headless 调研
-  ├─ disasm_lib 工具注册 (高风控)
-  ├─ patch_build (显式启用)
-  └─ 验收: 反汇编确认逻辑 → 近源码级修改 → 重打包
+阶段 4 (可选): L6 — 前身基础完善
+  ├─ 移植 analysis/zydis_engine.py + deobfuscator/junk_code/anti_debug
+  ├─ patch_build 工具 (显式高风控)
+  ├─ mg_engine.dll 断点追踪接入 (tracer_v2)
+  └─ 验收: 反汇编确认偏移 → 近源码级修改 → 重打包
 ```
+
+> 注: 阶段 2 原计划"从零调研 Frida/Ghidra"→ 因前身资产发现改为"移植 + 适配"。
+> 阶段 1 和阶段 3 (L1/L4) 是前身没有的, 保持新补。
 
 ---
 
@@ -230,9 +278,14 @@ FLOW_SELF_GROWTH: 每加一个工具 = 系统能力增长
 
 ```
 P1  默认边界确认: L1-L4 默认, L5/L6 高风控显式 — 认可?
-P2  阶段顺序: L1 → L3 → L4 → L5/L6 — 认可? (L2 黑盒触发并入 L1 基础设施)
+    (用户已表态: 技术本身合理, 单用户 + 显式操作 + PlanGate, 风险可控)
+P2  阶段顺序: 阶段0(移植盘点) → L1 → L3/L5(前身资产) → L4 → L6 — 认可?
+    (L2 黑盒触发并入 L1 基础设施)
 P3  UI 选型: 先 page-agent (DOM, web 前端) 还是 UI-TARS (视觉, 通用)?
     建议: 两者都注册, page-agent 优先 (你们前端是 web)
-P4  工具名: ui_test / hook_probe / net_trace / disasm_lib — 命名 OK?
-P5  是否现在开始阶段 1 (pip install ui-tars + page-agent 调研)?
+P4  工具命名: ui_test / hook_probe / net_trace / disasm_lib / xref /
+    dataflow / sym_exec — 命名 OK? (后三个是前身资产直接映射)
+P5  前身资产移植范围: 只搬工具层 (core/frida_bridge 等 + disasm/) —
+    不搬业务层 (agent/ai_assistant 等) — 认可?
+P6  是否现在开始阶段 0 (前身资产移植盘点) + 阶段 1 (ui-tars/page-agent)?
 ```
