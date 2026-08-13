@@ -64,3 +64,49 @@
   doc_recall_bench / recall_goldset / eval_100 / claim_eval / v3_session_api /
   测试若干 / 评测文档; switch 侧（另一仓库）: interface.go / openai.go /
   models.go / api.go（health 并行 + reasoning 透出 + thinking 开关）
+
+## 六、2026-08-13 深夜续（已本地提交: DialogMesh 947ab85 / switch 0e398f6, 未推）
+
+### 文档语料入生产召回（"信息内容才是召回核心"落地）
+- core/agent/recall/doc_corpus.py: 语料加载/结构切分/向量缓存移入 core,
+  排除 docs/test + docs/notTish（评测产物污染召回排序的根因）;
+  DM_DOC_CORPUS=1 时全局池合并 10787 块
+- 修复 3 个真实 bug: ① cold 命中缺 "cold:" 前缀 → 冷池独有时
+  vector_primary 退化 RRF 排序 ② _load_index_cache 在 tm 分支内 →
+  裸服务跳过加载 → SPO 全量重提取 ③ doc corpus SPO 不写回缓存 →
+  冷启动 145.8s → 21s（cache_hit 10710/10825）
+
+### HyDE 真实现（查询措辞脆弱性的正解）
+- recall_service._hyde_query_vector: LLM（thinking 关）生成假设答案段落 →
+  嵌入作查询向量（DM_HYDE=1, 无 LLM 自动跳过）; 实测假设段落把答案块
+  rank 13 → top-1 的机制可用
+- GatewayLLMProvider: thinking 透传 + request.timeout_ms 请求级超时
+
+### 意图分类接通（W1 核心）
+- v3 接入 LLM 意图分类（自由问句→意图集: 记忆召回/任务规划/代码分析/
+  数据搜索/因果推理/通用讨论/casual/通用对话）— 泛化于关键词字面匹配
+- skill_registry 知识类关键词别名兜底; DualTrack 网关适配器
+  （_GatewayLLMAdapter, 此前 llm=None 意图恒失效）
+- 蓝图 recall_pipeline 节点输出消费（W2）; 主路径 = LLM 分类 →
+  注册表 → 模板（已知）/LLM_DRIVEN（未知, 引擎已有）
+
+### 五维评测（LLM-judge, Prometheus 式分档 rubric + CoT）
+- scripts/eval_five_dim.py → docs/test/FIVE_DIM_EVAL_20260813.md
+- 首跑: 相关 4.25 / 一致 4.00 / 忠实 3.75 / 流畅 5.00 / 连贯 4.75
+- recall_fact 低分根因链已闭环: 意图未接 → 普通对话无召回 → 答案泛泛
+  （已修）; 答案块 rank 13（HyDE 可解）; docs/test 污染（已排除）
+
+### 网关升级（switch 仓库, 对标 one-api/LiteLLM）
+- 流式聚合: 上游恒流式, 非流式客户端网关内聚合（修复 stream&&req.Stream
+  导致聚合恒空的 bug）— 长生成 6s/833 字 finish=stop usage 正常
+- 超时: 默认 30s→120s + 连接 5s 分离; 连接阶段重试（退避+jitter,
+  max_retries 默认 2）; fallback 已有（gracefulDegradation）
+- 健康缓存: Prober 全量并行探测（启动首探 + 30s 周期）→ /v1/health
+  读缓存即时返回（?live=1 实时）— 实测 111ms cached
+
+### 待办（更新）
+- P1: 意图感知自适应融合（per-intent profile, W1 后半）; 重排层;
+  HyDE 上线默认 + 缓存; task 轨（W5）; recall 图扩展（W3）; 文档语料
+  评测纳入（DM_DOC_CORPUS 下的 eval）
+- P2: Faithfulness 任务上下文锚定; 行为链深度偏好（W7）; 五维评测
+  多次采样/校准; 蓝图覆盖（W6）
