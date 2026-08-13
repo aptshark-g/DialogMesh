@@ -9,7 +9,7 @@ Data sources: discourse tree, behavior chain, association chain,
               engineering chain, profile/inertia, version control.
 """
 from __future__ import annotations
-import json, os, time, logging
+import json, os, time, logging, threading
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 
@@ -747,11 +747,78 @@ class SubgraphCompiler:
                 text = getattr(item, "text", "") or ""
                 if not text:
                     continue
+                # 设计 5（文档↔代码桥, 2026-08-11）: 图节点 metadata.doc →
+                # cross_refs file: path, 执行层 file_read 精确读全文。
+                cross = []
+                for doc_path in (item.metadata or {}).get("doc", []) or []:
+                    if doc_path:
+                        cross.append({"target_domain": "file", "note": doc_path})
                 entries.append(DomainEntry(
                     "G", text[:300], min(1.0, 0.5 + item.relevance / 2),
                     "concept_graph", len(text) // 2,
+                    cross_refs=cross,
                 ))
             return entries
         except Exception as exc:
             logger.debug("graph expansion failed: %s", exc)
             return None
+
+    # ── 设计 4: 异步图扩展 + 增量拼接（2026-08-11, SUBGRAPH_EXPANSION_UPGRADE）──
+
+    def async_graph_expand(self, query: str, max_nodes: int = 8,
+                           on_result=None) -> Optional[threading.Thread]:
+        """异步图扩展: 后台线程跑 expand_from_graph, 完成回调 on_result。
+
+        粗召回先回 R 锚点（同步, 毫秒级）→ 图结果后补（异步）→
+        on_result(entries) 增量并入 → 白盒时序渐入可见。
+        """
+        if not self._engine or not query.strip():
+            return None
+        t = threading.Thread(
+            target=self._async_graph_worker,
+            args=(query, max_nodes, on_result),
+            daemon=True)
+        t.start()
+        return t
+
+    def _async_graph_worker(self, query: str, max_nodes: int, on_result):
+        try:
+            entries = self.expand_from_graph(query, max_nodes=max_nodes)
+        except Exception as exc:
+            logger.debug("async graph expand failed: %s", exc)
+            entries = None
+        if on_result is not None:
+            try:
+                on_result(entries)
+            except Exception as exc:
+                logger.debug("async graph callback failed: %s", exc)
+
+    def merge_incremental(self, ctx: SubgraphContext,
+                          new_entries: List[DomainEntry]) -> SubgraphContext:
+        """时序渐入拼接: 新图条目并入既有 SubgraphContext（去重 + 预算裁剪）。
+
+        去重: (domain, content) 已存在则跳过; 预算超限 → 按 confidence 裁剪。
+        """
+        if not new_entries:
+            return ctx
+        existing = {(e.domain, e.content) for e in ctx.entries}
+        added = [e for e in new_entries
+                 if (e.domain, e.content) not in existing]
+        if not added:
+            return ctx
+        ctx.entries.extend(added)
+        ctx.total_tokens = self._count_tokens(ctx.entries)
+        if ctx.total_tokens > ctx.budget:
+            ctx.entries.sort(key=lambda e: e.confidence, reverse=True)
+            kept = []
+            budget = ctx.budget
+            used = 0
+            for e in ctx.entries:
+                est = e.token_estimate or len(e.content) // 2
+                if used + est > budget:
+                    continue
+                kept.append(e)
+                used += est
+            ctx.entries = kept
+            ctx.total_tokens = used
+        return ctx

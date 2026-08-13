@@ -271,3 +271,29 @@ context/store.py:45-65  ContextSource 协议 NotImplementedError ×6（抽象, �
 | MoodClassifierLLM | V4.0 坐标路由器 §3.3 | Z 轴 LLM fallback 75% | 🔴 PCR 审计标"设计 75% 代码无" |
 
 > 判定口径: 🔴真缺口=设计承诺未接线, 应排期施工 | 🟡重复/待查=需归一 | 🟢阶段3=归档等分布式
+
+---
+
+## 六、2026-08-11 追加 — 召回评测驱动的 3 个真缺口
+
+> 触发: goldset 重建后重跑记忆评测基线 + REFINE_CHAIN_DUMP 全链路复查
+> （用户: "蓝图不需要覆盖这个？" + "这个暴力截断不是超级简化？"）。
+> 三条均有实测证据（docs/test/REFINE_CHAIN_DUMP_20260810.md 316 行,
+> 8 query 全链路 L0/L1/L2）。
+
+| # | 缺口 | 证据 | 说明 | 优先级 |
+|---|------|------|------|:---:|
+| GAP-R11 | **recall → 执行层注入未接线** | RECALL_EXECUTION_BRIDGE_DESIGN §四 现状核查: ❌ 未接线 | 设计主路径 = 蓝图 DAG subgraph 锚点节点（`chain="subgraph", params.recall_anchor=True`）产出 `{anchors,hits}` → 下游 agentic 工具节点消费; 兜底 = v3 编码请求 format_anchors 注入 tool_loop。两路径都停在设计, 粗召回结果不进执行层上下文 → "最后一公里"缺。 | P1 |
+| GAP-R12 | **蓝图 subgraph 转查阅任务未接线** | RECALL_EXECUTION_BRIDGE_DESIGN §四: ❌ 未接线（api_viz_edit 有 subgraph 模式, 未接执行层） | 锚点 path 索引（file: 行号）已生成, 但没有"锚点 → dir_list/grep/file_read 精确查阅"的节点串联; 粗召回只能给候选, 无法靠文件树导航读真内容。 | P1 |
+| GAP-R13 | **锚点文本 200 字符硬截断, 语义不闭环** | REFINE_CHAIN_DUMP r000: 显示 "…以下是具" 断句（RecallHit 构造 `text[:200]` + `RecallResult.__init__` 再 `[:200]`; L1 用 `[:300]`; dump L0 打印再 `[:150]`） | 截断为 token 预算设计（候选锚点不塞原文）, 但叠加 R11 未接线 → 截断成为唯一信息来源, 断句处语义残缺无 path 精确查阅兜底; 且三层截断（200/300/150）口径不统一。 | P1 |
+| GAP-R14 | **chunk_document 孤立标题残块** | goldset r017 = 仅 7 字符 "你想尝试的模式"（heading 无子内容独立成块） | `_tree_chunks` heading 分支: 标题 + 子段落合并成块, 但无子内容的孤立标题仍独立成块 → 语义残缺进召回池。应: 无子内容 heading 合并到相邻块, 或打 "heading-only" 标签降权。 | P2 |
+
+### 关联结论（用户两问）
+
+1. **"调用是蓝图吗？"** — 不是。生产 API（v3_session_api:472 / stubs_api:193）与评测
+   脚本（memory_bench/refine_ablation）都是直调 `RecallService.recall()`, 同一调用方式;
+   蓝图管任务编排（宏观 DAG）, recall 是基础能力层, 层级不同不算绕过。但蓝图对 recall
+   的覆盖（R11/R12）确实缺失, 是 v2.1 主项。
+2. **"暴力截断是超级简化？"** — 截断本身是 token 预算设计（候选锚点不塞原文,
+   RECALL_EXECUTION_BRIDGE §三 format_anchors 160 字符片段）, 不是"大小统一方便管理";
+   但 R11 未接线使截断成为唯一来源 → 实际效果等同超级简化。修 R11 后截断才有兜底。

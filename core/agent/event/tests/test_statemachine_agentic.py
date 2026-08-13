@@ -12,7 +12,8 @@ def test_dag_agentic_tool_node_runs_task_runner(monkeypatch):
     captured = {}
 
     def fake_loop(msgs, model="", max_rounds=6, allowed_tools=None,
-                  system_inject=None, on_step=None, timeout_s=0.0):
+                  system_inject=None, on_step=None, timeout_s=0.0,
+                  **kwargs):
         captured["inject"] = system_inject
         captured["tools"] = allowed_tools
         if on_step:
@@ -62,7 +63,8 @@ def test_dag_recall_anchor_topology(monkeypatch):
     captured = {}
 
     def fake_loop(msgs, model="", max_rounds=6, allowed_tools=None,
-                  system_inject=None, on_step=None, timeout_s=0.0):
+                  system_inject=None, on_step=None, timeout_s=0.0,
+                  **kwargs):
         captured["inject"] = system_inject
         if on_step:
             on_step({"round": 1, "tool": "file_read", "ok": True,

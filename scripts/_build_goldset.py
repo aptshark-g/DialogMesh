@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 """从真实 v3_sessions 生成召回黄金集（真实数据, 非手写）。"""
 import json
+import os
 import re
+import sys
 import hashlib
+
+# 脚本直接运行时 sys.path 缺项目根 → core 包导入失败（2026-08-11 修复）
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def clean(s):
@@ -11,40 +16,49 @@ def clean(s):
     return s
 
 
-def chunk_text(text, maxlen=280):
-    """闭环切块: 语法补全(代词) → EDU 闭环 → 相邻闭环合并到 maxlen。
+def is_noise_query(q):
+    """评测噪音 query 过滤（2026-08-11, 用户拍板清理）:
+    ① 乱码（? 密集） ② hello world 竞态族（多会话同内容, 期望块标注竞态）
+    ③ 纯问候/测试。这些 query 召回内容其实是对的, 但"期望=那次会话"的
+    标注无法判定 → 混入会低估真实能力。
+    """
+    q = q.strip()
+    if not q:
+        return True
+    # ① 乱码: ? 占比高
+    if q.count("?") / max(1, len(q)) > 0.3:
+        return True
+    # ② hello world 竞态族
+    if re.search(r"hello\s*world|helloworld", q, re.I):
+        return True
+    # ③ 纯问候/测试
+    if q.lower() in ("hi", "hello", "test", "你好", "在吗", "嗯", "好", "ok", "继续"):
+        return True
+    return False
 
-    不切断语义闭环（EDU 边界才断）; 超长闭环保留完整（语义压缩后续接入,
-    不机械截断 — 用户拍板: "抓闭环, 语义压缩实现长度统一, 不是强制切块"）。
+
+def chunk_text(text, maxlen=280):
+    """生产链路切块（2026-08-11 修复）: 调注册工具 chunk_document。
+
+    此前绕开注册链路自己硬写按句切分 → markdown 结构（---/###/代码块）
+    被吞进块, 上下文不闭环、内容残缺。现在走 DocumentIngestionPipeline
+    的 parser+注册工具（与生产一致）, 结构节点各自成块, 噪音过滤。
     """
     try:
-        from core.agent.discourse_block_tree.syntactic_decomposer import (
-            SYNTACTIC_DECOMPOSER,
-        )
-        edus = SYNTACTIC_DECOMPOSER.decompose(text)
-        pieces = []
-        for e in edus:
-            t = (getattr(e, "raw_text", "") or "").strip()
-            if t:
-                pieces.append(t)
-    except Exception:
-        # 兜底: 句号/段落边界（不按字符硬切）
-        pieces = [p.strip() for p in re.split(
-            r"(?<=[。！？!?；;])\s*|\n{2,}", text) if p.strip()]
-    if not pieces:
+        # 确保 builtin 工具注册执行（否则 chunk_document 未注册 → fallback）
+        import core.agent.tools.builtin  # noqa: F401
+        from core.agent.tools.registry import ToolRegistry
+        r = ToolRegistry.execute("chunk_document", text=text,
+                                 max_chunk_size=maxlen)
+        if r.success and r.data:
+            return [c for c in r.data.get("chunks", []) if c]
+        print("  [goldset] chunk_document not ok: success=%s err=%s"
+              % (r.success, getattr(r, "error", "?")[:80]))
         return []
-    chunks = []
-    buf = ""
-    for p in pieces:
-        if len(buf) + len(p) <= maxlen:
-            buf += p + "。"
-        else:
-            if buf:
-                chunks.append(buf)
-            buf = p + "。" if len(p) <= maxlen else p  # 超长闭环保留完整
-    if buf:
-        chunks.append(buf)
-    return [c.strip() for c in chunks if len(c.strip()) >= 20]
+    except Exception as e:
+        print("  [goldset] chunk_document failed: %s" % e)
+        # 兜底: 段落边界（不按字符硬切）
+        return [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
 
 
 def main():
@@ -67,7 +81,14 @@ def main():
     blocks = []
     query_items = []
     block_counter = 0
+    seen_queries = set()  # 同内容 query 去重（2026-08-11: 重复会话稀释评测）
     for sid, query, reply in pairs:
+        if is_noise_query(query):
+            continue
+        q_norm = query.strip()[:60]
+        if q_norm in seen_queries:
+            continue
+        seen_queries.add(q_norm)
         chunks = chunk_text(reply)
         if not chunks:
             continue

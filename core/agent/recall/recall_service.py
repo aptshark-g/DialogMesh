@@ -20,6 +20,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -42,6 +44,12 @@ TEMP_WEIGHT: Dict[str, float] = {
 }
 EPSILON = 0.02  # A18 ε 步长（反馈自适应）
 PRONOUNS = {"它", "他", "她", "这", "那", "其"}
+
+
+def _is_chinese_query(query: str) -> bool:
+    """Query 是否含中文（与 SemanticEncoder._is_chinese 同语义）。"""
+    return any('\u4e00' <= ch <= '\u9fff' or '\u3040' <= ch <= '\u30ff'
+               for ch in query)
 
 # 规则增强（SPO-A）: 同义归一表 — 缓解"字面精确匹配"瓶颈
 SYNONYM_MAP = {
@@ -156,18 +164,86 @@ class RecallService:
         self._embeddings: Dict[str, List[float]] = {}
         self._decomposer = None
         self._feedback_log: List[dict] = []
+        self._decompose_misses: List[dict] = []   # 子问题分解失败记录（元认知复盘）
         self._learned_conf: Dict[str, float] = {}
         self._last_result: Optional[RecallResult] = None
         self._spo_cache: Dict[str, List[dict]] = {}
         self._index_cache: Dict[str, dict] = {}   # bid -> {spo, vector}
         self._index_cache_dir = None
         self._index_cache_file = "default"
+        # 池归属（2026-08-11 修复竞态）: hot（default/sid）与 global 共用
+        # _index_cache dict, 但 flush 时需按池分文件写, 否则 global 覆盖
+        # default 的写入, default.json 永远等不到落盘（只落 100/360 块）。
+        self._file_bids: Dict[str, set] = {}   # sid -> bid 集合（该文件应含的块）
+        self._dirty_files: set = set()         # 待落盘的文件 sid
+        # Async index-cache persistence (2026-08-10): writing the full
+        # index JSON on every recall blocked the hot path (6.7s/5 queries
+        # in benchmarks). Writes now happen in a background thread, at
+        # most once per _index_cache_flush_interval, only when dirty.
+        self._index_cache_dirty = False
+        self._index_cache_flush_interval = 5.0   # seconds (A18-tunable)
+        self._index_cache_last_flush = 0.0
+        self._index_cache_flush_lock = threading.Lock()
+        self._index_cache_closed = False
         self._global_block_list: List[dict] = []
-        self.fuse_mode = "linear"   # linear | rrf | norm（RRF 融合 / 规则增强）
+        # 批量余弦矩阵缓存（2026-08-12）: list→array 拷贝每 query 重复
+        # （8594 块 × 1024 维 ≈ 70MB）; 块集/嵌入数不变则复用矩阵。
+        self._vec_matrix = None
+        self._vec_matrix_key = None
+        self._vec_bids: List[str] = []
+        # 稀疏 BM25 词项索引（2026-08-12）: 每块 tokenize 一次按块集缓存,
+        # 消灭"每 query 每块重分词"的 8.6-10s/query 开销。
+        self._bm25_indexes: Dict[tuple, dict] = {}
+        self._bm25_build_lock = threading.Lock()
+        # 默认 vector_primary（2026-08-12 采纳）: 诊断证据 — 100 条全部
+        # top1 来自 vector, vector 内 #1 的 46 条被 RRF 长尾压掉 ~12 条;
+        # vector 主导排序 + 其他源扩展后 fused top1 与 vector#1 完全对齐
+        # （46/46）, doc top1 21.3%→31.1%, dialogue 56.4%→69.2%。
+        # 备选: linear | rrf | norm（保留消融/回退）。
+        self.fuse_mode = "vector_primary"
         # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
         # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
         # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
         self.time_half_life_days = 0.0
+        # 并行子问题分解开关（2026-08-11, SUBGRAPH_EXPANSION_UPGRADE 设计 2）:
+        # True = LLM 把 query 拆 3-5 子问题并行召回（I/O 密集, threading 足够）;
+        # False = 回退旧行为（单 query 或串行 2-3 扩展）。
+        self.parallel_decompose = False
+        self.decompose_subqueries = 3        # 子问题数（含原 query）
+        self.decompose_max_workers = 4       # 并行度（I/O 密集, 线程池）
+        # DAG 分层局部扩展开关（设计 1）: True = expand_subgraph 走分层扩展 +
+        # 同步剪枝 + 跨锚点桥接; False = 旧 BFS。
+        self.dag_layer_expand = False
+        self.dag_max_hops = 2
+        self.dag_prune_threshold = 0.3       # 边 confidence × relevance 剪枝阈值
+        self.dag_budget_per_layer = 12       # 每层节点预算
+        self.dag_bridge_check = True         # 跨锚点桥接检查
+        # SPO 对齐候选集上限（2026-08-12）: 0 = 全池对齐（旧行为, doc 域
+        # 11493 块 ~330ms/池, 双池 ~660ms/query）; >0 = 只对 vector∪bm25
+        # 前 N 候选做约束投影对齐（设计 12.2 两级粒度: 粗扫描定位 → 精对齐）。
+        # 对齐是排序精修, 不需要全池 — 候选集外块本来就进不了融合前列。
+        # 环境变量可覆盖（DM_SPO_CAP=0 关闭候选集, 全池对齐）— 2026-08-12
+        # 实测 cap=300 提速但丢 SPO 独有 top1, 保留开关做消融对比。
+        try:
+            self.spo_candidate_cap = int(os.environ.get("DM_SPO_CAP", "300"))
+        except ValueError:
+            self.spo_candidate_cap = 300
+        # RRF 置信度加权（2026-08-12, 消融开关）: 0 = 纯 RRF（各源等权）;
+        # 1 = 贡献 × 溯源置信度（vector 0.9 / bm25 0.7 / spo 0.85 / hyde
+        # 0.8 / diffusion 0.75, A18 可学习）。诊断证据: 100 条中全部
+        # 34 个融合 top1 来自 vector, 而 vector 路线内 #1 有 45 条 —
+        # 11 条被其他源长尾拉下; 设计里溯源置信度本就该参与融合。
+        self.rrf_conf_weight = os.environ.get("DM_RRF_CONF", "0") == "1"
+        # 跨池去重（2026-08-12）: 全局池包含会话块 → 同一块在 hot 与
+        # cold 各出现一次, RRF 被双倍计分（churn 块叠加 6 源）。默认
+        # 去重（hot 优先, 更鲜）; DM_DEDUP_POOLS=0 关闭做消融。
+        self.dedup_pools = os.environ.get("DM_DEDUP_POOLS", "1") != "0"
+        # 融合模式环境覆盖（2026-08-12）: linear | rrf | vector_primary
+        # （证据驱动: top1 全部来自 vector, vector 内 #1 被 RRF 压掉
+        # ~10 条 → vector 主导排序 + 其他源扩展）
+        _fusion = os.environ.get("DM_FUSION", "")
+        if _fusion in ("linear", "rrf", "vector_primary"):
+            self.fuse_mode = _fusion
 
     def _norm(self, w: str) -> str:
         """同义归一（规则增强 SPO-A）: 谓词/主宾比较前归一。"""
@@ -250,21 +326,52 @@ class RecallService:
             if not text:
                 continue
             cached = self._index_cache.get(bid) or {}
-            spo = cached.get("spo") or self._extract_spo(text)
+            # 缓存指纹校验: 文本变了 → 弃用旧 spo/vector（2026-08-11）
+            pre_vec = getattr(b, "vector", None)
+            if isinstance(pre_vec, (list, tuple)) and len(pre_vec) > 0:
+                # 预编码透传（2026-08-12, 与 global 同）: 修复 hot 路径
+                # 无视预编码向量 → 8526 块重编码 340s
+                vector = list(pre_vec)
+                if cached.get("hash") == self._text_hash(text):
+                    spo = cached.get("spo") or self._extract_spo(text)
+                else:
+                    spo = self._extract_spo(text)
+            else:
+                if cached.get("hash") == self._text_hash(text):
+                    spo = cached.get("spo") or self._extract_spo(text)
+                    vector = cached.get("vector")
+                else:
+                    spo = self._extract_spo(text)
+                    vector = None
+            summary_raw = getattr(b, "summary", "")
+            if isinstance(summary_raw, str):
+                summary = summary_raw.strip()
+            elif summary_raw is not None and hasattr(summary_raw, "get_best"):
+                summary = (summary_raw.get_best() or "").strip()
+            else:
+                summary = ""
             blocks.append({
                 "id": bid,
                 "text": text,
+                "heading": getattr(b, "heading", "") or "",
+                "summary": summary,
                 "parent": getattr(b, "parent_id", None),
                 "children": list(getattr(b, "child_ids", [])),
                 "temperature": getattr(b, "status", "active"),
                 "spo": spo,
-                "vector": cached.get("vector"),
+                "vector": vector,
             })
-            self._index_cache.setdefault(bid, {})["spo"] = spo
+            # 缓存写回: hash + spo + vector（2026-08-12 修复, 与 global 同）
+            entry = self._index_cache.setdefault(bid, {})
+            entry["hash"] = self._text_hash(text)
+            entry["spo"] = spo
+            if vector is not None:
+                entry["vector"] = vector
         self._block_list = blocks
         self._blocks_cache = {b["id"]: b for b in blocks}
         self._current_sid = key
         self._index_cache_file = key
+        self._file_bids.setdefault(key, set()).update(b["id"] for b in blocks)
         self._save_index_cache(key)
         # R2 解孤儿: 块原子喂进 ChunkStore（hash 去重, 供向量后端/关键词兜底）
         if self._chunk is not None:
@@ -280,11 +387,14 @@ class RecallService:
         """冷路径: 全局块池（全量, 不按 sid 过滤）; 独立缓存 global.json。"""
         if self._global_block_list:
             return self._global_block_list
+        _t0 = time.time()
+        _stat = {"total": 0, "cache_hit": 0, "spo_recalc": 0, "pre_vec": 0}
         tm = self._discourse
         blocks = []
         if tm is not None and getattr(tm, "blocks", None):
             self._load_index_cache("global")
             for bid, b in tm.blocks.items():
+                _stat["total"] += 1
                 text = (
                     getattr(b, "_raw_text", "") or " ".join(
                         getattr(u, "raw_text", "") for u in getattr(b, "atomic_units", [])
@@ -293,16 +403,47 @@ class RecallService:
                 if not text:
                     continue
                 cached = self._index_cache.get(bid) or {}
+                # 预编码向量透传（2026-08-11）: FakeBlock.vector（prepare_vectors
+                # 批量编码）优先; 回退索引缓存; 都无 → 懒计算。
+                pre_vec = getattr(b, "vector", None)
+                if isinstance(pre_vec, (list, tuple)) and len(pre_vec) > 0:
+                    vector = list(pre_vec)
+                    _stat["pre_vec"] += 1
+                    # 预编码为准; SPO 仍走缓存（hash 匹配才复用, 否则重算并写回）
+                    if cached.get("hash") == self._text_hash(text):
+                        spo = cached.get("spo") or self._extract_spo(text)
+                        _stat["cache_hit"] += 1
+                    else:
+                        spo = self._extract_spo(text)
+                        _stat["spo_recalc"] += 1
+                else:
+                # 缓存指纹校验（2026-08-11）: 文本变了 → 弃用旧 spo/vector
+                    if cached.get("hash") == self._text_hash(text):
+                        spo = cached.get("spo") or self._extract_spo(text)
+                        vector = cached.get("vector")
+                        _stat["cache_hit"] += 1
+                    else:
+                        spo = self._extract_spo(text)
+                        vector = None
+                        _stat["spo_recalc"] += 1
                 blocks.append({
                     "id": bid,
                     "text": text,
+                    "heading": getattr(b, "heading", "") or "",
                     "parent": getattr(b, "parent_id", None),
                     "children": list(getattr(b, "child_ids", [])),
                     "temperature": getattr(b, "status", "active"),
-                    "spo": cached.get("spo") or self._extract_spo(text),
-                    "vector": cached.get("vector"),
+                    "spo": spo,
+                    "vector": vector,
                     "session": getattr(b, "_session_id", ""),
                 })
+                # 缓存写回: hash + spo 一起落（2026-08-12 修复: 此前只写 hash,
+                # spo/vector 永不持久化 → 每次全量重算 140s）
+                entry = self._index_cache.setdefault(bid, {})
+                entry["hash"] = self._text_hash(text)
+                entry["spo"] = spo
+                if vector is not None:
+                    entry["vector"] = vector
         # P0 写即索引（RECALL_SUBGRAPH_BRIDGE §六）: 合并产出内容块
         # （write_file 索引进 chunk_store 的 produced 原子）——刚写的
         # 文件内容进 recall 冷路径, "产出内容可召回"闭环。
@@ -316,13 +457,15 @@ class RecallService:
                     if any(b["id"] == bid for b in blocks):
                         continue
                     cached = self._index_cache.get(bid) or {}
-                    vec = cached.get("vector")
+                    vec = cached.get("vector") if cached.get("hash") == self._text_hash(text) else None
                     if vec is None:
                         # G0 记忆闭环: 产出块向量现算一次并落盘
                         # （_save_index_cache("global") → 重启后恢复）
                         vec = self._embed(text)
                         if vec is not None:
-                            self._index_cache.setdefault(bid, {})["vector"] = vec
+                            entry = self._index_cache.setdefault(bid, {})
+                            entry["vector"] = vec
+                            entry["hash"] = self._text_hash(text)
                     blocks.append({
                         "id": bid,
                         "text": text,
@@ -337,7 +480,11 @@ class RecallService:
                 logger.debug("produced-block merge failed: %s", e)
         self._global_block_list = blocks
         self._index_cache_file = "global"
+        self._file_bids.setdefault("global", set()).update(b["id"] for b in blocks)
         self._save_index_cache("global")
+        logger.info("ensure_global_blocks: %d 块 %.1fs 命中=%d 重算=%d 预编码=%d",
+                    len(blocks), time.time() - _t0,
+                    _stat["cache_hit"], _stat["spo_recalc"], _stat["pre_vec"])
         return blocks
 
     # ── 索引缓存（G0: 首次召回持久化 SPO+向量, 后续直读, 重启不丢） ──
@@ -357,6 +504,17 @@ class RecallService:
         safe = re.sub(r"[^0-9a-zA-Z_-]", "_", sid) or "default"
         return os.path.join(self._index_dir(), f"{safe}.json")
 
+    @staticmethod
+    def _text_hash(text: str) -> str:
+        """内容指纹: 缓存条目与块文本绑定, 文本变化 → 缓存失效。
+
+        2026-08-11 修复: goldset 重建后 bid 复用（r000...）但内容变了,
+        旧缓存向量（旧模型维度）被直接采用 → vector 路余弦全 0, 首跑
+        指标被污染。现在缓存条目带 hash, 命中时校验文本一致性。
+        """
+        import hashlib
+        return hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+
     def _load_index_cache(self, sid: str) -> None:
         import os, json
         path = self._index_path(sid)
@@ -365,24 +523,102 @@ class RecallService:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._index_cache = data.get("blocks", {}) if isinstance(data, dict) else {}
+            loaded = data.get("blocks", {}) if isinstance(data, dict) else {}
+            # 合并而非覆盖（2026-08-11）: hot 与 global 分文件存储, 但内存
+            # 共用 _index_cache; 覆盖会丢掉另一文件已加载的条目。
+            self._index_cache.update(loaded)
+            self._file_bids.setdefault(sid, set()).update(loaded.keys())
         except Exception as e:
             logger.debug("index cache load failed: %s", e)
-            self._index_cache = {}
+            self._file_bids.setdefault(sid, set())
 
     def _save_index_cache(self, sid: str) -> None:
-        import json
+        """Schedule an async flush of the index cache (throttled).
+
+        2026-08-10: previously a synchronous full JSON dump on every
+        recall — 6.7s/5 queries in benchmarks. Now dirty-flagged and
+        written by a background thread at most once per interval.
+        """
         if not self._index_cache:
             return
+        self._index_cache_dirty = True
+        # 按池分文件（2026-08-11）: hot/default 与 global 各自落盘,
+        # 不再用单值 pending_sid（global 会覆盖 default 的写入）。
+        self._dirty_files.add(sid)
+        now = time.time()
+        if now - self._index_cache_last_flush < self._index_cache_flush_interval:
+            return  # throttled — flush will happen on a later call
+        self._spawn_index_cache_flush()
+
+    def _spawn_index_cache_flush(self) -> None:
+        """Snapshot + write in a background daemon thread."""
+        if not self._index_cache_dirty or self._index_cache_closed:
+            return
+        with self._index_cache_flush_lock:
+            if not self._index_cache_dirty or self._index_cache_closed:
+                return
+            # 快照剥离 vector（2026-08-12）: 1024 维向量进 JSON 使每次
+            # flush 序列化 ~400MB, eval 实测每 query 拖慢 ~10s。向量仅
+            # 内存态（_index_cache/_embeddings）+ 专用 vec 缓存承载;
+            # 落盘只写 hash+spo（指纹校验仍完整）。
+            snapshot = {
+                bid: {k: v for k, v in entry.items() if k != "vector"}
+                for bid, entry in self._index_cache.items()
+            }
+            files = set(self._dirty_files)
+            file_bids = {sid: set(bids) for sid, bids in self._file_bids.items()}
+            self._index_cache_dirty = False
+            self._dirty_files.clear()
+            self._index_cache_last_flush = time.time()
+
+        def _write():
+            import json, os
+            try:
+                for sid in files:
+                    bids = file_bids.get(sid)
+                    if not bids:
+                        continue
+                    sub = {bid: snapshot[bid] for bid in bids
+                           if bid in snapshot}
+                    if not sub:
+                        continue
+                    path = self._index_path(sid)
+                    tmp = path + ".tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump({"blocks": sub}, f, ensure_ascii=False)
+                    os.replace(tmp, path)
+            except Exception as e:
+                logger.debug("index cache async save failed: %s", e)
+                # retry on next schedule
+                with self._index_cache_flush_lock:
+                    self._index_cache_dirty = True
+                    self._dirty_files.update(files)
+
+        threading.Thread(target=_write, daemon=True).start()
+
+    def flush_index_cache(self) -> None:
+        """Synchronous flush (on close/graceful shutdown)."""
+        self._index_cache_closed = True
+        if not self._index_cache:
+            return
+        import json, os
         try:
-            path = self._index_path(sid)
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"blocks": self._index_cache}, f, ensure_ascii=False)
-            import os
-            os.replace(tmp, path)
+            # 同步兜底: 所有已知文件按各自 bid 子集落盘
+            for sid, bids in self._file_bids.items():
+                if not bids:
+                    continue
+                sub = {bid: self._index_cache[bid] for bid in bids
+                       if bid in self._index_cache}
+                if not sub:
+                    continue
+                path = self._index_path(sid)
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump({"blocks": sub}, f, ensure_ascii=False)
+                os.replace(tmp, path)
+            self._dirty_files.clear()
         except Exception as e:
-            logger.debug("index cache save failed: %s", e)
+            logger.debug("index cache flush failed: %s", e)
 
     def _cosine(self, a, b) -> float:
         try:
@@ -430,26 +666,113 @@ class RecallService:
     def _vector_anchors(self, query: str, top_k: int,
                         blocks: Optional[List[dict]] = None) -> List[RecallHit]:
         """BGE 向量召回（余弦）; BGE 不可用 → ChunkStore 关键词兜底。"""
+        _t0 = time.time()
         if blocks is None:
             self._ensure_blocks()
             blocks = self._block_list
         qv = self._embed(query)
         if qv is not None:
             scored = []
+            batch_vecs = []
+            batch_bids = []
+            _vstat = {"from_emb": 0, "from_block": 0, "reembed": 0,
+                      "dim_mismatch": 0, "block_no_vec": 0, "q_dim": len(qv)}
             for b in blocks:
                 bid = b["id"]
-                if b.get("vector") is not None:
-                    ev = b["vector"]
-                    self._embeddings[bid] = ev
-                elif bid not in self._embeddings:
-                    ev = self._embed(b["text"])
+                # 两级粒度（设计 12.2, 2026-08-11）: 有 summary 时优先对
+                # 摘要打分（Coarse scan 快速定位）; 命中后执行层取全文。
+                score_text = (b.get("summary") or "").strip() or b["text"]
+                ev = self._embeddings.get(bid)
+                if ev is None:
+                    cached_vec = b.get("vector")
+                    # 维度防护（2026-08-11）: 缓存向量维度与当前 query 不一致
+                    # （旧模型 512/384 vs bge-m3 1024）→ 弃用重算, 否则余弦恒 0
+                    if cached_vec is not None and len(cached_vec) == len(qv):
+                        ev = cached_vec
+                        self._embeddings[bid] = ev
+                        _vstat["from_block"] += 1
+                    elif cached_vec is not None:
+                        _vstat["dim_mismatch"] += 1
+                    else:
+                        _vstat["block_no_vec"] += 1
+                else:
+                    _vstat["from_emb"] += 1
+                if ev is None:
+                    # 两级粒度（2026-08-12）: 嵌入"标题+核心内容"窗口,
+                    # 与 doc_recall_bench.prepare_vectors 同口径（粗扫描）;
+                    # 全文由子图扩展/执行层抓取。全文嵌入被巨块
+                    # （>8K 字符 → 8192 token 序列）拖到 30 分钟+。
+                    coarse = ((b.get("heading") or "")
+                              + "\n" + score_text)[:1500]
+                    ev = self._embed(coarse)
                     if ev is None:
                         continue
                     self._embeddings[bid] = ev
-                    self._index_cache.setdefault(bid, {})["vector"] = ev
-                sim = self._cosine(qv, self._embeddings[bid])
-                if sim > 0.3:
-                    scored.append((sim, b))
+                    entry = self._index_cache.setdefault(bid, {})
+                    entry["vector"] = ev
+                    # hash 用全文（与 _ensure_blocks 一致）: 全文变 → 缓存失效,
+                    # summary 向量同步重算。保证 spo/vector 缓存同指纹。
+                    entry["hash"] = self._text_hash(b["text"])
+                    _vstat["reembed"] += 1
+                batch_vecs.append(ev)
+                batch_bids.append(bid)
+            logger.info("vector_anchors: %.1fms blocks=%d emb=%d block=%d "
+                        "mismatch=%d novec=%d reembed=%d qdim=%d",
+                        (time.time() - _t0) * 1000, len(blocks),
+                        _vstat["from_emb"], _vstat["from_block"],
+                        _vstat["dim_mismatch"], _vstat["block_no_vec"],
+                        _vstat["reembed"], _vstat["q_dim"])
+            # Rust 批量余弦（2026-08-11, recall_rust_bridge）: 行为等价,
+            # 未编译自动回退 Python。2026-08-12: 矩阵按块集缓存, 省
+            # list→array 拷贝（8594 块 × 1024 维 ≈ 70MB/query）。
+            try:
+                from core.agent.recall.recall_rust_bridge import get_recall_kernel
+                import numpy as np
+                kernel = get_recall_kernel()
+                mkey = (tuple(batch_bids), len(self._embeddings), len(qv))
+                if (self._vec_matrix is None
+                        or self._vec_matrix_key != mkey
+                        or self._vec_matrix.shape[0] != len(batch_bids)):
+                    arr = np.asarray(batch_vecs, dtype=np.float64)
+                    self._vec_matrix = arr
+                    self._vec_matrix_key = mkey
+                    self._vec_bids = list(batch_bids)
+                else:
+                    arr = self._vec_matrix
+                if hasattr(kernel, "cosine_topk_buffer"):
+                    # PyBuffer 零拷贝（2026-08-11）: numpy 直接提取
+                    sims = kernel.cosine_topk_buffer(
+                        arr, arr.shape[1],
+                        np.asarray(qv, dtype=np.float64), arr.shape[0])
+                elif hasattr(kernel, "cosine_topk_bytes"):
+                    sims = kernel.cosine_topk_bytes(
+                        arr.tobytes(), arr.shape[1],
+                        np.asarray(qv, dtype=np.float64).tobytes(),
+                        arr.shape[0])
+                else:
+                    sims = kernel.cosine_topk(
+                        arr.flatten().tolist(), arr.shape[1],
+                        qv, arr.shape[0])
+                # Rust 返回 (行索引, 分数) → 经 batch_bids 映射回块 id
+                # （2026-08-12 修复: 此前误把行索引当块 id, Rust 激活时
+                # 向量路全部被过滤掉, doc 域召回归零）。
+                for row_idx, s in sims:
+                    if s <= 0.3 or row_idx >= len(batch_bids):
+                        continue
+                    bid = batch_bids[row_idx]
+                    b = self._blocks_cache.get(bid)
+                    if b is None:
+                        b = next((x for x in blocks if x["id"] == bid), None)
+                    if b is not None:
+                        scored.append((s, b))
+            except Exception:
+                for b in blocks:
+                    ev = self._embeddings.get(b["id"])
+                    if ev is None:
+                        continue
+                    sim = self._cosine(qv, ev)
+                    if sim > 0.3:
+                        scored.append((sim, b))
             scored.sort(key=lambda x: x[0], reverse=True)
             self._save_index_cache(getattr(self, "_index_cache_file", "default"))
             hits = []
@@ -461,6 +784,8 @@ class RecallService:
                         path=b.get("path") or [],
                         created_at=b.get("created_at"),
                     ))
+            logger.info("vector_anchors: %.1fms blocks=%d", 
+                        (time.time() - _t0) * 1000, len(blocks))
             return hits
         # 兜底: ChunkStore（关键词或 unified 后端）
         if self._chunk is not None:
@@ -477,39 +802,165 @@ class RecallService:
                 pass
         return []
 
+    def _bm25_tokenize(self, text: str) -> List[str]:
+        """分词（与 TopicQuickMatcher._tokenize 同语义: jieba, 单字过滤）。"""
+        try:
+            from core.agent.compiler.topic_quick_match import TopicQuickMatcher
+            return TopicQuickMatcher()._tokenize(text)
+        except Exception:
+            return []
+
+    def _bm25_index(self, blocks: List[dict]) -> Optional[dict]:
+        """稀疏 BM25 词项索引（每块 tokenize 一次, 按块 id 集缓存）。
+
+        2026-08-12 语义修正: 旧实现逐块 _bm25_score 且空 matcher（df 恒 0
+        常量 idf, avg_len=0 退化为 TF）; 现按语料真实 df/avg_len 打分,
+        与 Rust bm25_scores 内核（RECALL_RUST_DESIGN §三）口径一致。
+
+        2026-08-12 持久化: 11761 块 jieba 全量分词 ~14s/进程; 索引与
+        块集绑定（ids 集合 hash 作文件名）落盘 gzip, 二次进程直接加载。
+        """
+        _t0 = time.time()
+        key = tuple(b["id"] for b in blocks)
+        cached = self._bm25_indexes.get(key)
+        if cached is not None:
+            return cached
+        # 磁盘缓存（按块集指纹: ids + 内容 hash）: 命中则跳过全量分词。
+        # 2026-08-13 修复: key 只含 ids 时, 相同 id 不同内容（测试池复用
+        # b1/b2/b3、语料重建）会命中脏索引 → 误命中/漏命中。
+        import hashlib, gzip, json as _json
+        _content_h = hashlib.md5()
+        for _b in blocks:
+            _content_h.update((_b.get("text") or "")[:200].encode(
+                "utf-8", "replace"))
+        fp = hashlib.md5(
+            ("|".join(key) + "::" + _content_h.hexdigest()).encode(
+                "utf-8", "replace")).hexdigest()[:20]
+        disk_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))),
+            "data", "recall_index", "bm25_%s.json.gz" % fp)
+        if os.path.exists(disk_path):
+            try:
+                with gzip.open(disk_path, "rt", encoding="utf-8") as f:
+                    idx_obj = _json.load(f)
+                idx_obj["term_id"] = {
+                    k: int(v) for k, v in idx_obj["term_id"].items()}
+                idx_obj["df"] = [tuple(x) for x in idx_obj["df"]]
+                idx_obj["docs"] = [tuple(x) for x in idx_obj["docs"]]
+                self._bm25_indexes[key] = idx_obj
+                logger.info("bm25_index: loaded %d docs from %s (%.0fms)",
+                            idx_obj["n_docs"], os.path.basename(disk_path),
+                            (time.time() - _t0) * 1000)
+                return idx_obj
+            except Exception as e:
+                logger.debug("bm25 index disk load failed: %s", e)
+        with self._bm25_build_lock:
+            cached = self._bm25_indexes.get(key)
+            if cached is not None:
+                return cached
+            term_id: Dict[str, int] = {}
+            docs: List[tuple] = []
+            df_counts: Dict[int, int] = {}
+            doc_lens: List[float] = []
+            for idx, b in enumerate(blocks):
+                score_text = (b.get("summary") or "").strip() or b["text"]
+                toks = self._bm25_tokenize(score_text)
+                doc_lens.append(float(len(toks)))
+                tf: Dict[str, int] = {}
+                for t in toks:
+                    tf[t] = tf.get(t, 0) + 1
+                for t, c in tf.items():
+                    tid = term_id.setdefault(t, len(term_id))
+                    docs.append((idx, tid, c))
+                    df_counts[tid] = df_counts.get(tid, 0) + 1
+            if not docs:
+                idx_obj = {"docs": [], "df": [], "term_id": {},
+                           "doc_lens": [], "avg_len": 0.0,
+                           "n_docs": len(blocks)}
+                self._bm25_indexes[key] = idx_obj
+                return idx_obj
+            avg_len = sum(doc_lens) / max(1, len(doc_lens))
+            idx_obj = {
+                "docs": docs,
+                "df": [(tid, c) for tid, c in sorted(df_counts.items())],
+                "term_id": term_id,
+                "doc_lens": doc_lens,
+                "avg_len": avg_len,
+                "n_docs": len(blocks),
+            }
+            self._bm25_indexes[key] = idx_obj
+            logger.info("bm25_index: built %d docs / %d terms / %.1fs",
+                        len(blocks), len(term_id), time.time() - _t0)
+            try:
+                with gzip.open(disk_path, "wt", encoding="utf-8") as f:
+                    _json.dump(idx_obj, f, ensure_ascii=False)
+            except Exception as e:
+                logger.debug("bm25 index disk save failed: %s", e)
+            return idx_obj
+
     def _bm25_anchors(self, query: str, top_k: int,
                       blocks: Optional[List[dict]] = None) -> List[RecallHit]:
-        """BM25 词法召回（TopicQuickMatcher._bm25_score 同款算法）。"""
+        """BM25 词法召回（Rust 稀疏内核, Python 回退; 语料真实 df）。
+
+        2026-08-12: 旧实现每 query 对每块重分词打分（文档池 8.6-10s/query）;
+        现 = 词项索引（每块分词一次按块集缓存）+ Rust bm25_scores 批量打分。
+        """
+        _t0 = time.time()
+        # 跨语言保护 (2026-08-10, 变体评测 en 0% 根因):
+        # 非中文 query 对中文语料做词法匹配会因 ASCII 术语（tool_loop/
+        # blueprint 等）与中文块内同名术语碰巧匹配产生假高分, 压过向量
+        # 语义分。英文/混合 query 的词法召回交给向量（BGE-M3 统一空间）。
+        if not _is_chinese_query(query):
+            return []
         if blocks is None:
             self._ensure_blocks()
             blocks = self._block_list
-        try:
-            from core.agent.compiler.topic_quick_match import TopicQuickMatcher
-            matcher = TopicQuickMatcher()
-        except Exception:
+        if not blocks:
             return []
-        scored = []
-        for b in blocks:
-            try:
-                s = matcher._bm25_score(query, b["text"])
-            except Exception:
-                s = 0.0
-            if s > 0:
-                scored.append((s, b))
-        scored.sort(key=lambda x: x[0], reverse=True)
+        idx = self._bm25_index(blocks)
+        term_id = idx["term_id"]
+        qids: List[int] = []
+        seen: set = set()
+        for t in self._bm25_tokenize(query):
+            tid = term_id.get(t)
+            if tid is not None and tid not in seen:
+                qids.append(tid)
+                seen.add(tid)
+        if not qids:
+            return []
+        try:
+            from core.agent.recall.recall_rust_bridge import get_recall_kernel
+            kernel = get_recall_kernel()
+            scored = kernel.bm25_scores(
+                idx["docs"], idx["df"], idx["n_docs"], qids,
+                1.2, 0.75, idx["doc_lens"], idx["avg_len"])
+        except Exception as e:
+            logger.debug("bm25 kernel failed: %s", e)
+            scored = []
+        scored = [(d, s) for d, s in scored if s > 0]
+        # 确定性排序（2026-08-12）: Rust bm25_scores 内部 HashMap 迭代
+        # 顺序跨进程随机（RandomState 种子不同）→ 平分时 bm25 源内排名
+        # 跨进程漂移 → RRF 融合 top1 在重跑间翻转（实测 22↔21/39）。
+        # 显式 tie-break: 分数降序 + doc 索引升序。
+        scored.sort(key=lambda x: (-x[1], x[0]))
+        logger.info("bm25_anchors: %.1fms blocks=%d hits=%d qterms=%d",
+                    (time.time() - _t0) * 1000, len(blocks), len(scored),
+                    len(qids))
         if not scored:
             return []
-        max_s = scored[0][0] or 1.0
-        return [
-            RecallHit(
+        max_s = scored[0][1] or 1.0
+        out = []
+        for doc_idx, s in scored[:top_k]:
+            b = blocks[doc_idx]
+            out.append(RecallHit(
                 id=b["id"], text=b["text"][:200], source="bm25",
                 score=s / max_s, confidence=self._confidence("bm25"),
                 temperature=b["temperature"],
                 path=b.get("path") or [],
                 created_at=b.get("created_at"),
-            )
-            for s, b in scored[:top_k]
-        ]
+            ))
+        return out
 
     def _spo_anchors(self, query: str, top_k: int,
                      blocks: Optional[List[dict]] = None) -> List[RecallHit]:
@@ -518,6 +969,7 @@ class RecallService:
         2026-08-08 升级: 谓词对齐从"字面"升级为"抽象关系类型"
         （map_predicate: "源于"=="是"==is_a → 语义归一, 双语两阶段设计）。
         """
+        _t0 = time.time()
         if blocks is None:
             self._ensure_blocks()
             blocks = self._block_list
@@ -527,6 +979,17 @@ class RecallService:
         q_spo = self._extract_spo(query)
         if not q_spo:
             return []
+        # 两级粒度（2026-08-12）: 候选集限定 — SPO 是排序精修, 先由
+        # vector/bm25 粗扫描定位 top-C 再做约束投影对齐, 避免全池
+        # O(n) 对齐（11493 块 ~330ms/池）。候选外块本就不进融合前列。
+        cap = getattr(self, "spo_candidate_cap", 0)
+        if cap and len(blocks) > cap:
+            cand_ids = set()
+            for h in self._vector_anchors(query, cap, blocks=blocks):
+                cand_ids.add(h.id)
+            for h in self._bm25_anchors(query, cap, blocks=blocks):
+                cand_ids.add(h.id)
+            blocks = [b for b in blocks if b["id"] in cand_ids]
         scored = []
         use_norm = getattr(self, "fuse_mode", "linear") == "norm"
         for b in blocks:
@@ -565,6 +1028,8 @@ class RecallService:
             if best > 0:
                 scored.append((best, b))
         scored.sort(key=lambda x: x[0], reverse=True)
+        logger.info("spo_anchors: %.1fms blocks=%d hits=%d",
+                    (time.time() - _t0) * 1000, len(blocks), len(scored))
         return [
             RecallHit(
                 id=b["id"], text=b["text"][:200], source="spo",
@@ -611,7 +1076,41 @@ class RecallService:
         return []
 
     def _expand_questions(self, query: str) -> List[str]:
-        """HyDE/question 式召回: LLM 把 query 展开为 2-3 个问题; 无 LLM → 原 query。"""
+        """HyDE/question 式召回: LLM 把 query 展开为 N 个子问题; 无 LLM → 原 query。
+
+        2026-08-11 升级（SUBGRAPH_EXPANSION_UPGRADE 设计 2）: 子问题数可配
+        （decompose_subqueries）; 失败不阻塞（返回原 query 兜底）; 失败记录
+        进 _decompose_misses 供元认知复盘。
+        """
+        if self._llm is None:
+            return [query]
+        n = max(1, int(getattr(self, "decompose_subqueries", 3)))
+        prompt = (
+            f"把下面的查询展开为 {n} 个更具体的子问题（每行一个, 只输出问题）:\n"
+            f"查询: {query}"
+        )
+        try:
+            if hasattr(self._llm, "chat"):
+                resp = self._llm.chat([{"role": "user", "content": prompt}])
+            elif hasattr(self._llm, "complete"):
+                resp = self._llm.complete(prompt)
+            elif hasattr(self._llm, "generate"):
+                from core.agent.llm_providers.base import GenerateRequest
+                result = self._llm.generate(GenerateRequest(
+                    prompt=prompt, max_tokens=256, temperature=0.3))
+                resp = result.text if result is not None else ""
+            else:
+                return [query]
+            text = resp if isinstance(resp, str) else getattr(resp, "content", "")
+            qs = [q.strip() for q in text.splitlines() if q.strip()][:n]
+            return [query] + qs if qs else [query]
+        except Exception as e:
+            logger.debug("HyDE expansion failed: %s", e)
+            self._decompose_misses.append({"query": query, "error": str(e)[:120]})
+            return [query]
+
+    def _expand_questions_legacy(self, query: str) -> List[str]:
+        """旧行为: 展开 2-3 子问题（并行分解关闭时的轻量兜底）。"""
         if self._llm is None:
             return [query]
         prompt = (
@@ -638,11 +1137,36 @@ class RecallService:
             return [query]
 
     def _hyde_anchors(self, expanded: List[str], top_k: int) -> List[RecallHit]:
-        """对扩展问题分别向量召回, 合并去重。"""
+        """对扩展问题并行全路召回, 合并去重（2026-08-11 升级）。
+
+        旧行为: 串行只走 vector。新行为: 并行（线程池, I/O 密集不受 GIL 限制）
+        每子问题走 vector+bm25+spo（全路）; 子问题全空 → 记 miss 不阻塞。
+        """
         seen = set()
         hits = []
-        for q in expanded:
+        pool = getattr(self, "decompose_max_workers", 4)
+
+        def _one(q):
+            out = []
             for h in self._vector_anchors(q, top_k):
+                out.append(h)
+            for h in self._bm25_anchors(q, top_k):
+                out.append(h)
+            for h in self._spo_anchors(q, top_k):
+                out.append(h)
+            return q, out
+
+        if getattr(self, "parallel_decompose", False) and len(expanded) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max(1, pool)) as ex:
+                results = list(ex.map(_one, expanded))
+        else:
+            results = [_one(q) for q in expanded]
+        for q, sub in results:
+            if not sub:
+                self._decompose_misses.append({"query": q, "error": "empty recall"})
+                continue
+            for h in sub:
                 if h.id in seen:
                     continue
                 seen.add(h.id)
@@ -743,7 +1267,12 @@ class RecallService:
         self._last_sid = sid
         hot_blocks = self._ensure_blocks(sid)
         cold_blocks = self._ensure_global_blocks()
-        expanded = self._expand_questions(query) if use_hyde else [query]
+        if use_hyde and getattr(self, "parallel_decompose", False):
+            expanded = self._expand_questions(query)
+        elif use_hyde:
+            expanded = self._expand_questions_legacy(query)
+        else:
+            expanded = [query]
         hits: List[RecallHit] = []
         single = getattr(self, "single_source", None)
 
@@ -765,7 +1294,11 @@ class RecallService:
             h.source = "hot:" + h.source
         hits += hot_hits
         # 冷路径: 全局块池（大池, 覆盖广）
-        hits += _run(cold_blocks, "cold")
+        cold_hits = _run(cold_blocks, "cold")
+        if getattr(self, "dedup_pools", True):
+            hot_ids = {h.id for h in hot_hits}
+            cold_hits = [h for h in cold_hits if h.id not in hot_ids]
+        hits += cold_hits
         # HyDE（仅全量模式）
         if single == "hyde":
             hits += self._hyde_anchors(expanded, top_k)
@@ -786,8 +1319,11 @@ class RecallService:
             rrf_scores: Dict[str, float] = defaultdict(float)
             for src, hs in by_source.items():
                 hs.sort(key=lambda h: h.score, reverse=True)
+                w = 1.0
+                if getattr(self, "rrf_conf_weight", False):
+                    w = self._confidence(src.split(":", 1)[-1])
                 for rank, h in enumerate(hs):
-                    rrf_scores[h.id] += 1.0 / (60 + rank + 1)
+                    rrf_scores[h.id] += w / (60 + rank + 1)
             for h in hits:
                 if h.id in best:
                     continue
@@ -798,6 +1334,43 @@ class RecallService:
                 best.values(),
                 key=lambda h: h.score * self._temporal_factor(h),
                 reverse=True)
+        elif getattr(self, "fuse_mode", "linear") == "vector_primary":
+            # 证据驱动融合（2026-08-12, 待全量验证）: 诊断显示 100 条中
+            # 全部 top1 来自 vector 路线, 且 vector 内 #1 的 45 条中有
+            # ~10 条被其他源长尾压出 #1（RRF 负增益）。vector 命中的块
+            # 按向量相似度序主导排序; 非 vector 块（bm25/spo 独有召回,
+            # 扩展性来源）按 RRF 续排 — 召回扩展与排序解耦。
+            from collections import defaultdict
+            by_source = defaultdict(list)
+            for h in hits:
+                by_source[h.source].append(h)
+            vec_rank: Dict[str, int] = {}
+            vh = list(by_source.get("hot:vector", []))
+            cold_vec = by_source.get("cold:vector", [])
+            if cold_vec:
+                vh_ids = {x.id for x in vh}
+                vh += [h for h in cold_vec if h.id not in vh_ids]
+            vh.sort(key=lambda h: h.score, reverse=True)
+            for rank, h in enumerate(vh):
+                vec_rank.setdefault(h.id, rank)
+            rrf_scores = defaultdict(float)
+            for src, hs in by_source.items():
+                hs.sort(key=lambda h: h.score, reverse=True)
+                for rank, h in enumerate(hs):
+                    rrf_scores[h.id] += 1.0 / (60 + rank + 1)
+            for h in hits:
+                if h.id in best:
+                    continue
+                if h.id in rrf_scores:
+                    h.score = rrf_scores[h.id]
+                best[h.id] = h
+            ordered = sorted(
+                best.values(),
+                key=lambda h: (
+                    h.id not in vec_rank,
+                    vec_rank.get(h.id, 1 << 30),
+                    -h.score,
+                ))
         else:
             for h in hits:
                 cur = best.get(h.id)

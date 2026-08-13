@@ -75,3 +75,30 @@ def test_unified_backend_stats(fake_bge):
     store.add([Atom(text="one", block_id="x1"), Atom(text="two", block_id="x2")])
     assert store.stats()["total_atoms"] == 2
     assert store.stats()["unified_indexed"] == 2
+
+
+def test_unified_backend_persist_restore(fake_bge, tmp_path):
+    """unified_persist=True: text index survives cold reopen (G0 loop)."""
+    import os
+    from core.agent.storage.chunk_store import ChunkStore
+    store = ChunkStore(backend="unified", bge_model=fake_bge,
+                       unified_persist=True)
+    store._unified_save_every = 3
+    try:
+        store.add_text("AES key rotation policy for gateway", block_id="b1")
+        store.add_text("nginx upstream timeout tuning", block_id="b2")
+        store.add_text("deepseek gateway route config", block_id="b3")
+        assert store._unified_dirty == 0  # throttled save happened at 3
+        path = "data/recall_index/unified_text_index.npz"
+        assert os.path.exists(path)
+
+        store2 = ChunkStore(backend="unified", bge_model=fake_bge,
+                            unified_persist=True)
+        hits = store2._unified.search_texts("gateway route", top_k=2)
+        assert len(hits) > 0
+    finally:
+        store.close()
+        try:
+            os.remove("data/recall_index/unified_text_index.npz")
+        except OSError:
+            pass

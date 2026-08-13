@@ -400,7 +400,8 @@ def build_dialogmesh_registry(engine: Any = None) -> SubsystemRegistry:
                     bge = svc
             except Exception:
                 bge = None
-        return ChunkStore(backend=backend, bge_model=bge)
+        return ChunkStore(backend=backend, bge_model=bge,
+                          unified_persist=(backend == "unified"))
     r.register("chunk_store", "", required=False, init_order=110,
                description="Semantic atom vector store (in_memory|chromadb|unified)",
                factory=_chunk_store_factory)

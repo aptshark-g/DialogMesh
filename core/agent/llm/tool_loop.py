@@ -104,7 +104,9 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
               max_rounds: int = MAX_ROUNDS,
               allowed_tools: Optional[List[str]] = None,
               system_inject: Optional[str] = None,
-              on_step=None, timeout_s: float = 0.0) -> Dict:
+              on_step=None, timeout_s: float = 0.0,
+              symbol_interval: int = 0,
+              symbol_keep_last: int = 2) -> Dict:
     """function calling 循环。返回 {content, tool_calls, rounds, trace}。
 
     流程: 注入 tools → LLM → 有 tool_calls → 执行 → 回灌 → 再调
@@ -115,6 +117,9 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
       system_inject — 节点目标/约束注入（合并进首条 system 消息）
       on_step       — Hot 监视钩子: 每步执行后回调 {round, tool, ok, latency_ms}
       timeout_s     — 总执行截止时间（0 = 不限）; 超时提前终止返回 error=timeout
+      symbol_interval — 符号注入: 每 N 轮把早期 tool 原文压缩为 Mermaid 状态图
+                    （0 = 关闭, 默认; >0 = 开启, 上下文只留符号摘要+最近轮原文）
+      symbol_keep_last — 保留最近几轮 tool 原文（LLM 近期细节需要）
     """
     tools = build_tools_schema(allowed_tools)
     msgs = [dict(m) for m in messages]
@@ -173,6 +178,15 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
                     "tool_call_id": tc.get("id", ""),
                     "content": json.dumps(result, ensure_ascii=False)[:4000],
                 })
+            # 符号注入（2026-08-10）: 每 N 轮压缩早期轮次为状态图
+            if symbol_interval > 0 and (_round + 1) % symbol_interval == 0:
+                try:
+                    from core.agent.llm.symbol_injector import (
+                        compress_old_tool_rounds)
+                    msgs = compress_old_tool_rounds(
+                        msgs, trace, keep_last=symbol_keep_last)
+                except Exception:
+                    pass
             continue
         return {"content": msg.get("content", "") or "",
                 "tool_calls": executed, "rounds": _round + 1,

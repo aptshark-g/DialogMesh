@@ -34,7 +34,10 @@ def test_chromadb_count():
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         cb = ChromaBridge(persist_dir=tmp)
-        assert cb.count() >= 0  # 0 if empty, >0 if previous test ran
+        try:
+            assert cb.count() >= 0  # 0 if empty, >0 if previous test ran
+        finally:
+            cb.close()
 
 
 def test_nats_bridge_graceful():

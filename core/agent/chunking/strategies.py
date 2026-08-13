@@ -277,8 +277,11 @@ class ChunkStrategyRegistry:
             logger.warning("No viable chunk strategy found — falling back to FixedSizeChunkStrategy")
             return FixedSizeChunkStrategy()
 
-        # Default: quality / latency trade-off
-        best = max(candidates, key=lambda s: s.quality_score / (s.latency_ms + 1))
+        # 2026-08-11: fixed_size 是 emergency 兜底（按字符硬切会吞 markdown
+        # 结构）, 结构化文本应优先 header/semantic。quality 主导评分,
+        # latency 仅同质量时参考（旧式 quality/(latency+1) 让 latency 5ms
+        # 的 fixed_size 错误胜出）。
+        best = max(candidates, key=lambda s: (s.quality_score, -s.latency_ms))
         logger.debug("Selected chunk strategy: %s (score=%.3f, latency=%.1fms)",
                      best.name, best.quality_score, best.latency_ms)
         return best

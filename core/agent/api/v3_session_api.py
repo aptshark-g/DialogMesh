@@ -370,6 +370,23 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         chain_parts.append(f"路由: {str(route)[:200]}")
                     elif node_id.startswith("context"):
                         chain_parts.append(f"上下文: {str(output.get('assembled_context', output))[:200]}")
+                    # W2（2026-08-13）: 消费 recall_pipeline 模板节点输出 —
+                    # recall_anchor/subgraph 产出的锚点+编译子图必须进 LLM
+                    # 上下文, 否则"意图→召回→图扩展→回复"链路在 API 层断掉
+                    # （此前只有 intent/pcr/context 摘要进上下文, 锚点被丢）。
+                    elif node_id.startswith(("recall", "subgraph")):
+                        _anchors_txt = (
+                            output.get("anchors") or ""
+                            if isinstance(output, dict) else "")
+                        _sub_txt = (
+                            output.get("compiled_subgraph")
+                            or output.get("content")
+                            or ""
+                            if isinstance(output, dict) else "")
+                        _part = (_anchors_txt or _sub_txt or "")
+                        if _part:
+                            chain_parts.append(
+                                f"{node_id}: {str(_part)[:800]}")
                 if chain_parts:
                     decider_context = "## 管线分析\n" + "\n".join(chain_parts)
             else:

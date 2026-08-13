@@ -152,7 +152,8 @@ def _chunk_store_factory():
                 bge = svc
         except Exception:
             bge = None
-    return ChunkStore(backend=backend, bge_model=bge)
+    return ChunkStore(backend=backend, bge_model=bge,
+                      unified_persist=(backend == "unified"))
 
 _registry.register("chunk_store", "", init_order=5, required=False,
                    description="Semantic atom vector store (in_memory|chromadb|unified)",

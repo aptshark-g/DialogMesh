@@ -39,6 +39,9 @@ class TaskConstraint:
     timeout_s: float = 120.0                   # 总执行截止（tool_loop 硬截止）
     budget_time_s: float = 0.0                 # 监视时间预算（0 = 用 timeout_s）
     max_replans: int = 1                       # 自动重规划次数上限
+    symbol_interval: int = 0                   # 符号注入: 每 N 轮压缩早期
+                                               # tool 原文为状态图（0 = 关）
+    symbol_keep_last: int = 2                  # 保留最近几轮 tool 原文
 
 
 @dataclass
@@ -162,7 +165,9 @@ class TaskRunner:
             raw = self._llm_loop(
                 msgs, model=self._model, max_rounds=cur.max_rounds,
                 allowed_tools=cur.allowed_tools, system_inject=inject,
-                on_step=self._monitor.on_step, timeout_s=cur.timeout_s)
+                on_step=self._monitor.on_step, timeout_s=cur.timeout_s,
+                symbol_interval=cur.symbol_interval,
+                symbol_keep_last=cur.symbol_keep_last)
             content = str(raw.get("content", "") or "")
             error = str(raw.get("error", "") or "")
             result.tool_calls = raw.get("tool_calls") or []

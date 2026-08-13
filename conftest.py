@@ -49,10 +49,14 @@ def _env_facts() -> str:
 def pytest_assertrepr_compare(config, op, left, right):
     """Render assertion diffs with ASCII-safe reprs."""
     if op == "in":
+        try:
+            contained = right in left
+        except Exception:
+            contained = False
         return [
             f"left(container): {_ascii_repr(left)}",
             f"right(value):    {_ascii_repr(right)}",
-            f"right in left:   {right in left}",
+            f"right in left:   {contained}",
         ]
     if op == "==":
         return [

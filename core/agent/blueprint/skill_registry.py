@@ -195,6 +195,43 @@ BUILTIN_TEMPLATES["causal_reasoning"] = BlueprintDAG(
 )
 
 
+# Template 6: recall_pipeline — TEMPLATE（意图→召回→图扩展→回复, 2026-08-11）
+# 注册链路（用户拍板）: 意图分析（pcr/intent）→ recall_anchor 工具节点
+# （ToolRegistry.recall_decompose）→ subgraph 图扩展 → llm_reply。
+# 此前 recall 在 v3_session_api 直调（绕过蓝图）——本模板收进执行路径。
+BUILTIN_TEMPLATES["recall_pipeline"] = BlueprintDAG(
+    nodes=[
+        * _tick0_pair("记忆召回: 意图分析 → 召回锚点 → 图扩展"),
+        _make_node("recall_anchor_2", "tool", priority=1,
+                   tool="recall_decompose",
+                   params={"top_k": 5, "parallel": True},
+                   safety={"mode": "read_only"}),
+        _make_node("subgraph_3", "subgraph", priority=1,
+                   tools=["recall_decompose", "read"],
+                   safety={"mode": "read_only"}),
+        _llm_reply_node("llm_reply_4", priority=2),
+        _make_node("meta_audit_5", "meta", priority=9),
+        _make_node("behavior_learn_6", "behavior", priority=9),
+    ],
+    edges=[
+        _make_edge("pcr_0", "intent_1", "route", required=False),
+        _make_edge("intent_1", "recall_anchor_2", "intent_context"),
+        _make_edge("recall_anchor_2", "subgraph_3", "anchors"),
+        _make_edge("intent_1", "subgraph_3", "intent_context"),
+        _make_edge("subgraph_3", "llm_reply_4", "compiled_subgraph"),
+        _make_edge("intent_1", "llm_reply_4", "intent_context"),
+        _make_edge("pcr_0", "llm_reply_4", "compass"),
+    ],
+    strategy="TEMPLATE",
+    confidence=1.0,
+    design_rationale=(
+        "记忆召回: Tick0(pcr∥intent 意图分析) → Tick1(recall_anchor 工具"
+        "并行分解召回 + subgraph 图扩展) → Tick2(llm_reply) → async(meta.audit"
+        "∥behavior.learn)。此前 recall 直调绕过蓝图, 本模板收进执行路径。"
+    ),
+)
+
+
 # ═══════════════════════════════════════════════
 # SkillRegistry — intent → (strategy, blueprint)
 # ═══════════════════════════════════════════════
@@ -268,6 +305,10 @@ class SkillRegistry:
             StrategyWeight("LLM_DRIVEN", 1.0),
             StrategyWeight("HYBRID", 0.4),
         ]
+        self._strategy_weights["记忆召回"] = [
+            StrategyWeight("TEMPLATE", 1.0),
+            StrategyWeight("HYBRID", 0.6),
+        ]
 
     def match(self, intent: str) -> Tuple[str, BlueprintDAG]:
         """Match intent → best strategy + blueprint template.
@@ -318,6 +359,7 @@ class SkillRegistry:
             "任务规划": "task_planning",
             "数据搜索": "data_search",
             "因果推理": "causal_reasoning",
+            "记忆召回": "recall_pipeline",
         }
         template_name = template_map.get(matched_intent, "general_chat")
         blueprint = BUILTIN_TEMPLATES.get(template_name, BUILTIN_TEMPLATES["general_chat"])

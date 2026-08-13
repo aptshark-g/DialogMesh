@@ -1,0 +1,37 @@
+{
+ "mode": "faithfulness",
+ "faithfulness": 0.2898550724637681,
+ "hallucination_rate": 0.7101449275362319,
+ "claims_total": 69,
+ "claims_supported": 20,
+ "per_task": [
+  {
+   "task": "simple",
+   "claims": 20,
+   "supported": 16,
+   "faithfulness": 0.8,
+   "hallucination_rate": 0.2
+  },
+  {
+   "task": "code",
+   "claims": 9,
+   "supported": 1,
+   "faithfulness": 0.111,
+   "hallucination_rate": 0.889
+  },
+  {
+   "task": "explain",
+   "claims": 20,
+   "supported": 1,
+   "faithfulness": 0.05,
+   "hallucination_rate": 0.95
+  },
+  {
+   "task": "recall_fact",
+   "claims": 20,
+   "supported": 2,
+   "faithfulness": 0.1,
+   "hallucination_rate": 0.9
+  }
+ ]
+}

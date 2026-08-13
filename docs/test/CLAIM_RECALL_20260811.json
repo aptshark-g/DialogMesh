@@ -1,0 +1,99 @@
+{
+ "mode": "context_recall",
+ "top_k": 10,
+ "context_recall": 0.5625,
+ "claims_total": 240,
+ "claims_supported": 135,
+ "per_query": [
+  {
+   "query": "如果想做一个pi一样的agent你会怎么做？",
+   "claims": 20,
+   "supported": 3
+  },
+  {
+   "query": "去看看pi的信息，openclaw的原型貌似是，去查一下",
+   "claims": 13,
+   "supported": 12
+  },
+  {
+   "query": "你不能直接加载到任务里面吗？",
+   "claims": 12,
+   "supported": 8
+  },
+  {
+   "query": "现在可以去规划了吧？",
+   "claims": 14,
+   "supported": 5
+  },
+  {
+   "query": "没显示什么情况",
+   "claims": 16,
+   "supported": 14
+  },
+  {
+   "query": "帮我规划一个代码审查任务",
+   "claims": 20,
+   "supported": 3
+  },
+  {
+   "query": "有上下文吗？",
+   "claims": 16,
+   "supported": 14
+  },
+  {
+   "query": "规划一个用户登录系统，包含注册、JWT认证、密码找回",
+   "claims": 6,
+   "supported": 1
+  },
+  {
+   "query": "规划一个用户登录系统",
+   "claims": 15,
+   "supported": 14
+  },
+  {
+   "query": "你现在所知的上下文有什么",
+   "claims": 10,
+   "supported": 8
+  },
+  {
+   "query": "设计一个用户登录系统，包含JWT认证和数据库设计",
+   "claims": 6,
+   "supported": 0
+  },
+  {
+   "query": "设计一个全新的探索性系统架构，我计划分步骤验证核心模式，需要规范化的流程和明确的",
+   "claims": 20,
+   "supported": 5
+  },
+  {
+   "query": "设计全新探索性系统架构，计划分步骤验证核心模式，需要规范化流程和明确测试标准",
+   "claims": 8,
+   "supported": 1
+  },
+  {
+   "query": "我叫小明，我的项目是DialogMesh",
+   "claims": 11,
+   "supported": 9
+  },
+  {
+   "query": "我叫什么名字？我的项目是什么？",
+   "claims": 10,
+   "supported": 10
+  },
+  {
+   "query": "刚才的方案里 JWT 有效期怎么设置比较合理？",
+   "claims": 20,
+   "supported": 5
+  },
+  {
+   "query": "修改 core/agent/recall 下的召回服务，把 bm25 权重提高",
+   "claims": 3,
+   "supported": 3
+  },
+  {
+   "query": "写一个 Python 脚本计算 1 到 100 的质数之和并运行验证，然后告诉我",
+   "claims": 20,
+   "supported": 20
+  }
+ ]
+}

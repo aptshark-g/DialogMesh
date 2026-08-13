@@ -38,18 +38,36 @@ class SemanticEncoder:
     # Multilingual model for non-Chinese text (50+ languages, 384-dim)
     MULTILINGUAL_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     MULTILINGUAL_MODEL_PATH = "models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # BGE-M3 (2026-08-10, 方案 C 统一跨语言): 1024-dim multilingual,
+    # zh/en 统一向量空间 — 消除"中文 512 / 英文 384 维度不匹配"的跨语言
+    # 召回盲区（变体评测 en 0% 实锤）。本地 ModelScope 快照。
+    BGE_M3_PATH = "models/models/BAAI--bge-m3/snapshots/master"
     # 向量维度（BGE-small-zh 固定为 512，multilingual 固定为 384）
     EMBEDDING_DIM = 512
     MULTILINGUAL_DIM = 384
 
-    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
+    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None,
+                 use_bge_m3: Optional[bool] = None):
         # 从配置读取默认值（如果未显式传入）
         config = get_discourse_config() if get_discourse_config else None
         enc_cfg = config.encoder if config else None
 
+        # BGE-M3 开关: 显式参数 > 环境变量 > 配置 > 自动（本地有模型即用）
+        if use_bge_m3 is None:
+            use_bge_m3 = os.environ.get("DM_BGE_M3", "").lower() in ("1", "true", "yes")
+            if not use_bge_m3 and enc_cfg is not None:
+                use_bge_m3 = bool(getattr(enc_cfg, "use_bge_m3", False))
+            if not use_bge_m3:
+                use_bge_m3 = os.path.exists(self.BGE_M3_PATH)
+        self.use_bge_m3 = use_bge_m3
+
         self.model_path = model_path or (enc_cfg.model_path if enc_cfg else "models/BAAI/bge-small-zh")
         self.device = device or (enc_cfg.resolved_device if enc_cfg else ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.max_length = enc_cfg.max_length if enc_cfg else 512
+        self.max_length = 8192 if self.use_bge_m3 else (enc_cfg.max_length if enc_cfg else 512)
+        if self.use_bge_m3 and os.path.exists(self.BGE_M3_PATH):
+            self.model_path = self.BGE_M3_PATH
+            self.EMBEDDING_DIM = 1024
+            logger.info("SemanticEncoder: BGE-M3 unified mode (1024-dim)")
 
         # Lazy-loaded multilingual model for non-Chinese text
         self._multilingual_model = None
@@ -106,20 +124,21 @@ class SemanticEncoder:
             return
         self._multilingual_loaded = True
         try:
-            # Try loading multilingual model from local cache or modelscope
+            # Local-first: never hit the network here. Remote model
+            # fetching is a dedicated capability (future "connectivity"
+            # module); until then the gateway/LLM layer handles network.
+            # (2026-08-10: modelscope download was retried on every
+            # non-Chinese encode — 15s+ stalls in benchmarks.)
             import sentence_transformers
-            # Check modelscope first (HF blocked in China)
-            try:
-                from modelscope import snapshot_download
-                path = snapshot_download('iic/nlp_corom_sentence-embedding_english-base')
-                self._multilingual_model = sentence_transformers.SentenceTransformer(path)
-                self._multilingual_tokenizer = self._multilingual_model.tokenizer
-                logger.info(f"English model loaded via ModelScope: {path}")
-                return
-            except Exception:
-                pass
-            # Try local path
-            for local_path in [self.MULTILINGUAL_MODEL_PATH, "models/all-MiniLM-L6-v2"]:
+            for local_path in [
+                self.MULTILINGUAL_MODEL_PATH,
+                # HF snapshot cache (offline) — downloaded previously
+                os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                             "models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2",
+                             "snapshots", "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"),
+                "models/all-MiniLM-L6-v2",
+                "models/models--sentence-transformers--all-MiniLM-L6-v2",
+            ]:
                 if os.path.exists(local_path):
                     self._multilingual_model = sentence_transformers.SentenceTransformer(local_path)
                     self._multilingual_tokenizer = self._multilingual_model.tokenizer
@@ -156,8 +175,9 @@ class SemanticEncoder:
         if isinstance(texts, str):
             texts = [texts]
 
-        # Language detection: use multilingual model for non-Chinese
-        lang = self._detect_language(texts)
+        # Language detection: use multilingual model for non-Chinese.
+        # BGE-M3 mode skips routing — one unified multilingual space.
+        lang = "zh" if self.use_bge_m3 else self._detect_language(texts)
         if lang != "zh":
             self._load_multilingual()
 
@@ -183,17 +203,25 @@ class SemanticEncoder:
         all_vectors = []
         for i in range(0, len(uncached_texts), batch_size):
             batch = uncached_texts[i:i + batch_size]
-            if lang != "zh" and self._multilingual_model:
-                tokenizer = self._multilingual_tokenizer
-                model = self._multilingual_model
-                encoded = tokenizer(
+            if self.use_bge_m3:
+                # BGE-M3 unified: one 1024-dim space for zh + en + mixed —
+                # no language routing, no dimension mismatch (2026-08-10).
+                encoded = self._tokenizer(
                     batch, return_tensors="pt", padding=True,
                     truncation=True, max_length=self.max_length,
                 )
                 encoded = {k: v.to(self.device) for k, v in encoded.items()}
                 with torch.no_grad():
-                    output = model(**encoded)
+                    output = self._model(**encoded)
+                    # BGE-M3: CLS pooling + L2 normalize
                     vecs = output.last_hidden_state[:, 0].cpu().numpy()
+                all_vectors.extend(vecs)
+            elif lang != "zh" and self._multilingual_model:
+                with torch.no_grad():
+                    vecs = self._multilingual_model.encode(
+                        batch, batch_size=batch_size, normalize_embeddings=True,
+                        convert_to_numpy=True, show_progress_bar=False,
+                    )
                 all_vectors.extend(vecs)
             elif lang != "zh" and not self._multilingual_model:
                 # No multilingual model: use n-gram overlap features

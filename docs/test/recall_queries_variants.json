@@ -1,0 +1,1679 @@
+{
+ "meta": {
+  "created": "2026-08-10",
+  "purpose": "层3 变体评测查询集 (LLM 生成)",
+  "source": "recall_queries.json x3 变体类型",
+  "gateway": "http://127.0.0.1:8080",
+  "model": "deepseek-v4-flash"
+ },
+ "queries": [
+  {
+   "id": "v001",
+   "variant_type": "zh_syn",
+   "query": "执行层的分层结构是怎样的？tool_loop、蓝图和元认知三者之间如何关联？",
+   "original_id": "q001",
+   "original_query": "执行层怎么分层？tool_loop 和蓝图、元认知是什么关系",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v002",
+   "variant_type": "zh_syn",
+   "query": "在agentic工具节点中，如何实现让LLM自主决定调用工具？",
+   "original_id": "q002",
+   "original_query": "agentic 工具节点怎么让 LLM 自己调工具",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v003",
+   "variant_type": "zh_syn",
+   "query": "蓝图中的tool节点支持哪些参数配置？agentic工具节点与静态工具节点有什么不同？",
+   "original_id": "q003",
+   "original_query": "蓝图里 tool 节点有哪些参数，agentic 和静态工具节点区别",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v004",
+   "variant_type": "zh_syn",
+   "query": "用5分钟制作一个MC游戏时，元认知是如何检测到超时并切换替代方案的？",
+   "original_id": "q004",
+   "original_query": "5 分钟做一个 MC 游戏，元认知怎么发现超时并换方案",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v005",
+   "variant_type": "zh_syn",
+   "query": "执行偏差通过什么机制引发宏观计划调整，双向归因具体指什么？",
+   "original_id": "q005",
+   "original_query": "执行偏差怎么触发宏观计划改变，双向归因是什么",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v006",
+   "variant_type": "zh_syn",
+   "query": "用户介入被划分成哪几个等级，PlanGate 与异步日志的职责如何分配？",
+   "original_id": "q006",
+   "original_query": "用户介入分几级？PlanGate 和异步日志怎么分工",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v007",
+   "variant_type": "zh_syn",
+   "query": "蓝图薄点审计查出了哪些尚未完成接线的模块？",
+   "original_id": "q007",
+   "original_query": "蓝图薄点审计发现了哪些没接线的模块",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v008",
+   "variant_type": "zh_syn",
+   "query": "权限引擎在生产路径上是如何挂载的，PermissionEngine 接入到了哪个位置？",
+   "original_id": "q008",
+   "original_query": "权限引擎在生产路径怎么挂载的，PermissionEngine 接到哪了",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md",
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v009",
+   "variant_type": "zh_syn",
+   "query": "recall 的结果是如何注入到执行层的？锚点为何会带有路径信息？",
+   "original_id": "q009",
+   "original_query": "recall 结果怎么注入执行层，锚点为什么带路径",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v010",
+   "variant_type": "zh_syn",
+   "query": "粗召回与执行层的精确查找应当如何协同工作？为何不能仅依赖向量？",
+   "original_id": "q010",
+   "original_query": "粗召回和执行层精确查阅怎么配合，为什么不能只靠向量",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v011",
+   "variant_type": "zh_syn",
+   "query": "subgraph 节点中的 recall_anchor 参数具体起什么作用？",
+   "original_id": "q011",
+   "original_query": "subgraph 节点的 recall_anchor 参数是干嘛的",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v012",
+   "variant_type": "zh_syn",
+   "query": "统一召回环节采用了哪些算法？RRF 融合方法带来了多少性能提升？",
+   "original_id": "q012",
+   "original_query": "统一召回用了哪些算法，RRF 融合提升多少",
+   "expected": [
+    "docs/only/recall/RECALL_CAPABILITY_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v013",
+   "variant_type": "zh_syn",
+   "query": "在SPO约束投影中，如何提取主语和宾语关系？谓语的权重应设为多少？",
+   "original_id": "q013",
+   "original_query": "SPO 约束投影怎么提炼主宾关系，谓语权重多少",
+   "expected": [
+    "docs/only/recall/SPO_MODEL_STRATEGY_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v014",
+   "variant_type": "zh_syn",
+   "query": "对于中文SPO应当怎样处理？所谓的双语两阶段具体指什么？",
+   "original_id": "q014",
+   "original_query": "中文 SPO 怎么处理，双语两阶段是什么",
+   "expected": [
+    "docs/only/recall/SPO_BILINGUAL_TWOSTAGE_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v015",
+   "variant_type": "zh_syn",
+   "query": "记忆的热温冷分层是如何进行的？预取操作在什么条件下会被触发？",
+   "original_id": "q015",
+   "original_query": "记忆怎么按热温冷分层，预取怎么触发",
+   "expected": [
+    "docs/only/recall/DYNAMIC_TIERING_PREFETCH_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v016",
+   "variant_type": "zh_syn",
+   "query": "召回的第二批施工完成了哪些工作？黄金集包含了多少条数据？",
+   "original_id": "q016",
+   "original_query": "召回第二批施工做了哪些事，黄金集多少条",
+   "expected": [
+    "docs/only/recall/RECALL_BATCH2_PLAN_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v017",
+   "variant_type": "zh_syn",
+   "query": "在召回评测中，设置四路Baseline进行对比的目的是什么？",
+   "original_id": "q017",
+   "original_query": "召回评测为什么要有四路 Baseline 对比",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v018",
+   "variant_type": "zh_syn",
+   "query": "文档语料召回测试中的query是如何产生的，又为何需要人工标注呢？",
+   "original_id": "q018",
+   "original_query": "文档语料召回测试的 query 怎么来，为什么要人工标注",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v019",
+   "variant_type": "zh_syn",
+   "query": "第一版功能核对清单中的C1-C4权限具体指哪些内容？",
+   "original_id": "q019",
+   "original_query": "第一版功能核对清单里 C1-C4 权限是什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v020",
+   "variant_type": "zh_syn",
+   "query": "端到端自检环节的E1到E5各自主要检查哪些方面？",
+   "original_id": "q020",
+   "original_query": "端到端自检 E1-E5 分别检查什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v021",
+   "variant_type": "zh_syn",
+   "query": "树作为推理工作台的含义是什么，遗忘应当如何处理？",
+   "original_id": "q021",
+   "original_query": "树是推理工作台是什么意思，遗忘怎么处理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v022",
+   "variant_type": "zh_syn",
+   "query": "哪些公理规定了记录永不可删和抽象可逆推？",
+   "original_id": "q022",
+   "original_query": "记录永不可删和抽象可逆推是哪几条公理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v023",
+   "variant_type": "zh_syn",
+   "query": "如何理解偏差是养分，归因会回流到哪一层？",
+   "original_id": "q023",
+   "original_query": "偏差是养分怎么理解，归因回流到哪层",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v024",
+   "variant_type": "zh_syn",
+   "query": "白盒化承诺指什么，为什么行为必须被记录？",
+   "original_id": "q024",
+   "original_query": "白盒化承诺是什么，为什么行为必记录",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v025",
+   "variant_type": "zh_syn",
+   "query": "M1至M9应按怎样的次序施工？",
+   "original_id": "q025",
+   "original_query": "M1 到 M9 的施工顺序是什么",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v026",
+   "variant_type": "zh_syn",
+   "query": "阶段A与阶段B各自涵盖哪些模块？",
+   "original_id": "q026",
+   "original_query": "阶段 A 和阶段 B 分别包含哪些模块",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v027",
+   "variant_type": "zh_syn",
+   "query": "在v2.1召回桥完成之后，紧接着要施工哪一项？",
+   "original_id": "q027",
+   "original_query": "v2.1 召回桥之后下一个施工项是什么",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v028",
+   "variant_type": "zh_syn",
+   "query": "哪个文档提供了本轮压缩交接的恢复入口？",
+   "original_id": "q028",
+   "original_query": "本轮压缩交接的恢复入口是哪个文档",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v029",
+   "variant_type": "zh_syn",
+   "query": "工作流的自增长具体是如何实现的？成功路径要怎样进行沉淀和积累？",
+   "original_id": "q029",
+   "original_query": "工作流自增长是怎么实现的，成功路径怎么沉淀",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v030",
+   "variant_type": "zh_syn",
+   "query": "G3 的四保护具体包含哪四项？PlanGate 的触发方式是什么？",
+   "original_id": "q030",
+   "original_query": "G3 四保护是哪四个，PlanGate 怎么触发",
+   "expected": [
+    "docs/only/blueprint/P1_PROTECTION_REFLECTION_IMPL_20260806.md",
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v031",
+   "variant_type": "zh_syn",
+   "query": "在执行层监控里，Hot、Warm、Cold 分别负责哪些工作？",
+   "original_id": "q031",
+   "original_query": "执行层监控 Hot Warm Cold 分别做什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v032",
+   "variant_type": "zh_syn",
+   "query": "TaskRunner 的重规划循环是怎样运转的？为什么存在高风险时必须要停下来？",
+   "original_id": "q032",
+   "original_query": "TaskRunner 重规划循环怎么工作，为什么高风险要停下",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v033",
+   "variant_type": "zh_syn",
+   "query": "决策事件包含哪些 kind？strategy_switch 与 plan_gate 之间有何不同？",
+   "original_id": "q033",
+   "original_query": "决策事件有哪些 kind，strategy_switch 和 plan_gate 区别",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v034",
+   "variant_type": "zh_syn",
+   "query": "如何查看和干预变更日志？approve 和 reject 分别表示什么含义？",
+   "original_id": "q034",
+   "original_query": "变更日志怎么回看和介入，approve reject 语义",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v035",
+   "variant_type": "zh_syn",
+   "query": "蒸馏原料管道是如何进行收集的？HeuristicDistiller 的数据来源是什么？",
+   "original_id": "q035",
+   "original_query": "蒸馏原料管道怎么收集，HeuristicDistiller 从哪拿数据",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v036",
+   "variant_type": "zh_syn",
+   "query": "技能生命周期中的活性管理应该怎样实现？",
+   "original_id": "q036",
+   "original_query": "技能生命周期怎么做活性管理的",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v037",
+   "variant_type": "zh_syn",
+   "query": "对话树与召回之间有何关联？并行命中是如何实现的？",
+   "original_id": "q037",
+   "original_query": "对话树和召回是什么关系，命中怎么并行",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v038",
+   "variant_type": "zh_syn",
+   "query": "元认知复盘应隔多少轮执行一次？它与策略权重之间存在怎样的联系？",
+   "original_id": "q038",
+   "original_query": "元认知复盘每几轮做一次，和策略权重什么关系",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md",
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v039",
+   "variant_type": "zh_syn",
+   "query": "如何识别编码类请求？施工信号具体包含哪些？",
+   "original_id": "q039",
+   "original_query": "编码类请求怎么识别，施工信号有哪些",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v040",
+   "variant_type": "zh_syn",
+   "query": "混合式通用agent的定位是什么？它与纯RAG模式相比有何不同？",
+   "original_id": "q040",
+   "original_query": "混合式通用 agent 的定位是什么，和纯 RAG 有什么区别",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v041",
+   "variant_type": "zh_syn",
+   "query": "权限门是如何阻止链式 shell 以及防止越权写入的？",
+   "original_id": "q041",
+   "original_query": "权限门怎么拦截链式 shell 和越权写入",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v042",
+   "variant_type": "zh_syn",
+   "query": "OS 工具集都包含哪些内容？run_session 的作用是什么？",
+   "original_id": "q042",
+   "original_query": "OS 工具集有哪些，run_session 是干嘛的",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v043",
+   "variant_type": "zh_syn",
+   "query": "function calling 的端到端实测具体做了哪些事情？",
+   "original_id": "q043",
+   "original_query": "function calling 端到端实测做了什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v044",
+   "variant_type": "zh_syn",
+   "query": "执行迹与变更日志这两个白盒视图分别展示哪些信息？",
+   "original_id": "q044",
+   "original_query": "执行迹和变更日志两个白盒视图各展示什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md",
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v045",
+   "variant_type": "zh_syn",
+   "query": "与 OpenClaw Hermes 对比之后，我们还有哪些差距需要补齐？",
+   "original_id": "q045",
+   "original_query": "跟 OpenClaw Hermes 对标后我们还差什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v046",
+   "variant_type": "zh_syn",
+   "query": "定时自动化（automation）为何会沦为“孤儿”？要怎样接入它？",
+   "original_id": "q046",
+   "original_query": "定时自动化 automation 为什么是孤儿，怎么接",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v047",
+   "variant_type": "zh_syn",
+   "query": "replanner 自动更换方案为什么还没有落地，MC 在全部场景中少了哪些能力？",
+   "original_id": "q047",
+   "original_query": "replanner 自动换方案为什么没做，MC 全场景缺什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v048",
+   "variant_type": "zh_syn",
+   "query": "把文档漂移检测集成进召回评测应该怎么做？",
+   "original_id": "q048",
+   "original_query": "文档漂移检测怎么融入召回评测",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v049",
+   "variant_type": "zh_syn",
+   "query": "看护评测为何需要设定基准线和变化趋势？如何重新执行评测？",
+   "original_id": "q049",
+   "original_query": "评测看护为什么要有基线和趋势，怎么复跑",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v050",
+   "variant_type": "zh_syn",
+   "query": "距离首版上线还缺哪些工作？前端绑定和量化测试哪个更优先？",
+   "original_id": "q050",
+   "original_query": "第一版发布前还差哪些，前端绑定和量化测试优先级",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v051",
+   "variant_type": "en",
+   "query": "How is the execution layer structured? What is the relationship between tool_loop, blueprints, and metacognition?",
+   "original_id": "q001",
+   "original_query": "执行层怎么分层？tool_loop 和蓝图、元认知是什么关系",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v052",
+   "variant_type": "en",
+   "query": "How does an agentic tool node let the LLM call tools by itself?",
+   "original_id": "q002",
+   "original_query": "agentic 工具节点怎么让 LLM 自己调工具",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v053",
+   "variant_type": "en",
+   "query": "What parameters does a tool node have in a blueprint, and what is the difference between agentic and static tool nodes?",
+   "original_id": "q003",
+   "original_query": "蓝图里 tool 节点有哪些参数，agentic 和静态工具节点区别",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v054",
+   "variant_type": "en",
+   "query": "How does metacognition detect a timeout and switch plans when building a Minecraft game in 5 minutes?",
+   "original_id": "q004",
+   "original_query": "5 分钟做一个 MC 游戏，元认知怎么发现超时并换方案",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v055",
+   "variant_type": "en",
+   "query": "How does execution deviation trigger macro-plan changes, and what is bidirectional attribution?",
+   "original_id": "q005",
+   "original_query": "执行偏差怎么触发宏观计划改变，双向归因是什么",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v056",
+   "variant_type": "en",
+   "query": "How many levels of user intervention are there, and how do PlanGate and async logging divide responsibilities?",
+   "original_id": "q006",
+   "original_query": "用户介入分几级？PlanGate 和异步日志怎么分工",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v057",
+   "variant_type": "en",
+   "query": "Which unwired modules did the blueprint thin-point audit find?",
+   "original_id": "q007",
+   "original_query": "蓝图薄点审计发现了哪些没接线的模块",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v058",
+   "variant_type": "en",
+   "query": "How is the permission engine mounted in the production path, and where is PermissionEngine connected?",
+   "original_id": "q008",
+   "original_query": "权限引擎在生产路径怎么挂载的，PermissionEngine 接到哪了",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md",
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v059",
+   "variant_type": "en",
+   "query": "How are recall results injected into the execution layer, and why do anchors include paths?",
+   "original_id": "q009",
+   "original_query": "recall 结果怎么注入执行层，锚点为什么带路径",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v060",
+   "variant_type": "en",
+   "query": "How do coarse recall and exact lookup in the execution layer cooperate, and why can't vector search alone be relied on?",
+   "original_id": "q010",
+   "original_query": "粗召回和执行层精确查阅怎么配合，为什么不能只靠向量",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v061",
+   "variant_type": "en",
+   "query": "What is the recall_anchor parameter on subgraph nodes used for?",
+   "original_id": "q011",
+   "original_query": "subgraph 节点的 recall_anchor 参数是干嘛的",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v062",
+   "variant_type": "en",
+   "query": "Which algorithms are used in unified recall, and how much improvement does RRF fusion bring?",
+   "original_id": "q012",
+   "original_query": "统一召回用了哪些算法，RRF 融合提升多少",
+   "expected": [
+    "docs/only/recall/RECALL_CAPABILITY_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v063",
+   "variant_type": "en",
+   "query": "How does SPO constrained projection extract subject-object relations, and what is the predicate weight?",
+   "original_id": "q013",
+   "original_query": "SPO 约束投影怎么提炼主宾关系，谓语权重多少",
+   "expected": [
+    "docs/only/recall/SPO_MODEL_STRATEGY_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v064",
+   "variant_type": "en",
+   "query": "How is Chinese SPO handled, and what is the bilingual two-stage approach?",
+   "original_id": "q014",
+   "original_query": "中文 SPO 怎么处理，双语两阶段是什么",
+   "expected": [
+    "docs/only/recall/SPO_BILINGUAL_TWOSTAGE_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v065",
+   "variant_type": "en",
+   "query": "How is memory layered into hot, warm, and cold tiers, and how is prefetching triggered?",
+   "original_id": "q015",
+   "original_query": "记忆怎么按热温冷分层，预取怎么触发",
+   "expected": [
+    "docs/only/recall/DYNAMIC_TIERING_PREFETCH_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v066",
+   "variant_type": "en",
+   "query": "What was done in the second batch of recall construction, and how many items are in the golden set?",
+   "original_id": "q016",
+   "original_query": "召回第二批施工做了哪些事，黄金集多少条",
+   "expected": [
+    "docs/only/recall/RECALL_BATCH2_PLAN_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v067",
+   "variant_type": "en",
+   "query": "Why does recall evaluation need a four-way baseline comparison",
+   "original_id": "q017",
+   "original_query": "召回评测为什么要有四路 Baseline 对比",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v068",
+   "variant_type": "en",
+   "query": "How are queries for document corpus recall testing sourced, and why is manual annotation needed",
+   "original_id": "q018",
+   "original_query": "文档语料召回测试的 query 怎么来，为什么要人工标注",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v069",
+   "variant_type": "en",
+   "query": "What are the C1-C4 permissions in the first version functional checklist",
+   "original_id": "q019",
+   "original_query": "第一版功能核对清单里 C1-C4 权限是什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v070",
+   "variant_type": "en",
+   "query": "What do end-to-end self-checks E1-E5 each verify",
+   "original_id": "q020",
+   "original_query": "端到端自检 E1-E5 分别检查什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v071",
+   "variant_type": "en",
+   "query": "What does it mean that the tree is a reasoning workbench, and how is forgetting handled?",
+   "original_id": "q021",
+   "original_query": "树是推理工作台是什么意思，遗忘怎么处理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v072",
+   "variant_type": "en",
+   "query": "Which axioms state that records can never be deleted and that abstraction is reversible?",
+   "original_id": "q022",
+   "original_query": "记录永不可删和抽象可逆推是哪几条公理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v073",
+   "variant_type": "en",
+   "query": "How should we understand deviation as nourishment, and to which layer does attribution flow back?",
+   "original_id": "q023",
+   "original_query": "偏差是养分怎么理解，归因回流到哪层",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v074",
+   "variant_type": "en",
+   "query": "What is the white-box commitment, and why must behavior always be recorded?",
+   "original_id": "q024",
+   "original_query": "白盒化承诺是什么，为什么行为必记录",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v075",
+   "variant_type": "en",
+   "query": "What is the construction order from M1 to M9?",
+   "original_id": "q025",
+   "original_query": "M1 到 M9 的施工顺序是什么",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v076",
+   "variant_type": "en",
+   "query": "Which modules are included in Phase A and Phase B respectively?",
+   "original_id": "q026",
+   "original_query": "阶段 A 和阶段 B 分别包含哪些模块",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v077",
+   "variant_type": "en",
+   "query": "After the v2.1 recall bridge, what is the next construction item?",
+   "original_id": "q027",
+   "original_query": "v2.1 召回桥之后下一个施工项是什么",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v078",
+   "variant_type": "en",
+   "query": "Which document is the recovery entry point for this round of compression handover?",
+   "original_id": "q028",
+   "original_query": "本轮压缩交接的恢复入口是哪个文档",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v079",
+   "variant_type": "en",
+   "query": "How is workflow self-growth achieved, and how are successful paths accumulated?",
+   "original_id": "q029",
+   "original_query": "工作流自增长是怎么实现的，成功路径怎么沉淀",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v080",
+   "variant_type": "en",
+   "query": "What are the four protections in G3, and how is PlanGate triggered?",
+   "original_id": "q030",
+   "original_query": "G3 四保护是哪四个，PlanGate 怎么触发",
+   "expected": [
+    "docs/only/blueprint/P1_PROTECTION_REFLECTION_IMPL_20260806.md",
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v081",
+   "variant_type": "en",
+   "query": "What are the respective roles of Hot, Warm, and Cold in execution-layer monitoring?",
+   "original_id": "q031",
+   "original_query": "执行层监控 Hot Warm Cold 分别做什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v082",
+   "variant_type": "en",
+   "query": "How does the TaskRunner replanning loop function, and why does high risk cause it to stop?",
+   "original_id": "q032",
+   "original_query": "TaskRunner 重规划循环怎么工作，为什么高风险要停下",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v083",
+   "variant_type": "en",
+   "query": "What kinds of decision events are there, and what is the difference between strategy_switch and plan_gate?",
+   "original_id": "q033",
+   "original_query": "决策事件有哪些 kind，strategy_switch 和 plan_gate 区别",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v084",
+   "variant_type": "en",
+   "query": "How do you review and intervene in the change log, and what are the semantics of approve and reject?",
+   "original_id": "q034",
+   "original_query": "变更日志怎么回看和介入，approve reject 语义",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v085",
+   "variant_type": "en",
+   "query": "How is the distillation raw material pipeline collected, and where does HeuristicDistiller get its data?",
+   "original_id": "q035",
+   "original_query": "蒸馏原料管道怎么收集，HeuristicDistiller 从哪拿数据",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v086",
+   "variant_type": "en",
+   "query": "How is activity management handled in the skill lifecycle?",
+   "original_id": "q036",
+   "original_query": "技能生命周期怎么做活性管理的",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v087",
+   "variant_type": "en",
+   "query": "What is the relationship between dialogue trees and recall, and how are hits executed in parallel?",
+   "original_id": "q037",
+   "original_query": "对话树和召回是什么关系，命中怎么并行",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v088",
+   "variant_type": "en",
+   "query": "How often should metacognitive review be performed, and how does it relate to strategy weights?",
+   "original_id": "q038",
+   "original_query": "元认知复盘每几轮做一次，和策略权重什么关系",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md",
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v089",
+   "variant_type": "en",
+   "query": "How are coding requests identified, and what are the construction signals?",
+   "original_id": "q039",
+   "original_query": "编码类请求怎么识别，施工信号有哪些",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v090",
+   "variant_type": "en",
+   "query": "What is the positioning of a hybrid general agent, and how does it differ from pure RAG?",
+   "original_id": "q040",
+   "original_query": "混合式通用 agent 的定位是什么，和纯 RAG 有什么区别",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v091",
+   "variant_type": "en",
+   "query": "How does the permission gate block chained shells and unauthorized writes?",
+   "original_id": "q041",
+   "original_query": "权限门怎么拦截链式 shell 和越权写入",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v092",
+   "variant_type": "en",
+   "query": "What OS tools are included, and what does run_session do?",
+   "original_id": "q042",
+   "original_query": "OS 工具集有哪些，run_session 是干嘛的",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v093",
+   "variant_type": "en",
+   "query": "What was done in the end-to-end testing of function calling?",
+   "original_id": "q043",
+   "original_query": "function calling 端到端实测做了什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v094",
+   "variant_type": "en",
+   "query": "What do the two white-box views, execution trace and change log, each display?",
+   "original_id": "q044",
+   "original_query": "执行迹和变更日志两个白盒视图各展示什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md",
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v095",
+   "variant_type": "en",
+   "query": "What are we still missing after benchmarking against OpenClaw Hermes?",
+   "original_id": "q045",
+   "original_query": "跟 OpenClaw Hermes 对标后我们还差什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v096",
+   "variant_type": "en",
+   "query": "Why is scheduled automation considered an orphan, and how can it be integrated?",
+   "original_id": "q046",
+   "original_query": "定时自动化 automation 为什么是孤儿，怎么接",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v097",
+   "variant_type": "en",
+   "query": "Why hasn't automatic plan-switching in replanner been implemented, and what does MC lack across all scenarios?",
+   "original_id": "q047",
+   "original_query": "replanner 自动换方案为什么没做，MC 全场景缺什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v098",
+   "variant_type": "en",
+   "query": "How can document drift detection be incorporated into recall evaluation?",
+   "original_id": "q048",
+   "original_query": "文档漂移检测怎么融入召回评测",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v099",
+   "variant_type": "en",
+   "query": "Why does evaluation monitoring require a baseline and trend, and how do you rerun it?",
+   "original_id": "q049",
+   "original_query": "评测看护为什么要有基线和趋势，怎么复跑",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v100",
+   "variant_type": "en",
+   "query": "What remains before the first release, and what is the priority between front-end binding and quantization testing?",
+   "original_id": "q050",
+   "original_query": "第一版发布前还差哪些，前端绑定和量化测试优先级",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v101",
+   "variant_type": "casual",
+   "query": "执行层到底咋分层？tool_loop、蓝图和元认知这三啥关系？",
+   "original_id": "q001",
+   "original_query": "执行层怎么分层？tool_loop 和蓝图、元认知是什么关系",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v102",
+   "variant_type": "casual",
+   "query": "agentic 工具节点是咋让 LLM 自己决定调工具的？",
+   "original_id": "q002",
+   "original_query": "agentic 工具节点怎么让 LLM 自己调工具",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v103",
+   "variant_type": "casual",
+   "query": "蓝图里 tool 节点都有哪些参数？agentic 和静态工具节点有啥区别？",
+   "original_id": "q003",
+   "original_query": "蓝图里 tool 节点有哪些参数，agentic 和静态工具节点区别",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v104",
+   "variant_type": "casual",
+   "query": "5分钟做个MC游戏，元认知怎么发现超时然后换方案？",
+   "original_id": "q004",
+   "original_query": "5 分钟做一个 MC 游戏，元认知怎么发现超时并换方案",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v105",
+   "variant_type": "casual",
+   "query": "执行偏差咋触发宏观计划改的啊，双向归因是啥意思？",
+   "original_id": "q005",
+   "original_query": "执行偏差怎么触发宏观计划改变，双向归因是什么",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v106",
+   "variant_type": "casual",
+   "query": "用户介入分哪几级？PlanGate 和异步日志咋分工的？",
+   "original_id": "q006",
+   "original_query": "用户介入分几级？PlanGate 和异步日志怎么分工",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v107",
+   "variant_type": "casual",
+   "query": "蓝图薄点审计都发现哪些模块没接线？",
+   "original_id": "q007",
+   "original_query": "蓝图薄点审计发现了哪些没接线的模块",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v108",
+   "variant_type": "casual",
+   "query": "权限引擎在生产路径上咋挂的，PermissionEngine 接哪了？",
+   "original_id": "q008",
+   "original_query": "权限引擎在生产路径怎么挂载的，PermissionEngine 接到哪了",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md",
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v109",
+   "variant_type": "casual",
+   "query": "recall结果咋注入到执行层啊，锚点咋还带路径呢？",
+   "original_id": "q009",
+   "original_query": "recall 结果怎么注入执行层，锚点为什么带路径",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v110",
+   "variant_type": "casual",
+   "query": "粗召回跟执行层的精确查阅咋配合的，为啥光靠向量不行？",
+   "original_id": "q010",
+   "original_query": "粗召回和执行层精确查阅怎么配合，为什么不能只靠向量",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v111",
+   "variant_type": "casual",
+   "query": "subgraph节点上的recall_anchor参数是干啥用的？",
+   "original_id": "q011",
+   "original_query": "subgraph 节点的 recall_anchor 参数是干嘛的",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v112",
+   "variant_type": "casual",
+   "query": "统一召回都用了哪些算法，RRF融合能提升多少？",
+   "original_id": "q012",
+   "original_query": "统一召回用了哪些算法，RRF 融合提升多少",
+   "expected": [
+    "docs/only/recall/RECALL_CAPABILITY_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v113",
+   "variant_type": "casual",
+   "query": "SPO约束投影咋提炼主宾关系啊，谓语权重给多少？",
+   "original_id": "q013",
+   "original_query": "SPO 约束投影怎么提炼主宾关系，谓语权重多少",
+   "expected": [
+    "docs/only/recall/SPO_MODEL_STRATEGY_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v114",
+   "variant_type": "casual",
+   "query": "中文SPO咋处理，双语两阶段是啥意思？",
+   "original_id": "q014",
+   "original_query": "中文 SPO 怎么处理，双语两阶段是什么",
+   "expected": [
+    "docs/only/recall/SPO_BILINGUAL_TWOSTAGE_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v115",
+   "variant_type": "casual",
+   "query": "记忆按热温冷咋分层，预取啥时候触发？",
+   "original_id": "q015",
+   "original_query": "记忆怎么按热温冷分层，预取怎么触发",
+   "expected": [
+    "docs/only/recall/DYNAMIC_TIERING_PREFETCH_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v116",
+   "variant_type": "casual",
+   "query": "召回第二批施工做了啥，黄金集多少条？",
+   "original_id": "q016",
+   "original_query": "召回第二批施工做了哪些事，黄金集多少条",
+   "expected": [
+    "docs/only/recall/RECALL_BATCH2_PLAN_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v117",
+   "variant_type": "casual",
+   "query": "召回评测为啥非得有四路baseline对比啊",
+   "original_id": "q017",
+   "original_query": "召回评测为什么要有四路 Baseline 对比",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v118",
+   "variant_type": "casual",
+   "query": "文档语料召回测试的query咋来的，为啥要人工标注",
+   "original_id": "q018",
+   "original_query": "文档语料召回测试的 query 怎么来，为什么要人工标注",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v119",
+   "variant_type": "casual",
+   "query": "第一版功能核对清单里C1到C4的权限是啥",
+   "original_id": "q019",
+   "original_query": "第一版功能核对清单里 C1-C4 权限是什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v120",
+   "variant_type": "casual",
+   "query": "端到端自检的E1到E5都检查些啥",
+   "original_id": "q020",
+   "original_query": "端到端自检 E1-E5 分别检查什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v121",
+   "variant_type": "casual",
+   "query": "树是推理工作台啥意思？遗忘咋整？",
+   "original_id": "q021",
+   "original_query": "树是推理工作台是什么意思，遗忘怎么处理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v122",
+   "variant_type": "casual",
+   "query": "记录永不可删和抽象可逆推是哪几条公理来着？",
+   "original_id": "q022",
+   "original_query": "记录永不可删和抽象可逆推是哪几条公理",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v123",
+   "variant_type": "casual",
+   "query": "偏差是养分咋理解？归因回流到哪一层？",
+   "original_id": "q023",
+   "original_query": "偏差是养分怎么理解，归因回流到哪层",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v124",
+   "variant_type": "casual",
+   "query": "白盒化承诺是啥？为啥行为必须记录？",
+   "original_id": "q024",
+   "original_query": "白盒化承诺是什么，为什么行为必记录",
+   "expected": [
+    "docs/only/wise/PARADIGM.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v125",
+   "variant_type": "casual",
+   "query": "M1到M9的施工顺序是啥来着？",
+   "original_id": "q025",
+   "original_query": "M1 到 M9 的施工顺序是什么",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v126",
+   "variant_type": "casual",
+   "query": "阶段A和阶段B分别都包含哪些模块？",
+   "original_id": "q026",
+   "original_query": "阶段 A 和阶段 B 分别包含哪些模块",
+   "expected": [
+    "docs/only/IMPLEMENTATION_PLAN_20260804.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v127",
+   "variant_type": "casual",
+   "query": "v2.1召回桥之后下一个施工项是啥？",
+   "original_id": "q027",
+   "original_query": "v2.1 召回桥之后下一个施工项是什么",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v128",
+   "variant_type": "casual",
+   "query": "这轮压缩交接的恢复入口在哪个文档？",
+   "original_id": "q028",
+   "original_query": "本轮压缩交接的恢复入口是哪个文档",
+   "expected": [
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v129",
+   "variant_type": "casual",
+   "query": "工作流自增长咋实现的，成功路径咋沉淀？",
+   "original_id": "q029",
+   "original_query": "工作流自增长是怎么实现的，成功路径怎么沉淀",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v130",
+   "variant_type": "casual",
+   "query": "G3四保护是哪四个？PlanGate咋触发？",
+   "original_id": "q030",
+   "original_query": "G3 四保护是哪四个，PlanGate 怎么触发",
+   "expected": [
+    "docs/only/blueprint/P1_PROTECTION_REFLECTION_IMPL_20260806.md",
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v131",
+   "variant_type": "casual",
+   "query": "执行层监控里Hot、Warm、Cold分别都干啥？",
+   "original_id": "q031",
+   "original_query": "执行层监控 Hot Warm Cold 分别做什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v132",
+   "variant_type": "casual",
+   "query": "TaskRunner重规划循环咋工作的，为啥高风险要停？",
+   "original_id": "q032",
+   "original_query": "TaskRunner 重规划循环怎么工作，为什么高风险要停下",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v133",
+   "variant_type": "casual",
+   "query": "决策事件有哪些 kind？strategy_switch 和 plan_gate 有啥区别？",
+   "original_id": "q033",
+   "original_query": "决策事件有哪些 kind，strategy_switch 和 plan_gate 区别",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v134",
+   "variant_type": "casual",
+   "query": "变更日志怎么回看和介入？approve 和 reject 是啥意思？",
+   "original_id": "q034",
+   "original_query": "变更日志怎么回看和介入，approve reject 语义",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v135",
+   "variant_type": "casual",
+   "query": "蒸馏原料管道怎么收集？HeuristicDistiller 从哪儿拿数据？",
+   "original_id": "q035",
+   "original_query": "蒸馏原料管道怎么收集，HeuristicDistiller 从哪拿数据",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v136",
+   "variant_type": "casual",
+   "query": "技能生命周期咋做活性管理？",
+   "original_id": "q036",
+   "original_query": "技能生命周期怎么做活性管理的",
+   "expected": [
+    "docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v137",
+   "variant_type": "casual",
+   "query": "对话树跟召回到底啥关系啊，命中时候怎么并行跑？",
+   "original_id": "q037",
+   "original_query": "对话树和召回是什么关系，命中怎么并行",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v138",
+   "variant_type": "casual",
+   "query": "元认知复盘一般隔几轮搞一次？跟策略权重那块是咋挂钩的？",
+   "original_id": "q038",
+   "original_query": "元认知复盘每几轮做一次，和策略权重什么关系",
+   "expected": [
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md",
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v139",
+   "variant_type": "casual",
+   "query": "编码类请求咋识别出来的？施工信号都有哪些？",
+   "original_id": "q039",
+   "original_query": "编码类请求怎么识别，施工信号有哪些",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v140",
+   "variant_type": "casual",
+   "query": "混合式通用agent到底定位是啥？跟纯RAG有啥区别？",
+   "original_id": "q040",
+   "original_query": "混合式通用 agent 的定位是什么，和纯 RAG 有什么区别",
+   "expected": [
+    "docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v141",
+   "variant_type": "casual",
+   "query": "权限门是咋拦截链式 shell 和越权写入的？",
+   "original_id": "q041",
+   "original_query": "权限门怎么拦截链式 shell 和越权写入",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v142",
+   "variant_type": "casual",
+   "query": "OS 工具集有哪几个，run_session 是干啥的？",
+   "original_id": "q042",
+   "original_query": "OS 工具集有哪些，run_session 是干嘛的",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v143",
+   "variant_type": "casual",
+   "query": "function calling 端到端实测都做了些啥？",
+   "original_id": "q043",
+   "original_query": "function calling 端到端实测做了什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "simple"
+  },
+  {
+   "id": "v144",
+   "variant_type": "casual",
+   "query": "执行迹和变更日志这俩白盒视图各自展示什么东西？",
+   "original_id": "q044",
+   "original_query": "执行迹和变更日志两个白盒视图各展示什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md",
+    "docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md"
+   ],
+   "level": "cross"
+  },
+  {
+   "id": "v145",
+   "variant_type": "casual",
+   "query": "咱跟OpenClaw Hermes对标完还差啥？",
+   "original_id": "q045",
+   "original_query": "跟 OpenClaw Hermes 对标后我们还差什么",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v146",
+   "variant_type": "casual",
+   "query": "定时自动化automation咋成孤儿了，怎么接上？",
+   "original_id": "q046",
+   "original_query": "定时自动化 automation 为什么是孤儿，怎么接",
+   "expected": [
+    "docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v147",
+   "variant_type": "casual",
+   "query": "replanner自动换方案咋没做，MC全场景现在缺啥？",
+   "original_id": "q047",
+   "original_query": "replanner 自动换方案为什么没做，MC 全场景缺什么",
+   "expected": [
+    "docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v148",
+   "variant_type": "casual",
+   "query": "文档漂移检测咋融进召回评测里？",
+   "original_id": "q048",
+   "original_query": "文档漂移检测怎么融入召回评测",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v149",
+   "variant_type": "casual",
+   "query": "评测看护为啥要有基线和趋势啊？怎么复跑？",
+   "original_id": "q049",
+   "original_query": "评测看护为什么要有基线和趋势，怎么复跑",
+   "expected": [
+    "docs/only/recall/RECALL_BENCHMARK_DESIGN_20260809.md"
+   ],
+   "level": "complex"
+  },
+  {
+   "id": "v150",
+   "variant_type": "casual",
+   "query": "第一版发布前还差啥？前端绑定和量化测试哪个优先级高？",
+   "original_id": "q050",
+   "original_query": "第一版发布前还差哪些，前端绑定和量化测试优先级",
+   "expected": [
+    "docs/only/V1_FUNCTION_CHECKLIST_20260808.md",
+    "docs/only/STATE_HANDOFF_20260809.md"
+   ],
+   "level": "cross"
+  }
+ ]
+}

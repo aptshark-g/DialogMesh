@@ -19,6 +19,33 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "learning_content"
 
 
+def _local_embed_768(texts) -> list:
+    """Zero-download deterministic 768d embedder (char-hash).
+
+    Keeps ChromaStore query usable offline — chromadb's default
+    embedding function would download an ONNX model on first use.
+    Aligned with ingestion's 768d vectors so no dimension mismatch.
+    """
+    try:
+        import numpy as np
+    except Exception:
+        return None
+    if isinstance(texts, str):
+        texts = [texts]
+    out = []
+    rng = np.random.RandomState(7)
+    for t in texts:
+        v = np.zeros(768, dtype=float)
+        for i, ch in enumerate(t[:512]):
+            v[i % 768] += (ord(ch) % 31) / 31.0
+        v = v + rng.rand(768) * 1e-6
+        n = np.linalg.norm(v)
+        if n > 0:
+            v = v / n
+        out.append(v.tolist())
+    return out
+
+
 class ChromaStore:
     """ChromaDB wrapper for external learning content.
 
@@ -71,7 +98,21 @@ class ChromaStore:
 
     @property
     def available(self) -> bool:
+        if self._collection is None:
+            self._init()
         return self._collection is not None
+
+    def close(self):
+        """Release chromadb sqlite file locks (Windows-safe)."""
+        client = getattr(self, "_client", None)
+        close = getattr(client, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:
+                pass
+        self._client = None
+        self._collection = None
 
     def reload(self):
         """Force re-initialization (e.g. after installing chromadb)."""
@@ -127,7 +168,11 @@ class ChromaStore:
             if embedding:
                 results = self._collection.query(query_embeddings=[embedding], n_results=n_results)
             else:
-                results = self._collection.query(query_texts=[text], n_results=n_results)
+                qv = _local_embed_768([text])
+                if qv:
+                    results = self._collection.query(query_embeddings=qv, n_results=n_results)
+                else:
+                    results = self._collection.query(query_texts=[text], n_results=n_results)
             return self._format_results(results)
         except Exception as e:
             logger.warning("ChromaDB query failed: %s", e)

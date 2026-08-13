@@ -1,6 +1,50 @@
-# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
+﻿# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
+> **2026-08-13 召回终测 + Faithfulness 机制修复（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_FINAL_20260813.md`。
+> 完成: eval_100 全量 95s（原 919s）/ BM25 Rust 250x / 语料结构切分全覆盖 /
+> 多文件期望修复 / C 类归零 / vector_primary 融合（doc top1 31.1%,
+> dialogue 69.2%）/ 确定性双跑 / Faithfulness 机制验证（simple 0.80,
+> 总 0.29; 根因: deepseek-v4 思维链写进 content → 网关 thinking 开关
+> {"type":"disabled"}）/ 蓝图 recall 节点消费 / 网关 health 并行。
+> P0 全清; P1: 意图感知自适应融合 / 重排层 / HyDE / task 轨 / 图扩展。
+> 环境坑: 沙箱进程无出站网络（网关需 start.bat/提权启动）。**
+> **2026-08-12 召回体系完整化（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_COMPLETE_20260812.md`。
+> 完成: 评测集清理(39+61=100)/量化指标(top1 69.2% R@5 94.9% MRR 0.797)/
+> StructurePreSplitter 切分/两级粒度/claim 级 Context Recall(0.562)/
+> 内容→图(vault 110 节点 159 边 + 图导航 + 隐式边核验)/子图扩展 5 设计/
+> Rust 内核(PyBuffer 零拷贝 2ms + 缓存持久化 bug 修复)/
+> 蓝图 recall_pipeline 模板。待办 P0: eval_100 全量/Faithfulness/
+> BM25 接 Rust/RRF 通用块降权。环境坑 9 条已记录。**
+> **2026-08-11 评测面板 + 缓存竞态修复（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_20260809.md`（§十二续）。
+> 完成: ① G0 索引缓存竞态修复（default/global 分文件落盘, 指纹+维度
+> 校验防旧缓存污染, 360/360 块完整落盘, 4 项新测试）; ② 评测面板
+> `docs/test/EVAL_DASHBOARD.md|.json`（scripts/eval_dashboard.py, 统一
+> 6 类评测产物参数/指标/缺失）; ③ 新缺口 GAP-R11~R14 已记录
+> （COMPLETENESS_GAP_INVENTORY §六: 蓝图 recall 未接线 / 锚点硬截断 /
+> 孤立标题残块）。goldset 重建后干净基线: 82 query / 360 块,
+> rrf top1 29.3%（随机 5.8%）/ CP@5 0.375。待办: Context Recall /
+> Faithfulness 未实现; REFINE_CHAIN_DUMP 可重跑（网关缓存 bug 已修）。**
+> **2026-08-10 符号注入 + 跨语言召回完成（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_20260809.md`（§十/§十一）。
+> 完成: 符号注入（trace→Mermaid 状态图 + tool_loop 上下文压缩,
+> 端到端 3 步工具链验证 + 回归 42/42）; 跨语言召回（bge-m3 统一
+> 1024 维, en top1 0%→24%, BM25 跨语言保护 + 向量粗筛）。
+> 决策: 保 bge-m3 统一（中文 -10pp 换跨语言）; 符号注入=下一施工项已完成。
+> 施工记录 = docs/only/execution/SYMBOL_INJECTION_IMPL_20260810.md;
+> 决策 = docs/only/recall/RECALL_CROSSLINGUAL_DECISION_20260810.md。
+> 开放项: 提炼器升级/token 阈值/原文落盘 refs/统一提炼调度层。**
+> **2026-08-10 chromadb 环境修复完成（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_20260809.md`（§八）。
+> chromadb 1.5.9 装入 .venv（清华镜像）+ 三处 chromadb 入口离线化
+> （ChunkStore/ChromaBridge/ChromaStore, 本地 embedding 零下载）+
+> UnifiedStore 持久化接线（unified_persist, DM_CHUNK_BACKEND=unified
+> 自动开启）。测试: .venv 119/3（3 failed 预存在环境差异）+ anaconda
+> 116/1 skipped。施工记录 = docs/only/storage/CHROMADB_ENV_FIX_20260810.md。
+> 剩余待办: 博客 chapter4 / 前端 B / 层3 变体 / 跨域召回 / trace_id §11.2。**
 > **2026-08-09 深夜 召回体系完成（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_20260809.md`（§七）。
 > 完成: 量化评测体系（50 查询/2444 块/GPU/基线 44%）+ 时序约束(+6pp,

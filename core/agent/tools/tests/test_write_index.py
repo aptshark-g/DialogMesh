@@ -56,6 +56,7 @@ def test_produced_vector_persisted_via_g0(monkeypatch, tmp_path):
     from core.agent.tools.builtin import _file_write
     _file_write(str(tmp_path / "m.md"), content)
     svc = RecallService(engine=None, chunk_store=cs, discourse=None, llm=None)
+    svc._index_cache_dir = str(tmp_path)  # 隔离: 不污染 data/recall_index/
     monkeypatch.setattr(
         svc, "_embed", lambda text: [0.1] * 32)
     blocks = svc._ensure_global_blocks()
@@ -63,6 +64,7 @@ def test_produced_vector_persisted_via_g0(monkeypatch, tmp_path):
     assert produced[0]["vector"] is not None
     # 落盘
     import json
+    svc.flush_index_cache()  # 异步节流 → 显式同步落盘
     path = svc._index_path("global")
     assert os.path.exists(path)
     data = json.load(open(path, encoding="utf-8"))
@@ -71,5 +73,6 @@ def test_produced_vector_persisted_via_g0(monkeypatch, tmp_path):
     assert data["blocks"][bid].get("vector") is not None
     # 二次实例加载恢复（模拟重启）
     svc2 = RecallService(engine=None, chunk_store=cs, discourse=None, llm=None)
+    svc2._index_cache_dir = str(tmp_path)
     svc2._load_index_cache("global")
     assert svc2._index_cache.get(bid, {}).get("vector") is not None

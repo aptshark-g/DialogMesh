@@ -32,9 +32,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 DOC_DIRS = ["docs", os.path.join("docs", "only")]
-BLOCK_MAX_CHARS = 2000      # 单块索引文本上限（召回匹配用, 真实内容走 path）
 QUERY_MIN_CHARS = 4
-VEC_CACHE = os.path.join(ROOT, "scripts", ".recall_vec_cache.json")
+# 结构粒度上限（2026-08-12）: 超大节块按 ### → 段落 → 行 递归切分,
+# 全部在结构边界上切（标题/空行/行首）, 绝不从文字中间硬截。
+SECTION_MAX_CHARS = 3000
+# 粗召回嵌入窗口（2026-08-12, 两级粒度设计 12.2）: 向量嵌入
+# "标题 + 核心内容"。窗口 = 结构块上限（SECTION_MAX_CHARS=3000）,
+# 与切分同颗粒度 — 结构切分后 99.99% 块 <= 3000 字符, 嵌入覆盖全文;
+# 唯一 >3000 的是单行无换行巨文本（无结构边界可切, 前缀窗口兜底）。
+# 全文嵌入被旧语料的巨块（>8K 字符 → bge-m3 8192 token 序列,
+# O(n²) 注意力）拖慢实测 30 分钟+; 结构切分后 3000 窗口 ≈ 2000 token,
+# 批量 GPU 编码 ~13 分钟一次性。
+EMBED_WINDOW = SECTION_MAX_CHARS
+# v3（2026-08-12）: 结构切分语料 + 3000 窗口（v2 = 未切分语料 + 1500 窗口）。
+VEC_CACHE = os.path.join(ROOT, "scripts", ".recall_vec_cache_v3.json")
 TERM_CACHE = os.path.join(ROOT, "scripts", ".recall_term_index.json")
 
 
@@ -61,15 +72,15 @@ def _heading_level(line: str) -> int:
     return len(m.group(1)) if m else 0
 
 
-def split_markdown(text: str) -> list:
-    """按 ## 级标题切块。返回 [(heading, content)]。"""
+def _split_at_level(text: str, level: int) -> list:
+    """按 >=level 级标题切分。返回 [(heading, content)]。"""
     lines = text.splitlines()
     sections = []
     cur_heading = ""
     cur = []
     for line in lines:
         lvl = _heading_level(line)
-        if lvl >= 2:
+        if lvl >= level:
             if cur or cur_heading:
                 sections.append((cur_heading, "\n".join(cur).strip()))
             cur_heading = re.sub(r"^#+\s+", "", line).strip()
@@ -81,10 +92,79 @@ def split_markdown(text: str) -> list:
     return sections
 
 
+def _split_paragraphs(text: str, max_chars: int) -> list:
+    """按空行段落整组聚合到 <= max_chars（不切段内文字）。"""
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    out = []
+    buf = ""
+    for p in paras:
+        if buf and len(buf) + len(p) + 2 > max_chars:
+            out.append(buf)
+            buf = p
+        else:
+            buf = (buf + "\n\n" + p) if buf else p
+    if buf:
+        out.append(buf)
+    return out
+
+
+def _split_lines(text: str, max_chars: int) -> list:
+    """超长段落/表格按行聚合（md 行 = 结构单元, 表格按行组切, 不切行内）。"""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    out = []
+    buf = ""
+    for ln in lines:
+        if buf and len(buf) + len(ln) + 1 > max_chars:
+            out.append(buf)
+            buf = ln
+        else:
+            buf = (buf + "\n" + ln) if buf else ln
+    if buf:
+        out.append(buf)
+    return out
+
+
+def split_markdown(text: str, max_chars: int = SECTION_MAX_CHARS) -> list:
+    """按 ## 级标题切块; 超大节块按结构递归切分（### → 段落 → 行）。
+
+    2026-08-12: 此前超大节块（最大 31K 字符）整块保留 → 嵌入被
+    bge-m3 8192 token 序列拖到 30 分钟; 且旧 load_blocks 的 2000 字符
+    硬截断把段落切半。现在所有切分点都在结构边界上, 块内内容完整。
+    """
+    out = []
+    for heading, content in _split_at_level(text, 2):
+        if len(content) <= max_chars:
+            out.append((heading, content))
+            continue
+        subs = _split_at_level(content, 3)
+        if len(subs) > 1 and max(len(c) for _, c in subs) < len(content):
+            for h3, c3 in subs:
+                label = (f"{heading} / {h3}" if (heading and h3)
+                         else (heading or h3))
+                if len(c3) <= max_chars:
+                    out.append((label, c3))
+                else:
+                    for p in _split_paragraphs(c3, max_chars):
+                        if len(p) <= max_chars:
+                            out.append((label, p))
+                        else:
+                            for ln in _split_lines(p, max_chars):
+                                out.append((label, ln))
+        else:
+            for p in _split_paragraphs(content, max_chars):
+                if len(p) <= max_chars:
+                    out.append((heading, p))
+                else:
+                    for ln in _split_lines(p, max_chars):
+                        out.append((heading, ln))
+    return out
+
+
 def load_blocks(limit: int = 0) -> list:
     """全量文档 → 块列表 [{id, text, path, heading, doc}]。"""
     blocks = []
     files = []
+    seen_ids = set()
     for d in DOC_DIRS:
         base = os.path.join(ROOT, d)
         for dirpath, _, fnames in os.walk(base):
@@ -107,10 +187,21 @@ def load_blocks(limit: int = 0) -> list:
         if not sections or all(not c for _, c in sections):
             sections = [("", text)]
         for heading, content in sections:
-            body = (content or "")[:BLOCK_MAX_CHARS]
+            # 2026-08-12: 取消 2000 字符硬截断 — 截断导致块内容破碎
+            # （段落切半/尾段丢失）, 召回评分与真实内容脱节。块内全文
+            # 保留; 向量嵌入由编码器自身截断（bge-m3 max_length=8192）。
+            body = content or ""
             if not body.strip():
                 continue
-            bid = f"{rel}#{heading[:40]}" if heading else f"{rel}#file"
+            # id 用完整标题（不再 [:40] 截断）+ 碰撞消歧: 完整标题下
+            # 重复标题仍可能（同文多节同名）, 追加 #2/#3 序号。
+            base_id = f"{rel}#{heading}" if heading else f"{rel}#file"
+            bid = base_id
+            n = 2
+            while bid in seen_ids:
+                bid = f"{base_id}#{n}"
+                n += 1
+            seen_ids.add(bid)
             blocks.append({
                 "id": bid, "text": body, "path": [rel, heading or ""],
                 "heading": heading, "doc": rel, "temperature": "active",
@@ -149,27 +240,40 @@ def prepare_vectors(blocks: list, skip: bool = False) -> None:
                 cache = json.load(f)
         except Exception:
             cache = {}
-    uncached = [(b, b["id"]) for b in blocks
-                if b["id"] not in cache and not b.get("vector")]
+    # 2026-08-12 修复: 无论是否新块, 先把缓存命中块的向量回填到
+    # b["vector"] — 否则只要有一个新块, 其余 ~1.1 万缓存块全部不走
+    # 缓存, 首 query 被 _embed 逐个补算拖慢 300s+。
+    for b in blocks:
+        if b.get("vector") is None and b["id"] in cache:
+            b["vector"] = cache[b["id"]]
+    # 回填后再算缺失集（文件不存在/损坏时 cache 为空 → 全量计算）
+    uncached = [b for b in blocks if b.get("vector") is None]
     if not uncached:
-        for b in blocks:
-            if b["id"] in cache:
-                b["vector"] = cache[b["id"]]
         return
     try:
         from core.agent.compiler.semantic_encoder import get_encoder
         enc = get_encoder()
         t0 = time.time()
-        texts = [b["text"][:500] for b, _ in uncached]
-        vectors = enc.encode(texts, batch_size=32, normalize=True)
-        for (b, bid), vec in zip(uncached, vectors):
-            v = vec.tolist() if hasattr(vec, "tolist") else list(vec)
-            b["vector"] = v
-            cache[bid] = v
-        with open(VEC_CACHE, "w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False)
-        print(f"  [vector] {len(uncached)} 块批量编码完成 "
-              f"({time.time()-t0:.1f}s, 缓存 {VEC_CACHE})")
+        total = len(uncached)
+        done = 0
+        # 分块编码 + 增量落盘（2026-08-12）: 30 分钟超时进程被杀后
+        # 全部白算; 每 1000 块保存一次, 中断只丢最后一段。
+        for start in range(0, total, 1000):
+            sub = uncached[start:start + 1000]
+            texts = [((b.get("heading") or "") + "\n" + b["text"])
+                     [:EMBED_WINDOW] for b in sub]
+            vectors = enc.encode(texts, batch_size=32, normalize=True)
+            for b, vec in zip(sub, vectors):
+                v = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+                b["vector"] = v
+                cache[b["id"]] = v
+            done += len(sub)
+            with open(VEC_CACHE, "w", encoding="utf-8") as f:
+                json.dump(cache, f, ensure_ascii=False)
+            print(f"  [vector] {done}/{total} 块 ({time.time()-t0:.0f}s)",
+                  flush=True)
+        print(f"  [vector] 完成 {total} 块, {time.time()-t0:.1f}s, "
+              f"缓存 {VEC_CACHE}")
     except Exception as e:
         print(f"  [vector] 编码失败, 降级跳过: {e}")
 
@@ -202,20 +306,57 @@ def preindex_terms(blocks: list) -> None:
 
 
 def coarse_candidates(query: str, blocks: list, top_c: int = 200) -> list:
-    """粗筛: query 词项与块词项交集排序 → top-C 候选块（供真打分）。"""
+    """粗筛: 词法交集 ∪ 向量相似度 → top-C 候选块（供真打分）。
+
+    2026-08-10: 纯词法对跨语言 query 是盲区（英文 query 与中文块词面
+    零交集, 正确块进不了候选 → en 变体召回 0%）。加入向量粗筛后,
+    跨语言 query 的正确中文块能进候选（实测 0 → 12 命中）。
+    """
+    lex_scored = []
     try:
         import jieba
         qterms = set(jieba.cut(query))
     except Exception:
         qterms = set(query)
-    scored = []
     for b in blocks:
         terms = b.get("terms") or []
         overlap = sum(1 for t in qterms if t in terms)
         if overlap > 0:
-            scored.append((overlap, b))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [b for _, b in scored[:top_c]]
+            lex_scored.append((overlap, b))
+    lex_scored.sort(key=lambda x: x[0], reverse=True)
+    lex_top = [b for _, b in lex_scored[:top_c]]
+
+    # 向量粗筛: query 与候选块向量相似度 top-C（跨语言保底）
+    vec_top = []
+    try:
+        import numpy as np
+        from core.agent.compiler.semantic_encoder import get_encoder
+        enc = get_encoder()
+        qv = enc.encode([query], normalize=True)[0]
+        qn = np.linalg.norm(qv)
+        scored = []
+        for b in blocks:
+            v = b.get("vector")
+            if v is None:
+                continue
+            v = np.asarray(v)
+            sim = float(np.dot(qv, v) / (qn * np.linalg.norm(v) + 1e-9))
+            if sim > 0.2:
+                scored.append((sim, b))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        vec_top = [b for _, b in scored[:top_c]]
+    except Exception:
+        pass
+
+    # 合并去重（词法优先）
+    seen = set()
+    merged = []
+    for b in lex_top + vec_top:
+        if b["id"] in seen:
+            continue
+        seen.add(b["id"])
+        merged.append(b)
+    return merged[:top_c]
 
 
 def build_queries(blocks, max_queries: int = 300) -> list:

@@ -305,6 +305,24 @@ class UnifiedGraphStore:
                 f"SELECT node_id FROM unified_nodes WHERE activation_count > {self._hot_threshold}").fetchall()
         return [r["node_id"] for r in rows]
 
+    def delete_domain(self, domain: str) -> int:
+        """按域清理节点与边（2026-08-11: 图重建/增量更新/域迁移用）。
+
+        返回删除的边数（节点数可从 stats 对账）。边先删（外键语义,
+        unified_edges 无 FK 约束, 顺序仅为语义清晰）。
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM unified_edges WHERE domain=?", (domain,))
+            edge_del = cur.rowcount
+            cur = self._conn.execute(
+                "DELETE FROM unified_nodes WHERE domain=?", (domain,))
+            node_del = cur.rowcount
+            self._conn.commit()
+        logger = __import__("logging").getLogger(__name__)
+        logger.info("delete_domain(%s): %d nodes, %d edges", domain, node_del, edge_del)
+        return edge_del
+
     def _row_to_dict(self, row) -> dict:
         d = dict(row)
         d["data"] = json.loads(d["data"])

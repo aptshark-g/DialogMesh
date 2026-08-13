@@ -9,6 +9,33 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
+def _local_embed(texts) -> list:
+    """Zero-download deterministic embedder (char-hash → 64d).
+
+    Keeps ChromaBridge fully local — chromadb's default embedding
+    function would download an ONNX model on first use (G10: prefer
+    lightweight local backends).
+    """
+    try:
+        import numpy as np
+    except Exception:
+        return None
+    if isinstance(texts, str):
+        texts = [texts]
+    out = []
+    rng = np.random.RandomState(42)
+    for t in texts:
+        v = np.zeros(64, dtype=float)
+        for i, ch in enumerate(t[:256]):
+            v[i % 64] += (ord(ch) % 31) / 31.0
+        v = v + rng.rand(64) * 1e-6
+        n = np.linalg.norm(v)
+        if n > 0:
+            v = v / n
+        out.append(v.tolist())
+    return out
+
+
 # ═══════════════════════════════════════════════════════════
 #  NATS EventBus bridge (optional)
 # ═══════════════════════════════════════════════════════════
@@ -121,10 +148,13 @@ class ChromaBridge:
         if not self._collection:
             return False
         try:
+            embeddings = _local_embed([text])
+            kwargs = {"ids": [obj_id], "documents": [text],
+                      "metadatas": [metadata or {"added": True}]}
+            if embeddings:
+                kwargs["embeddings"] = embeddings
             self._collection.add(
-                ids=[obj_id],
-                documents=[text],
-                metadatas=[metadata or {}],
+                **kwargs,
             )
             return True
         except Exception:
@@ -134,7 +164,11 @@ class ChromaBridge:
         if not self._collection:
             return []
         try:
-            results = self._collection.query(query_texts=[query], n_results=limit)
+            qv = _local_embed([query])
+            if qv:
+                results = self._collection.query(query_embeddings=qv, n_results=limit)
+            else:
+                results = self._collection.query(query_texts=[query], n_results=limit)
             return results.get("documents", [[]])[0] if results else []
         except Exception:
             return []
@@ -146,7 +180,9 @@ class ChromaBridge:
         """Close ChromaDB client to release file locks."""
         if self._client:
             try:
-                self._client.reset()
+                # Official close(): releases sqlite file locks (Windows).
+                # NOT reset() — that would wipe the persisted collection.
+                self._client.close()
             except Exception:
                 pass
             self._client = None

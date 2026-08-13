@@ -14,7 +14,8 @@ from __future__ import annotations
 from core.agent.blueprint.models import (
     BlueprintDAG, BlueprintNode, BlueprintEdge,
 )
-from core.agent.blueprint.skill_registry import SkillRegistry, LEARNED_TEMPLATES
+from core.agent.blueprint.skill_registry import (
+    SkillRegistry, LEARNED_TEMPLATES, BUILTIN_TEMPLATES)
 from core.agent.blueprint.learning_bridge import (
     LearningBridge, ExecutionTrace, ExecutionTraceStore,
 )
@@ -224,3 +225,33 @@ def test_engine_learn_from_execution():
     assert r["learned"] is True
     assert "查时间" in LEARNED_TEMPLATES
 
+
+# ── recall_pipeline 模板注册（2026-08-11, 意图→召回→图扩展→回复）──
+
+
+def test_recall_pipeline_template_registered():
+    """recall_pipeline 模板已注册, 含 recall_decompose 工具节点。"""
+    from core.agent.blueprint.skill_registry import BUILTIN_TEMPLATES
+    dag = BUILTIN_TEMPLATES.get("recall_pipeline")
+    assert dag is not None
+    tool_nodes = [n for n in dag.nodes if n.chain == "tool"]
+    assert tool_nodes, "模板应含 tool 节点"
+    assert tool_nodes[0].params.get("tool") == "recall_decompose"
+    chains = [n.chain for n in dag.nodes]
+    assert "pcr" in chains and "intent" in chains
+    assert "subgraph" in chains and "llm_reply" in chains
+
+
+def test_recall_pipeline_intent_match():
+    """意图"记忆召回"匹配到 recall_pipeline 模板。"""
+    reg = SkillRegistry()
+    strategy, dag = reg.match("记忆召回")
+    assert dag is BUILTIN_TEMPLATES["recall_pipeline"]
+    assert strategy == "TEMPLATE"
+
+
+def test_recall_intent_partial_match():
+    """包含式匹配: "需要记忆召回历史内容" 也能命中。"""
+    reg = SkillRegistry()
+    _, dag = reg.match("需要记忆召回历史内容")
+    assert dag is BUILTIN_TEMPLATES["recall_pipeline"]

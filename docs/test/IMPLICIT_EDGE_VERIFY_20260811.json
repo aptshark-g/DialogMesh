@@ -1,0 +1,1086 @@
+{
+ "n": 108,
+ "precision": 0.1111111111111111,
+ "results": [
+  {
+   "source": "design_pcr_interface_v2_1",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.808,
+   "source_summary": "design_pcr_interface_v2_1。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.774,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "YES DISCUSSES",
+   "is_relation": true,
+   "rel_type": "discusses"
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.763,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "PCR-SUPPLEMENT",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.759,
+   "source_summary": "PCR 遗漏补全。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "DESIGN_SKILL_LAYER",
+   "similarity": 0.75,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "DESIGN_SKILL_LAYER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.75,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.736,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "DESIGN_SKILL_LAYER",
+   "similarity": 0.735,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "DESIGN_SKILL_LAYER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.733,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "PCR-ARCH-REFS",
+   "similarity": 0.73,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "PCR 架构引用文档。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "DESIGN_TIERED_ACTION_RESOLVER",
+   "similarity": 0.729,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "checkpoint_pcr_p13",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.711,
+   "source_summary": "checkpoint_pcr_p13。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "DESIGN_TIERED_ACTION_RESOLVER",
+   "similarity": 0.71,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.697,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "DESIGN_TIERED_ACTION_RESOLVER",
+   "similarity": 0.696,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.693,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "PCR-SUPPLEMENT",
+   "similarity": 0.692,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "PCR 遗漏补全。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_pcr_issues_discussion",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.689,
+   "source_summary": "design_pcr_issues_discussion。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "checkpoint_pcr_p13",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.688,
+   "source_summary": "checkpoint_pcr_p13。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "DESIGN_MULTI_TIER_PIPELINE",
+   "similarity": 0.687,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.685,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.682,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "ENGINEERING_PCR",
+   "similarity": 0.679,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "ENGINEERING_PCR。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "PCR-SUPPLEMENT",
+   "similarity": 0.678,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "PCR 遗漏补全。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "checkpoint_pcr_p13",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.675,
+   "source_summary": "checkpoint_pcr_p13。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.674,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.674,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.674,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.671,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_layer1_intent_parser",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.671,
+   "source_summary": "design_layer1_intent_parser。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-SUPPLEMENT",
+   "target": "PCR-SUPPLEMENT",
+   "similarity": 0.665,
+   "source_summary": "Intent 遗漏补全 — 3 篇。---",
+   "target_summary": "PCR 遗漏补全。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.664,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.663,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.662,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "HOWTO-USE",
+   "similarity": 0.66,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "HOWTO-USE。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "README",
+   "similarity": 0.659,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "DialogMesh 设计文档。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.659,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_layer0_pcr_and_layer1_intent_parser",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.658,
+   "source_summary": "原始设计 v2.4。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "PCR-SUPPLEMENT",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.655,
+   "source_summary": "PCR 遗漏补全。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.653,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "ENGINEERING_PCR",
+   "similarity": 0.652,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "ENGINEERING_PCR。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "INTENT-SUPPLEMENT",
+   "similarity": 0.639,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "Intent 遗漏补全 — 3 篇。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_pcr_interface_v2_1",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.639,
+   "source_summary": "design_pcr_interface_v2_1。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "ENGINEERING_PCR",
+   "similarity": 0.636,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "ENGINEERING_PCR。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "ENGINEERING_PCR",
+   "similarity": 0.636,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "ENGINEERING_PCR。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "PCR-SUPPLEMENT",
+   "similarity": 0.634,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "PCR 遗漏补全。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_layer1_intent_parser",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.632,
+   "source_summary": "design_layer1_intent_parser。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.624,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "PCR-IMPL-GAP",
+   "similarity": 0.622,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "README",
+   "similarity": 0.621,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "DialogMesh 设计文档。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.619,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.617,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.616,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.615,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "README",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.615,
+   "source_summary": "DialogMesh 设计文档。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "HOWTO-USE",
+   "similarity": 0.614,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "HOWTO-USE。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.612,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-IMPL-GAP",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.611,
+   "source_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "README",
+   "similarity": 0.61,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "DialogMesh 设计文档。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "DESIGN_SKILL_LAYER",
+   "similarity": 0.608,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "DESIGN_SKILL_LAYER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.607,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "INTENT-SUPPLEMENT",
+   "similarity": 0.606,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "Intent 遗漏补全 — 3 篇。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "PCR-IMPL-GAP",
+   "similarity": 0.606,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.604,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "README",
+   "similarity": 0.604,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "DialogMesh 设计文档。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-IMPL-GAP",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.604,
+   "source_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-v4-tiered-summary",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.6,
+   "source_summary": "v4/tiered 代码模块摘要。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-v4-tiered-summary",
+   "target": "DESIGN_TIERED_ACTION_RESOLVER",
+   "similarity": 0.599,
+   "source_summary": "v4/tiered 代码模块摘要。---",
+   "target_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.599,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "README",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.598,
+   "source_summary": "DialogMesh 设计文档。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "HOWTO-USE",
+   "similarity": 0.597,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "HOWTO-USE。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "HOWTO-USE",
+   "similarity": 0.595,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "HOWTO-USE。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "README",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.593,
+   "source_summary": "DialogMesh 设计文档。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.591,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.59,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.588,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-SUPPLEMENT",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.586,
+   "source_summary": "Intent 遗漏补全 — 3 篇。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-ARCH-REFS",
+   "target": "PCR-IMPL-GAP",
+   "similarity": 0.586,
+   "source_summary": "PCR 架构引用文档。---",
+   "target_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_layer0_pcr_and_layer1_intent_parser",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.586,
+   "source_summary": "原始设计 v2.4。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "HOWTO-USE",
+   "similarity": 0.584,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "HOWTO-USE。---",
+   "verdict": "YES RELATED_TO",
+   "is_relation": true,
+   "rel_type": "related_to"
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "README",
+   "similarity": 0.583,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "DialogMesh 设计文档。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.582,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-IMPL-GAP",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.581,
+   "source_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_MULTI_TIER_PIPELINE",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.58,
+   "source_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "PCR-SUPPLEMENT",
+   "similarity": 0.58,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "PCR 遗漏补全。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-SUPPLEMENT",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.579,
+   "source_summary": "PCR 遗漏补全。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-v4-tiered-summary",
+   "target": "DESIGN_MULTI_TIER_PIPELINE",
+   "similarity": 0.576,
+   "source_summary": "v4/tiered 代码模块摘要。---",
+   "target_summary": "DESIGN_MULTI_TIER_PIPELINE。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "CODE-v4-tiered-summary",
+   "similarity": 0.575,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "v4/tiered 代码模块摘要。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "INTENT-IMPL-GAP",
+   "similarity": 0.575,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "IntentParser — 接入后差距 (修正)。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.573,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "README",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.573,
+   "source_summary": "DialogMesh 设计文档。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "ENGINEERING_PCR",
+   "target": "INTENT-IMPL-GAP",
+   "similarity": 0.57,
+   "source_summary": "ENGINEERING_PCR。---",
+   "target_summary": "IntentParser — 接入后差距 (修正)。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "design_layer0_pcr_and_layer1_intent_parser",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.57,
+   "source_summary": "原始设计 v2.4。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "YES EXTENDS",
+   "is_relation": true,
+   "rel_type": "extends"
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.568,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "design_pcr_issues_discussion",
+   "similarity": 0.568,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "design_pcr_issues_discussion。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "RECURSIVE-CONVERGENCE-MATCH",
+   "similarity": 0.566,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "主题快速匹配方案 — 递归收敛。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.566,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.564,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.561,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "HOWTO-USE",
+   "target": "pcr_gap_assessment",
+   "similarity": 0.556,
+   "source_summary": "HOWTO-USE。---",
+   "target_summary": "pcr_gap_assessment。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "BUSINESS-ISSUES-AUDIT",
+   "target": "PCR-IMPL-GAP",
+   "similarity": 0.554,
+   "source_summary": "业务流问题审计 — 10链全扫描。---",
+   "target_summary": "PCR 业务链 — 设计 vs 实现差距。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_COGNITIVE_SCHEDULER",
+   "target": "INTENT-IMPL-GAP",
+   "similarity": 0.554,
+   "source_summary": "DESIGN_COGNITIVE_SCHEDULER。---",
+   "target_summary": "IntentParser — 接入后差距 (修正)。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_SKILL_LAYER",
+   "target": "checkpoint_pcr_p13",
+   "similarity": 0.554,
+   "source_summary": "DESIGN_SKILL_LAYER。---",
+   "target_summary": "checkpoint_pcr_p13。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "INTENT-IMPL-GAP",
+   "target": "RECURSIVE-CONVERGENCE-MATCH",
+   "similarity": 0.552,
+   "source_summary": "IntentParser — 接入后差距 (修正)。---",
+   "target_summary": "主题快速匹配方案 — 递归收敛。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "CODE-LAYER15-MISSING",
+   "target": "design_layer0_pcr_and_layer1_intent_parser",
+   "similarity": 0.551,
+   "source_summary": "Layer 1.5 代码遗漏补全。---",
+   "target_summary": "原始设计 v2.4。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "DESIGN_TIERED_ACTION_RESOLVER",
+   "target": "INTENT-SUPPLEMENT",
+   "similarity": 0.551,
+   "source_summary": "DESIGN_TIERED_ACTION_RESOLVER。---",
+   "target_summary": "Intent 遗漏补全 — 3 篇。---",
+   "verdict": "",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "PCR-SUPPLEMENT",
+   "target": "design_pcr_interface_v2_1",
+   "similarity": 0.551,
+   "source_summary": "PCR 遗漏补全。---",
+   "target_summary": "design_pcr_interface_v2_1。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  },
+  {
+   "source": "checkpoint_pcr_p13",
+   "target": "design_layer1_intent_parser",
+   "similarity": 0.551,
+   "source_summary": "checkpoint_pcr_p13。---",
+   "target_summary": "design_layer1_intent_parser。---",
+   "verdict": "NO",
+   "is_relation": false,
+   "rel_type": ""
+  }
+ ]
+}

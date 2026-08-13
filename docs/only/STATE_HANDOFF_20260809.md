@@ -1,7 +1,8 @@
-# 压缩交接 — 召回探索 + OS 工具 + function calling + 第一版核对（2026-08-09）
+﻿# 压缩交接 — 召回探索 + OS 工具 + function calling + 第一版核对（2026-08-09）
 
 > 状态: 压缩恢复唯一入口（本轮）
 > 前置: STATE_HANDOFF_UI_TEST_ROUND_20260807（树图化+召回第一批）
+> **2026-08-10 追加: chromadb 环境修复完成**（见 §八）— 离线化 + 持久化 + 锁释放
 > **2026-08-09 追加: v2 执行层分层施工完成**（见 §六）— 下一步:
 > ①第一版收尾（README/commit+push GitHub）或 ②前端执行迹绑定（阶段 B）
 
@@ -135,3 +136,95 @@ task_runner 7 + 回归 47+ 全绿
 - 蓝图薄点审计: docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md
 - 参考: docs/only/reference/（OPENCLAW_OS_TOOLS + OPENWORKER_CODE_AGENT）
 - 测试数据: docs/test/RECALL_GOLDSET_20260808.md
+
+## 八、chromadb 环境修复完成（2026-08-10）
+
+- 施工记录: docs/only/storage/CHROMADB_ENV_FIX_20260810.md
+- chromadb 1.5.9 装入 .venv（清华镜像, 无需 clash）+ .venv 补 pytest 9.1.1
+- 三处 chromadb 入口离线化（本地 embedding 兜底, 不再触发默认模型下载）:
+  ChunkStore chromadb 后端（PersistentClient + 冷重开重建 Atom + close()）/
+  ChromaBridge（close() 从 reset 改官方 close, 修 metadata 空 dict）/
+  ChromaStore（修 available 不触发 lazy init 的预存在 bug + close()）
+- UnifiedStore 持久化接线: ChunkStore unified_persist=True（load 恢复 +
+  节流落盘 + close flush）; DM_CHUNK_BACKEND=unified 时自动开启
+- 测试: 新增 7 项（chromadb 6 + unified persist 1）; .venv 119/3 failed
+  （3 failed 为 recall 环境差异预存在, recall 文件未动）; anaconda 116/1 skipped
+- 环境坑: .venv 才有 chromadb（anaconda numpy 坏）; chromadb 测试只能 .venv 跑
+
+## 九、环境坑复盘 — 中文编码反复踩坑（2026-08-10 记录, 教训级）
+
+### 事件
+层3 变体评测连网关, 中文 prompt 到 LLM 侧变 `????`/乱码, 浪费大量时间
+排查。此前已多次出现（压缩交接 §环境坑 已有记录）。
+
+### 根因（三层）
+1. **恢复流程执行不彻底**: 只读交接顶部摘要, 未精读 §环境坑清单
+   （BACKEND_BLUEPRINT 108 行早已写: heredoc `| python -` 中文变 ????）
+2. **无条件反射**: 中文输入应一律走 apply_patch/Set-Content 写 .py 文件再执行,
+   不要裸管道喂 stdin（PowerShell 管道默认编码 ≠ UTF-8）
+3. **网关调用规范未集中**: dm-client 鉴权 / provider 字段 / batch 超时,
+   散落在 v3_session_api.py / tool_loop.py 源码, 没有提取成文档
+
+### 规则（防止第三次）
+- 中文脚本/中文输入 → 先写文件（apply_patch 或 Set-Content UTF8）再执行,
+  禁止 `@'...'@ | python -` 传中文
+- 连网关前先 `rg "chat/completions" core` 看现成调用（v3_session_api.py）
+- 网关规范（本地网关 8080）:
+  - 鉴权: `Authorization: Bearer dm-client`（不是 provider 的 sk- key!）
+  - body 必带: `provider: "deepseek"` + `model: "deepseek-v4-flash"`
+  - batch ≤ 4 条/请求, max_tokens ≤ 2048, 否则 504 Gateway Timeout
+  - 空 content + finish_reason=length = max_tokens 太小的网关行为
+- 测试后清临时文件（本批 smoke 已清）
+
+## 十、符号注入施工完成（2026-08-10）
+
+- 施工记录: docs/only/execution/SYMBOL_INJECTION_IMPL_20260810.md
+- 新增 core/agent/llm/symbol_injector.py: trace → Mermaid 状态图 +
+  上下文压缩（早期轮次符号化, 保留最近轮原文, node_id 可追溯）
+- tool_loop 加 symbol_interval（默认关）; TaskRunner 接线（TaskConstraint 字段）
+- 端到端（真实 LLM）: 3 步工具链符号图正确生成; 回归 42/42 全绿
+- 开放项: LLM 提炼升级 / token 阈值触发 / 原文落盘 refs / 统一提炼调度层
+
+## 十一、跨语言召回决策（2026-08-10）
+
+- 决策文档: docs/only/recall/RECALL_CROSSLINGUAL_DECISION_20260810.md
+- 拍板: 保 bge-m3 统一（1024 维, 接受中文 -10pp 换跨语言统一空间）
+- en top1 0% → 24%（MRR 0.063→0.355）: BGE-M3 + 向量粗筛 + BM25 跨语言保护
+- 评测报告: docs/test/DOC_RECALL_VARIANT_BENCH_20260810.md
+- 参考分析: docs/only/reference/TENCENTDB_AGENT_MEMORY_ANALYSIS_20260810.md
+
+## 十二、结构化切分修复 + 量化评测推进（2026-08-11）
+
+### 1. 网关缓存污染 bug 修复（LLM 空返回真根因）
+- 现象: LLM 偶发返回空 content（agent_bench code#2 / refine LLM 全空）
+- 根因: switch 网关缓存键 = messages+model, **不含 max_tokens/temperature**
+  → max_tokens=16 的截断空响应被缓存, 同 messages 的 128 请求命中坏缓存
+- 修复: server/api.go requestCacheKey 加入生成参数（已编译 gateway.exe）
+- 验证: mt=16 坏缓存不再污染 mt=128（content 恢复）
+
+### 2. goldset 切块质量问题（用户: 硬切太乱来）
+- 根因: goldset 生成器绕过生产注册链路, 私有 chunk_text 按句硬切
+  → markdown 结构（---/###/代码块）被吞, 块语义残缺
+- 修复: 新增 chunk_document 工具（ToolRegistry, category=parse）
+  → MarkdownParser 树（heading 层级 + code/list 独立）+ 噪音过滤
+  → 结构节点独立成块, 段落合并; select 修复（header/semantic 优先
+  fixed_size, 不再按 quality/latency 让 fixed_size 胜出）
+- goldset 重建: 714 块 → 360 块, 异常 184 → 0（4 个为代码注释误报）
+- 脚本修复: _build_goldset.py 加 ROOT 到 sys.path（core 导入失败曾全 fallback）
+
+### 3. 量化评测数据（本轮）
+- Agent 任务: 成功率 100%（10/10）, 延迟 avg 24.7s（LLM 生成主导）,
+  token ~4.7K/任务, ¥0.009/任务
+- 记忆评测（RAGAS 口径）: rrf top1 52.5%（随机 11.3%）, CP@5 0.603
+- 消融: L0 粗召回 top1 53.3% / L1 子图覆盖 93.3%（goldset 无图数据,
+  实为 top-10 透传）/ L2 LLM 精排 20% → **LLM 简单挑选负增益,
+  粗召回 RRF 排序是主力**（LLM 空返回修复后结论稳定）
+- 评测脚本: agent_bench.py / memory_bench.py / refine_bench.py /
+  refine_ablation.py / dump_refine_chain.py / gen_recall_variants.py /
+  recall_variant_bench.py
+
+### 4. 待办（压缩后）
+- goldset 重建后重跑记忆评测基线（top1/CP 应变化, 块质量提升）
+- 精细化正解: 子图内容直接注入执行层（不做 LLM 中间过滤）——设计待落地
+- Rust 重构（RECALL_RUST_DESIGN_20260810.md）: 余弦/BM25 计算核心
+- 评测体系补齐: Faithfulness（claim 级）/ Context Recall / 并发吞吐

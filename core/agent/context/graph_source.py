@@ -42,6 +42,8 @@ class ConceptGraph:
         self._embeddings: Dict[str, np.ndarray] = {}  # concept_name -> vector
         self._embedder = embedder
         self._built = False
+        self._communities: List[List[str]] = []
+        self._community_summaries: Dict[tuple, str] = {}
 
     @property
     def has_embeddings(self) -> bool:
@@ -164,7 +166,112 @@ class ConceptGraph:
         self._built = True
         logger.info("ConceptGraph: %d nodes, %d edges (%d co-occurrence), %d embeddings",
                     len(self._nodes), len(self._edges), len(cooccur), len(self._embeddings))
+        self.build_communities()
         return len(self._nodes)
+
+    def build_from_graph_store(self, store, domain: str = "vault_docs",
+                               embedder: Optional[Callable[[str], Any]] = None) -> int:
+        """从 UnifiedGraphStore 加载图（CONTENT_TO_GRAPH 设计 2, 2026-08-11）。
+
+        消费 vault 文档节点 + wikilink/cross_ref 边（含 source_kind 标签）;
+        节点带 summary（INDEX 摘要）→ 后续召回可 Coarse scan。
+        与 build_from_pool 可叠加（文档图 + 观测概念图共存）。
+        """
+        if embedder is not None:
+            self._embedder = embedder
+        import json as _json
+        rows = store._conn.execute(
+            "SELECT node_id, data, summary FROM unified_nodes WHERE domain=?",
+            (domain,)).fetchall()
+        for row in rows:
+            node_id = row["node_id"]
+            data = _json.loads(row["data"]) if isinstance(row["data"], str) else row["data"]
+            if node_id in self._nodes:
+                continue
+            self._nodes[node_id] = {
+                "relations": [],
+                "observations": [row["summary"] or ""] if row["summary"] else [],
+                "docs": {data.get("source", "")} if data.get("source") else set(),
+            }
+        edge_rows = store._conn.execute(
+            "SELECT edge_type, source_id, target_id, data, weight "
+            "FROM unified_edges WHERE domain=?", (domain,)).fetchall()
+        for er in edge_rows:
+            src, tgt = er["source_id"], er["target_id"]
+            if src not in self._nodes or tgt not in self._nodes:
+                continue
+            edata = _json.loads(er["data"]) if isinstance(er["data"], str) else er["data"]
+            kind = edata.get("source_kind", "inferred") if edata else "inferred"
+            conf = 0.9 if kind == "extracted" else 0.5
+            self._edges.append({
+                "source": src, "target": tgt,
+                "type": er["edge_type"], "confidence": conf,
+                "source_kind": kind,
+            })
+            self._nodes[src]["relations"].append({
+                "target": tgt, "type": er["edge_type"], "confidence": conf,
+            })
+        self._built = True
+        self.build_communities()
+        return len(self._nodes)
+
+    # ---- Community layer (GraphRAG 对齐, 2026-08-11, 设计 3) ----
+
+    def build_communities(self) -> int:
+        """社区检测 + 摘要（GraphRAG 全局层, SUBGRAPH_EXPANSION_UPGRADE 设计 3）。
+
+        networkx greedy_modularity（无新依赖）; 每社区聚合节点+观测做摘要;
+        社区名 → 摘要文本存 _community_summaries, 查询期向量 top-k。
+        小图（<4 节点）跳过, 返回 0。
+        """
+        if len(self._nodes) < 4 or not self._edges:
+            self._communities = []
+            self._community_summaries = {}
+            return 0
+        import networkx as nx
+        from networkx.algorithms import community as nx_community
+        G = nx.Graph()
+        G.add_nodes_from(self._nodes.keys())
+        for e in self._edges:
+            G.add_edge(e["source"], e["target"])
+        try:
+            comps = nx_community.greedy_modularity_communities(G)
+        except Exception:
+            comps = []
+        self._communities = [sorted(c) for c in comps if len(c) >= 2]
+        self._community_summaries = {}
+        for c in self._communities:
+            parts = []
+            for name in c[:8]:
+                node = self._nodes.get(name)
+                if not node:
+                    continue
+                parts.append("[%s]" % name)
+                parts.extend(node["observations"][:2])
+            self._community_summaries[tuple(c)] = " ".join(p for p in parts if p)[:600]
+        return len(self._communities)
+
+    def community_top_k(self, query: str, top_k: int = 3,
+                        threshold: float = 0.1) -> List[Tuple[List[str], float]]:
+        """查询期全局层: query → 社区摘要向量 top-k（轻量, 毫秒级）。
+
+        返回 [(社区节点列表, 相关分)], 命中社区的节点可并入局部扩展 seed。
+        """
+        if not getattr(self, "_community_summaries", None):
+            return []
+        qvec = self._encode(query)
+        scored = []
+        for c, summary in self._community_summaries.items():
+            if qvec is not None:
+                svec = self._encode(summary)
+                sim = float(np.dot(qvec, svec)) if svec is not None else 0.0
+            else:
+                sim = sum(1 for w in query.lower().split()
+                          if w in summary.lower()) * 0.1
+            if sim >= threshold:
+                scored.append((list(c), sim))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
 
     # ---- Multi-tier seed finding ----
 
@@ -217,6 +324,10 @@ class ConceptGraph:
 
     def expand_subgraph(self, seeds: List[str], max_hops: int = 2,
                         max_nodes: int = 30) -> Tuple[Set[str], List[dict]]:
+        """子图扩展: 默认旧 BFS; dag_layer_expand=True 时走分层扩展 +
+        同步剪枝 + 跨锚点桥接（SUBGRAPH_EXPANSION_UPGRADE 设计 1, 2026-08-11）。"""
+        if getattr(self, "dag_layer_expand", False):
+            return self._expand_subgraph_layered(seeds, max_hops, max_nodes)
         visited: Set[str] = set()
         edges: List[dict] = []
         frontier = set(seeds)
@@ -239,6 +350,62 @@ class ConceptGraph:
                     break
             frontier = next_frontier
             if not frontier or len(visited) >= max_nodes:
+                break
+        visited.update(frontier)
+        return visited, edges
+
+    def _expand_subgraph_layered(self, seeds: List[str], max_hops: int = 2,
+                                 max_nodes: int = 30) -> Tuple[Set[str], List[dict]]:
+        """DAG 分层局部扩展: 每层边界节点邻域 → confidence×relevance 剪枝 →
+        预算截断 → 下一层。天然拓扑序, 无环 = 无重复访问, 不会爆。"""
+        visited: Set[str] = set()
+        edges: List[dict] = []
+        # 节点 relevance 缓存（种子最高, 逐层衰减）
+        relevance = {s: 1.0 for s in seeds if s in self._nodes}
+        frontier = set(relevance)
+        threshold = float(getattr(self, "dag_prune_threshold", 0.3))
+        budget = int(getattr(self, "dag_budget_per_layer", 12))
+        max_hops = int(getattr(self, "dag_max_hops", max_hops))
+
+        for hop in range(max_hops):
+            if not frontier or len(visited) >= max_nodes:
+                break
+            next_frontier = {}
+            for node_name in frontier:
+                if node_name not in self._nodes:
+                    continue
+                visited.add(node_name)
+                base_rel = relevance.get(node_name, 0.3)
+                for rel in self._nodes[node_name]["relations"]:
+                    target = rel["target"]
+                    conf = float(rel.get("confidence", 0.5))
+                    prio = conf * base_rel
+                    edges.append({
+                        "source": node_name, "target": target,
+                        "type": rel["type"], "confidence": conf, "hop": hop,
+                        "prio": round(prio, 4),
+                    })
+                    if target in visited or target in next_frontier:
+                        continue
+                    if prio < threshold:      # 同步剪枝: 低置信边丢弃
+                        continue
+                    next_frontier[target] = max(
+                        next_frontier.get(target, 0.0), prio)
+            # 预算截断: 每层只保留最相关的 top-budget
+            ranked = sorted(next_frontier.items(),
+                            key=lambda kv: kv[1], reverse=True)[:budget]
+            frontier = {n for n, _ in ranked}
+            for n, p in ranked:
+                relevance[n] = p
+            if getattr(self, "dag_bridge_check", True):
+                # 跨锚点桥接: 层结果间若有直接边, 优先纳入（防漏桥）
+                for a in seeds:
+                    if a in self._nodes and a not in visited and a not in frontier:
+                        rels = {r["target"] for r in self._nodes[a]["relations"]}
+                        if rels.intersection(visited):
+                            frontier.add(a)
+                            relevance[a] = 0.9
+            if len(visited) >= max_nodes:
                 break
         visited.update(frontier)
         return visited, edges
@@ -284,6 +451,7 @@ class ConceptGraph:
                 content={"concept": node_name, "observations": node["observations"]},
                 text=content,
                 relevance=relevance,
+                metadata={"doc": sorted(node["docs"])[:3], "concept": node_name},
             ))
 
         items.sort(key=lambda x: x.relevance, reverse=True)
@@ -296,6 +464,56 @@ class ConceptGraph:
             "embeddings": len(self._embeddings),
             "built": self._built,
         }
+
+    # ── 图导航 API（CONTENT_TO_GRAPH 设计 4, 2026-08-11）──
+
+    def neighbors(self, node_name: str, edge_type: str = None) -> List[str]:
+        """返回节点的邻居（可选按边类型过滤）。"""
+        node = self._nodes.get(node_name)
+        if not node:
+            return []
+        out = []
+        for rel in node["relations"]:
+            if edge_type and rel["type"] != edge_type:
+                continue
+            out.append(rel["target"])
+        return out
+
+    def callers(self, node_name: str, edge_type: str = None) -> List[str]:
+        """反向边: 谁引用了该节点（溯源）。"""
+        out = []
+        for src, node in self._nodes.items():
+            for rel in node["relations"]:
+                if rel["target"] != node_name:
+                    continue
+                if edge_type and rel["type"] != edge_type:
+                    continue
+                out.append(src)
+        return out
+
+    def path(self, a: str, b: str, max_hops: int = 4) -> Optional[List[str]]:
+        """双链最短路径（BFS）: 文档间导航, 防"锚点孤立"。"""
+        if a not in self._nodes or b not in self._nodes:
+            return None
+        from collections import deque
+        visited = {a: None}
+        queue = deque([a])
+        while queue and max_hops >= 0:
+            cur = queue.popleft()
+            if cur == b:
+                path = []
+                node = b
+                while node is not None:
+                    path.append(node)
+                    node = visited[node]
+                return list(reversed(path))
+            for nb in self.neighbors(cur):
+                if nb not in visited:
+                    visited[nb] = cur
+                    queue.append(nb)
+            max_hops -= 1
+        return None
+
 
 
 # ============================================================================

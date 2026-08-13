@@ -18,6 +18,8 @@ class FakeBlock:
         self.block_id = bid
         self._raw_text = text
         self._session_id = session or ""
+        self.vector = None       # 预编码向量透传（2026-08-11）
+        self.summary = ""        # 摘要透传（两级粒度）
         self.parent_id = None
         self.child_ids = []
         self.status = "active"
@@ -34,11 +36,31 @@ def load_goldset(path="data/recall_goldset.json"):
         return json.load(f)
 
 
-def build_service(blocks, mode="linear", single=None):
+def build_service(blocks, mode="vector_primary", single=None):
     from core.agent.recall.recall_service import RecallService
-    discourse = FakeDiscourse([FakeBlock(b["id"], b["text"], b.get("session")) for b in blocks])
+    fakes = []
+    for b in blocks:
+        fb = FakeBlock(b["id"], b["text"], b.get("session"))
+        fb.vector = b.get("vector")
+        fb.summary = b.get("summary", "")
+        fakes.append(fb)
+    # W4（2026-08-13）: bench 平铺块按 session 建顺序链 — 生产 discourse
+    # 树有 parent/child 结构, 评测应同构, 否则 recall() 内 _diffuse
+    # 空转, 上下文永远只有裸锚点（Faithfulness 误判幻觉的根因之一）。
+    by_sess = {}
+    for fb in fakes:
+        by_sess.setdefault(fb._session_id or "_", []).append(fb)
+    for members in by_sess.values():
+        for i, fb in enumerate(members):
+            if i > 0:
+                fb.parent_id = members[i - 1].block_id
+            if i + 1 < len(members):
+                fb.child_ids = [members[i + 1].block_id]
+    discourse = FakeDiscourse(fakes)
     svc = RecallService(engine=None, chunk_store=None, discourse=discourse, llm=None)
-    svc.fuse_mode = mode
+    # 2026-08-12: env 优先（DM_FUSION 消融开关）— 构造后覆写会吞掉
+    # __init__ 里的 env 覆盖, 导致消融无效。
+    svc.fuse_mode = os.environ.get("DM_FUSION", mode)
     svc.single_source = single
     return svc
 
@@ -76,7 +98,8 @@ def random_baseline(gold, top_k, scope="global"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="linear", choices=["linear", "rrf", "norm"])
+    ap.add_argument("--mode", default="vector_primary",
+                    choices=["linear", "rrf", "norm", "vector_primary"])
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--single", default=None,
                     choices=["vector", "bm25", "spo", "hyde", "assoc"])

@@ -11,7 +11,8 @@ def _make_loop(responses):
     pool = list(responses) if isinstance(responses, list) else [responses]
 
     def loop(msgs, model="", max_rounds=6, allowed_tools=None,
-             system_inject=None, on_step=None, timeout_s=0.0):
+             system_inject=None, on_step=None, timeout_s=0.0,
+             symbol_interval=0, symbol_keep_last=2):
         calls.append({
             "system_inject": system_inject, "allowed_tools": allowed_tools,
             "max_rounds": max_rounds,

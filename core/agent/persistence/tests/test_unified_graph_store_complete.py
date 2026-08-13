@@ -102,3 +102,22 @@ def test_run_maintenance_migrates_tiers(store):
     assert result["W->C"] > 0
     counts = store.get_tier_counts()
     assert counts.get("C", 0) > 0
+
+
+def test_delete_domain_removes_nodes_and_edges(store):
+    """delete_domain: 按域清理节点与边, 不影响其他域（2026-08-11）。"""
+    store.save_node("n1", "document", "vault_docs", {"title": "a"}, summary="s")
+    store.save_node("n2", "document", "vault_docs", {"title": "b"})
+    store.save_node("other", "document", "other_domain", {"title": "c"})
+    store.save_edge("wikilink", "vault_docs", "n1", "n2",
+                    {"source_kind": "extracted"}, weight=0.9)
+    store.save_edge("cross_ref", "other_domain", "other", "n1",
+                    {"source_kind": "extracted"})
+    deleted_edges = store.delete_domain("vault_docs")
+    assert deleted_edges == 1
+    stats = store.stats
+    # 其他域节点/边保留
+    assert stats["node_count"] == 1
+    assert stats["edge_count"] == 1
+    assert store.load_node("other") is not None
+    assert store.load_node("n1") is None
