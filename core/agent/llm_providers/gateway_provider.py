@@ -70,14 +70,17 @@ class GatewayLLMProvider(LLMProvider):
         except ImportError:
             self._client = None  # fallback to urllib
 
-    def _post(self, path: str, body: dict, provider: str = None) -> dict:
+    def _post(self, path: str, body: dict, provider: str = None,
+              timeout: float = None) -> dict:
         self._ensure_client()
         url = path
         if provider:
             url += f"?provider={provider}"
+        # 2026-08-13: 请求级超时透传（调用方可指定更长/更短超时）
+        eff_timeout = timeout if timeout is not None else self._timeout
 
         if self._client:
-            resp = self._client.post(url, json=body)
+            resp = self._client.post(url, json=body, timeout=eff_timeout)
             if resp.status_code != 200:
                 raise RuntimeError(f"Gateway HTTP {resp.status_code}: {resp.text}")
             return resp.json()
@@ -90,7 +93,7 @@ class GatewayLLMProvider(LLMProvider):
                 headers={"Content-Type": "application/json",
                          "Authorization": f"Bearer {self._api_key}"},
             )
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+            with urllib.request.urlopen(req, timeout=eff_timeout) as r:
                 return json.loads(r.read())
 
     def _get(self, path: str) -> dict:
@@ -137,6 +140,12 @@ class GatewayLLMProvider(LLMProvider):
         if model:
             body["model"] = model
 
+        # 推理开关透传（2026-08-13）: 提取/分类/HyDE 等任务关思考
+        # （{"type":"disabled"}）— 快且不烧 max_tokens。
+        thinking = request.metadata.get("thinking")
+        if thinking is not None:
+            body["thinking"] = thinking
+
         if request.response_format == "json":
             body["response_format"] = {"type": "json_object"}
 
@@ -147,11 +156,16 @@ class GatewayLLMProvider(LLMProvider):
         # 保证调用方永远拿到 GenerateResult 而非裸异常。
         try:
             try:
-                data = self._post("/v1/chat/completions", body, provider)
+                _timeout = None
+                if getattr(request, "timeout_ms", 0):
+                    _timeout = request.timeout_ms / 1000.0
+                data = self._post("/v1/chat/completions", body, provider,
+                                  timeout=_timeout)
             except RuntimeError as e:
                 if "circuit" in str(e).lower() and "open" in str(e).lower():
                     time.sleep(1.0)
-                    data = self._post("/v1/chat/completions", body, provider)
+                    data = self._post("/v1/chat/completions", body, provider,
+                                      timeout=_timeout)
                 else:
                     raise
             choices = data.get("choices", [])

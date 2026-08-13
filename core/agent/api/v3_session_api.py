@@ -13,6 +13,61 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v3/session")
 
+
+class _GatewayLLMAdapter:
+    """内部模块 generate() 接口 → switch 网关（2026-08-13）。
+
+    DualTrack/意图分类等模块期望 llm.generate(prompt, max_tokens,
+    temperature); 接网关 deepseek-v4-flash, thinking 关闭（分类无需推理,
+    快且稳）。此前这些模块 llm=None 走结构式降级, 意图分类恒失效。
+    """
+
+    def generate(self, prompt: str, max_tokens: int = 300,
+                 temperature: float = 0.1, **kwargs) -> str:
+        import urllib.request
+        body = json.dumps({
+            "provider": "deepseek", "model": "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "thinking": {"type": "disabled"},
+            "max_tokens": max_tokens, "temperature": temperature,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8080/v1/chat/completions", data=body,
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer dm-client"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            d = json.loads(resp.read())
+        return d["choices"][0]["message"].get("content") or ""
+
+    def classify_intent(self, text: str) -> str:
+        """LLM 意图分类（2026-08-13, W1 正解）: 自由问句 → 固定意图集。
+
+        泛化: LLM 理解改写/换说法, 不像关键词字面匹配那样脆;
+        软编码: 意图集集中定义, 扩展只改一处;
+        运行时可调: 每次消息都走一次分类（thinking 关闭, ~1s）。
+        """
+        categories = (
+            "记忆召回（查历史对话/文档/知识/算法/原理/介绍/解释）|"
+            "任务规划（规划/编排/任务图）|"
+            "代码分析（写代码/改代码/审查代码/修bug）|"
+            "数据搜索（查数据/查配置/找文件）|"
+            "因果推理（为什么/原因/因果）|"
+            "通用讨论（观点/设计/架构讨论）|"
+            "casual（问候/闲聊/寒暄）|"
+            "通用对话（其他）"
+        )
+        prompt = (
+            "把用户消息归类为以下意图之一（只输出类别名, 不要其他文字）：\n"
+            f"{categories}\n\n用户消息: {text[:300]}"
+        )
+        raw = self.generate(prompt, max_tokens=20, temperature=0.0)
+        for cat in ("记忆召回", "任务规划", "代码分析", "数据搜索",
+                    "因果推理", "通用讨论", "casual", "通用对话"):
+            if cat in raw:
+                return cat
+        return "通用对话"
+
+
 # ═══ Persistence ═══
 _SESSIONS_FILE = Path(os.path.join(DATA_DIR, "v3_sessions.json"))
 _SESSIONS_LOCK = __import__("threading").Lock()
@@ -313,13 +368,25 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     _shared_registry = None
             engine = BlueprintEngine(decision_bus=_dbus, registry=_shared_registry)
             # Real intent from DualTrack so the 5 built-in templates can
-            # actually be selected (P0-7/P1-25).
+            # actually be selected (P0-7/P1-25). 2026-08-13: 接网关 LLM —
+            # 此前无 llm 退化结构式返回原文, 意图分类恒失效（W1 死参数
+            # 根因）; thinking 关闭（分类无需推理, 快且稳）。
+            # 2026-08-13 升级: LLM 意图分类（自由问句→意图集, 泛化于
+            # 关键词字面匹配）; 失败降级 DualTrack 拆分。
             try:
                 from core.agent.intent.dual_track import DualTrackIntentPipeline
-                dt = DualTrackIntentPipeline()
-                segs = getattr(dt.process(req.content), "segments", [])
-                if segs:
-                    intent = segs[0]
+                _adapter = _GatewayLLMAdapter()
+                try:
+                    _cat = _adapter.classify_intent(req.content)
+                    if _cat:
+                        intent = _cat
+                except Exception:
+                    _cat = ""
+                if not _cat or _cat == "通用对话":
+                    dt = DualTrackIntentPipeline(llm=_adapter)
+                    segs = getattr(dt.process(req.content), "segments", [])
+                    if segs:
+                        intent = segs[0]
             except Exception:
                 pass
             dag = engine.build(req.content, intent=intent)

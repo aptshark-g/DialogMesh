@@ -322,6 +322,21 @@ class SkillRegistry:
             logger.info("Empty intent → defaulting to general_chat")
             return "HYBRID", BUILTIN_TEMPLATES["general_chat"]
 
+        # 知识类关键词别名（2026-08-13, W1）: DualTrack 单意图返回原文,
+        # 自由问句匹配不上已知意图名 → 落 general_chat（无 recall 节点）。
+        # 知识/原理/对比类问句路由到"记忆召回"→ recall_pipeline
+        # （recall_anchor→subgraph→llm_reply）; casual（你好等）不受影响。
+        _knowledge_aliases = (
+            "召回", "算法", "原理", "为什么", "解释", "介绍",
+            "区别", "怎么实现", "如何实现", "哪些",
+        )
+        for _kw in _knowledge_aliases:
+            if _kw in intent:
+                logger.info("Intent '%s' → knowledge alias '%s' → 记忆召回",
+                            intent, _kw)
+                intent = "记忆召回"
+                break
+
         # G2: 学习模板优先（精确命中）
         if intent in LEARNED_TEMPLATES:
             logger.info("Intent '%s' → LEARNED template (self-grown)", intent)

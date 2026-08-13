@@ -238,6 +238,12 @@ class RecallService:
         # cold 各出现一次, RRF 被双倍计分（churn 块叠加 6 源）。默认
         # 去重（hot 优先, 更鲜）; DM_DEDUP_POOLS=0 关闭做消融。
         self.dedup_pools = os.environ.get("DM_DEDUP_POOLS", "1") != "0"
+        # 文档语料入全局池（2026-08-13, "信息内容才是召回核心"）:
+        # 对话树三级（Hot/Warm/Cold）只覆盖记忆域; docs 语料是独立知识源。
+        # DM_DOC_CORPUS=1 时全局池合并 11761 块文档（向量走 v3 缓存）。
+        self.enable_doc_corpus = os.environ.get(
+            "DM_DOC_CORPUS", "0") == "1"
+        self._doc_corpus_blocks: Optional[List[dict]] = None
         # 融合模式环境覆盖（2026-08-12）: linear | rrf | vector_primary
         # （证据驱动: top1 全部来自 vector, vector 内 #1 被 RRF 压掉
         # ~10 条 → vector 主导排序 + 其他源扩展）
@@ -391,8 +397,11 @@ class RecallService:
         _stat = {"total": 0, "cache_hit": 0, "spo_recalc": 0, "pre_vec": 0}
         tm = self._discourse
         blocks = []
+        # 2026-08-13 修复: 索引缓存无条件加载 — 此前在 tm 分支内,
+        # 裸服务（无 discourse, 文档语料池）跳过加载 → doc corpus 合并
+        # cache_hit=0, 每次全量 SPO 提取 146s。
+        self._load_index_cache("global")
         if tm is not None and getattr(tm, "blocks", None):
-            self._load_index_cache("global")
             for bid, b in tm.blocks.items():
                 _stat["total"] += 1
                 text = (
@@ -478,6 +487,50 @@ class RecallService:
                     })
             except Exception as e:
                 logger.debug("produced-block merge failed: %s", e)
+        # 文档语料合并（2026-08-13, DM_DOC_CORPUS=1）: "信息内容才是
+        # 召回核心" — 对话树三级只覆盖记忆域, docs 语料是独立知识源。
+        # 懒加载一次, 向量走 v3 缓存; SPO 一次性提取（与 discourse 同口径）。
+        if getattr(self, "enable_doc_corpus", False):
+            try:
+                from core.agent.recall.doc_corpus import (
+                    load_doc_blocks, prepare_doc_vectors)
+                if self._doc_corpus_blocks is None:
+                    _m_t0 = time.time()
+                    doc_blocks = load_doc_blocks()
+                    prepare_doc_vectors(doc_blocks)
+                    _m_hit = 0
+                    _m_ext = 0
+                    for b in doc_blocks:
+                        b["summary"] = ""
+                        b["parent"] = None
+                        b["children"] = []
+                        # 2026-08-13 修复: 复用索引缓存（hash 指纹）—
+                        # 此前无条件全量提取 10787 块 ≈ 147s/进程; 首跑
+                        # 后 global.json 持久化 spo, 重启降到秒级。
+                        _cached = self._index_cache.get(b["id"]) or {}
+                        if _cached.get("hash") == self._text_hash(b["text"]):
+                            b["spo"] = _cached.get("spo") or []
+                            _m_hit += 1
+                        else:
+                            b["spo"] = self._extract_spo(b["text"])
+                            _m_ext += 1
+                        # 写回索引缓存（2026-08-13）: 文档块 hash+spo 必须
+                        # 持久化, 否则每次进程重启全量重提取 195s。
+                        _entry = self._index_cache.setdefault(b["id"], {})
+                        _entry["hash"] = self._text_hash(b["text"])
+                        if b["spo"]:
+                            _entry["spo"] = b["spo"]
+                    self._doc_corpus_blocks = doc_blocks
+                    logger.info(
+                        "doc corpus merge: %d blocks, cache_hit=%d "
+                        "extract=%d, %.1fs",
+                        len(doc_blocks), _m_hit, _m_ext,
+                        time.time() - _m_t0)
+                blocks += self._doc_corpus_blocks
+                logger.info("global pool: +%d doc corpus blocks",
+                            len(self._doc_corpus_blocks))
+            except Exception as e:
+                logger.debug("doc corpus merge failed: %s", e)
         self._global_block_list = blocks
         self._index_cache_file = "global"
         self._file_bids.setdefault("global", set()).update(b["id"] for b in blocks)
@@ -661,16 +714,56 @@ class RecallService:
         except Exception:
             return None
 
+    def _chat_once(self, prompt: str, max_tokens: int = 300) -> Optional[str]:
+        """经 self._llm 一次对话（兼容 chat/complete/generate 三接口）。"""
+        llm = self._llm
+        if llm is None:
+            return None
+        try:
+            if hasattr(llm, "chat"):
+                resp = llm.chat([{"role": "user", "content": prompt}])
+            elif hasattr(llm, "complete"):
+                resp = llm.complete(prompt)
+            elif hasattr(llm, "generate"):
+                from core.agent.llm_providers.base import GenerateRequest
+                result = llm.generate(GenerateRequest(
+                    prompt=prompt, max_tokens=max_tokens,
+                    temperature=0.0,
+                    metadata={"thinking": {"type": "disabled"}}))
+                resp = result.text if result is not None else ""
+            else:
+                return None
+            return resp if isinstance(resp, str) else getattr(
+                resp, "content", "")
+        except Exception:
+            return None
+
+    def _hyde_query_vector(self, query: str) -> Optional[List[float]]:
+        """HyDE 真实现（2026-08-13, P1）: LLM 生成假设答案段落 → 嵌入
+        作查询向量。域术语在假设段落里显式出现 → 把"措辞敏感"的答案块
+        （实测 rank 13）拉到 top-1; 查询措辞脆弱性的正解。
+        无 LLM（评测 bench）→ None, 行为不变。"""
+        prompt = (
+            "根据问题，写一段假设性的答案（3-5 句，包含可能的关键术语、"
+            "算法名和事实），用于检索增强。只输出答案段落：\n问题: " + query
+        )
+        resp = self._chat_once(prompt, max_tokens=400)
+        if not resp or not resp.strip():
+            return None
+        return self._embed(resp.strip())
+
     # ── 混合锚点 ─────────────────────────────────────────────────
 
     def _vector_anchors(self, query: str, top_k: int,
-                        blocks: Optional[List[dict]] = None) -> List[RecallHit]:
+                        blocks: Optional[List[dict]] = None,
+                        query_vec: Optional[list] = None) -> List[RecallHit]:
         """BGE 向量召回（余弦）; BGE 不可用 → ChunkStore 关键词兜底。"""
         _t0 = time.time()
         if blocks is None:
             self._ensure_blocks()
             blocks = self._block_list
-        qv = self._embed(query)
+        # HyDE 查询向量（2026-08-13）: 假设答案嵌入, 语义含域术语
+        qv = query_vec if query_vec is not None else self._embed(query)
         if qv is not None:
             scored = []
             batch_vecs = []
@@ -1275,11 +1368,17 @@ class RecallService:
             expanded = [query]
         hits: List[RecallHit] = []
         single = getattr(self, "single_source", None)
+        # HyDE 查询向量（2026-08-13, DM_HYDE=1）: 假设答案嵌入喂给
+        # vector 路（bm25/spo 仍用原 query）; 无 LLM 时自动跳过。
+        hyde_vec = None
+        if os.environ.get("DM_HYDE", "0") == "1" and self._llm is not None:
+            hyde_vec = self._hyde_query_vector(query)
 
         def _run(blocks, tag):
             out = []
             if single in (None, "vector"):
-                out += self._vector_anchors(query, top_k, blocks=blocks)
+                out += self._vector_anchors(
+                    query, top_k, blocks=blocks, query_vec=hyde_vec)
             if single in (None, "bm25"):
                 out += self._bm25_anchors(query, top_k, blocks=blocks)
             if single in (None, "spo"):
@@ -1295,6 +1394,12 @@ class RecallService:
         hits += hot_hits
         # 冷路径: 全局块池（大池, 覆盖广）
         cold_hits = _run(cold_blocks, "cold")
+        # 2026-08-13 修复: cold 命中必须打 "cold:" 前缀（与 hot 对称）—
+        # 此前无前缀, 冷池独有时（生产无会话树/文档语料池）vector_primary
+        # 融合的 vec_rank 查不到 cold:vector → 退化为 RRF 排序, 冷池
+        # 排序错误（评测热池=全块掩盖了此 bug）。
+        for h in cold_hits:
+            h.source = "cold:" + h.source
         if getattr(self, "dedup_pools", True):
             hot_ids = {h.id for h in hot_hits}
             cold_hits = [h for h in cold_hits if h.id not in hot_ids]
