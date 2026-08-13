@@ -18,6 +18,31 @@ from core.agent.llm_providers.base import LLMProvider, GenerateRequest, Generate
 logger = logging.getLogger(__name__)
 
 
+class GatewayCallError(RuntimeError):
+    """网关错误（2026-08-13）: 携带稳定 code（error_catalog.yaml 查表用）。
+
+    code 来自网关响应（AUTH_FAILED/RATE_LIMITED/UPSTREAM_TIMEOUT/...）,
+    客户端按 code 决策（重试/展示）, 不再文本匹配。
+    """
+
+    def __init__(self, status: int, code: str, message: str, body: dict):
+        super().__init__(f"Gateway HTTP {status} [{code}]: {message}")
+        self.status = status
+        self.code = code or "UNKNOWN_ERROR"
+        self.message = message
+        self.body = body or {}
+
+    @classmethod
+    def from_response(cls, status: int, text: str) -> "GatewayCallError":
+        body = {}
+        try:
+            body = json.loads(text or "{}")
+        except Exception:
+            pass
+        return cls(status, body.get("code", ""),
+                   body.get("error") or text[:200], body)
+
+
 class GatewayLLMProvider(LLMProvider):
     """LLM provider that routes via Switch Gateway.
 
@@ -82,7 +107,8 @@ class GatewayLLMProvider(LLMProvider):
         if self._client:
             resp = self._client.post(url, json=body, timeout=eff_timeout)
             if resp.status_code != 200:
-                raise RuntimeError(f"Gateway HTTP {resp.status_code}: {resp.text}")
+                raise GatewayCallError.from_response(
+                    resp.status_code, resp.text)
             return resp.json()
         else:
             import urllib.request
@@ -93,8 +119,12 @@ class GatewayLLMProvider(LLMProvider):
                 headers={"Content-Type": "application/json",
                          "Authorization": f"Bearer {self._api_key}"},
             )
-            with urllib.request.urlopen(req, timeout=eff_timeout) as r:
-                return json.loads(r.read())
+            try:
+                with urllib.request.urlopen(req, timeout=eff_timeout) as r:
+                    return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                raise GatewayCallError.from_response(
+                    e.code, e.read().decode("utf-8", errors="replace"))
 
     def _get(self, path: str) -> dict:
         """Simple GET helper (health/providers) with httpx → urllib fallback."""
@@ -162,7 +192,12 @@ class GatewayLLMProvider(LLMProvider):
                 data = self._post("/v1/chat/completions", body, provider,
                                   timeout=_timeout)
             except RuntimeError as e:
-                if "circuit" in str(e).lower() and "open" in str(e).lower():
+                _code = getattr(e, "code", "") or ""
+                # 2026-08-13: 优先按稳定 code 判定（error_catalog 查表）,
+                # 文本匹配仅作旧版网关兜底。
+                if _code == "CIRCUIT_OPEN" or (
+                        "circuit" in str(e).lower()
+                        and "open" in str(e).lower()):
                     time.sleep(1.0)
                     data = self._post("/v1/chat/completions", body, provider,
                                       timeout=_timeout)

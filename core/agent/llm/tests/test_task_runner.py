@@ -36,6 +36,47 @@ def _fail_resp():
             "content": ""}
 
 
+class _FakeExecutionTree:
+    """执行轨迹落树（P0）: 记录 create_task/spawn/complete 调用。"""
+    def __init__(self):
+        self.created = []
+        self.spawned = []
+        self.completed = []
+
+    def create_task(self, plan, parent_id=None):
+        self.created.append(plan)
+        return type("N", (), {"node_id": "exec_root"})()
+
+    def spawn_sub_agent(self, parent_id, task, context_size,
+                        pointers=None, queries=None):
+        self.spawned.append((parent_id, task, context_size))
+
+    def complete_node(self, node_id, result):
+        self.completed.append((node_id, result))
+
+
+def test_execution_trace_lands_in_tree():
+    """P0 执行轨迹落树: 任务→create_task, 每步→spawn, 收尾→complete。"""
+    tree = _FakeExecutionTree()
+    loop, _ = _make_loop({"content": "完成", "steps": [
+        {"round": 1, "tool": "write_file", "args": "hello.py",
+         "ok": True, "latency_ms": 5},
+        {"round": 2, "tool": "run_python", "args": "python hello.py",
+         "ok": True, "latency_ms": 8},
+    ]})
+    runner = TaskRunner(llm_loop=loop, execution_tree=tree)
+    res = runner.run("写 hello.py 并运行",
+                     constraint=TaskConstraint(goal="写 hello.py 并运行"))
+    assert res.status == "ok"
+    assert len(tree.created) == 1
+    assert tree.created[0]["strategy"] == "TOOL_LOOP"
+    assert len(tree.spawned) == 2
+    assert tree.spawned[0][1].startswith("write_file")
+    assert len(tree.completed) == 1
+    assert tree.completed[0][1]["tools"] == ["write_file", "run_python"]
+    assert tree.completed[0][1]["status"] == "ok"
+
+
 def test_constraint_injection_into_system_prompt():
     loop, calls = _make_loop({"content": "完成", "steps": [
         {"round": 1, "tool": "run_python", "ok": True, "latency_ms": 5}]})

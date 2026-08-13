@@ -1,0 +1,82 @@
+# 错误目录（2026-08-13）— 统一查表, 可扩展（新增种类只改本文件）。
+# 客户端/前端按响应里的 code 查表展示; 网关用 retryable 决定是否重试。
+#
+# 格式: code → {http_status, meaning, causes, remedy, retryable, retry_after_s}
+
+AUTH_FAILED:
+  http_status: 401
+  meaning: 上游鉴权失败（key 缺失/无效/过期）
+  causes: [provider.yaml 的 api_key 为空, key 已失效, 上游封禁]
+  remedy: 检查 provider.yaml key; 重新生成/更换 key
+  retryable: false
+
+RATE_LIMITED:
+  http_status: 429
+  meaning: 上游限流（每分钟请求数超限）
+  causes: [网关限流桶, 上游 RPM 配额, 并发突刺]
+  remedy: 降频重试; DM_GATEWAY_RATE_LIMIT=0 可关网关限流
+  retryable: true
+  retry_after_s: 5
+
+BUDGET_EXCEEDED:
+  http_status: 429
+  meaning: per-key 日配额超限（网关侧, 非上游）
+  causes: [DM_GATEWAY_KEY_QUOTA_DAILY 配置的 token/天上限已用尽]
+  remedy: 提高配额; 或等待次日重置（按 auth key 当日用量判定）
+  retryable: false
+
+UPSTREAM_TIMEOUT:
+  http_status: 504
+  meaning: 上游响应超时（长生成/思维链超过 timeout_ms）
+  causes: [生成超长, 推理模型思维链吃满预算, 上游网络抖动]
+  remedy: 提高 provider timeout_ms（默认 120s）; 关 thinking
+  retryable: true
+
+UPSTREAM_5XX:
+  http_status: 502
+  meaning: 上游 5xx（服务端内部错误）
+  causes: [上游过载, 上游故障, 请求体异常]
+  remedy: 稍后重试（连接阶段已自动重试 max_retries 次）
+  retryable: true
+
+BAD_REQUEST:
+  http_status: 400
+  meaning: 请求格式错误（参数非法）
+  causes: [max_tokens 非法, temperature 越界, messages 空]
+  remedy: 修正请求参数, 不重试
+  retryable: false
+
+NETWORK_ERROR:
+  http_status: 503
+  meaning: 网络层失败（DNS/连接拒绝/TLS）
+  causes: [上游不可达, 防火墙/代理, 沙箱出站限制]
+  remedy: 检查网络/代理; 确认进程非沙箱启动
+  retryable: true
+
+CIRCUIT_OPEN:
+  http_status: 503
+  meaning: 本地熔断器打开（连续失败, 30s 内拒绝）
+  causes: [上游连续失败触发熔断, 半开探测未恢复]
+  remedy: 等待半开探测; 检查上游恢复
+  retryable: false
+
+NO_PROVIDER:
+  http_status: 503
+  meaning: 无可用路由 provider
+  causes: [全部 provider 未配置 key/未启用]
+  remedy: 在 provider.yaml 配置并启用至少一个 provider
+  retryable: false
+
+PROVIDER_NOT_FOUND:
+  http_status: 404
+  meaning: 指定 provider 未注册
+  causes: [请求 provider 名拼写错误, 配置未加载]
+  remedy: 检查 provider 名; 热加载配置
+  retryable: false
+
+UNKNOWN_ERROR:
+  http_status: 500
+  meaning: 未分类错误
+  causes: [未知]
+  remedy: 查看网关日志定位
+  retryable: false

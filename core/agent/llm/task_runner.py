@@ -89,7 +89,8 @@ class TaskRunner:
     def __init__(self, decision_bus: Any = None, monitor: Any = None,
                  intervention: Any = None, replanner: Optional[Callable] = None,
                  meta_feedback: Any = None, llm_loop: Optional[Callable] = None,
-                 model: str = "", trace_store: Any = None):
+                 model: str = "", trace_store: Any = None,
+                 execution_tree: Any = None):
         # 默认内存空总线（不触发 get_engine, 单元测试零启动成本）。
         # 生产接线（v3_session_api / statemachine）显式传 engine 总线,
         # 或调用 attach_engine_bus() 让事件进 /v6/changelog。
@@ -106,6 +107,10 @@ class TaskRunner:
         self._llm_loop = llm_loop or _default_llm_loop
         self._model = model
         self._trace_store = trace_store
+        # 执行轨迹落树（2026-08-13, P0 接线）: 淘宝 PES"全链路可回放" —
+        # 每步执行同步写 ExecutionTree（create_task/spawn_sub_agent/
+        # complete_node）, 行为链读树学模式, 元认知读树发现偏差。
+        self._execution_tree = execution_tree
 
     def attach_engine_bus(self) -> bool:
         """绑定引擎的决策事件总线（changelog 同源, 回看可见）。"""
@@ -159,15 +164,57 @@ class TaskRunner:
                        or 0.0)
         result = TaskResult(node_id=node_id)
 
+        # 执行轨迹落树（P0）: 任务节点 create_task → 每步 spawn_sub_agent
+        # → 收尾 complete_node（可回放/审计/归因）。
+        tree = self._execution_tree
+        tree_node_id = None
+        _tree_steps: list = []
+        if tree is not None:
+            try:
+                tree_node_id = tree.create_task(
+                    {"steps": [constraint.goal],
+                     "strategy": "TOOL_LOOP"}).node_id
+            except Exception as e:
+                logger.debug("execution tree create_task failed: %s", e)
+                tree_node_id = None
+
+        def _step_hook(step):
+            try:
+                self._monitor.on_step(step)
+            except Exception:
+                pass
+            if tree is not None and tree_node_id:
+                try:
+                    _tree_steps.append(step)
+                    tree.spawn_sub_agent(
+                        tree_node_id,
+                        task="%s: %s" % (
+                            step.get("name") or step.get("tool", "?"),
+                            str(step.get("summary") or
+                                step.get("args") or "")[:120]),
+                        context_size=0,
+                        pointers=["trace:%s" % step.get("round", 0)])
+                except Exception:
+                    pass
+
         cur = constraint
         for attempt in range(1 + max(0, constraint.max_replans)):
             self._monitor.reset()
-            raw = self._llm_loop(
-                msgs, model=self._model, max_rounds=cur.max_rounds,
-                allowed_tools=cur.allowed_tools, system_inject=inject,
-                on_step=self._monitor.on_step, timeout_s=cur.timeout_s,
-                symbol_interval=cur.symbol_interval,
-                symbol_keep_last=cur.symbol_keep_last)
+            try:
+                raw = self._llm_loop(
+                    msgs, model=self._model, max_rounds=cur.max_rounds,
+                    allowed_tools=cur.allowed_tools, system_inject=inject,
+                    on_step=_step_hook, timeout_s=cur.timeout_s,
+                    symbol_interval=cur.symbol_interval,
+                    symbol_keep_last=cur.symbol_keep_last)
+            except Exception as _le:
+                # 2026-08-13: 异常转 error 结果（不冒泡）— 保证落树收尾
+                # （complete_node）与复盘回流必然执行, 树节点不卡 ACTIVE。
+                logger.debug("llm_loop failed: %s", _le)
+                result.status = "error"
+                result.verdict = "abort"
+                result.reason = str(_le)[:200]
+                break
             content = str(raw.get("content", "") or "")
             error = str(raw.get("error", "") or "")
             result.tool_calls = raw.get("tool_calls") or []
@@ -249,6 +296,21 @@ class TaskRunner:
             request_id=request_id, turn=turn)
         # 复盘回流（A6）: 可选 MetaFeedback 消费（执行质量 → 策略权重）
         self._writeback(result, node_id, request_id)
+        # 执行轨迹落树收尾: 完整/失败/中止都落 result 摘要
+        if tree is not None and tree_node_id:
+            try:
+                tree.complete_node(tree_node_id, {
+                    "status": result.status,
+                    "verdict": result.verdict,
+                    "reason": (result.reason or "")[:200],
+                    "rounds": result.rounds,
+                    "replans": result.replans,
+                    "tools": [str(s.get("tool", "?"))
+                              for s in _tree_steps[:20]],
+                    "latency_ms": result.latency_ms,
+                })
+            except Exception as e:
+                logger.debug("execution tree complete failed: %s", e)
         return result
 
     def _writeback(self, result: TaskResult, node_id: str,

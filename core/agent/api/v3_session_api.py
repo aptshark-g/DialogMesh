@@ -403,6 +403,10 @@ async def send_message(session_id: str, req: SendMessageRequest):
                              "decision_bus": _dbus,
                              "meta_feedback": (getattr(_eng, "_meta_feedback", None)
                                                if _eng is not None else None),
+                             # 执行轨迹落树（P0）: 传会话树供 agentic 节点
+                             "discourse_tree": (
+                                 getattr(_eng, "_discourse_tree", None)
+                                 if _eng is not None else None),
                              "model": req.model or "deepseek-v4-flash"},
                 )
                 dag_results = chain_result.get("results", {})
@@ -542,11 +546,22 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 except Exception:
                     _dbus2 = None
                     _mf2 = None
-                    _ts2 = None
+                _ts2 = None
+                # 执行轨迹落树（P0）: per-session AgentTreeManager.execution
+                _exec_tree = None
+                try:
+                    _dt = getattr(_eng2, "_discourse_tree", None)
+                    if _dt is not None and hasattr(_dt, "_trees"):
+                        _mgr = _dt._trees.get(session_id)
+                        if _mgr is not None:
+                            _exec_tree = getattr(_mgr, "execution", None)
+                except Exception:
+                    _exec_tree = None
                 _runner = TaskRunner(decision_bus=_dbus2,
                                      meta_feedback=_mf2,
                                      trace_store=_ts2,
-                                     model=req.model or "deepseek-v4-flash")
+                                     model=req.model or "deepseek-v4-flash",
+                                     execution_tree=_exec_tree)
                 # v2.1 召回→执行层桥: 编码/施工类请求先粗召回当前目标,
                 # 结果作为候选锚点注入执行上下文（精确查阅由执行层工具完成）。
                 anchors = ""

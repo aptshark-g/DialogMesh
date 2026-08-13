@@ -288,10 +288,24 @@ class DeciderStateMachine:
                                 or node.params.get("description", "")
                                 or f"执行节点 {node.node_id}")
                         _dbus = context.get("decision_bus")
+                        # 执行轨迹落树（P0）: 会话级 ExecutionTree
+                        _exec_tree = None
+                        try:
+                            _dt = getattr(context, "get", lambda k: None)(
+                                "discourse_tree")
+                            if _dt is not None and hasattr(_dt, "_trees"):
+                                _mgr = _dt._trees.get(
+                                    context.get("session_id") or "")
+                                if _mgr is not None:
+                                    _exec_tree = getattr(
+                                        _mgr, "execution", None)
+                        except Exception:
+                            _exec_tree = None
                         runner = TaskRunner(
                             decision_bus=_dbus,
                             meta_feedback=context.get("meta_feedback"),
-                            model=context.get("model", ""))
+                            model=context.get("model", ""),
+                            execution_tree=_exec_tree)
                         constraint = TaskConstraint(
                             goal=goal,
                             scope=node.params.get("scope", ""),

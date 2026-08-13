@@ -49,7 +49,11 @@
   ⚠️ handoffs — 多 agent 交接 (B2-3 子图) 无工程化
 
 缺口 (分级):
-  [ ] P0 执行轨迹落树: ExecutionTree 接入 T4 (可回放/审计/归因)
+  [x] P0 执行轨迹落树: ExecutionTree 接入 T4 (可回放/审计/归因)
+      ✅ 2026-08-13 完成: TaskRunner(execution_tree=) — create_task →
+      spawn_sub_agent(每步工具) → complete_node(结果摘要); v3_session_api
+      + statemachine agentic 节点接线（per-session 树）; 正式测试
+      test_execution_trace_lands_in_tree（8/8 绿）
       → LoopX 的 "evidence" 概念印证: 执行证据是控制平面的核心
   [ ] P1 agent 级 quota: 长任务配额 (预算/时间/回合数) 独立于网关限流
   [ ] P1 handoffs 状态化: 子 agent 交接时状态持久化 (LoopX handoffs)
