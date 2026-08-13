@@ -125,3 +125,5 @@ gateway/provider.yaml
 gateway/provider.yaml.bak
 gateway/gateway.state.json
 gateway/selftest_out.json
+
+gateway/usage_log.jsonl

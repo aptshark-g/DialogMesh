@@ -1115,7 +1115,7 @@
 | 图谱 | GET /v6/graph; /v6/discourse-tree; /v6/objects; PUT /v6/edit/*（graph/discourse-tree/objects/relations/ir）| ConversationGraphPage |
 | 深层链 | /v6/relations; /v6/causal; /v6/behavior; /v6/engineering; /v6/behavior/patterns; /v6/behavior/predict; /v6/belief | DeepChainPage/BehaviorPage/EngineeringPage |
 | 规则/反馈 | GET/PUT /v6/rules; POST /v6/feedback | EngineeringPage/SettingsPage |
-| 提供商/网关 | /v6/providers*; /v6/gateway/*（providers/config/usage/stats/health/reload/active）| GatewayPage/SettingsPage |
+| 提供商/网关 | /v6/providers*; /v6/gateway/*（providers/config/usage/stats/health/reload/active/cost/error-catalog）| GatewayPage/SettingsPage |
 | 管道/参数 | /v6/pipeline; /v6/extraction; /v6/perspectives; /v6/parameters; /v6/context; /v6/router/modes | PipelinePage |
 | 持久化 | /v6/persistence; /v6/persistence/graphs; /v6/subgraph; /v6/recursive-map | PipelinePage/DeepChainPage |
 | 元认知 | /v6/meta/stats; /v6/meta/queue; /v6/meta/scan; /v6/meta/retrospect; /v6/versions/* | MetaCenterPage |
@@ -1237,3 +1237,10 @@
 - RightDock: 路由联动 tab + 手动固定 + 6 内容（画像/上下文/工程链/任务/图例/思考流）
 - Layout 接入; tsc 归零 + build 绿
 
+
+### 2026-08-13 网关数据契约补充（switch /v1/* 透传）
+
+- /v6/gateway/cost → switch /v1/usage: total_requests/total_tokens/by_provider + cost:{total, by_key, by_model, tenant_count} — 真实 token/请求/费用（按 key/model 分摊, usage_log.jsonl 持久化, 重启不丢）。
+- /v6/gateway/error-catalog → switch /v1/error-catalog: 错误码 YAML（AUTH_FAILED/RATE_LIMITED/UPSTREAM_TIMEOUT/CONTEXT_WINDOW_EXCEEDED/...）。
+- /v6/gateway/usage（既有）: 本地会话 monitor（data/monitor 估算）, 与网关真实计费（cost）不同源 — 页面"当前会话/累计用量"= 本地估算, "网关真实统计与计费"卡片 = cost/stats 透传。
+- /v6/gateway/stats 真实字段: tokens_prompt/tokens_completion/cache_hits/cache_misses/requests_by_provider/requests_by_model/errors_by_provider/latency_by_provider/rate_limit_hits/circuit_opens/stream_requests/active_connections/uptime_seconds（V6GatewayStats 已对齐）。

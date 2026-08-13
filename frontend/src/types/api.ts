@@ -845,15 +845,45 @@ export interface V6GatewayUsage {
   };
 }
 
+// 网关计费（2026-08-13, switch /v1/usage 透传）: 真实 token/请求/费用
+export interface V6GatewayCost {
+  total_requests?: number;
+  total_tokens?: number;
+  by_provider?: Record<string, number>;
+  cost?: {
+    total?: { prompt_tokens: number; completion_tokens: number;
+              requests: number; cost_usd: number };
+    by_key?: Record<string, {
+      key: string; prompt_tokens: number; completion_tokens: number;
+      requests: number; cost_usd: number }>;
+    by_model?: Record<string, {
+      model: string; prompt_tokens: number; completion_tokens: number;
+      requests: number; cost_usd: number }>;
+    tenant_count?: number;
+  };
+}
+
 export interface V6GatewayStats {
-  requests: number;
-  tokens: number;
-  latency_p50: number;
-  latency_p95: number;
-  latency_p99: number;
-  cache_hit_rate: number;
-  errors_by_provider: Record<string, number>;
-  requests_by_model: Record<string, number>;
+  // 2026-08-13: 对齐 switch /v1/stats 真实字段
+  uptime_seconds?: number;
+  requests?: number;
+  tokens_prompt?: number;
+  tokens_completion?: number;
+  cache_hits?: number;
+  cache_misses?: number;
+  rate_limit_hits?: number;
+  circuit_opens?: number;
+  stream_requests?: number;
+  active_connections?: number;
+  requests_by_provider?: Record<string, number>;
+  requests_by_model?: Record<string, number>;
+  requests_by_status?: Record<string, number>;
+  errors_by_provider?: Record<string, number>;
+  latency_by_provider?: Record<string, number>;
+  latency_p50?: number;
+  latency_p95?: number;
+  latency_p99?: number;
+  cache_hit_rate?: number;
 }
 
 export interface V6GatewayHealth {

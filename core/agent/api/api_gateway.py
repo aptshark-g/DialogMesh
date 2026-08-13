@@ -496,6 +496,19 @@ async def gateway_usage():
         "rates": {"deepseek": "$0.14/M in + $0.28/M out"}
     }
 
+
+@router.get("/cost")
+async def gateway_cost():
+    """网关计费（2026-08-13 接线）: 转发 switch /v1/usage 的 cost 数据 —
+    total（token/请求/费用）+ by_key + by_model（精细化分摊）。"""
+    return _switch_get("/v1/usage")
+
+
+@router.get("/error-catalog")
+async def gateway_error_catalog():
+    """错误目录（2026-08-13）: 转发 switch /v1/error-catalog（YAML 文本）。"""
+    return _switch_get_text("/v1/error-catalog")
+
 # ── Proxy helpers ──
 
 def _switch_get(path: str) -> dict:
@@ -506,6 +519,17 @@ def _switch_get(path: str) -> dict:
             return json.loads(resp.read())
     except Exception as e:
         return {"error": f"switch unavailable: {e}"}
+
+
+def _switch_get_text(path: str) -> str:
+    """文本透传（2026-08-13）: error-catalog 是 YAML 文本, 不走 JSON。"""
+    try:
+        req = urllib.request.Request(f"{SWITCH_URL}{path}")
+        req.add_header("Authorization", f"Bearer {SWITCH_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        return f"# switch unavailable: {e}"
 
 def _switch_admin(path: str, method: str = "POST", body: dict = None) -> dict:
     try:

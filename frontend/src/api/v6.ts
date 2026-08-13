@@ -23,7 +23,8 @@ import type {
   V6GatewayProvidersResponse, V6GatewayProviderConfigRequest, V6GatewayProviderConfigResponse,
   V6GatewayTestResponse, V6GatewayModelsResponse,
   V6GatewayActiveRequest, V6GatewayActiveResponse,
-  V6GatewayConfig, V6GatewayConfigRequest, V6GatewayUsage, V6GatewayStats, V6GatewayHealth,
+  V6GatewayConfig, V6GatewayConfigRequest, V6GatewayUsage, V6GatewayStats,
+  V6GatewayHealth, V6GatewayCost,
   V6ServiceStatus,
   // v8 Meta
   V6MetaStatsResponse, V6MetaQueueResponse,
@@ -379,6 +380,14 @@ export function updateGatewayConfig(req: V6GatewayConfigRequest): Promise<V6Gate
 
 export function getGatewayUsage(): Promise<V6GatewayUsage> {
   return apiFetch<V6GatewayUsage>('/v6/gateway/usage');
+}
+
+export function getGatewayCost(): Promise<V6GatewayCost> {
+  return apiFetch<V6GatewayCost>('/v6/gateway/cost');
+}
+
+export function getGatewayErrorCatalog(): Promise<string> {
+  return apiFetch<string>('/v6/gateway/error-catalog');
 }
 
 export function getGatewayStats(): Promise<V6GatewayStats> {

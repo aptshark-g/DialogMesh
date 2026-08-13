@@ -41,6 +41,7 @@ import {
   getContext,
   addGatewayProvider,
   removeGatewayProvider,
+  getGatewayCost,
 } from '../api/v6';
 import { getStatus, triggerCheckpoint, inspectSystem } from '../api/v4';
 import { cn } from '../lib/utils';
@@ -52,6 +53,7 @@ import type {
   V6ContextConfigRequest,
   V6ContextResponse,
   V6GatewayProviderAddRequest,
+  V6GatewayCost,
   StatusResponse,
   CheckpointResponse,
   InspectResponse,
@@ -286,6 +288,20 @@ export function GatewayPage() {
   const [testResults, setTestResults] = useState<Record<string, { healthy: boolean; latency: number; error: string | null }>>({});
   const [testingProvider, setTestingProvider] = useState<string | null>(null); // local — avoids global re-render
   const [activeTab, setActiveTab] = useState<'providers' | 'usage' | 'config' | 'monitor'>('providers');
+
+  // ─── 网关计费（2026-08-13 接线: switch /v1/usage 真实 cost）───
+  const [gatewayCost, setGatewayCost] = useState<V6GatewayCost | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      getGatewayCost()
+        .then((d) => { if (alive) setGatewayCost(d); })
+        .catch(() => { /* 网关未启动时静默 */ });
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   // ─── 系统运维状态 (引擎 / Provider 切换 / 上下文配置) ───
   const [engineStatus, setEngineStatus] = useState<StatusResponse | null>(null);
@@ -895,6 +911,79 @@ export function GatewayPage() {
                 </div>
               </div>
             )}
+
+            {/* 网关真实统计与计费（2026-08-13: switch /v1/stats + /v1/usage）*/}
+            <div className="bg-surface-card rounded-xl border border-gray-200 p-5 md:col-span-2">
+              <div className="flex items-center gap-2 text-text-muted mb-4">
+                <Zap className="h-4 w-4" />
+                <span className="text-xs font-semibold">网关真实统计与计费</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                <div className="bg-surface-sidebar rounded-lg p-3">
+                  <span className="text-xs text-text-muted">Prompt Tokens</span>
+                  <p className="text-lg font-semibold text-text-primary">
+                    {(stats?.tokens_prompt ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-surface-sidebar rounded-lg p-3">
+                  <span className="text-xs text-text-muted">Completion Tokens</span>
+                  <p className="text-lg font-semibold text-text-primary">
+                    {(stats?.tokens_completion ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-surface-sidebar rounded-lg p-3">
+                  <span className="text-xs text-text-muted">缓存命中</span>
+                  <p className="text-lg font-semibold text-status-success">
+                    {(stats?.cache_hits ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-surface-sidebar rounded-lg p-3">
+                  <span className="text-xs text-text-muted">缓存未命中</span>
+                  <p className="text-lg font-semibold text-text-primary">
+                    {(stats?.cache_misses ?? 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-lg bg-surface-sidebar p-3">
+                  <span className="text-xs text-text-muted">总费用 (USD)</span>
+                  <p className="text-lg font-semibold text-primary">
+                    {gatewayCost?.cost?.total?.cost_usd?.toFixed(6) ?? '-'}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {gatewayCost?.cost?.total?.requests ?? 0} 请求 ·{' '}
+                    {(gatewayCost?.cost?.total?.prompt_tokens ?? 0).toLocaleString()} /
+                    {(gatewayCost?.cost?.total?.completion_tokens ?? 0).toLocaleString()} tokens
+                  </p>
+                </div>
+                <div className="rounded-lg bg-surface-sidebar p-3">
+                  <span className="text-xs text-text-muted">按 Key 分摊</span>
+                  {gatewayCost?.cost?.by_key && Object.keys(gatewayCost.cost.by_key).length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      {Object.entries(gatewayCost.cost.by_key).map(([k, v]) => (
+                        <div key={k} className="flex justify-between text-xs">
+                          <span className="text-text-secondary font-mono">{v.key}</span>
+                          <span className="text-text-primary">${v.cost_usd.toFixed(6)} · {v.requests} 请求</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-xs text-text-muted mt-1">暂无数据</p>}
+                </div>
+                <div className="rounded-lg bg-surface-sidebar p-3">
+                  <span className="text-xs text-text-muted">按模型分摊</span>
+                  {gatewayCost?.cost?.by_model && Object.keys(gatewayCost.cost.by_model).length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      {Object.entries(gatewayCost.cost.by_model).map(([m, v]) => (
+                        <div key={m} className="flex justify-between text-xs">
+                          <span className="text-text-secondary font-mono">{v.model}</span>
+                          <span className="text-text-primary">${v.cost_usd.toFixed(6)} · {v.requests} 请求</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-xs text-text-muted mt-1">暂无数据</p>}
+                </div>
+              </div>
+            </div>
           </motion.section>
         )}
 
