@@ -74,7 +74,9 @@ def test_route_batch_high_sync_required():
 # ── executor._handle_tool_batch ──────────────────────────────
 
 def test_batch_readonly_tools_executes():
-    p1, p2 = _tmp_file("a"), _tmp_file("b")
+    # 2026-08-13 强化: 内容用独特字符串（不可能出现在临时路径/用户名里）,
+    # 旧断言 "a"/"b" 会因路径含字母碰巧通过 — 浅测试实锤。
+    p1, p2 = _tmp_file("alpha-content"), _tmp_file("beta-content")
     try:
         ex = _ToolExec()
         node = _batch_node()
@@ -83,8 +85,12 @@ def test_batch_readonly_tools_executes():
             {"tool": "file_read", "args": {"path": p2}},
         ], "读两个文件")
         assert r["status"] == "ok"
-        assert "a" in str(r["tool_results"])
-        assert "b" in str(r["tool_results"])
+        assert "alpha-content" in str(r["tool_results"])
+        assert "beta-content" in str(r["tool_results"])
+        # 同名工具不互相覆盖: 第二个 file_read 结果独立保留（2026-08-13）
+        keys = list(r["tool_results"].keys())
+        assert len(keys) == 2, f"两个 file_read 应有两个结果键: {keys}"
+        assert "file_read" in keys and "file_read#2" in keys
     finally:
         os.unlink(p1)
         os.unlink(p2)

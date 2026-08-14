@@ -35,6 +35,7 @@ SOURCE_CONFIDENCE: Dict[str, float] = {
     "spo": 0.85,
     "assoc": 0.75,
     "diffusion": 0.75,
+    "graph": 0.75,
 }
 TEMP_WEIGHT: Dict[str, float] = {
     "active": 1.0,
@@ -44,6 +45,104 @@ TEMP_WEIGHT: Dict[str, float] = {
 }
 EPSILON = 0.02  # A18 ε 步长（反馈自适应）
 PRONOUNS = {"它", "他", "她", "这", "那", "其"}
+
+# 意图感知自适应融合（2026-08-13, W1 后半）: per-intent 融合配置。
+# 每种意图天然最优路径不同（用户拍板: "各种意图天然最优不同"）——
+# 记忆召回/知识问答重语义（vector 主导）; 数据搜索/代码分析重词法
+# +结构（bm25/spo 权重上浮）; 因果推理重约束投影（spo 主导）。
+# A18: 各意图各源置信度独立可学习（feedback(intent=...) 调整）。
+# 意图名与 _GatewayLLMAdapter.classify_intent 的类别集对齐（软编码:
+# 扩展只改这一处）。
+INTENT_PROFILES: Dict[str, Dict[str, object]] = {
+    "记忆召回": {
+        "fuse_mode": "vector_primary",
+        "weights": {"vector": 0.55, "bm25": 0.25, "spo": 0.15,
+                    "hyde": 0.10, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.10},
+        "hyde": True, "diffuse_k": 2, "graph": True,
+    },
+    "数据搜索": {
+        "fuse_mode": "rerank",
+        "weights": {"vector": 0.40, "bm25": 0.35, "spo": 0.20,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.10},
+        "hyde": True, "diffuse_k": 1, "graph": True,
+    },
+    "代码分析": {
+        "fuse_mode": "rerank",
+        "weights": {"vector": 0.35, "bm25": 0.35, "spo": 0.25,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.12},
+        "hyde": True, "diffuse_k": 1, "graph": True,
+    },
+    "任务规划": {
+        "fuse_mode": "rerank",
+        "weights": {"vector": 0.45, "bm25": 0.30, "spo": 0.20,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.10},
+        "hyde": True, "diffuse_k": 2, "graph": True,
+    },
+    "因果推理": {
+        "fuse_mode": "rerank",
+        "weights": {"vector": 0.40, "bm25": 0.20, "spo": 0.35,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.10},
+        "hyde": True, "diffuse_k": 2, "graph": True,
+    },
+    "通用讨论": {
+        "fuse_mode": "vector_primary",
+        "weights": {"vector": 0.50, "bm25": 0.25, "spo": 0.20,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.08},
+        "hyde": False, "diffuse_k": 2, "graph": False,
+        # 闲聊/讨论类不需要激进检索重排（2026-08-13 消融: casual top1
+        # 100%→66.7%、通用讨论 100%→50% 是重排把对话命中挤下去的实例）。
+        "rerank": False,
+    },
+    "casual": {
+        "fuse_mode": "vector_primary",
+        "weights": {"vector": 0.60, "bm25": 0.20, "spo": 0.10,
+                    "hyde": 0.00, "assoc": 0.10, "diffusion": 0.05,
+                    "graph": 0.00},
+        "hyde": False, "diffuse_k": 1, "graph": False,
+        "rerank": False,
+    },
+    "通用对话": {
+        "fuse_mode": "vector_primary",
+        "weights": {"vector": 0.55, "bm25": 0.25, "spo": 0.15,
+                    "hyde": 0.05, "assoc": 0.05, "diffusion": 0.08,
+                    "graph": 0.08},
+        "hyde": False, "diffuse_k": 2, "graph": False,
+        "rerank": False,
+    },
+}
+# 默认重排权重（无意图/未知意图时）: 保守, vector 主导（dialogue 69.2%
+# 由 vector 支撑, 不能因重排掉分）, 但 bm25/spo 独有命中可上浮
+# （doc top1 31.1% 提升空间在此——纯 vector 漏检时词法/结构补位）。
+RERANK_WEIGHTS: Dict[str, float] = {
+    "vector": 0.55, "bm25": 0.25, "spo": 0.15, "hyde": 0.10,
+    "assoc": 0.05, "diffusion": 0.08, "graph": 0.10,
+}
+
+
+def normalize_intent(intent: Optional[str]) -> Optional[str]:
+    """意图名归一: 空/未知名 → None（走默认 profile）。"""
+    if not intent:
+        return None
+    i = str(intent).strip()
+    if i in INTENT_PROFILES:
+        return i
+    # 别名兜底（英文/缩写 → 中文类别集）
+    ALIASES = {
+        "task": "任务规划", "任务": "任务规划", "plan": "任务规划",
+        "code": "代码分析", "coding": "代码分析",
+        "search": "数据搜索", "data": "数据搜索",
+        "knowledge": "记忆召回", "memory": "记忆召回",
+        "recall": "记忆召回", "query": "记忆召回",
+        "why": "因果推理", "causal": "因果推理",
+        "discuss": "通用讨论", "chat": "casual", "general": "通用对话",
+    }
+    return ALIASES.get(i.lower(), None)
 
 
 def _is_chinese_query(query: str) -> bool:
@@ -79,7 +178,10 @@ class RecallHit:
     hops: int = 0
     path: List[str] = field(default_factory=list)
     spo: Optional[dict] = None        # 约束投影（SPO 三元组）
+    parent_context: str = ""          # 父块上下文（文件摘要, 2026-08-14）
     created_at: float = field(default_factory=time.time)
+    scores: Dict[str, float] = field(default_factory=dict)  # 每源原始分（重排用）
+    rerank_score: float = 0.0          # 重排层输出分（白盒可查）
 
     def fused(self) -> float:
         """融合分: 相关度 × 溯源置信度 × 温度权重。"""
@@ -100,6 +202,9 @@ class RecallHit:
             "hops": self.hops,
             "path": self.path,
             "spo": self.spo,
+            "parent_context": self.parent_context[:200],
+            "scores": self.scores,
+            "rerank_score": round(self.rerank_score, 6),
             "fused": round(self.fused(), 4),
         }
 
@@ -110,6 +215,9 @@ class RecallResult:
     hits: List[RecallHit] = field(default_factory=list)
     expanded_queries: List[str] = field(default_factory=list)
     latency_ms: float = 0.0
+    file_boost_ms: float = 0.0        # 文件层耗时（两级检索监控, 2026-08-14）
+    files_hit: int = 0                # 文件层命中数
+    pool_extras: List[RecallHit] = field(default_factory=list)  # C 最小版候选池扩展
 
     def to_dict(self) -> dict:
         return {
@@ -117,6 +225,9 @@ class RecallResult:
             "expanded_queries": self.expanded_queries,
             "hits": [h.to_dict() for h in self.hits],
             "latency_ms": round(self.latency_ms, 1),
+            "file_boost_ms": round(self.file_boost_ms, 1),
+            "files_hit": self.files_hit,
+            "pool_extras": [h.to_dict() for h in self.pool_extras],
         }
 
 
@@ -138,6 +249,10 @@ def format_anchors(result: "RecallResult", max_chars: int = 1200,
         if h.path:
             loc = " <" + ",".join(str(p) for p in h.path[:3]) + ">"
         line = f"- [{h.source} {h.fused():.2f}]{loc} {text}"
+        # 父块上下文（2026-08-14, 方案 B 返回层 — 对齐 ParentDocument
+        # Retriever: 检索小块, 返回时附父块上下文, 不参与排序）
+        if getattr(h, "parent_context", ""):
+            line += f" | 文件: {h.parent_context[:120]}"
         used += len(line) + 1
         if used > max_chars:
             break
@@ -166,6 +281,12 @@ class RecallService:
         self._feedback_log: List[dict] = []
         self._decompose_misses: List[dict] = []   # 子问题分解失败记录（元认知复盘）
         self._learned_conf: Dict[str, float] = {}
+        # A18 持久化（2026-08-13）: 置信度/权重覆盖落盘 data/recall_index/
+        # learned_conf.json — 重启不丢（此前进程内, 反馈即失）。
+        # 键: "source"（全局）或 "意图:source"（per-intent）;
+        # 权重覆盖: {"rerank:intent:source": w}（重排权重, 白盒可调）。
+        self._weight_overrides: Dict[str, Dict[str, float]] = {}
+        self._load_learned_conf()
         self._last_result: Optional[RecallResult] = None
         self._spo_cache: Dict[str, List[dict]] = {}
         self._index_cache: Dict[str, dict] = {}   # bid -> {spo, vector}
@@ -201,6 +322,24 @@ class RecallService:
         # （46/46）, doc top1 21.3%→31.1%, dialogue 56.4%→69.2%。
         # 备选: linear | rrf | norm（保留消融/回退）。
         self.fuse_mode = "vector_primary"
+        # 重排层（2026-08-13, P1）: 候选生成后按意图权重特征重排。
+        # DM_RERANK=0 关闭（消融对比）。默认开。
+        self.rerank = os.environ.get("DM_RERANK", "1") != "0"
+        # 源独有保底（2026-08-14, 实验开关, 默认关）:
+        # 设想 — vector_primary 下向量长尾填满 top-k, bm25/spo 独有
+        # 命中被埋（doc 域 8 条 miss: vec=None 且 bm25 rank 1-2）。
+        # 实测（eval_100 消融）— ×1.5 提升纯非 vector 命中是**负优化**:
+        # doc top1 34.4%→31.1%, 记忆召回 40.3%→37.3% — bm25 假阳性
+        # 同被抬升, 净损 3.3pp。结论: 无差别提升"源独有"= 无差别提升
+        # 噪声; 保底必须区分"正确独有"与"噪声独有"（待设计, 如按
+        # 源强度阈值/校验）, 当前保留开关供后续实验。
+        self.source_guarantee = os.environ.get(
+            "DM_SOURCE_GUARANTEE", "0") != "0"
+        try:
+            self.guarantee_boost = float(os.environ.get(
+                "DM_SOURCE_GUARANTEE_BOOST", "1.5"))
+        except ValueError:
+            self.guarantee_boost = 1.5
         # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
         # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
         # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
@@ -244,6 +383,39 @@ class RecallService:
         self.enable_doc_corpus = os.environ.get(
             "DM_DOC_CORPUS", "0") == "1"
         self._doc_corpus_blocks: Optional[List[dict]] = None
+        # 两级检索（2026-08-14, 方案 B+C 合并体）: 文件级摘要向量库
+        # （~600 文件）— query 先打文件层, 命中文件的节块 boost +
+        # parent_context 返回。摘要策略: mechanical（默认零成本）/
+        # small（LM Studio）/ llm（网关）; DM_FILE_SUMMARY 覆盖。
+        self._file_summaries: Optional[Dict[str, str]] = None
+        self._file_summary_vectors: Dict[str, List[float]] = {}
+        # 两级检索（2026-08-14 实验, 默认关 — 诚实消融结果）:
+        # 文件层命中 → 节块保底抬分（Parent-Child 直投候选）。
+        # 实测 doc top1 23→22（净损）: "文件对但块弱相关"的块被保底
+        # 抬到 top-1, 挤掉真正相关块。方案 A（doc_title 嵌入窗口,
+        # 34.4→37.7%）才是有效提升; 文件层保底需更精细设计
+        # （文件命中后只在文件内部排序, 而非全局保底）— DM_FILE_BOOST=1
+        # 开启实验。
+        self._file_summary_boost = os.environ.get(
+            "DM_FILE_BOOST", "0") != "0"
+        self._file_boost_factor = 0.10   # 加性 boost（余弦分 +0.1）
+        self._file_summary_top = 5       # 文件层 top-k
+        # 2026-08-14（B 尾巴）: 文件层信号进重排权重（DM_FILE_RERANK=1）。
+        # 不保底抬分（DM_FILE_BOOST 已被消融否决 — 全局保底挤掉真相关
+        # 块）, 而是文件摘要命中 → 该文件节块的重排特征加权（可消融,
+        # 与 DM_FILE_BOOST 正交: 一个动检索层, 一个动重排层）。
+        self._file_rerank = os.environ.get(
+            "DM_FILE_RERANK", "0") != "0"
+        self._file_rerank_weight = 0.15   # 重排特征加性权重（与 w[src] 同量级）
+        # 2026-08-14（C 最小版）: 文件命中 → 该文件节块进候选池扩展
+        # （DM_FILE_POOL=1）。只扩候选不抬排序 — 消融结论: 文件层
+        # 信号颗粒度错配, 抬排名必输; 价值在给子图更多锚点/合并材料。
+        self._file_pool = os.environ.get("DM_FILE_POOL", "0") != "0"
+        self._file_pool_per_doc = 3       # 每命中文件最多进池块数
+        self._file_summary_strategy = os.environ.get(
+            "DM_FILE_SUMMARY", "mechanical")
+        self._file_summary_vec_path = None
+        self._load_file_summary_vectors()
         # 融合模式环境覆盖（2026-08-12）: linear | rrf | vector_primary
         # （证据驱动: top1 全部来自 vector, vector 内 #1 被 RRF 压掉
         # ~10 条 → vector 主导排序 + 其他源扩展）
@@ -366,6 +538,15 @@ class RecallService:
                 "temperature": getattr(b, "status", "active"),
                 "spo": spo,
                 "vector": vector,
+                # 2026-08-14: hot 块透传文件上下文（与 _ensure_global_blocks
+                # 对齐）— doc/path 供返回层 parent_context 附加与文件级
+                # boost; doc_title 供无预编码向量时的嵌入窗口（方案 A 同
+                # 口径）。对话树块无这些属性 → 空值, 行为不变。
+                "doc": getattr(b, "doc", "") or "",
+                "doc_title": getattr(b, "doc_title", "") or "",
+                "path": (getattr(b, "_path", None)
+                         or ([getattr(b, "doc", "")]
+                             if getattr(b, "doc", "") else [])),
             })
             # 缓存写回: hash + spo + vector（2026-08-12 修复, 与 global 同）
             entry = self._index_cache.setdefault(bid, {})
@@ -445,6 +626,7 @@ class RecallService:
                     "spo": spo,
                     "vector": vector,
                     "session": getattr(b, "_session_id", ""),
+                    "doc": getattr(b, "doc", ""),
                 })
                 # 缓存写回: hash + spo 一起落（2026-08-12 修复: 此前只写 hash,
                 # spo/vector 永不持久化 → 每次全量重算 140s）
@@ -539,6 +721,136 @@ class RecallService:
                     len(blocks), time.time() - _t0,
                     _stat["cache_hit"], _stat["spo_recalc"], _stat["pre_vec"])
         return blocks
+
+    # ── 两级检索（2026-08-14, 方案 B+C 合并体）────────────────
+
+    def _ensure_file_summaries(self) -> Dict[str, str]:
+        """文件级摘要懒加载（全局池含 doc 块时才加载）。
+
+        不依赖 enable_doc_corpus 开关（eval 的 doc_service 构造时
+        未开该开关, 但块带 doc 字段 — 有 doc 块即加载）。"""
+        if self._file_summaries is not None:
+            return self._file_summaries
+        pool = self._global_block_list or []
+        has_doc = any(b.get("doc") for b in pool)
+        if not has_doc:
+            # 2026-08-14: eval/bench 的 doc 块在 hot 池（discourse）, 冷池
+            # 为空 → 只看冷池会导致 parent_context 永远附加不上。hot 池
+            # 有 doc 块（_ensure_blocks 已透传 doc）即加载。
+            hot = self._block_list or []
+            has_doc = any(b.get("doc") for b in hot)
+        if not has_doc:
+            self._file_summaries = {}
+            return self._file_summaries
+        try:
+            from core.agent.recall.doc_corpus import load_file_summaries
+            self._file_summaries = load_file_summaries(
+                strategy=getattr(self, "_file_summary_strategy",
+                                 "mechanical"))
+        except Exception as e:
+            logger.debug("file summaries load failed: %s", e)
+            self._file_summaries = {}
+        return self._file_summaries
+
+    def _file_summary_vec_file(self) -> str:
+        if self._file_summary_vec_path is None:
+            self._file_summary_vec_path = os.path.join(
+                self._index_dir(), "doc_file_summaries_vectors.json")
+        return self._file_summary_vec_path
+
+    def _load_file_summary_vectors(self) -> None:
+        """文件摘要向量落盘加载（首查 23s → 秒级）。"""
+        try:
+            import json as _json
+            with open(self._file_summary_vec_file(), "r",
+                      encoding="utf-8") as f:
+                self._file_summary_vectors = _json.load(f)
+            # 2026-08-14 修复: 向量与摘要策略强绑定 — 缓存无策略标记
+            # 或与当前策略不一致 → 全弃（否则 small 摘要配 mechanical
+            # 旧向量, 文件层信号失真）。
+            if (self._file_summary_vectors.get("_strategy")
+                    != self._file_summary_strategy):
+                self._file_summary_vectors = {}
+        except Exception:
+            self._file_summary_vectors = {}
+
+    def _save_file_summary_vectors(self) -> None:
+        try:
+            import json as _json
+            out = dict(self._file_summary_vectors)
+            out["_strategy"] = self._file_summary_strategy
+            tmp = self._file_summary_vec_file() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump(out, f, ensure_ascii=False)
+            os.replace(tmp, self._file_summary_vec_file())
+        except Exception as e:
+            logger.debug("file summary vectors save failed: %s", e)
+
+    def _file_doc_scores(self, query: str) -> tuple:
+        """query → 文件摘要向量 top-k → {doc: 相似度}。
+
+        返回 ({doc: sim}, 文件层耗时 ms, 文件层命中数)。
+        文件摘要向量懒计算（~600 文件, 一次嵌入缓存进 _embeddings）。
+        消费方: DM_FILE_BOOST（检索层保底, 已消融否决）与
+        DM_FILE_RERANK（重排层加权, 2026-08-14 B 尾巴）。
+        """
+        t0 = time.time()
+        summaries = self._ensure_file_summaries()
+        if not summaries:
+            return {}, 0.0, 0
+        qv = self._embed(query)
+        if qv is None:
+            return {}, 0.0, 0
+        scored = []
+        for doc, summary in summaries.items():
+            vec = self._file_summary_vectors.get(doc)
+            if vec is None:
+                vec = self._embed(summary[:1000])
+                if vec is None:
+                    # 2026-08-14 修复: 嵌入偶发失败不静默跳过 —
+                    # 轻量词法兜底（无 jieba 依赖: 中文按 2-gram 字,
+                    # ASCII 按词; 交集>0 → 弱命中 0.35）。防文件层
+                    # 因 embed 抖动漏文件。
+                    if self._lex_overlap(query, summary) > 0:
+                        scored.append((0.35, doc))
+                    continue
+                self._file_summary_vectors[doc] = vec
+                # 增量落盘（避免进程中断全丢）
+                if len(self._file_summary_vectors) % 100 == 0:
+                    self._save_file_summary_vectors()
+            sim = self._cosine(qv, vec)
+            if sim > 0.3:
+                scored.append((sim, doc))
+        self._save_file_summary_vectors()
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top = scored[: self._file_summary_top]
+        return ({d: s for s, d in top},
+                (time.time() - t0) * 1000, len(top))
+
+    @staticmethod
+    def _lex_overlap(a: str, b: str) -> int:
+        """轻量词法交集: 中文字符二元组 + ASCII 词, 无第三方依赖。"""
+        import re
+
+        def _tokens(s: str) -> set:
+            out = set()
+            cjk = re.findall(r"[\u4e00-\u9fff]", s)
+            for i in range(len(cjk) - 1):
+                out.add(cjk[i] + cjk[i + 1])
+            out.update(re.findall(r"[A-Za-z0-9_]{2,}", s))
+            return out
+
+        return len(_tokens(a) & _tokens(b))
+
+    @staticmethod
+    def _cosine(a: List[float], b: List[float]) -> float:
+        import math
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        na = math.sqrt(sum(x * x for x in a)) or 1e-9
+        nb = math.sqrt(sum(y * y for y in b)) or 1e-9
+        return dot / (na * nb)
 
     # ── 索引缓存（G0: 首次召回持久化 SPO+向量, 后续直读, 重启不丢） ──
 
@@ -756,7 +1068,9 @@ class RecallService:
 
     def _vector_anchors(self, query: str, top_k: int,
                         blocks: Optional[List[dict]] = None,
-                        query_vec: Optional[list] = None) -> List[RecallHit]:
+                        query_vec: Optional[list] = None,
+                        boost_docs: Optional[set] = None,
+                        pool_docs: Optional[set] = None) -> List[RecallHit]:
         """BGE 向量召回（余弦）; BGE 不可用 → ChunkStore 关键词兜底。"""
         _t0 = time.time()
         if blocks is None:
@@ -795,8 +1109,17 @@ class RecallService:
                     # 与 doc_recall_bench.prepare_vectors 同口径（粗扫描）;
                     # 全文由子图扩展/执行层抓取。全文嵌入被巨块
                     # （>8K 字符 → 8192 token 序列）拖到 30 分钟+。
-                    coarse = ((b.get("heading") or "")
-                              + "\n" + score_text)[:1500]
+                    # 2026-08-14: coarse 兜底窗口带文件标题（父级上下文,
+                    # 与 doc_corpus v4 嵌入同口径）。无 doc_title（对话树
+                    # 块/goldset）→ 与原窗口字节级一致, 不引入回归。
+                    _doc_t = b.get("doc_title") or ""
+                    if _doc_t:
+                        coarse = ((f"{_doc_t} | "
+                                   f"{b.get('heading') or ''}\n{score_text}")
+                                  [:1500])
+                    else:
+                        coarse = ((b.get("heading") or "")
+                                  + "\n" + score_text)[:1500]
                     ev = self._embed(coarse)
                     if ev is None:
                         continue
@@ -850,21 +1173,41 @@ class RecallService:
                 # （2026-08-12 修复: 此前误把行索引当块 id, Rust 激活时
                 # 向量路全部被过滤掉, doc 域召回归零）。
                 for row_idx, s in sims:
-                    if s <= 0.3 or row_idx >= len(batch_bids):
+                    if row_idx >= len(batch_bids):
                         continue
                     bid = batch_bids[row_idx]
                     b = self._blocks_cache.get(bid)
                     if b is None:
                         b = next((x for x in blocks if x["id"] == bid), None)
-                    if b is not None:
-                        scored.append((s, b))
+                    boosted = (boost_docs and b is not None
+                               and b.get("doc") in boost_docs)
+                    if boost_docs and b is not None and bid.startswith(
+                            "docs/only/G10"):
+                        logger.info("G10 boost check: doc=%r in=%s",
+                                    b.get("doc")[:40],
+                                    b.get("doc") in boost_docs)
+                    # 两级检索（2026-08-14, 方案 B+C 合并体）:
+                    # 文件层命中的文件 → 其节块直接进候选（即使 sim<0.3
+                    # 被阈值滤掉 — Parent-Child 正解: 文件对 → 块可见）。
+                    # score = max(原始分, 保底 0.25) + 0.1 boost。
+                    if boosted:
+                        s = max(s, 0.25) + self._file_boost_factor
+                    if s > 0.3 or boosted or (
+                            pool_docs and b is not None
+                            and b.get("doc") in pool_docs):
+                        if b is not None:
+                            scored.append((s, b))
             except Exception:
                 for b in blocks:
                     ev = self._embeddings.get(b["id"])
                     if ev is None:
                         continue
                     sim = self._cosine(qv, ev)
-                    if sim > 0.3:
+                    boosted = (boost_docs and b.get("doc") in boost_docs)
+                    if boosted:
+                        sim = max(sim, 0.25) + self._file_boost_factor
+                    if sim > 0.3 or boosted or (
+                            pool_docs and b.get("doc") in pool_docs):
                         scored.append((sim, b))
             scored.sort(key=lambda x: x[0], reverse=True)
             self._save_index_cache(getattr(self, "_index_cache_file", "default"))
@@ -1268,6 +1611,51 @@ class RecallService:
                 hits.append(h)
         return hits[:top_k]
 
+    def _segment_anchors(self, segments: List[str],
+                         top_k: int) -> List[RecallHit]:
+        """多意图 segments 消费（2026-08-13, 意图副路径实质化）:
+
+        每个子意图段并行全路召回（vector+bm25+spo, 线程池 I/O 密集）,
+        合并去重, 源标记 "segment"（区别于 hyde 的查询扩展 — 这是
+        意图拆分的段, 语义权重更高）。失败段记录 miss 不阻塞。
+        """
+        segs = [s.strip() for s in (segments or []) if s and s.strip()]
+        if len(segs) <= 1:
+            return []
+        seen: set = set()
+        hits: List[RecallHit] = []
+        pool = getattr(self, "decompose_max_workers", 4)
+
+        def _one(q):
+            out = []
+            for h in self._vector_anchors(q, top_k):
+                out.append(h)
+            for h in self._bm25_anchors(q, top_k):
+                out.append(h)
+            for h in self._spo_anchors(q, top_k):
+                out.append(h)
+            return q, out
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max(1, pool)) as ex:
+                results = list(ex.map(_one, segs))
+        except Exception:
+            results = [_one(q) for q in segs]
+        for q, sub in results:
+            if not sub:
+                self._decompose_misses.append(
+                    {"query": q, "error": "segment empty recall"})
+                continue
+            for h in sub:
+                if h.id in seen:
+                    continue
+                seen.add(h.id)
+                h.source = "segment"
+                h.confidence = 0.8
+                hits.append(h)
+        return hits[: top_k * 2]
+
     # ── 扩散 ────────────────────────────────────────────────────
 
     def _diffuse(self, anchors: List[RecallHit], k: int = 2) -> List[RecallHit]:
@@ -1304,12 +1692,67 @@ class RecallService:
 
     # ── A18 权重自适应 + A6 反馈 ─────────────────────────────────
 
-    def _confidence(self, source: str) -> float:
-        """读取可学习置信度（默认表, 被 feedback 调整后覆盖）。"""
-        return self._learned_conf.get(source, SOURCE_CONFIDENCE[source])
+    def _learned_conf_path(self) -> str:
+        import os
+        return os.path.join(self._index_dir(), "learned_conf.json")
 
-    def feedback(self, hit_id: str, useful: bool, note: str = "") -> dict:
+    def _load_learned_conf(self) -> None:
+        """A18 持久化加载: 置信度 + 重排权重覆盖（重启不丢）。"""
+        import json as _json
+        try:
+            with open(self._learned_conf_path(), "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            conf = data.get("confidence") or {}
+            for k, v in conf.items():
+                try:
+                    self._learned_conf[str(k)] = float(v)
+                except (TypeError, ValueError):
+                    continue
+            overrides = data.get("rerank_weights") or {}
+            for intent, srcs in overrides.items():
+                self._weight_overrides[str(intent)] = {
+                    str(s): float(w) for s, w in srcs.items()
+                    if isinstance(w, (int, float))}
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.debug("learned_conf load failed: %s", e)
+
+    def _save_learned_conf(self) -> None:
+        """A18 持久化保存（反馈/调权后调用; 文件小, 直接写）。"""
+        import json as _json
+        try:
+            data = {
+                "confidence": dict(self._learned_conf),
+                "rerank_weights": {
+                    k: v for k, v in self._weight_overrides.items()},
+            }
+            path = self._learned_conf_path()
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump(data, f, ensure_ascii=False, indent=1)
+            import os
+            os.replace(tmp, path)
+        except Exception as e:
+            logger.debug("learned_conf save failed: %s", e)
+
+    def _confidence(self, source: str,
+                    intent: Optional[str] = None) -> float:
+        """读取可学习置信度（默认表, 被 feedback 调整后覆盖）。
+
+        W1 后半（2026-08-13）: 意图感知 — 优先读 per-intent 置信度
+        （"意图:来源" 键）; 无则回退全局（旧行为）。A18 参数白盒:
+        weights(intent=) 可单独查看/调节每个意图的配置。"""
+        key = f"{intent}:{source}" if intent else source
+        return self._learned_conf.get(
+            key, self._learned_conf.get(source, SOURCE_CONFIDENCE[source]))
+
+    def feedback(self, hit_id: str, useful: bool, note: str = "",
+                 intent: Optional[str] = None) -> dict:
         """A6 后验反馈: ε 步长调整来源置信度（GAP-D4 update_source_credibility 落地）。
+
+        2026-08-13（W1 后半）: 带 intent 时只调该意图的置信度
+        （"意图:来源"）, 不影响其他意图; 不带 intent = 全局调整（旧行为）。
         持久化后续接入（当前进程内; 记录可审计）。"""
         found = None
         # 从最近一次结果里找 hit
@@ -1321,32 +1764,179 @@ class RecallService:
         if found is None:
             return {"ok": False, "error": "hit not found"}
         base_source = found.source.split(":", 1)[-1]  # hot:bm25 -> bm25
-        conf = self._confidence(base_source)
+        conf = self._confidence(base_source, intent)
         new_conf = max(0.1, min(1.0, conf + (EPSILON if useful else -EPSILON)))
-        self._learned_conf[base_source] = new_conf
+        key = f"{intent}:{base_source}" if intent else base_source
+        self._learned_conf[key] = new_conf
         self._feedback_log.append({
             "ts": time.time(), "hit_id": hit_id, "source": base_source,
-            "useful": useful, "before": round(conf, 4),
+            "intent": intent, "useful": useful, "before": round(conf, 4),
             "after": round(new_conf, 4), "note": note,
         })
+        self._save_learned_conf()
         return {
             "ok": True, "source": base_source,
+            "intent": intent,
             "before": round(conf, 4), "after": round(new_conf, 4),
         }
 
-    def weights(self) -> dict:
-        """A18 参数白盒: 当前各源置信度（可调节）。"""
-        return {k: round(self._confidence(k), 4) for k in SOURCE_CONFIDENCE}
+    def weights(self, intent: Optional[str] = None) -> dict:
+        """A18 参数白盒: 当前各源置信度（可调节）。
 
-    def set_weight(self, source: str, value: float) -> dict:
-        """A18 用户感知调节: 显式覆盖某源置信度（clamp 0.1-1.0）。"""
+        intent 指定时返回该意图的权重视图（含重排权重 + 置信度）;
+        不带 intent 返回全局置信度（旧行为）。"""
+        base = {k: round(self._confidence(k), 4) for k in SOURCE_CONFIDENCE}
+        if not intent:
+            return base
+        profile = INTENT_PROFILES.get(normalize_intent(intent)) or {}
+        weights = dict(profile.get("weights") or RERANK_WEIGHTS)
+        # 白盒覆盖（set_weight 写入的 rerank 权重优先）
+        for src, w in (self._weight_overrides.get(intent) or {}).items():
+            weights[src] = w
+        return {
+            "confidence": {
+                k: round(self._confidence(k, intent), 4)
+                for k in SOURCE_CONFIDENCE},
+            "rerank": {k: round(v, 4) for k, v in weights.items()},
+            "fuse_mode": profile.get("fuse_mode") or self.fuse_mode,
+        }
+
+    def set_weight(self, source: str, value: float,
+                   intent: Optional[str] = None,
+                   target: str = "confidence") -> dict:
+        """A18 用户感知调节: 显式覆盖置信度或重排权重（clamp 0-1）。
+
+        target="confidence": 源置信度（全局或 per-intent）;
+        target="rerank": 重排权重（per-intent, 影响 _rerank 加权）。
+        均持久化（learned_conf.json）, 重启不丢。
+        """
+        value = max(0.0, min(1.0, float(value)))
+        if target == "rerank":
+            if intent not in INTENT_PROFILES:
+                return {"ok": False,
+                        "error": f"unknown intent: {intent} "
+                                 f"(rerank 权重需指定已定义意图)"}
+            profile = INTENT_PROFILES[intent]
+            if source not in profile.get("weights", {}):
+                return {"ok": False,
+                        "error": f"unknown rerank source: {source} "
+                                 f"for intent {intent}"}
+            over = self._weight_overrides.setdefault(intent, {})
+            over[source] = value
+            self._save_learned_conf()
+            return {"ok": True, "target": "rerank", "intent": intent,
+                    "source": source, "weight": round(value, 4)}
         if source not in SOURCE_CONFIDENCE:
             return {"ok": False, "error": f"unknown source: {source}"}
-        self._learned_conf[source] = max(0.1, min(1.0, float(value)))
+        key = f"{intent}:{source}" if intent else source
+        self._learned_conf[key] = max(0.1, value)
+        self._save_learned_conf()
         return {"ok": True, "source": source,
-                "confidence": round(self._learned_conf[source], 4)}
+                "intent": intent,
+                "confidence": round(self._learned_conf[key], 4)}
 
     # ── 主入口 ─────────────────────────────────────────────────
+
+    # ── W3: recall 本体图扩展（内容边, 2026-08-13） ─────────────
+
+    def _graph_anchors(self, query: str, top_k: int) -> List[RecallHit]:
+        """内容边图扩展: ConceptGraph 对 query 做局部图检索
+        （compile_context = 实体定位 + 边优先级扩散, 有向/无环, 预算限定）。
+
+        定位（W3 验收）: recall() 本体可扩展图 — 树空/块空时也能从
+        持久化图抓相关内容（用户: "就算树空的，子图扩展也能去持久化
+        里面抓吧？"）; 节点 metadata.doc → path, 执行层 file_read
+        精确查阅全文（粗召回只给定位, 不塞大段原文）。
+        无 engine / 无图 → []（评测 bench 不受影响, 确定性保持）。
+        """
+        if self._engine is None or not query or not query.strip():
+            return []
+        graph = None
+        ci = getattr(self._engine, "_content_index", None)
+        if ci is not None and hasattr(ci, "_graph"):
+            graph = ci._graph
+        if graph is None:
+            graph = getattr(self._engine, "_graph", None)
+        if graph is None or not hasattr(graph, "compile_context"):
+            return []
+        try:
+            items = graph.compile_context(
+                query, top_k=top_k, max_hops=2, max_nodes=max(12, top_k * 4))
+            out: List[RecallHit] = []
+            for i, item in enumerate(items):
+                text = getattr(item, "text", "") or ""
+                if not text.strip():
+                    continue
+                path = []
+                for dp in (item.metadata or {}).get("doc", []) or []:
+                    if dp:
+                        path.append(str(dp))
+                rel = float(getattr(item, "relevance", 0.5) or 0.5)
+                out.append(RecallHit(
+                    id=f"graph:{i}:{hash(text) & 0xffffffff:08x}",
+                    text=text[:200], source="graph",
+                    score=min(1.0, 0.3 + rel / 2),
+                    confidence=self._confidence("graph"),
+                    path=path,
+                ))
+            logger.info("graph_anchors: %d items (query=%.40s)",
+                        len(out), query)
+            return out[:top_k]
+        except Exception as e:
+            logger.debug("graph anchors failed: %s", e)
+            return []
+
+    # ── 重排层（2026-08-13, P1: doc top1 31%→40%+ 的施工面） ─────
+
+    def _rerank(self, hits: List[RecallHit],
+                intent: Optional[str] = None,
+                file_sims: Optional[dict] = None) -> List[RecallHit]:
+        """候选生成（粗序）→ 特征重排: 每源分数按候选集内源 max 归一
+        （跨源尺度无关: vector 余弦 0.3-1.0 / bm25 已归一到 0-1 /
+        spo 0-1）, 按意图权重加权; 源缺失不惩罚（只对存在的源求和）。
+
+        A18 白盒: 权重 = 意图 profile.weights（feedback(intent=) 可调
+        置信度, 权重表静态）; 平局按原序 → 确定性双跑一致。
+        """
+        profile = INTENT_PROFILES.get(normalize_intent(intent)) or {}
+        w = dict(profile.get("weights") or RERANK_WEIGHTS)
+        # A18 白盒覆盖（set_weight(target="rerank") 持久化的权重优先）
+        for src, wv in (self._weight_overrides.get(intent) or {}).items():
+            w[src] = wv
+        cap = max(12, min(60, len(hits)))
+        cands = hits[:cap]
+        tail = hits[cap:]
+        src_max: Dict[str, float] = {}
+        for h in cands:
+            for src, s in h.scores.items():
+                base = src.split(":", 1)[-1]
+                if s > src_max.get(base, 0.0):
+                    src_max[base] = s
+        order = {id(h): i for i, h in enumerate(cands)}
+        for h in cands:
+            feat = 0.0
+            for src, s in h.scores.items():
+                m = src_max.get(src.split(":", 1)[-1]) or 0.0
+                if m > 0:
+                    feat += w.get(src.split(":", 1)[-1], 0.1) * (s / m)
+            # 文件层信号进重排（2026-08-14, B 尾巴）: 文件摘要命中 →
+            # 该文件节块加权（乘文件摘要相似度, 不保底不全局抬）。
+            # 与 DM_FILE_BOOST 正交（一个动检索层, 一个动重排层）。
+            if file_sims and h.path:
+                s_f = file_sims.get(h.path[0])
+                if s_f:
+                    feat += self._file_rerank_weight * s_f
+            # 源独有保底（2026-08-14）: 纯非 vector 命中（该块只有
+            # bm25/spo 等独有证据）→ 贡献 ×boost — 防"源的 top-1 被
+            # 向量长尾埋掉"。通用规则, 非意图特调; 闲聊类不走重排
+            # 天然不生效。
+            if (getattr(self, "source_guarantee", False)
+                    and "vector" not in h.scores
+                    and h.scores):
+                feat *= getattr(self, "guarantee_boost", 1.5)
+            h.rerank_score = round(feat, 6)
+        cands.sort(key=lambda h: (-h.rerank_score, order[id(h)]))
+        return cands + tail
 
     def recall(
         self,
@@ -1355,9 +1945,24 @@ class RecallService:
         top_k: int = 10,
         sid: Optional[str] = None,
         use_hyde: bool = True,
+        expand_graph: Optional[bool] = None,
+        sub_queries: Optional[List[str]] = None,
     ) -> RecallResult:
         t0 = time.time()
         self._last_sid = sid
+        intent_n = normalize_intent(intent)
+        profile = INTENT_PROFILES.get(intent_n) or {}
+        # 意图感知融合模式（W1 后半）: profile.fuse_mode 优先; 显式 env
+        # DM_FUSION 仍可覆盖（消融开关, 与 __init__ 一致）。
+        fuse_mode = self.fuse_mode
+        if profile.get("fuse_mode") and not os.environ.get("DM_FUSION", ""):
+            fuse_mode = profile["fuse_mode"]
+        # 意图感知 HyDE / 扩散深度 / 图扩展
+        if profile.get("hyde") is not None:
+            use_hyde = use_hyde and bool(profile["hyde"])
+        diffuse_k = int(profile.get("diffuse_k") or 2)
+        if expand_graph is None:
+            expand_graph = bool(profile.get("graph", False))
         hot_blocks = self._ensure_blocks(sid)
         cold_blocks = self._ensure_global_blocks()
         if use_hyde and getattr(self, "parallel_decompose", False):
@@ -1368,17 +1973,29 @@ class RecallService:
             expanded = [query]
         hits: List[RecallHit] = []
         single = getattr(self, "single_source", None)
-        # HyDE 查询向量（2026-08-13, DM_HYDE=1）: 假设答案嵌入喂给
-        # vector 路（bm25/spo 仍用原 query）; 无 LLM 时自动跳过。
+        # HyDE 查询向量（2026-08-13, 默认上线 DM_HYDE=1）: 假设答案
+        # 嵌入喂给 vector 路（bm25/spo 仍用原 query）; 无 LLM 自动跳过。
         hyde_vec = None
-        if os.environ.get("DM_HYDE", "0") == "1" and self._llm is not None:
+        if os.environ.get("DM_HYDE", "1") == "1" and self._llm is not None:
             hyde_vec = self._hyde_query_vector(query)
+        # 两级检索（2026-08-14, 方案 B+C 合并体）: 文件层定位 →
+        # 命中文件的节块 boost。只对冷池（doc 语料）生效; 监控耗时。
+        file_boost_ms = 0.0
+        files_hit: set = set()
+        file_sims: dict = {}
+        if single is None and cold_blocks and (
+                getattr(self, "_file_summary_boost", False)
+                or getattr(self, "_file_rerank", False)
+                or getattr(self, "_file_pool", False)):
+            file_sims, file_boost_ms, _ = self._file_doc_scores(query)
+            files_hit = set(file_sims)
 
         def _run(blocks, tag):
             out = []
             if single in (None, "vector"):
                 out += self._vector_anchors(
-                    query, top_k, blocks=blocks, query_vec=hyde_vec)
+                    query, top_k, blocks=blocks, query_vec=hyde_vec,
+                    boost_docs=files_hit if tag == "cold" else None)
             if single in (None, "bm25"):
                 out += self._bm25_anchors(query, top_k, blocks=blocks)
             if single in (None, "spo"):
@@ -1409,13 +2026,27 @@ class RecallService:
             hits += self._hyde_anchors(expanded, top_k)
         elif use_hyde and single is None and len(expanded) > 1:
             hits += self._hyde_anchors(expanded, top_k)
-        # 扩散（在锚点基础上）
+        # 多意图 segments 消费（2026-08-13）: 意图拆分的子段并行全路召回,
+        # 与 hyde 查询扩展互补（段 = 独立意图, 语义权重更高）
+        if single is None and sub_queries:
+            hits += self._segment_anchors(sub_queries, top_k)
+        # 扩散（在锚点基础上, 意图感知深度）
         anchor_ids = {h.id for h in hits}
         if single is None:
-            hits += self._diffuse(hits, k=2)
+            hits += self._diffuse(hits, k=diffuse_k)
+        # W3: recall 本体图扩展（内容边, 树空也可从持久化图抓）
+        if single is None and expand_graph and self._engine is not None:
+            hits += self._graph_anchors(query, top_k)
+        # 每源原始分收集（重排特征, 跨源合并时保留所有源分数）
+        score_index: Dict[str, Dict[str, float]] = {}
+        for h in hits:
+            base = h.source.split(":", 1)[-1]
+            d = score_index.setdefault(h.id, {})
+            if base not in d or h.score > d[base]:
+                d[base] = h.score
         # 融合排序 + 去重
         best: Dict[str, RecallHit] = {}
-        if getattr(self, "fuse_mode", "linear") == "rrf":
+        if fuse_mode == "rrf":
             # RRF: 每源内按 score 排序得 rank, 跨源累加 1/(k+rank)（尺度不敏感）
             from collections import defaultdict
             by_source: Dict[str, List[RecallHit]] = defaultdict(list)
@@ -1426,7 +2057,7 @@ class RecallService:
                 hs.sort(key=lambda h: h.score, reverse=True)
                 w = 1.0
                 if getattr(self, "rrf_conf_weight", False):
-                    w = self._confidence(src.split(":", 1)[-1])
+                    w = self._confidence(src.split(":", 1)[-1], intent_n)
                 for rank, h in enumerate(hs):
                     rrf_scores[h.id] += w / (60 + rank + 1)
             for h in hits:
@@ -1439,7 +2070,7 @@ class RecallService:
                 best.values(),
                 key=lambda h: h.score * self._temporal_factor(h),
                 reverse=True)
-        elif getattr(self, "fuse_mode", "linear") == "vector_primary":
+        elif fuse_mode == "vector_primary":
             # 证据驱动融合（2026-08-12, 待全量验证）: 诊断显示 100 条中
             # 全部 top1 来自 vector 路线, 且 vector 内 #1 的 45 条中有
             # ~10 条被其他源长尾压出 #1（RRF 负增益）。vector 命中的块
@@ -1485,11 +2116,61 @@ class RecallService:
                 best.values(),
                 key=lambda h: h.fused() * self._temporal_factor(h),
                 reverse=True)
+        # 重排层（2026-08-13, P1）: 粗序 → 特征重排（意图权重）。
+        # DM_RERANK=0 关闭（消融对比）。默认开。
+        for h in ordered:
+            h.scores.update(score_index.get(h.id, {}))
+        # 父块上下文（2026-08-14, 方案 B）: doc 块命中附文件摘要 —
+        # LLM/执行层拿到"文件级语义", 不只有 160 字节块片段
+        summaries = self._ensure_file_summaries()
+        for h in ordered:
+            if not h.parent_context and summaries:
+                doc = next((p for p in (h.path or [])
+                            if p in summaries), None)
+                if doc:
+                    h.parent_context = summaries[doc][:200]
+        if (getattr(self, "rerank", True)
+                and bool(profile.get("rerank", True))
+                and os.environ.get("DM_RERANK", "1") != "0"
+                and len(ordered) > 1):
+            ordered = self._rerank(ordered, intent_n, file_sims)
+        # C 最小版候选池扩展（2026-08-14, DM_FILE_POOL=1）: 文件命中
+        # 文件的节块按自然分进 pool_extras（不抬排序, 只扩候选）—
+        # 给子图编译更多锚点/合并材料。消融结论: 文件层信号抬排名必输,
+        # 价值在召回扩展。
+        pool_extras: List[RecallHit] = []
+        if (getattr(self, "_file_pool", False) and file_sims
+                and cold_blocks):
+            try:
+                pool_blocks = [b for b in cold_blocks
+                               if b.get("doc") in file_sims]
+                ph = self._vector_anchors(
+                    query,
+                    top_k=self._file_pool_per_doc * max(len(file_sims), 1),
+                    blocks=pool_blocks, pool_docs=set(file_sims))
+                existing = {h.id for h in ordered}
+                for h in ph:
+                    if h.id in existing:
+                        continue
+                    h.source = "cold:pool"
+                    if not h.parent_context:
+                        doc = h.path[0] if h.path else None
+                        if doc and doc in summaries:
+                            h.parent_context = summaries[doc][:200]
+                    pool_extras.append(h)
+                    if len(pool_extras) >= (
+                            self._file_pool_per_doc * max(len(file_sims), 1)):
+                        break
+            except Exception as e:
+                logger.debug("pool extras failed: %s", e)
         result = RecallResult(
             query=query,
             hits=ordered[:top_k],
             expanded_queries=expanded,
             latency_ms=(time.time() - t0) * 1000,
+            file_boost_ms=round(file_boost_ms, 2),
+            files_hit=len(files_hit),
+            pool_extras=pool_extras,
         )
         self._last_result = result
         return result

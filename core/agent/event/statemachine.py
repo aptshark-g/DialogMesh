@@ -267,7 +267,9 @@ class DeciderStateMachine:
                                 or context.get("text") or "")
                     rr = rs.recall(query, top_k=int(
                         node.params.get("top_k", 5)),
-                        sid=context.get("session_id") or "")
+                        intent=context.get("intent"),
+                        sid=context.get("session_id") or "",
+                        expand_graph=True)
                     anchors = format_anchors(rr, max_chars=int(
                         node.params.get("max_chars", 1200)))
                     hits = [h.to_dict() for h in (rr.hits or [])[:10]]
@@ -330,10 +332,31 @@ class DeciderStateMachine:
                     from core.agent.blueprint.permission_engine import (
                         PermissionEngine, has_shell_operators)
                     tool = node.params.get("tool", "")
-                    args = node.params.get("args", {}) or {}
+                    args = dict(node.params.get("args", {}) or {})
                     if not tool:
                         return nid, {"status": "error",
                                      "error": "tool node missing tool param"}
+                    # 2026-08-13 修复（蓝图薄点实锤）: 模板工具节点参数
+                    # （recall_pipeline 的 top_k/parallel）此前因缺 "args"
+                    # 键从不进 handler, 工具以默认值空跑。现 params 直传:
+                    # 保留键外全部作为工具 kwargs; query 缺省 = 上下文文本;
+                    # 多意图 segments（intent 节点输出）注入 sub_queries。
+                    _RESERVED = {"tool", "args", "agentic", "safety",
+                                 "allowed_tools", "goal", "description",
+                                 "scope", "max_rounds", "timeout_s",
+                                 "max_replans", "recall_anchor"}
+                    for _k, _v in node.params.items():
+                        if _k not in _RESERVED and _k not in args:
+                            args[_k] = _v
+                    if tool == "recall_decompose":
+                        if not args.get("query"):
+                            args["query"] = context.get("text") or ""
+                        if not args.get("sub_queries"):
+                            _ic = node_ctx.get("intent_context") or {}
+                            _segs = (_ic.get("segments") or []
+                                     if isinstance(_ic, dict) else [])
+                            if len(_segs) > 1:
+                                args["sub_queries"] = _segs
                     decision = PermissionEngine().evaluate(tool, args)
                     if not decision.allowed:
                         if ("writable root" in decision.reason
@@ -439,7 +462,9 @@ class DeciderStateMachine:
             rs = RecallService()
             query = str(context.get("text") or goal)
             rr = rs.recall(query, top_k=5,
-                           sid=context.get("session_id") or "")
+                           intent=context.get("intent"),
+                           sid=context.get("session_id") or "",
+                           expand_graph=True)
             return format_anchors(rr, max_chars=1200)
         except Exception:
             return ""

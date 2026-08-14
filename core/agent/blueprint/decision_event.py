@@ -13,6 +13,9 @@ reason 语义）。两类消费方:
   plan_gate        — PlanGate checkpoint 触发/批准/否决
   meta_advice      — 元认知建议（复盘 verdict/recommendation）
   user_correction  — 用户显式修正/约束
+  exec_tree_audit  — 执行树消费器审计（2026-08-14, 检测层事件:
+                      doom_loop/卡 ACTIVE/失败工具/纯文本回合 —
+                      介入仍走 ExecutionMonitor/PlanGate, 检测不介入）
 """
 
 from __future__ import annotations
@@ -27,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 # 合法事件 kinds
-VALID_KINDS = {"strategy_switch", "plan_gate", "meta_advice", "user_correction"}
+VALID_KINDS = {"strategy_switch", "plan_gate", "meta_advice",
+               "user_correction", "exec_tree_audit"}
 # T5 (BIDIRECTIONAL_ATTRIBUTION): 偏差归因类型
 VALID_ATTRIBUTIONS = {"plan", "constraint", "data", "tool", "none"}
 

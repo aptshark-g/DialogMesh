@@ -22,7 +22,9 @@ class TestSchema:
     """DecisionEvent 数据契约。"""
 
     def test_valid_kinds(self):
-        assert VALID_KINDS == {"strategy_switch", "plan_gate", "meta_advice", "user_correction"}
+        # 2026-08-14: exec_tree_audit 加入（执行树消费器审计事件, 检测层）
+        assert VALID_KINDS == {"strategy_switch", "plan_gate", "meta_advice",
+                               "user_correction", "exec_tree_audit"}
 
     def test_invalid_kind_rejected(self):
         with pytest.raises(ValueError):

@@ -71,6 +71,19 @@ class _GatewayLLMAdapter:
 # ═══ Persistence ═══
 _SESSIONS_FILE = Path(os.path.join(DATA_DIR, "v3_sessions.json"))
 _SESSIONS_LOCK = __import__("threading").Lock()
+# 2026-08-14（吸收 O2 并发纪律）: 同会话防双跑 — 每个 session 一把
+# 执行锁, 工具循环串行（避免两条 tool_loop 并发污染同一执行树/文件）。
+_SESSION_EXEC_LOCKS: Dict[str, Any] = {}
+_SESSION_EXEC_LOCKS_GUARD = __import__("threading").Lock()
+
+
+def _session_exec_lock(session_id: str):
+    with _SESSION_EXEC_LOCKS_GUARD:
+        lock = _SESSION_EXEC_LOCKS.get(session_id)
+        if lock is None:
+            lock = __import__("threading").Lock()
+            _SESSION_EXEC_LOCKS[session_id] = lock
+        return lock
 
 # ═══ Task Graph Workspace (内存态=热 / 落盘=温, 版本冲突检测) ═══
 _TASK_GRAPH_WORKSPACES: Dict[str, Dict[str, Any]] = {}
@@ -349,6 +362,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
         dag_nodes = 0
         trace_errors = []
         intent = "通用对话"  # function-level: Phase 3.5 sets real value, Phase 5 reuses
+        _multi_segments: List[str] = []  # 多意图拆分段（recall 消费, 2026-08-13）
         try:
             from core.agent.blueprint.engine import BlueprintEngine
             from core.agent.blueprint.tracer import PipelineTracer
@@ -383,13 +397,40 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 except Exception:
                     _cat = ""
                 if not _cat or _cat == "通用对话":
-                    dt = DualTrackIntentPipeline(llm=_adapter)
-                    segs = getattr(dt.process(req.content), "segments", [])
+                    # 5 链数据源接线（2026-08-13, 意图副路径实质化）:
+                    # fallback 管线喂画像/关联链/话语上下文, 算法链
+                    # 不再全 abstain; 历史 = 会话最近消息（discourse 链）。
+                    _hist = [str(m.get("content", ""))[:200]
+                             for m in (session.get("messages") or [])[-5:]]
+                    dt = DualTrackIntentPipeline(
+                        llm=_adapter,
+                        profile_resolver=(
+                            lambda: getattr(
+                                getattr(_eng, "_ocean_analyst", None),
+                                "profile", None)),
+                        association_resolver=(
+                            getattr(_eng, "_intent_association_snapshot", None)
+                            if _eng is not None else None),
+                        discourse_resolver=(
+                            getattr(_eng, "_l3_discourse_topics", None)
+                            if _eng is not None else None),
+                    )
+                    dt_res = dt.process(req.content, history=_hist)
+                    segs = list(getattr(dt_res, "segments", []) or [])
                     if segs:
                         intent = segs[0]
+                        # 多意图消费: 拆分段保留, Phase 4 喂 recall
+                        if getattr(dt_res, "is_multi", False) and len(segs) > 1:
+                            _multi_segments = segs[1:]
             except Exception:
                 pass
-            dag = engine.build(req.content, intent=intent)
+            # 多意图入口（2026-08-13）: 检测到意图拆分段 → 显式走
+            # intent_multi_recall 模板（intent 节点 segments → recall
+            # 多路召回 → 子图扩展 → 回复）; 单意图走 registry match。
+            dag = engine.build(
+                req.content, intent=intent,
+                template=("intent_multi_recall"
+                          if _multi_segments else None))
             dag_nodes = dag.node_count
             # Execute through the live StateMachine (registered handlers map
             # DAG chains to PipelinePhases via CHAIN_TO_PHASE).
@@ -400,6 +441,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     dag,
                     context={"text": req.content, "session_id": session_id,
                              "request_id": msg_id,
+                             "intent": intent,
                              "decision_bus": _dbus,
                              "meta_feedback": (getattr(_eng, "_meta_feedback", None)
                                                if _eng is not None else None),
@@ -509,9 +551,15 @@ async def send_message(session_id: str, req: SendMessageRequest):
         import urllib.request
         tool_loop_used = False
         try:
-            # 编码/实现类请求 → LLM 自主工具调用循环（function calling）
+            # task 类请求 → LLM 自主工具调用循环（function calling）
+            # W5（2026-08-13）: 意图路由把 task 类 query 统一送执行层轨 —
+            # 此前只有 is_code_request 字面判定; 现在 任务规划/代码分析
+            # 意图（LLM 分类, 泛化于关键词）也进 TaskRunner（宏观蓝图
+            # 约束 + 微观工具执行 + 元认知监控）。task 类正解 = 调工具
+            # 读真实内容（dir_list/grep/file_read）, 比纯召回上下文准。
             from core.agent.blueprint.code_request import is_code_request
-            if is_code_request(req.content):
+            _task_intents = ("任务规划", "代码分析")
+            if is_code_request(req.content) or intent in _task_intents:
                 # v2 执行层（2026-08-09）: TaskRunner = tool_loop + 蓝图约束
                 # 注入（已确认任务图作为宏观约束）+ 元认知监控 + 决策事件。
                 from core.agent.llm.task_runner import (
@@ -569,7 +617,10 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     from core.agent.recall.recall_service import (
                         RecallService, format_anchors)
                     _rs = RecallService(engine=_eng2)
-                    _rr = _rs.recall(req.content, top_k=5, sid=session_id)
+                    _rr = _rs.recall(
+                        req.content, intent=intent, top_k=5,
+                        sid=session_id, expand_graph=True,
+                        sub_queries=_multi_segments or None)
                     anchors = format_anchors(_rr, max_chars=1200)
                     # recall→subgraph 桥: 锚点作为 seed 编译子图
                     # （含事件溯源=生产情景 + 图扩展=关联内容）
@@ -577,8 +628,12 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         from core.agent.v4.cognitive.subgraph_compiler import (
                             SubgraphCompiler)
                         _sc = SubgraphCompiler(engine=_eng2)
+                        # C 最小版（2026-08-14）: 文件命中候选池扩展
+                        # 也作为子图锚点（只扩候选不抬排序）
+                        _anchors = list(_rr.hits) + list(
+                            getattr(_rr, "pool_extras", []))
                         _sctx = _sc.compile_from_anchors(
-                            _rr.hits, event_id=msg_id)
+                            _anchors, event_id=msg_id)
                         _sub = _sc.assemble_prompt(_sctx)
                         if _sub and _sub.strip():
                             anchors = anchors + "\n\n" + _sub
@@ -586,14 +641,26 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         pass
                 except Exception:
                     anchors = ""
-                _tr = _runner.run(
-                    goal=req.content,
-                    constraint=TaskConstraint(
-                        goal=req.content, scope=scope,
-                        max_rounds=6, timeout_s=120, max_replans=1),
-                    node_id="root_task", session_id=session_id,
-                    request_id=msg_id, messages=all_messages,
-                    anchors=anchors)
+                _exec_lock = _session_exec_lock(session_id)
+                with _exec_lock:
+                    _tr = _runner.run(
+                        goal=req.content,
+                        constraint=TaskConstraint(
+                            goal=req.content, scope=scope,
+                            max_rounds=6, timeout_s=120, max_replans=1),
+                        node_id="root_task", session_id=session_id,
+                        request_id=msg_id, messages=all_messages,
+                        anchors=anchors)
+                    # 执行树消费端（阶段 5 接线）: 任务收尾立即审计 +
+                    # 模式沉淀（force=True 旁路频率门控 — 终端状态
+                    # 立即消费, Hermes force_persist 同语义）
+                    try:
+                        if _eng2 is not None and hasattr(
+                                _eng2, "_consume_execution_tree"):
+                            _eng2._consume_execution_tree(
+                                session_id, force=True)
+                    except Exception:
+                        pass
                 tool_loop_used = True
                 content = _tr.content or ""
                 if _tr.tool_calls or _tr.verdict != "continue":

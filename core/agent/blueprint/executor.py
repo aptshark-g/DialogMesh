@@ -708,12 +708,19 @@ class BlueprintExecutor:
         specs = list(specs)[:5]
         with ThreadPoolExecutor(max_workers=min(len(specs), 5)) as pool:
             futures = {pool.submit(_run_one, s): s for s in specs}
+            # 2026-08-13 修复: 结果按工具名 key, 同名工具（如批次内两个
+            # file_read）互相覆盖, 只留最后一个（全量跑时随机丢内容）。
+            # 现同名工具按出现序 key 为 name#2/#3..., 结果不丢。
+            seen_names: Dict[str, int] = {}
             for fut in as_completed(futures):
                 name, data, err = fut.result()
+                seen_names[name] = seen_names.get(name, 0) + 1
+                key = (f"{name}#{seen_names[name]}"
+                       if seen_names[name] > 1 else name)
                 if err:
-                    errors[name] = err
+                    errors[key] = err
                 else:
-                    results[name] = data
+                    results[key] = data
         status = "ok" if results and not errors else (
             "error" if errors and not results else "partial")
         return {

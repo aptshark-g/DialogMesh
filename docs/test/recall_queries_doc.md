@@ -9,7 +9,7 @@
 | q005 | 执行偏差怎么触发宏观计划改变，双向归因是什么 | docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md | complex | 双向纽带 |
 | q006 | 用户介入分几级？PlanGate 和异步日志怎么分工 | docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md | complex | 三层介入 |
 | q007 | 蓝图薄点审计发现了哪些没接线的模块 | docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md | simple | 薄点清单 |
-| q008 | 权限引擎在生产路径怎么挂载的，PermissionEngine 接到哪了 | docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md; docs/only/V1_FUNCTION_CHEC | complex | F1 接线 |
+| q008 | 权限引擎在生产路径怎么挂载的，PermissionEngine 接到哪了 | docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md; docs/only/V1_FUNCTION_CHECKLIST_20260808.md | complex | F1 接线 |
 | q009 | recall 结果怎么注入执行层，锚点为什么带路径 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | simple | 召回桥 |
 | q010 | 粗召回和执行层精确查阅怎么配合，为什么不能只靠向量 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | complex | 分层准确性 |
 | q011 | subgraph 节点的 recall_anchor 参数是干嘛的 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | simple | 图拓扑锚点 |
@@ -31,7 +31,7 @@
 | q027 | v2.1 召回桥之后下一个施工项是什么 | docs/only/STATE_HANDOFF_20260809.md | simple | 交接 |
 | q028 | 本轮压缩交接的恢复入口是哪个文档 | docs/only/STATE_HANDOFF_20260809.md | simple | 恢复路径 |
 | q029 | 工作流自增长是怎么实现的，成功路径怎么沉淀 | docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md | complex | 自增长 |
-| q030 | G3 四保护是哪四个，PlanGate 怎么触发 | docs/only/blueprint/P1_PROTECTION_REFLECTION_IMPL_20260806.md; docs/only/bluepri | complex | 四保护 |
+| q030 | G3 四保护是哪四个，PlanGate 怎么触发 | docs/only/blueprint/P1_PROTECTION_REFLECTION_IMPL_20260806.md; docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md | complex | 四保护 |
 | q031 | 执行层监控 Hot Warm Cold 分别做什么 | docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md | simple | 三层监控 |
 | q032 | TaskRunner 重规划循环怎么工作，为什么高风险要停下 | docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md | complex | 重规划 |
 | q033 | 决策事件有哪些 kind，strategy_switch 和 plan_gate 区别 | docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md | complex | 事件 kind |
@@ -39,13 +39,13 @@
 | q035 | 蒸馏原料管道怎么收集，HeuristicDistiller 从哪拿数据 | docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md | complex | 蒸馏 |
 | q036 | 技能生命周期怎么做活性管理的 | docs/only/blueprint/FLOW_SELF_GROWTH_20260806.md | complex | skill lifecycle |
 | q037 | 对话树和召回是什么关系，命中怎么并行 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | cross | 跨域 |
-| q038 | 元认知复盘每几轮做一次，和策略权重什么关系 | docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md; docs/only/bluep | cross | 跨域 |
+| q038 | 元认知复盘每几轮做一次，和策略权重什么关系 | docs/only/blueprint/META_ARBITER_ASYNC_INTERVENTION_20260806.md | cross | 跨域 |
 | q039 | 编码类请求怎么识别，施工信号有哪些 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | simple | is_code_request |
 | q040 | 混合式通用 agent 的定位是什么，和纯 RAG 有什么区别 | docs/only/recall/RECALL_EXECUTION_BRIDGE_DESIGN_20260809.md | complex | 定位 |
-| q041 | 权限门怎么拦截链式 shell 和越权写入 | docs/only/V1_FUNCTION_CHECKLIST_20260808.md; docs/only/blueprint/BLUEPRINT_THIN_ | complex | 权限 |
+| q041 | 权限门怎么拦截链式 shell 和越权写入 | docs/only/V1_FUNCTION_CHECKLIST_20260808.md; docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md | complex | 权限 |
 | q042 | OS 工具集有哪些，run_session 是干嘛的 | docs/only/V1_FUNCTION_CHECKLIST_20260808.md | simple | OS 工具 |
 | q043 | function calling 端到端实测做了什么 | docs/only/V1_FUNCTION_CHECKLIST_20260808.md | simple | tool_loop 实测 |
-| q044 | 执行迹和变更日志两个白盒视图各展示什么 | docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md; docs/only/blueprin | cross | 跨域 |
+| q044 | 执行迹和变更日志两个白盒视图各展示什么 | docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md | cross | 跨域 |
 | q045 | 跟 OpenClaw Hermes 对标后我们还差什么 | docs/only/V1_FUNCTION_CHECKLIST_20260808.md | complex | 对标差距 |
 | q046 | 定时自动化 automation 为什么是孤儿，怎么接 | docs/only/blueprint/BLUEPRINT_THIN_AUDIT_20260808.md | complex | automation 孤儿 |
 | q047 | replanner 自动换方案为什么没做，MC 全场景缺什么 | docs/only/blueprint/EXECUTION_LAYER_ARCHITECTURE_20260809.md | complex | replanner 缺口 |

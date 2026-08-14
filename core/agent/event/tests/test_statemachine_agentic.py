@@ -3,6 +3,7 @@
 import pytest
 
 from core.agent.event.statemachine import DeciderStateMachine
+from core.agent.event.statemachine import PipelinePhase
 from core.agent.blueprint.models import BlueprintDAG, BlueprintNode, BlueprintEdge
 from core.agent.blueprint.decision_event import DecisionEventBus
 
@@ -75,7 +76,10 @@ def test_dag_recall_anchor_topology(monkeypatch):
     monkeypatch.setattr(tr_module, "_default_llm_loop", fake_loop)
 
     class FakeRecall:
-        def recall(self, query, top_k=5, sid=None):
+        # 2026-08-13: 生产契约已扩展（W1 intent + W3 expand_graph）—
+        # 桩签名与 RecallService.recall 对齐, 否则新参数 TypeError。
+        def recall(self, query, top_k=5, sid=None, intent=None,
+                   use_hyde=True, expand_graph=None):
             return RecallResult(query=query, hits=[RecallHit(
                 id="a1", text="候选锚点片段 AES 密钥", source="bm25",
                 score=0.8, confidence=0.9)])
@@ -104,3 +108,66 @@ def test_dag_recall_anchor_topology(monkeypatch):
     # 锚点来自上游图节点（不是节点内自召回）
     assert "候选锚点" in captured["inject"]
     assert "bm25" in captured["inject"]
+
+
+def test_tool_node_params_flow_to_handler(monkeypatch):
+    """蓝图薄点修复（2026-08-13）: 模板工具节点 params 直传 handler —
+    recall_pipeline 的 top_k/parallel 此前因缺 args 键从不进工具。"""
+    import core.agent.tools.registry as treg
+    captured = {}
+
+    def fake_execute(name, **kwargs):
+        captured["name"] = name
+        captured["kwargs"] = kwargs
+        return treg.ToolResult(name, True, data={"ok": True})
+
+    monkeypatch.setattr(treg.ToolRegistry, "execute", fake_execute)
+    sm = DeciderStateMachine()
+    bus = DecisionEventBus()
+    dag = BlueprintDAG(
+        nodes=[BlueprintNode(
+            "tool_0", "tool", priority=0,
+            params={"tool": "recall_decompose",
+                    "top_k": 7, "parallel": True})],
+        edges=[])
+    r = sm.run_dag(dag, context={"text": "查 AES 密钥",
+                                 "session_id": "s1",
+                                 "decision_bus": bus})
+    assert r["results"]["tool_0"]["status"] == "ok"
+    assert captured["name"] == "recall_decompose"
+    assert captured["kwargs"]["top_k"] == 7
+    assert captured["kwargs"]["parallel"] is True
+    assert captured["kwargs"]["query"] == "查 AES 密钥"
+
+
+def test_multi_segments_injected_into_recall_tool(monkeypatch):
+    """多意图 segments 注入（2026-08-13）: intent 节点输出
+    segments → recall_decompose.sub_queries（意图副路径实质化）。"""
+    import core.agent.tools.registry as treg
+    captured = {}
+
+    def fake_execute(name, **kwargs):
+        captured["kwargs"] = kwargs
+        return treg.ToolResult(name, True, data={"ok": True})
+
+    monkeypatch.setattr(treg.ToolRegistry, "execute", fake_execute)
+    sm = DeciderStateMachine()
+    sm.register_handler(
+        PipelinePhase.INTENT,
+        lambda ctx: {"category": "multi", "is_multi": True,
+                     "segments": ["先定位延迟", "然后修复"]})
+    bus = DecisionEventBus()
+    dag = BlueprintDAG(
+        nodes=[
+            BlueprintNode("intent_1", "intent", priority=0),
+            BlueprintNode("tool_2", "tool", priority=1,
+                          params={"tool": "recall_decompose",
+                                  "top_k": 5}),
+        ],
+        edges=[BlueprintEdge("intent_1", "tool_2", "intent_context")],
+    )
+    r = sm.run_dag(dag, context={"text": "先定位延迟然后修复",
+                                 "session_id": "s1",
+                                 "decision_bus": bus})
+    assert r["results"]["tool_2"]["status"] == "ok"
+    assert captured["kwargs"]["sub_queries"] == ["先定位延迟", "然后修复"]

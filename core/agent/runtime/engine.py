@@ -1094,9 +1094,98 @@ class CognitiveRuntimeEngine:
             self._intent_parser = DualTrackIntentPipeline(
                 llm=self._llm_provider,
                 belief_acc=getattr(self, "_l2_5_belief", None),
+                # 5 链数据源接线（2026-08-13, 意图副路径实质化）:
+                # resolver 形态 = 每次 process() 取最新快照（画像/关联链
+                # 状态随时间变化）; 无数据时链 abstain（诚实, 不硬造）。
+                profile_resolver=(
+                    lambda: getattr(
+                        getattr(self, "_ocean_analyst", None),
+                        "profile", None)),
+                association_resolver=self._intent_association_snapshot,
+                discourse_resolver=self._l3_discourse_topics,
             )
         except Exception as e:
             logger.debug("Intent runtime (Agent-Native) unavailable: %s", e)
+
+    def _intent_association_snapshot(self) -> dict:
+        """5 链 association 数据源（2026-08-13）: 关联链服务真实状态 →
+        意图验证链消费（topic_shift_count/cohesion 是新意图候选信号;
+        last_discovery 的实体/链摘要是 entities 池）。无服务 → {}（abstain）。"""
+        try:
+            svc = getattr(self, "_assoc_service", None)
+            if svc is None:
+                return {}
+            state = svc.state_snapshot()
+            entities = []
+            last = getattr(state, "last_discovery", None) or {}
+            for key in ("l1", "l3", "l4", "l5"):
+                val = last.get(key)
+                if isinstance(val, dict):
+                    entities.extend(str(k) for k in val.keys())
+                elif val:
+                    entities.append(str(val)[:80])
+            return {
+                "entities": [e for e in entities if e][:30],
+                "state": {
+                    "topic_shift_count": getattr(
+                        state, "topic_shift_count", 0),
+                    "behavior_count": getattr(state, "behavior_count", 0),
+                    "cohesion": getattr(state, "cohesion", 1.0),
+                    "discoveries": getattr(state, "discoveries", 0),
+                },
+            }
+        except Exception as e:
+            logger.debug("intent association snapshot failed: %s", e)
+            return {}
+
+    # ── 执行树消费端（2026-08-14, 阶段 5 接线）────────────────
+
+    def _consume_execution_tree(self, session_id: str = "",
+                                force: bool = False) -> dict:
+        """执行树消费（元认知偏差审计 + 执行模式沉淀）。
+
+        设计: EXECUTION_LAYER_ARCHITECTURE 元认知树图职责（执行后 →
+        树图分析）; 吸收纪律: 检测与介入分离（只发 audit 事件,
+        介入仍走 ExecutionMonitor/PlanGate）+ 频率门控（消费器自带
+        最小间隔, 配置不能变高频写手）。调用方: TaskRunner/v3 收尾。
+        """
+        try:
+            dt = getattr(self, "_discourse_tree", None)
+            if dt is None or not hasattr(dt, "_trees"):
+                return {"consumed": False, "reason": "no_tree_manager"}
+            mgr = dt._trees.get(session_id or "")
+            exec_tree = getattr(mgr, "execution", None) if mgr else None
+            if exec_tree is None:
+                return {"consumed": False, "reason": "no_exec_tree"}
+            from core.agent.execution.tree_consumers import (
+                AuditFeedbackLoop, ExecutionPatternStore, MetaTreeConsumer)
+            if getattr(self, "_meta_tree_consumer", None) is None:
+                self._meta_tree_consumer = MetaTreeConsumer(
+                    bus=getattr(self, "_decision_bus", None))
+            if getattr(self, "_execution_pattern_store", None) is None:
+                self._execution_pattern_store = ExecutionPatternStore()
+            if getattr(self, "_audit_feedback_loop", None) is None:
+                self._audit_feedback_loop = AuditFeedbackLoop(
+                    meta_feedback=getattr(self, "_meta_feedback", None),
+                    decision_bus=getattr(self, "_decision_bus", None))
+            audit = self._meta_tree_consumer.consume(
+                exec_tree, session_id=session_id, force=force)
+            # 检测→回流闭环（A6）: audit 事件喂窗口聚合, 达阈值
+            # 触发策略权重回流（学习层; 不直接改执行流）
+            reflux = {"actions": []}
+            for ev in audit.get("events", []):
+                reflux = self._audit_feedback_loop.consume_event(ev)
+            patterns = self._execution_pattern_store.consume(
+                exec_tree, session_id=session_id, force=force)
+            return {
+                "consumed": True,
+                "audit_events": len(audit.get("events", [])),
+                "reflux_actions": len(reflux.get("actions", [])),
+                "patterns": patterns.get("skipped", True) is False,
+            }
+        except Exception as e:
+            logger.debug("execution tree consume failed: %s", e)
+            return {"consumed": False, "reason": str(e)[:120]}
 
     def cognitive_state(self) -> dict:
         """认知层状态快照（A19 白盒可检查）。"""

@@ -85,7 +85,13 @@ class ConstraintChecker:
 
         # Data key resolution: every edge's data_key must be a known key
         valid_keys = {"route", "intent_context", "assembled_context", "compiled_subgraph",
-                      "profile_text", "compass", "data"}
+                      "profile_text", "compass", "data",
+                      # 2026-08-13 修复（蓝图薄点实锤）: recall_pipeline /
+                      # intent_multi_recall 模板的 recall_anchor→subgraph
+                      # 边用 "anchors"（锚点注入通道）— 此前不在白名单,
+                      # 模板构建恒校验失败回退最小 DAG, "意图→召回→图扩展
+                      # →回复"链路在 build 层就断掉。
+                      "anchors"}
         for e in dag.edges:
             if e.data_key not in valid_keys:
                 errors.append(f"Unknown data_key '{e.data_key}' in edge {e.from_node}→{e.to_node}")
@@ -187,7 +193,8 @@ class BlueprintEngine:
 
     def build(self, text: str, intent: str = None, strategy: str = None,
               strictness: float = None, depth: int = None,
-              breadth: int = None, decision_mode: str = None) -> BlueprintDAG:
+              breadth: int = None, decision_mode: str = None,
+              template: str = None) -> BlueprintDAG:
         """Build a BlueprintDAG for the given input.
 
         Args:
@@ -199,6 +206,8 @@ class BlueprintEngine:
             breadth: 发散路径数 2-6（LLM_DRIVEN; None → 默认 3）
             decision_mode: auto|template|hybrid|llm — 决策模式映射 strategy
               （auto → registry.match; 其余强制对应策略）
+            template: 显式模板名（2026-08-13, 多意图入口）— 跳过 registry
+              match 直接取 BUILTIN_TEMPLATES[template]; 未知名回退 match。
 
         Returns:
             BlueprintDAG ready for execution
@@ -219,14 +228,22 @@ class BlueprintEngine:
         # Auto-detect intent + strategy
         if intent is None:
             intent = "通用对话"  # default fallback
-        if strategy is None:
-            strategy, blueprint = self.registry.match(intent)
-        else:
-            _, default_bp = self.registry.match(intent)
-            blueprint = default_bp
+        blueprint = None
+        if template:
+            from core.agent.blueprint.skill_registry import BUILTIN_TEMPLATES
+            explicit = BUILTIN_TEMPLATES.get(template)
+            if explicit is not None:
+                blueprint = explicit
+                if strategy is None:
+                    strategy = explicit.strategy
+        if blueprint is None:
+            if strategy is None:
+                strategy, blueprint = self.registry.match(intent)
+            else:
+                _, blueprint = self.registry.match(intent)
 
         # Cache key for fast path — deterministic, no hash collision
-        cache_key = f"{intent}:{strategy}:{text[:200]}"
+        cache_key = f"{intent}:{strategy}:{template or '-'}:{text[:200]}"
         if cache_key in self._strategy_cache:
             logger.info("Cache hit for %s", intent)
             # Return a copy so callers cannot mutate the cached DAG

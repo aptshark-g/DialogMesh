@@ -42,6 +42,7 @@ class _FakeExecutionTree:
         self.created = []
         self.spawned = []
         self.completed = []
+        self.nodes = []
 
     def create_task(self, plan, parent_id=None):
         self.created.append(plan)
@@ -50,6 +51,10 @@ class _FakeExecutionTree:
     def spawn_sub_agent(self, parent_id, task, context_size,
                         pointers=None, queries=None):
         self.spawned.append((parent_id, task, context_size))
+        # 阶段 0: 返回节点对象（_step_hook 写 outcome/input）
+        node = type("N", (), {"content": {}})()
+        self.nodes.append(node)
+        return node
 
     def complete_node(self, node_id, result):
         self.completed.append((node_id, result))
@@ -60,9 +65,11 @@ def test_execution_trace_lands_in_tree():
     tree = _FakeExecutionTree()
     loop, _ = _make_loop({"content": "完成", "steps": [
         {"round": 1, "tool": "write_file", "args": "hello.py",
-         "ok": True, "latency_ms": 5},
+         "ok": True, "latency_ms": 5,
+         "input": '{"path": "hello.py"}'},
         {"round": 2, "tool": "run_python", "args": "python hello.py",
-         "ok": True, "latency_ms": 8},
+         "ok": True, "latency_ms": 8,
+         "input": '{"command": "python hello.py"}'},
     ]})
     runner = TaskRunner(llm_loop=loop, execution_tree=tree)
     res = runner.run("写 hello.py 并运行",
@@ -72,6 +79,10 @@ def test_execution_trace_lands_in_tree():
     assert tree.created[0]["strategy"] == "TOOL_LOOP"
     assert len(tree.spawned) == 2
     assert tree.spawned[0][1].startswith("write_file")
+    # 阶段 0（吸收 A2/O3）: 每步 outcome 词汇化 + 输入摘要落节点
+    assert tree.nodes[0].content["outcome"] == "success"
+    assert tree.nodes[1].content["outcome"] == "success"
+    assert '"path": "hello.py"' in tree.nodes[0].content["input"]
     assert len(tree.completed) == 1
     assert tree.completed[0][1]["tools"] == ["write_file", "run_python"]
     assert tree.completed[0][1]["status"] == "ok"

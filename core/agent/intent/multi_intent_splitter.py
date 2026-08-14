@@ -53,7 +53,10 @@ class MultiIntentSplitter:
         self._engineering = engineering
 
     def split(self, text: str, entities: List[str] = None,
-              pcr_zone: str = "MIXED", history: List[str] = None) -> MultiIntentResult:
+              pcr_zone: str = "MIXED", history: List[str] = None,
+              profile: object = None, association: dict = None,
+              discourse: object = None,
+              engineering: object = None) -> MultiIntentResult:
         """LLM-first split, then 5-chain verification + fusion + ambiguity gate.
 
         R3 pipeline:
@@ -62,12 +65,25 @@ class MultiIntentSplitter:
                   rest are zero-cost algorithm chains), fused by FusionDecider.
           Step 3: AmbiguityGate evaluates aggregate signals → upgrade path.
 
+        2026-08-13（意图副路径实质化）: 5 链数据源可从调用侧注入
+        （profile=画像对象含 .dims / association={"entities","state"} /
+        discourse=对话树上下文 / engineering=工程上下文）— 缺省回退
+        构造时注入（self._profile 等）。此前数据源从未接线, 算法链
+        全部 abstain（形式在、实质薄）; 现在引擎/v3 调用侧喂真实数据。
+
         Without an LLM the splitter logs the degradation and falls back to
         the structural path (single segment, explicit trace), never silently
         returning an unverified multi-split.
         """
         entities = entities or []
         history = history or []
+        # 调用侧注入优先, 构造时注入次之（2026-08-13）
+        profile = profile if profile is not None else self._profile
+        association = (association if association is not None
+                       else self._association)
+        discourse = discourse if discourse is not None else self._discourse
+        engineering = (engineering if engineering is not None
+                       else self._engineering)
 
         # Step 1: LLM decides if multi-intent (not algorithm)
         if self.llm:
@@ -106,11 +122,11 @@ class MultiIntentSplitter:
         pcr_complexity = ZONE_COMPLEXITY.get(pcr_zone or "", 0.5)
         pcr_noise = ZONE_NOISE.get(pcr_zone or "", 0.5)
         context = VerifyContext(
-            profile=getattr(self, "_profile", None),
-            association=getattr(self, "_association", None),
-            discourse=getattr(self, "_discourse", None),
+            profile=profile,
+            association=association,
+            discourse=discourse,
             literal=text,  # original text → literal chain treats each candidate as a fragment
-            engineering=getattr(self, "_engineering", None),
+            engineering=engineering,
             history=history,
         )
 
@@ -193,11 +209,33 @@ class MultiIntentSplitter:
                          reason="profile: neutral traits")
 
     def _association_chain(self, candidate: SubIntent, context: VerifyContext) -> ChainVote:
-        """Algorithm chain: candidate entities across domains → separate intent."""
+        """Algorithm chain: candidate entities across domains → separate intent.
+
+        2026-08-13（实质化）: 除实体重叠外, 消费关联链真实状态信号 —
+        topic_shift_count>=2（连续话题切换 → 新意图候选成立）或
+        cohesion<0.5（低凝聚力 → 上下文断裂）→ accept; 无数据 abstain。
+        """
         assoc = context.association
         if not assoc or not isinstance(assoc, dict):
             return ChainVote(chain="association", confidence=0.5, decision="pass",
                              reason="association: no substrate data")
+        # 真实状态信号（引擎 _intent_association_snapshot 喂入）
+        state = assoc.get("state") or {}
+        try:
+            topic_shifts = int(state.get("topic_shift_count", 0))
+            cohesion = float(state.get("cohesion", 1.0))
+        except (TypeError, ValueError):
+            topic_shifts, cohesion = 0, 1.0
+        if topic_shifts >= 2:
+            return ChainVote(chain="association", confidence=0.7,
+                             decision="accept",
+                             reason=f"association: {topic_shifts} topic "
+                                    f"shifts → new intent plausible")
+        if cohesion < 0.5:
+            return ChainVote(chain="association", confidence=0.65,
+                             decision="accept",
+                             reason=f"association: low cohesion "
+                                    f"({cohesion:.2f}) → context broken")
         known = set(str(e).lower() for e in (assoc.get("entities") or []))
         cand = set(str(e).lower() for e in (candidate.entities or []))
         if not known or not cand:

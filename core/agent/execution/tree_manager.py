@@ -168,6 +168,162 @@ class ExecutionTree(AgentTree):
             node.completed_at = time.time()
             node.content["result"] = result
 
+    # ── 消费端只读 API（2026-08-13, EXEC_TREE_CONSUMPTION 吸收落地）──
+    # 设计意图: 行为链读树学模式 / 元认知读树发现偏差（淘宝 PES 全链路
+    # 可回放的消费侧）。纪律（吸收自 Grok/Hermes）:
+    #   - 只读观察者: 查询不改树, 消费回调不控执行循环
+    #   - 结果词汇化: success/error/cancelled 稳定枚举（对齐 ToolOutcome）
+
+    def get_tasks(self, status: Optional[NodeStatus] = None) -> List[AgentTreeNode]:
+        """全部任务（plan）节点, 可按状态过滤。"""
+        return [n for n in self._nodes.values()
+                if n.content.get("task_type") == "plan"
+                and (status is None or n.status == status)]
+
+    def get_subagents(self, task_id: str) -> List[AgentTreeNode]:
+        """某任务的全部步骤（sub_agent 子节点, 按创建序）。"""
+        task = self._nodes.get(task_id)
+        if task is None:
+            return []
+        out = []
+
+        def _walk(nid: str):
+            node = self._nodes.get(nid)
+            if node is None:
+                return
+            for cid in node.children:
+                child = self._nodes.get(cid)
+                if child is not None:
+                    if child.content.get("task_type") == "sub_agent":
+                        out.append(child)
+                    _walk(cid)
+
+        _walk(task_id)
+        return out
+
+    def tree_patterns(self) -> Dict[str, Any]:
+        """消费端模式提取（元认知偏差信号 + 行为链学习原料）。
+
+        输出（全部确定性, 只读）:
+          tasks / completed / failed / stuck_active / text_only
+          tool_outcomes: {tool: {success, error, cancelled}}（词汇化结果）
+          failing_tools: 失败 >=2 且 >= 成功的工具（抖动信号）
+          doom_loops: 同工具+同输入连续 3 次（吸收 O3, 输入不变才
+            是死循环——不是失败次数）
+          consecutive_failures: 每个任务内连续失败步骤数
+          tool_sequences: 每任务工具序列（行为链学习原料）
+          avg_steps_per_task / max_steps_per_task（深度偏好信号, W7 雏形）
+        """
+        tasks = self.get_tasks()
+        tool_outcomes: Dict[str, Dict[str, int]] = {}
+        failing_tools: List[str] = []
+        doom_loops: List[Dict[str, Any]] = []
+        tool_sequences: List[List[str]] = []
+        consecutive_failures: List[int] = []
+        text_only_tasks = 0
+        stuck_active = 0
+        completed = 0
+        now = time.time()
+        for t in tasks:
+            if t.status == NodeStatus.COMPLETED:
+                completed += 1
+            # 卡 ACTIVE: 创建超过 5 分钟仍未完成（无步骤也计入 —
+            # 2026-08-14 修复: 旧代码在 "if not steps: continue"
+            # 之前漏检了无步骤的卡死任务）
+            if t.status == NodeStatus.ACTIVE and (
+                    t.created_at and now - t.created_at > 300):
+                stuck_active += 1
+            steps = self.get_subagents(t.node_id)
+            if not steps:
+                if t.status == NodeStatus.COMPLETED:
+                    text_only_tasks += 1
+                continue
+            seq: List[str] = []
+            run_fail = 0
+            max_fail = 0
+            last_key: Optional[tuple] = None
+            same_run = 0
+            for s in steps:
+                outcome = self._outcome_of(s)
+                tool_name = self._tool_name_of(s)
+                if tool_name:
+                    seq.append(tool_name)
+                    bucket = tool_outcomes.setdefault(
+                        tool_name, {"success": 0, "error": 0, "cancelled": 0})
+                    bucket[outcome] = bucket.get(outcome, 0) + 1
+                    # doom loop（吸收 O3）: 同工具+同输入连续 3 次
+                    inp = (s.content.get("input") or "") or ""
+                    key = (tool_name, inp)
+                    if key == last_key:
+                        same_run += 1
+                        if same_run >= 3:
+                            doom_loops.append({
+                                "task": t.node_id, "tool": tool_name,
+                                "input": inp[:120], "count": same_run + 1,
+                            })
+                    else:
+                        last_key, same_run = key, 1
+                if outcome == "error":
+                    run_fail += 1
+                    max_fail = max(max_fail, run_fail)
+                else:
+                    run_fail = 0
+            consecutive_failures.append(max_fail)
+            if seq:
+                tool_sequences.append(seq)
+        for tool, bucket in tool_outcomes.items():
+            if bucket.get("error", 0) >= 2 and bucket["error"] >= bucket.get(
+                    "success", 0):
+                failing_tools.append(tool)
+        steps_lens = [len(self.get_subagents(t.node_id)) for t in tasks]
+        return {
+            "tasks": len(tasks),
+            "completed": completed,
+            "failed": sum(1 for t in tasks
+                          if t.status == NodeStatus.FAILED),
+            "stuck_active": stuck_active,
+            "text_only": text_only_tasks,
+            "tool_outcomes": tool_outcomes,
+            "failing_tools": sorted(failing_tools),
+            "doom_loops": doom_loops,
+            "consecutive_failures": consecutive_failures,
+            "tool_sequences": tool_sequences,
+            "avg_steps_per_task": round(
+                sum(steps_lens) / max(1, len(steps_lens)), 2),
+            "max_steps_per_task": max(steps_lens) if steps_lens else 0,
+        }
+
+    @staticmethod
+    def _outcome_of(node: AgentTreeNode) -> str:
+        """结果词汇化（对齐 Grok ToolOutcome 子集）: success/error/cancelled。
+
+        2026-08-14（阶段 0）: 优先读写侧词汇化 content["outcome"]
+        （TaskRunner._step_hook 落树）; 回退 content.result 的
+        status 映射（TaskResult: ok→success, aborted→cancelled,
+        其余→error）。"""
+        written = node.content.get("outcome")
+        if written in ("success", "error", "cancelled"):
+            return written
+        result = (node.content.get("result") or {})
+        if isinstance(result, dict):
+            st = str(result.get("status", ""))
+            if st == "ok":
+                return "success"
+            if st in ("aborted", "cancelled"):
+                return "cancelled"
+            if st in ("failed", "error", "rejected", "replan",
+                      "ask_user", "timeout"):
+                return "error"
+        if node.status in (NodeStatus.FAILED, NodeStatus.BLOCKED):
+            return "error"
+        return "success"
+
+    @staticmethod
+    def _tool_name_of(node: AgentTreeNode) -> str:
+        task = (node.content.get("task") or "") or ""
+        name = (task or "").split(":", 1)[0].strip()
+        return name if len(name) <= 32 else name[:32]
+
 
 class ConstraintTree(AgentTree):
     """Engineering rules, file/command constraints, security policies."""

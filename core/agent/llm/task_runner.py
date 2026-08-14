@@ -186,7 +186,7 @@ class TaskRunner:
             if tree is not None and tree_node_id:
                 try:
                     _tree_steps.append(step)
-                    tree.spawn_sub_agent(
+                    node = tree.spawn_sub_agent(
                         tree_node_id,
                         task="%s: %s" % (
                             step.get("name") or step.get("tool", "?"),
@@ -194,6 +194,13 @@ class TaskRunner:
                                 step.get("args") or "")[:120]),
                         context_size=0,
                         pointers=["trace:%s" % step.get("round", 0)])
+                    # 阶段 0（吸收 A2/O3）: 结果词汇化写节点 —
+                    # 每步 outcome + 输入摘要, 执行树消费端可查
+                    # "同工具+同输入连续 N 次"死循环与成败统计。
+                    node.content["outcome"] = (
+                        "error" if not step.get("ok") else "success")
+                    node.content["input"] = (
+                        str(step.get("input") or "")[:200])
                 except Exception:
                     pass
 

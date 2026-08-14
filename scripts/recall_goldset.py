@@ -14,10 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class FakeBlock:
-    def __init__(self, bid, text, session=None):
+    def __init__(self, bid, text, session=None, doc=None):
         self.block_id = bid
         self._raw_text = text
         self._session_id = session or ""
+        # 2026-08-14（两级检索）: doc 字段透传（文件级 boost 依赖）
+        self.doc = doc or ""
         self.vector = None       # 预编码向量透传（2026-08-11）
         self.summary = ""        # 摘要透传（两级粒度）
         self.parent_id = None
@@ -40,7 +42,7 @@ def build_service(blocks, mode="vector_primary", single=None):
     from core.agent.recall.recall_service import RecallService
     fakes = []
     for b in blocks:
-        fb = FakeBlock(b["id"], b["text"], b.get("session"))
+        fb = FakeBlock(b["id"], b["text"], b.get("session"), b.get("doc"))
         fb.vector = b.get("vector")
         fb.summary = b.get("summary", "")
         fakes.append(fb)

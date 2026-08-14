@@ -4,8 +4,14 @@
 
 数据: docs/test/recall_queries_100.md（39 对话 + 61 文档）
 指标（纯本地）: top1/3/5、MRR、nDCG、Recall@5/10/20、Context Precision、
-每 query 耗时。输出 docs/test/EVAL_100_20260811.md。
-用法: .venv\\Scripts\\python.exe scripts/eval_100.py
+每 query 耗时。输出 docs/test/EVAL_100_YYYYMMDD.md（按运行日期）。
+
+2026-08-13（P1 意图感知 + 重排）:
+- 查询集新增第 6 列 intent（与 classify_intent 类别集对齐）→ recall 按
+  意图选融合配置（W1 后半: INTENT_PROFILES per-intent 权重/模式）。
+- --compare 模式: 同一进程内跑 DM_RERANK=0（旧排序）vs 1（重排层）,
+  输出对比表 + 按意图细分（doc 域 top1 提升的施工面）。
+用法: .venv\\Scripts\\python.exe scripts/eval_100.py [--compare]
 """
 from __future__ import annotations
 
@@ -34,14 +40,15 @@ def _mrr_ndcg(hits, expected, top_k):
     return mrr, (dcg / idcg if idcg else 0.0)
 
 
-def main():
+def _run(rerank_on: bool):
+    """跑一遍完整评测; rerank_on 控制重排层开关（进程内环境翻转）。"""
     from collections import Counter
     from scripts.recall_goldset import load_goldset, build_service
     import scripts.doc_recall_bench as drb
 
+    os.environ["DM_RERANK"] = "1" if rerank_on else "0"
     queries = load_query_set("docs/test/recall_queries_100.md")
     gold = load_goldset()
-    gold_blocks = {b["id"]: b for b in gold["blocks"]}
     svc = build_service(
         [{"id": b["id"], "text": b["text"],
           "session": b.get("session", ""),
@@ -51,9 +58,7 @@ def main():
     print("文档块: %d" % len(doc_blocks))
     # 批量编码 + 磁盘缓存（2026-08-11: 首次 GPU/批量 embed, 二次秒级）
     drb.prepare_vectors(doc_blocks)
-    # 文件级 expected → 节级块 id 展开（2026-08-12）: 评测集 expected 写的是
-    # 文件路径, 块池是 file#heading 节级块; 精确匹配恒 0 → 按 doc 字段展开,
-    # 命中该文件任一节块即算命中。
+    # 文件级 expected → 节级块 id 展开（2026-08-12）
     file_to_ids = {}
     for b in doc_blocks:
         file_to_ids.setdefault(b["doc"], set()).add(b["id"])
@@ -63,18 +68,18 @@ def main():
 
     stats = {"dialogue": {"n": 0, "top1": 0, "top3": 0, "top5": 0,
                           "mrr": 0.0, "ndcg": 0.0, "cp": 0.0,
-                          "r5": 0, "r10": 0, "r20": 0, "time_ms": 0.0},
+                          "r5": 0, "r10": 0, "r20": 0, "time_ms": 0.0,
+                          "pc": 0},
              "doc": dict.fromkeys(["n", "top1", "top3", "top5", "mrr",
                                    "ndcg", "cp", "r5", "r10", "r20",
-                                   "time_ms"], 0.0)}
-    # 诊断明细（2026-08-12）: 融合排名 / 各路线最佳排名 / 耗时 / 分类 /
-    # top1 块来源。目的: 一次跑完即知"为什么高/低/快/慢"。
+                                   "time_ms", "pc"], 0.0)}
+    # 按意图细分（2026-08-13, W1 验收）: 每意图 top1/3/5 命中数
+    by_intent = {}   # intent -> {"n", "top1", "top3", "top5"}
     rows = []
     t_total = time.time()
     for qi in queries:
         exp_files = qi["expected"]
-        # 2026-08-12 修复: load_query_set 已把 ";" 拆成列表 —
-        # 此前只取 [0] 导致多文件期望行只评估第一个文件。
+        intent = qi.get("intent") or "记忆召回"
         if exp_files and exp_files[0].startswith("goldset:"):
             exp = exp_files[0].split(":", 1)[1].split(",")
             svc_use, tag = svc, "dialogue"
@@ -91,9 +96,16 @@ def main():
             svc_use, tag = doc_service, "doc"
         s = stats[tag]
         s["n"] += 1
+        it = by_intent.setdefault(
+            intent, {"n": 0, "top1": 0, "top3": 0, "top5": 0})
+        it["n"] += 1
         t0 = time.time()
-        res = svc_use.recall(qi["query"], top_k=20, use_hyde=False)
+        # W1（2026-08-13）: 意图传入 recall → 按意图选融合配置/重排权重
+        res = svc_use.recall(qi["query"], intent=intent, top_k=20,
+                             use_hyde=False)
         s["time_ms"] += (time.time() - t0) * 1000
+        # 方案 B 返回层（2026-08-14）: 锚点附带父文件摘要的覆盖数
+        s["pc"] += sum(1 for h in res.hits[:5] if h.parent_context)
         ids = [h.id for h in res.hits]
         exp_set = set(exp)
         hit = [i + 1 for i, x in enumerate(ids[:20]) if x in exp_set]
@@ -101,10 +113,13 @@ def main():
             r = hit[0]
             if r == 1:
                 s["top1"] += 1
+                it["top1"] += 1
             if r <= 3:
                 s["top3"] += 1
+                it["top3"] += 1
             if r <= 5:
                 s["top5"] += 1
+                it["top5"] += 1
             if r <= 5:
                 s["r5"] += 1
             if r <= 10:
@@ -114,10 +129,10 @@ def main():
         mrr, ndcg = _mrr_ndcg(ids, exp_set, 5)
         s["mrr"] += mrr
         s["ndcg"] += ndcg
-        # ── 诊断采集 ────────────────────────────────────────────
         detail = {
-            "query": qi["query"], "tag": tag, "fused_rank": None,
-            "routes": {}, "top1_source": None, "cls": "A",
+            "query": qi["query"], "tag": tag, "intent": intent,
+            "fused_rank": None, "routes": {}, "top1_source": None,
+            "cls": "A",
         }
         if hit:
             detail["fused_rank"] = hit[0]
@@ -137,7 +152,6 @@ def main():
         if res.hits:
             detail["top1_source"] = res.hits[0].source
         rows.append(detail)
-        # CP: 加权位置（分母=相关项数）
         relevant = 0
         num = 0.0
         for k, x in enumerate(ids[:5], 1):
@@ -147,8 +161,10 @@ def main():
                 num += tp / k
         s["cp"] += num / relevant if relevant else 0.0
 
-    out = ["# 统一评测 100 条 — 无 LLM 全指标（2026-08-11）", "",
-           f"- 数据: docs/test/recall_queries_100.md（100 条）",
+    out = ["# 统一评测 100 条 — 意图感知 + 重排对比（%s）"
+           % time.strftime("%Y-%m-%d"), "",
+           f"- 数据: docs/test/recall_queries_100.md（100 条, 含 intent 列）",
+           f"- 重排层: {'ON' if rerank_on else 'OFF（旧排序基线）'}",
            f"- 总耗时: {time.time() - t_total:.0f}s", ""]
     for tag, s in stats.items():
         n = s["n"] or 1
@@ -158,8 +174,15 @@ def main():
                 f"- MRR@5: {s['mrr']/n:.3f} | nDCG@5: {s['ndcg']/n:.3f}",
                 f"- Recall@5: {100.0*s['r5']/n:.1f}% | @10: {100.0*s['r10']/n:.1f}% | @20: {100.0*s['r20']/n:.1f}%",
                 f"- Context Precision@5: {s['cp']/n:.3f}",
+                f"- 返回层 parent_context 覆盖: {s['pc']}/{s['n']*5} 个 top5 锚点带文件摘要",
                 f"- 平均耗时: {s['time_ms']/n:.0f} ms/query", ""]
-    # ── 诊断汇总（为什么）────────────────────────────────────────
+    out += ["## 按意图细分（W1 验收）", ""]
+    for intent, it in sorted(by_intent.items()):
+        n = it["n"] or 1
+        out.append(
+            f"- {intent}: n={it['n']}  top1={100.0*it['top1']/n:.1f}%  "
+            f"top3={100.0*it['top3']/n:.1f}%  top5={100.0*it['top5']/n:.1f}%")
+    out += ["", "## 诊断汇总（为什么）", ""]
     by_cls = Counter(r["cls"] for r in rows)
     fused_top1 = [r for r in rows if r["fused_rank"] == 1]
     win_src = Counter(r["top1_source"] or "?" for r in fused_top1)
@@ -178,7 +201,6 @@ def main():
     near_miss = sum(1 for r in rows
                     if r["fused_rank"] is not None and r["fused_rank"] > 1)
     out += [
-        "## 诊断汇总（为什么）", "",
         f"- 分类: A(融合命中)={by_cls['A']}  B(路线内被融合挤出)="
         f"{by_cls['B']}  C(检索缺口)={by_cls['C']}",
         f"- top1 命中块的来源: {dict(win_src)}",
@@ -192,9 +214,9 @@ def main():
     ]
     for r in rows:
         out.append(
-            "- [%s] fused=%s vec=%s bm25=%s spo=%s | vec%.0fms bm25%.0fms "
+            "- [%s/%s] fused=%s vec=%s bm25=%s spo=%s | vec%.0fms bm25%.0fms "
             "spo%.0fms | top1源=%s | %s" % (
-                r["cls"], r["fused_rank"],
+                r["cls"], r["intent"], r["fused_rank"],
                 r["routes"]["vector"]["best"],
                 r["routes"]["bm25"]["best"],
                 r["routes"]["spo"]["best"],
@@ -202,12 +224,53 @@ def main():
                 r["routes"]["bm25"]["ms"],
                 r["routes"]["spo"]["ms"],
                 r["top1_source"] or "-", r["query"][:44]))
-    with open("docs/test/EVAL_100_20260811.md", "w", encoding="utf-8") as f:
-        f.write("\n".join(out))
-    with open("docs/test/EVAL_100_DETAIL_20260812.md", "w",
+    return stats, by_intent, out
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--compare", action="store_true",
+                    help="同进程跑 rerank OFF/ON 两次并输出对比表")
+    args = ap.parse_args()
+    if not args.compare:
+        _, _, out = _run(rerank_on=True)
+        with open("docs/test/EVAL_100_%s.md" % time.strftime("%Y%m%d"), "w",
+                  encoding="utf-8") as f:
+            f.write("\n".join(out))
+        print("\n".join(out))
+        return
+    off_stats, off_intent, off_lines = _run(rerank_on=False)
+    on_stats, on_intent, on_lines = _run(rerank_on=True)
+    head = ["# eval_100 — 重排层消融对比（2026-08-13）", "",
+            "| 域 | 指标 | 旧排序(OFF) | 重排(ON) | Δ |", "|---|---|---|---|---|"]
+    for tag in ("dialogue", "doc"):
+        for metric, key in (("top1", "top1"), ("top3", "top3"),
+                            ("MRR@5", "mrr"), ("nDCG@5", "ndcg")):
+            a = off_stats[tag][key] / (off_stats[tag]["n"] or 1)
+            b = on_stats[tag][key] / (on_stats[tag]["n"] or 1)
+            if metric in ("MRR@5", "nDCG@5"):
+                head.append(f"| {tag} | {metric} | {a:.3f} | {b:.3f} | {b-a:+.3f} |")
+            else:
+                head.append(
+                    f"| {tag} | {metric} | {100*a:.1f}% | {100*b:.1f}% | "
+                    f"{100*(b-a):+.1f}pp |")
+    head += ["", "### 按意图 top1（OFF → ON）", ""]
+    for intent in sorted(set(off_intent) | set(on_intent)):
+        a = off_intent.get(intent, {"n": 0, "top1": 0})
+        b = on_intent.get(intent, {"n": 0, "top1": 0})
+        an = a["n"] or 1
+        bn = b["n"] or 1
+        head.append(
+            f"- {intent}: {100.0*a['top1']/an:.1f}% → "
+            f"{100.0*b['top1']/bn:.1f}% （n={b['n']}）")
+    full = head + ["", "---", "", "## OFF 明细"] + off_lines[off_lines.index("## 逐条明细"):]
+    full += ["", "---", "", "## ON 明细"] + on_lines[on_lines.index("## 逐条明细"):]
+    with open("docs/test/EVAL_100_RERANK_COMPARE_%s.md"
+              % time.strftime("%Y%m%d"), "w",
               encoding="utf-8") as f:
-        f.write("\n".join(out))
-    print("\n".join(out))
+        f.write("\n".join(full))
+    print("\n".join(head))
 
 
 if __name__ == "__main__":

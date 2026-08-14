@@ -23,7 +23,11 @@ def layer():
     from core.agent.service.session_manager import SessionManager
     from core.agent.service.request_queue import RequestQueue
     sl = ServiceLayer(
-        rate_limiter=RateLimiter(default_tenant_rps=2.0, session_burst=2),
+        # 2026-08-14: session_rate=0.05（refill 20s/枚）消除测试时序抖动 —
+        # 旧默认 rate=1.0 时请求间隔超 1s 桶回填, per_session 测试偶发
+        # 第 3 个请求 200 而非 429。生产默认 session_rate=1.0 不变。
+        rate_limiter=RateLimiter(
+            default_tenant_rps=2.0, session_burst=2, session_rate=0.05),
         session_manager=SessionManager(ttl_seconds=3600),
         request_queue=RequestQueue(max_global_depth=2, per_session_max_depth=1),
     )

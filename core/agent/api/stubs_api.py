@@ -166,9 +166,10 @@ async def get_discourse_tree(sid: Optional[str] = Query(default=None)):
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),
+                 intent: Optional[str] = Query(default=None),
                  sid: Optional[str] = Query(default=None)):
     """统一召回（B2-3 P1）: 混合锚点 + 扩散 + 融合。"""
-    return kernel_recall(query, top_k=top_k, sid=sid)
+    return kernel_recall(query, top_k=top_k, sid=sid, intent=intent)
 
 
 @router.post("/recall/reconstruct")

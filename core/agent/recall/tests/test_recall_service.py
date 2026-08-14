@@ -59,6 +59,131 @@ class TestFormatAnchors:
         # 索引语义: 锚点携带源文档路径（执行层 file_read 精确查阅用）
         assert "docs/only/recall/DESIGN.md" in out
 
+    def test_parent_context_appended_at_return_layer(self):
+        rr = RecallResult(query="q", hits=[
+            RecallHit(id="h1", text="小块正文", source="bm25",
+                      score=0.5, confidence=0.5,
+                      parent_context="文件摘要（方案 B 返回层附加, 不参与排序）"),
+        ])
+        out = format_anchors(rr)
+        assert "| 文件: 文件摘要" in out
+
+
+class TestMultiIntentSegments:
+    """多意图 segments 消费（2026-08-13, 意图副路径实质化）:
+    recall(sub_queries=意图拆分段) → 并行多路召回合并。"""
+
+    def test_sub_queries_merged_into_hits(self):
+        # b4 只被段查询命中（主查询"AES 密钥"不含"修复"语义）。
+        blocks = BLOCKS + [
+            FakeBlock("b4", "定位问题后实施修复方案", children=[]),
+        ]
+        svc = _svc(blocks)
+        # 机制级: 段并行召回产出 segment 源命中（含段独有块）
+        seg = svc._segment_anchors(["密钥存储位置", "修复方案实施"], 10)
+        assert any(h.id == "b4" and h.source == "segment" for h in seg)
+        # 集成级: sub_queries 进入 recall 不破坏主链路, 段独有块可被召回
+        rr = svc.recall("AES 密钥", top_k=10, use_hyde=False,
+                        sub_queries=["密钥存储位置", "修复方案实施"])
+        assert any(h.id == "b4" for h in rr.hits)
+
+    def test_single_or_empty_segments_skip(self):
+        svc = _svc(BLOCKS)
+        rr1 = svc.recall("AES 密钥", top_k=10, use_hyde=False,
+                         sub_queries=["只有一个段"])
+        rr2 = svc.recall("AES 密钥", top_k=10, use_hyde=False,
+                         sub_queries=[])
+        assert not any(h.source == "segment" for h in rr1.hits)
+        assert not any(h.source == "segment" for h in rr2.hits)
+
+
+class TestA18Persistence:
+    """A18 持久化（2026-08-13）: 置信度/权重覆盖落盘, 重启不丢。"""
+
+    def test_feedback_persists_across_services(self, tmp_path):
+        svc = _svc(BLOCKS)
+        svc._index_cache_dir = str(tmp_path)  # 测试隔离, 不碰生产 data/
+        rr = svc.recall("AES 密钥", top_k=5, use_hyde=False)
+        assert rr.hits
+        target = rr.hits[0]
+        base_source = target.source.split(":", 1)[-1]  # hot:bm25 -> bm25
+        before = svc._confidence(base_source)
+        r = svc.feedback(target.id, useful=True, intent="记忆召回")
+        assert r["ok"]
+        assert r["source"] == base_source and r["after"] > before
+        # 新服务实例（同一 data 目录）加载持久化置信度
+        svc2 = _svc(BLOCKS)
+        # __init__ 加载发生在 _index_cache_dir 赋值前（指向生产目录）—
+        # 测试隔离: 赋值后重载一次
+        svc2._index_cache_dir = str(tmp_path)
+        svc2._load_learned_conf()
+        # per-intent 置信度已持久化（不假设 top1 是 vector——单测环境
+        # 无真实 embedding 时 bm25 占 top1）; 全局不受 per-intent 影响
+        assert svc2._confidence(base_source, "记忆召回") == r["after"]
+        assert svc2._confidence(base_source) == before
+
+    def test_rerank_file_signal_boosts_doc_blocks(self):
+        """B 尾巴（2026-08-14）: 文件层信号进重排权重（不保底抬分）。"""
+        svc = _svc(BLOCKS)
+        h_low = RecallHit(id="a", text="t", source="bm25", score=0.5,
+                          confidence=0.5, path=["docs/x.md"])
+        h_high = RecallHit(id="b", text="t", source="bm25", score=0.6,
+                           confidence=0.5, path=["docs/y.md"])
+        h_low.scores = {"bm25": 0.5}
+        h_high.scores = {"bm25": 0.6}
+        # 无文件信号 → 原分高者第一
+        out = svc._rerank([h_low, h_high])
+        assert out[0].id == "b"
+        # 文件摘要命中 x.md → a 的块加权反超（0.25×5/6 + 0.15×0.9 > 0.25）
+        out2 = svc._rerank([h_low, h_high], file_sims={"docs/x.md": 0.9})
+        assert out2[0].id == "a"
+        # 未命中文件 → 无影响
+        out3 = svc._rerank([h_low, h_high], file_sims={"docs/z.md": 0.9})
+        assert out3[0].id == "b"
+
+    def test_pool_extras_expand_candidates(self, monkeypatch):
+        """C 最小版（2026-08-14）: 文件命中 → 节块进候选池扩展,
+        不抬排序（pool_extras 独立于 hits, 供子图编译消费）。"""
+        svc = _svc(BLOCKS)
+        svc._file_pool = True
+        svc._file_pool_per_doc = 2
+        fake_hit = RecallHit(
+            id="pool1", text="补充块", source="vector", score=0.25,
+            confidence=0.5, path=["docs/x.md"])
+
+        def fake_doc_scores(q):
+            return {"docs/x.md": 0.8}, 1.0, 1
+
+        def fake_global_blocks():
+            return [{"id": "pool1", "text": "补充块", "doc": "docs/x.md",
+                     "vector": [0.1] * 8, "heading": "", "spo": [],
+                     "temperature": "active"}]
+
+        def fake_vec(q, top_k, blocks=None, query_vec=None,
+                     boost_docs=None, pool_docs=None):
+            return [fake_hit] if pool_docs else []
+
+        monkeypatch.setattr(svc, "_file_doc_scores", fake_doc_scores)
+        monkeypatch.setattr(svc, "_ensure_global_blocks", fake_global_blocks)
+        monkeypatch.setattr(svc, "_vector_anchors", fake_vec)
+        rr = svc.recall("AES 密钥", top_k=5, use_hyde=False)
+        assert rr.pool_extras and rr.pool_extras[0].id == "pool1"
+        assert rr.pool_extras[0].source == "cold:pool"
+        assert all(h.id != "pool1" for h in rr.hits)  # 不混入排序
+
+    def test_set_weight_rerank_override_persists(self, tmp_path):
+        svc = _svc(BLOCKS)
+        svc._index_cache_dir = str(tmp_path)
+        r = svc.set_weight("bm25", 0.9, intent="任务规划", target="rerank")
+        assert r["ok"] and r["weight"] == 0.9
+        svc2 = _svc(BLOCKS)
+        svc2._index_cache_dir = str(tmp_path)
+        svc2._load_learned_conf()
+        w = svc2.weights("任务规划")
+        assert w["rerank"]["bm25"] == 0.9
+        # 全局置信度不受 per-intent 覆盖影响
+        assert svc2._confidence("bm25") == 0.7
+
     def test_truncates_long_hits(self):
         long_text = "x" * 300
         rr = RecallResult(query="q", hits=[RecallHit(

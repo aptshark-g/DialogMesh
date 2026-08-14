@@ -68,9 +68,14 @@ class RateLimiter:
         default_tenant_rps: float = 10.0,
         session_burst: int = 5,
         queue_max_depth: int = 100,
+        # 2026-08-14: 会话桶 refill 率参数化 — 生产默认 1.0 不变;
+        # 测试可用极小 refill 率（如 0.05）消除"请求间隔超 1 秒桶回填"
+        # 的时序抖动（test_rate_limit_per_session_bucket 偶发 429→200）。
+        session_rate: float = 1.0,
     ):
         self.default_tenant_rps = default_tenant_rps
         self.session_burst = session_burst
+        self.session_rate = session_rate
         self.queue_max_depth = queue_max_depth
 
         self._tenant_buckets: Dict[str, TokenBucket] = {}
@@ -92,7 +97,8 @@ class RateLimiter:
         with self._lock:
             bucket = self._session_buckets.get(session_id)
             if bucket is None:
-                bucket = TokenBucket(rate=1.0, burst=self.session_burst)
+                bucket = TokenBucket(
+                    rate=self.session_rate, burst=self.session_burst)
                 self._session_buckets[session_id] = bucket
             return bucket
 

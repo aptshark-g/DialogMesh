@@ -160,6 +160,11 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
                     "ok": result.get("ok", False),
                     "latency_ms": round((time.time() - _t0) * 1000, 1),
                     "error": str(result.get("error", ""))[:200],
+                    # 2026-08-14（阶段 0, 吸收 O3）: 输入摘要进 step —
+                    # doom loop 判定需要"同工具+同输入"（不是失败次数）;
+                    # 执行树消费端据此检测死循环。
+                    "input": json.dumps(
+                        args, ensure_ascii=False)[:200],
                 }
                 trace.append(step)
                 executed.append({

@@ -328,12 +328,17 @@ ToolRegistry.register(ToolAdapter(
 
 
 def _recall_decompose(query: str = "", top_k: int = 5,
-                      parallel: bool = False, sid: str = "") -> dict:
+                      parallel: bool = False, sid: str = "",
+                      intent: str = "", sub_queries: list = None) -> dict:
     """统一召回工具（蓝图/tool_loop 可调）: query → 四路锚点 + 可选并行分解。
 
     2026-08-11 注册（SUBGRAPH_EXPANSION_UPGRADE）: 走生产 RecallService,
     与 /v6/recall 同源。parallel=True 时启用 LLM 并行子问题分解
     （I/O 密集, threading）。返回 {hits, sources, miss, decompose_misses}。
+
+    2026-08-13（W1 后半 + 意图副路径实质化）:
+    intent= 意图标签 → per-intent 融合配置; sub_queries= 多意图拆分段
+    （蓝图 intent 节点输出 segments 注入）→ 并行多路召回。
     """
     from core.agent.recall.recall_service import RecallService, format_anchors
     try:
@@ -343,7 +348,10 @@ def _recall_decompose(query: str = "", top_k: int = 5,
         engine = None
     rs = RecallService(engine=engine)
     rs.parallel_decompose = bool(parallel)
-    res = rs.recall(query, top_k=top_k, sid=sid or None, use_hyde=bool(parallel))
+    res = rs.recall(
+        query, intent=intent or None, top_k=top_k, sid=sid or None,
+        use_hyde=bool(parallel), expand_graph=True,
+        sub_queries=sub_queries or None)
     return {
         "hits": [{"id": h.id, "source": h.source, "score": round(h.score, 4),
                   "text": (h.text or "")[:160]} for h in res.hits],
@@ -364,5 +372,7 @@ ToolRegistry.register(ToolAdapter(
     handler=_recall_decompose,
     input_schema={"query": "user query", "top_k": "int (default 5)",
                   "parallel": "bool: enable LLM sub-question decomposition (default false)",
-                  "sid": "session id (optional)"},
+                  "sid": "session id (optional)",
+                  "intent": "intent label (per-intent fusion profile)",
+                  "sub_queries": "list[str]: multi-intent segments for parallel recall"},
 ))

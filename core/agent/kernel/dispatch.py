@@ -395,7 +395,8 @@ def kernel_discourse_tree(sid: Optional[str] = None) -> dict:
 
 
 def kernel_recall(query: str, top_k: int = 10,
-                  sid: Optional[str] = None) -> dict:
+                  sid: Optional[str] = None,
+                  intent: Optional[str] = None) -> dict:
     """统一召回能力接口（B2-3 P1, 2026-08-08）。
 
     混合锚点（BGE 向量 + BM25 + SPO 约束投影 + HyDE 扩展 + 关联链）→
@@ -411,7 +412,8 @@ def kernel_recall(query: str, top_k: int = 10,
             _discourse_ensure(engine, sid)
         from core.agent.recall import RecallService
         svc = RecallService(engine=engine)
-        result = svc.recall(query, top_k=top_k, sid=sid)
+        result = svc.recall(query, intent=intent, top_k=top_k, sid=sid,
+                            expand_graph=True)
         return result.to_dict()
     except Exception as e:
         return {"error": str(e), "hits": []}

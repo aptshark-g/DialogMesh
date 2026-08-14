@@ -232,6 +232,46 @@ BUILTIN_TEMPLATES["recall_pipeline"] = BlueprintDAG(
 )
 
 
+# Template 7: intent_multi_recall — TEMPLATE（多意图 → 多路召回, 2026-08-13）
+# 注册链路（用户拍板分层原则）: 流程层模板化 — 能力（RecallService 多路
+# 召回/sub_queries）是工具, 入口消费是模板。意图节点输出多意图 segments
+# （DualTrack is_multi）→ statemachine 注入 recall_decompose.sub_queries
+# → 并行多路召回 → 子图扩展 → 回复。模板选择: v3 API 检测到多意图拆分时
+# build(template="intent_multi_recall") 显式指定。
+BUILTIN_TEMPLATES["intent_multi_recall"] = BlueprintDAG(
+    nodes=[
+        * _tick0_pair("多意图: 意图分析 → 多路召回 → 图扩展"),
+        _make_node("recall_anchor_2", "tool", priority=1,
+                   tool="recall_decompose",
+                   params={"top_k": 5},
+                   safety={"mode": "read_only"}),
+        _make_node("subgraph_3", "subgraph", priority=1,
+                   tools=["recall_decompose", "read"],
+                   safety={"mode": "read_only"}),
+        _llm_reply_node("llm_reply_4", priority=2),
+        _make_node("meta_audit_5", "meta", priority=9),
+        _make_node("behavior_learn_6", "behavior", priority=9),
+    ],
+    edges=[
+        _make_edge("pcr_0", "intent_1", "route", required=False),
+        _make_edge("intent_1", "recall_anchor_2", "intent_context"),
+        _make_edge("recall_anchor_2", "subgraph_3", "anchors"),
+        _make_edge("intent_1", "subgraph_3", "intent_context"),
+        _make_edge("subgraph_3", "llm_reply_4", "compiled_subgraph"),
+        _make_edge("intent_1", "llm_reply_4", "intent_context"),
+        _make_edge("pcr_0", "llm_reply_4", "compass"),
+    ],
+    strategy="TEMPLATE",
+    confidence=1.0,
+    design_rationale=(
+        "多意图: Tick0(pcr∥intent) → Tick1(recall_anchor 工具节点, "
+        "statemachine 把 intent 节点 segments 注入 sub_queries → "
+        "并行多路召回) → Tick2(llm_reply) → async(meta.audit∥behavior.learn)。"
+        "模板化动机 = 可学习（多意图召回好坏 → MetaFeedback 调权重）可审计。"
+    ),
+)
+
+
 # ═══════════════════════════════════════════════
 # SkillRegistry — intent → (strategy, blueprint)
 # ═══════════════════════════════════════════════

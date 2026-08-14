@@ -31,7 +31,13 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-DOC_DIRS = ["docs", os.path.join("docs", "only")]
+# 2026-08-14 语料卫生修复:
+# ① walk "docs" 已递归覆盖 docs/only — 双目录导致 docs/only 每块
+#    双份装载（#2 消歧后缀）, top-k 被重复块占位, recall@k 实际减半;
+# ② 排除 docs/test（评测文档引用 query 原文 → 基准自污染, 实测 832 处）
+#    与 docs/notTish（另一项目参考文档, 非 DialogMesh 知识）。
+EXCLUDE_PREFIXES = ("docs/test/", "docs/notTish/")
+DOC_DIRS = ["docs"]
 QUERY_MIN_CHARS = 4
 # 结构粒度上限（2026-08-12）: 超大节块按 ### → 段落 → 行 递归切分,
 # 全部在结构边界上切（标题/空行/行首）, 绝不从文字中间硬截。
@@ -46,6 +52,9 @@ SECTION_MAX_CHARS = 3000
 EMBED_WINDOW = SECTION_MAX_CHARS
 # v3（2026-08-12）: 结构切分语料 + 3000 窗口（v2 = 未切分语料 + 1500 窗口）。
 VEC_CACHE = os.path.join(ROOT, "scripts", ".recall_vec_cache_v3.json")
+# 2026-08-14（doc 域 miss 修复, 父级上下文）: 与 core/doc_corpus 同步 —
+# 嵌入窗口加文件标题（doc_title | 节标题\n内容）, 缓存升 v4。
+VEC_CACHE = os.path.join(ROOT, "scripts", ".recall_vec_cache_v4.json")
 TERM_CACHE = os.path.join(ROOT, "scripts", ".recall_term_index.json")
 
 
@@ -70,6 +79,16 @@ class FakeDiscourse:
 def _heading_level(line: str) -> int:
     m = re.match(r"^(#{1,6})\s+", line)
     return len(m.group(1)) if m else 0
+
+
+def _doc_title(text: str, rel: str) -> str:
+    """文件标题（父级上下文, 2026-08-14）: 首个 H1; 无 H1 → 文件名。"""
+    for line in text.splitlines()[:30]:
+        lvl = _heading_level(line)
+        if lvl == 1:
+            return re.sub(r"^#+\s+", "", line).strip()
+    name = os.path.basename(rel)
+    return name[:-3] if name.endswith(".md") else name
 
 
 def _split_at_level(text: str, level: int) -> list:
@@ -168,6 +187,9 @@ def load_blocks(limit: int = 0) -> list:
     for d in DOC_DIRS:
         base = os.path.join(ROOT, d)
         for dirpath, _, fnames in os.walk(base):
+            rel_dir = os.path.relpath(dirpath, ROOT).replace("\\", "/") + "/"
+            if any(rel_dir.startswith(p) for p in EXCLUDE_PREFIXES):
+                continue
             for fn in sorted(fnames):
                 if fn.endswith(".md"):
                     files.append(os.path.join(dirpath, fn))
@@ -183,6 +205,7 @@ def load_blocks(limit: int = 0) -> list:
         if not text.strip():
             continue
         created_at = _doc_timestamp(rel, fp)
+        doc_title = _doc_title(text, rel)
         sections = split_markdown(text)
         if not sections or all(not c for _, c in sections):
             sections = [("", text)]
@@ -205,6 +228,7 @@ def load_blocks(limit: int = 0) -> list:
             blocks.append({
                 "id": bid, "text": body, "path": [rel, heading or ""],
                 "heading": heading, "doc": rel, "temperature": "active",
+                "doc_title": doc_title,
                 "created_at": created_at,
             })
     return blocks
@@ -260,8 +284,10 @@ def prepare_vectors(blocks: list, skip: bool = False) -> None:
         # 全部白算; 每 1000 块保存一次, 中断只丢最后一段。
         for start in range(0, total, 1000):
             sub = uncached[start:start + 1000]
-            texts = [((b.get("heading") or "") + "\n" + b["text"])
-                     [:EMBED_WINDOW] for b in sub]
+            # 2026-08-14: 嵌入窗口 = 文件标题 + 节标题 + 内容
+            texts = [((f"{b.get('doc_title') or ''} | "
+                       f"{b.get('heading') or ''}\n{b['text']}")
+                      [:EMBED_WINDOW]) for b in sub]
             vectors = enc.encode(texts, batch_size=32, normalize=True)
             for b, vec in zip(sub, vectors):
                 v = vec.tolist() if hasattr(vec, "tolist") else list(vec)

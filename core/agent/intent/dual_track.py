@@ -36,16 +36,35 @@ class DualTrackIntentPipeline:
         result = pipeline.process("先定位延迟然后修复", profile=..., association=..., history=...)
     """
 
-    def __init__(self, llm=None, belief_acc=None, compressor=None):
+    def __init__(self, llm=None, belief_acc=None, compressor=None,
+                 profile=None, association=None, discourse=None,
+                 engineering=None,
+                 profile_resolver=None, association_resolver=None,
+                 discourse_resolver=None):
+        """5 链数据源接线（2026-08-13, 意图副路径实质化）。
+
+        profile/association/discourse/engineering = 构造时注入的静态数据;
+        *_resolver = 每次 process() 时求值的动态数据源（画像/关联链状态
+        随时间变化, resolver 取最新快照）— 引擎接线用 resolver 形态。
+        """
         self.llm = llm
         self.belief = belief_acc
         self.compressor = compressor  # DerivationCompressor
+        self._profile = profile
+        self._association = association
+        self._discourse = discourse
+        self._engineering = engineering
+        self._profile_resolver = profile_resolver
+        self._association_resolver = association_resolver
+        self._discourse_resolver = discourse_resolver
 
         from .multi_intent_splitter import MultiIntentSplitter
         from .multi_perspective import MultiPerspectiveAnalyzer
         from .ambiguity_bridge import IntentAmbiguityResolver
 
-        self._splitter = MultiIntentSplitter(llm=llm)
+        self._splitter = MultiIntentSplitter(
+            llm=llm, profile=profile, association=association,
+            discourse=discourse, engineering=engineering)
         self._analyzer = MultiPerspectiveAnalyzer(llm=llm)
         self._bridge = IntentAmbiguityResolver(llm=llm, belief_acc=belief_acc) if belief_acc else None
 
@@ -57,6 +76,26 @@ class DualTrackIntentPipeline:
                 association: dict = None, history: List[str] = None) -> PipelineResult:
         """Hot path: fast single LLM. Trigger cold path when confidence is low."""
         t0 = time.time()
+        # 动态数据源求值（2026-08-13）: 每次调用取最新快照
+        profile = profile if profile is not None else self._profile
+        association = (association if association is not None
+                       else self._association)
+        if self._profile_resolver is not None:
+            try:
+                profile = self._profile_resolver()
+            except Exception:
+                profile = profile
+        if self._association_resolver is not None:
+            try:
+                association = self._association_resolver()
+            except Exception:
+                association = association
+        discourse = self._discourse
+        if self._discourse_resolver is not None:
+            try:
+                discourse = self._discourse_resolver()
+            except Exception:
+                discourse = discourse
 
         # ── Check heuristic cache first ──
         if self.compressor:
@@ -71,7 +110,10 @@ class DualTrackIntentPipeline:
                 )
 
         # ── Hot path: single LLM split ──
-        result = self._splitter.split(text, history=history or [])
+        result = self._splitter.split(
+            text, history=history or [],
+            profile=profile, association=association,
+            discourse=discourse, engineering=self._engineering)
         latency = (time.time() - t0) * 1000
 
         hot_result = PipelineResult(

@@ -255,3 +255,36 @@ def test_recall_intent_partial_match():
     reg = SkillRegistry()
     _, dag = reg.match("需要记忆召回历史内容")
     assert dag is BUILTIN_TEMPLATES["recall_pipeline"]
+
+
+# ── intent_multi_recall 模板（2026-08-13, 多意图 → 多路召回）──
+
+
+def test_intent_multi_recall_template_registered():
+    """intent_multi_recall 模板已注册, 工具节点 = recall_decompose。"""
+    from core.agent.blueprint.skill_registry import BUILTIN_TEMPLATES
+    dag = BUILTIN_TEMPLATES.get("intent_multi_recall")
+    assert dag is not None
+    tool_nodes = [n for n in dag.nodes if n.chain == "tool"]
+    assert tool_nodes and tool_nodes[0].params.get("tool") == "recall_decompose"
+    # intent → recall 边用 intent_context data_key（segments 注入通道）
+    edge = next(e for e in dag.edges
+                if e.from_node == "intent_1"
+                and e.to_node == "recall_anchor_2")
+    assert edge.data_key == "intent_context"
+
+
+def test_build_template_override():
+    """engine.build(template="intent_multi_recall") 显式选多意图模板。"""
+    from core.agent.blueprint.engine import BlueprintEngine
+    from core.agent.blueprint.skill_registry import BUILTIN_TEMPLATES
+    engine = BlueprintEngine()
+    dag = engine.build("先定位延迟然后修复", intent="任务规划",
+                       template="intent_multi_recall")
+    assert dag is not None
+    assert dag.node_count == BUILTIN_TEMPLATES[
+        "intent_multi_recall"].node_count
+    # 未知名模板回退 registry match（不崩）
+    dag2 = engine.build("你好", intent="通用对话",
+                        template="no_such_template")
+    assert dag2 is not None and dag2.node_count > 0
