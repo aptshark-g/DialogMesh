@@ -684,6 +684,9 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 "provider": req.provider or "deepseek",
                 "model": req.model or "deepseek-v4-flash",
                 "messages": all_messages,
+                # 2026-08-14 修复: 网关默认 thinking 开 → deepseek-v4
+                # 推理吃光预算空返回（与 tool_loop/call_switch 同因）。
+                "thinking": {"type": "disabled"},
             }
             http_req = urllib.request.Request(
                 "http://127.0.0.1:8080/v1/chat/completions",
@@ -835,6 +838,8 @@ async def edit_dag(session_id: str, req: DAGEditRequest):
                 {"role": "system", "content": "你是 DAG 编辑器。根据用户指令修改任务图节点列表。"},
                 {"role": "user", "content": prompt},
             ],
+            # 2026-08-14: 与主回复同因 — 关思考保 JSON 提取稳定
+            "thinking": {"type": "disabled"},
         }).encode()
         http_req = urllib.request.Request(
             "http://127.0.0.1:8080/v1/chat/completions",

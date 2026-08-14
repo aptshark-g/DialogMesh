@@ -48,6 +48,9 @@ def call_switch(messages: List[dict], provider: str = DEFAULT_PROVIDER,
     """
     import urllib.request
     body = {"provider": provider, "model": model, "messages": messages}
+    # 2026-08-14 修复: 网关默认 thinking 开, deepseek-v4 推理吃光预算
+    # → content 空。llm_reply 默认关思考（需思考的场景再显式开）。
+    body["thinking"] = {"type": "disabled"}
     if temperature is not None:
         body["temperature"] = temperature
     if max_tokens is not None:

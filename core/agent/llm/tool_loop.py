@@ -59,6 +59,10 @@ def _call_gateway(messages: List[Dict], tools: List[Dict],
         "messages": messages,
         "tools": tools,
         "tool_choice": "auto",
+        # 2026-08-14 修复: deepseek-v4 推理模式吃光预算 → content 空
+        # （openai.go 三层开关: 请求级 > 厂商级 > 默认开）。工具调用
+        # prompt 复杂必触发推理 → 显式关思考（可靠优先, 需思考再开）。
+        "thinking": {"type": "disabled"},
     }
     req = urllib.request.Request(
         GATEWAY_URL, data=json.dumps(body).encode(),
@@ -164,7 +168,8 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
                     # doom loop 判定需要"同工具+同输入"（不是失败次数）;
                     # 执行树消费端据此检测死循环。
                     "input": json.dumps(
-                        args, ensure_ascii=False)[:200],
+                        tc.get("function", {}).get("arguments")
+                        or "{}", ensure_ascii=False)[:200],
                 }
                 trace.append(step)
                 executed.append({
