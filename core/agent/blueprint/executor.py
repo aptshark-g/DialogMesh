@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
@@ -895,6 +896,7 @@ class BlueprintExecutor:
 
     def _summarize_tool_result(self, tool_name: str, data) -> str:
         """工具结果摘要（进 llm_reply 上下文, 不存全文）。"""
+        detail = int(os.environ.get("DM_TOOL_DETAIL", "2000"))
         if isinstance(data, dict):
             if tool_name in ("arxiv_search",):
                 papers = data.get("papers", [])
@@ -903,9 +905,9 @@ class BlueprintExecutor:
                 return f"找到 {data.get('count', len(papers))} 篇论文: " + "; ".join(parts)
             if tool_name in ("web_fetch", "pdf_extract"):
                 text = data.get("text", "")
-                return f"{tool_name}: {str(text)[:300]}"
+                return f"{tool_name}: {str(text)[:detail]}"
             if tool_name == "file_read":
-                return f"file_read({data.get('path', '')}): {str(data.get('content', ''))[:300]}"
+                return f"file_read({data.get('path', '')}): {str(data.get('content', ''))[:detail]}"
             return str(data)[:300]
         return str(data)[:300]
 
@@ -923,11 +925,15 @@ class BlueprintExecutor:
         if output.get("status") in ("error", "blocked", "unavailable") or output.get("error"):
             err = str(output.get("error", output.get("status", "")))[:120]
             return f"[不可信] {err}"
+        # 2026-08-15 加固: 细节承载键（锚点/子图/工具结果）给更大上限,
+        # 结构键保持 200 — 分级保留, 不统一压扁（P9 信息论分治落地）。
+        detail_cap = {"compiled_subgraph": 2000, "anchors": 1500,
+                      "tool_result": 2000, "response": 1200}
         for key in ("route", "segments", "intents", "compiled_subgraph",
                     "assembled_context", "profile_text", "response", "content",
-                    "tool_result", "summary"):
+                    "tool_result", "summary", "anchors"):
             if output.get(key):
-                return str(output[key])[:200]
+                return str(output[key])[:detail_cap.get(key, 200)]
         return str(output.get("status", ""))[:100]
 
     # ─── Per-chain handlers (direct component calls, no fake data) ───
@@ -1040,6 +1046,14 @@ class BlueprintExecutor:
         for nid, out in outputs.items():
             if nid == node.node_id:
                 continue
+            # 2026-08-15 加固（P9/A7 细节保留）: recall/subgraph 节点
+            # 的锚点全文进上下文（此前 _summarize 只取 200 字符摘要,
+            # 数字/细节在摘要里失真 → 事实矛盾幻觉的根因之一）。
+            if nid.startswith(("recall", "subgraph")):
+                detail = self._detail_block(out)
+                if detail:
+                    blocks.append(f"[{nid}] {detail}")
+                continue
             summary = self._summarize(out)
             if summary:
                 blocks.append(f"[{nid}] {summary}")
@@ -1051,7 +1065,9 @@ class BlueprintExecutor:
             return {"response": reply, "mode": "template", "status": "ok"}
 
         # mode=llm (default): switch-gateway call with aggregated context
-        system = "你是 DialogMesh 认知助手。基于管线分析上下文生成最终回复。"
+        system = ("你是 DialogMesh 认知助手。基于管线分析上下文生成最终回复。"
+                  "回答必须基于上下文：数字、结论、细节必须来自上下文；"
+                  "上下文不足时明确说明不知道，不编造。")
         user = f"用户: {text}\n\n管线上下文:\n{context_block}"
         # 二阶抽象: 启发注入决策上下文（与 engineering 约束并列, A19 白盒）
         inv = self._lazy_inventory()
@@ -1070,6 +1086,25 @@ class BlueprintExecutor:
             return {"response": reply, "mode": "llm", "status": "ok"}
         return {"status": "unavailable", "error": "switch call failed",
                 "response": ""}
+
+    def _detail_block(self, out: dict) -> str:
+        """细节节点输出 → 全文块（recall/subgraph 锚点, 2026-08-15）。"""
+        if not isinstance(out, dict):
+            return ""
+        hits = out.get("hits") or []
+        parts = []
+        # 变体档位（蓝图多样性, 2026-08-15）: 消融可调, 默认 top-3 × 1200
+        top_n = int(os.environ.get("DM_CTX_DETAIL_TOP", "3"))
+        chars = int(os.environ.get("DM_CTX_DETAIL_CHARS", "1200"))
+        for h in hits[:top_n]:
+            text = h.get("full_text") or h.get("text") or ""
+            path = (h.get("path") or ["?"])[0]
+            if text:
+                parts.append(f"- {path}: {text[:chars]}")
+        if parts:
+            return "\n".join(parts)
+        return str(out.get("anchors")
+                   or out.get("compiled_subgraph") or "")[:1500]
 
     # ─── Async-consumption stubs (explicit, no fake work) ───
 

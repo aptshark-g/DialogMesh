@@ -179,6 +179,10 @@ class RecallHit:
     path: List[str] = field(default_factory=list)
     spo: Optional[dict] = None        # 约束投影（SPO 三元组）
     parent_context: str = ""          # 父块上下文（文件摘要, 2026-08-14）
+    full_text: str = ""               # 全文（2026-08-15 加固: 细节保留,
+                                      # P9 低概率高价值原样保留的落地 —
+                                      # 锚点展示用 text[:200], 生成上下文
+                                      # 用 full_text）
     created_at: float = field(default_factory=time.time)
     scores: Dict[str, float] = field(default_factory=dict)  # 每源原始分（重排用）
     rerank_score: float = 0.0          # 重排层输出分（白盒可查）
@@ -203,6 +207,7 @@ class RecallHit:
             "path": self.path,
             "spo": self.spo,
             "parent_context": self.parent_context[:200],
+            "full_text": self.full_text[:4000],
             "scores": self.scores,
             "rerank_score": round(self.rerank_score, 6),
             "fused": round(self.fused(), 4),
@@ -2134,6 +2139,17 @@ class RecallService:
                 and os.environ.get("DM_RERANK", "1") != "0"
                 and len(ordered) > 1):
             ordered = self._rerank(ordered, intent_n, file_sims)
+        # 2026-08-15 加固（P9/A7 细节保留）: 全文回填 — 锚点展示仍用
+        # text[:200], 但 hit 携带全文供生成上下文/子图/执行层取用。
+        # 此前 7 条召回路径全部 [:200] 截断, "低概率高价值原样保留"
+        # 只存在于设计, 未进实现（llm_reply 上下文被摘要压扁 → 幻觉）。
+        for h in ordered:
+            if h.full_text:
+                continue
+            b = (self._blocks_cache.get(h.id)
+                 or next((x for x in cold_blocks if x["id"] == h.id), None))
+            if b is not None:
+                h.full_text = b.get("text") or ""
         # C 最小版候选池扩展（2026-08-14, DM_FILE_POOL=1）: 文件命中
         # 文件的节块按自然分进 pool_extras（不抬排序, 只扩候选）—
         # 给子图编译更多锚点/合并材料。消融结论: 文件层信号抬排名必输,
@@ -2153,6 +2169,9 @@ class RecallService:
                     if h.id in existing:
                         continue
                     h.source = "cold:pool"
+                    b = next((x for x in pool_blocks if x["id"] == h.id), None)
+                    if b is not None:
+                        h.full_text = b.get("text") or ""
                     if not h.parent_context:
                         doc = h.path[0] if h.path else None
                         if doc and doc in summaries:

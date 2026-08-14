@@ -171,6 +171,18 @@ class TestA18Persistence:
         assert rr.pool_extras[0].source == "cold:pool"
         assert all(h.id != "pool1" for h in rr.hits)  # 不混入排序
 
+    def test_full_text_backfilled_p9(self):
+        """P9 原文保留（2026-08-15 一致性测试）: 命中必须携带全文,
+        摘要/截断只影响展示（text[:200]）, 不影响存在（full_text）。"""
+        svc = _svc(BLOCKS)
+        rr = svc.recall("AES 密钥", top_k=5, use_hyde=False)
+        assert rr.hits
+        for h in rr.hits[:2]:
+            assert h.full_text, "P9: 命中必须携带全文"
+            assert len(h.full_text) >= len(h.text)
+        d = rr.hits[0].to_dict()
+        assert d["full_text"], "P9: to_dict 必须带全文（放大路径）"
+
     def test_set_weight_rerank_override_persists(self, tmp_path):
         svc = _svc(BLOCKS)
         svc._index_cache_dir = str(tmp_path)
