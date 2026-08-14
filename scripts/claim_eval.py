@@ -148,6 +148,32 @@ def judge_claim(llm: GatewayLLM, claim: str, context: str) -> bool:
     return first.startswith("YES") or first.startswith("是") or "YES" in first[:10]
 
 
+def judge_claim3(llm: GatewayLLM, claim: str, context: str) -> str:
+    """三分判定（2026-08-15, 幻觉口径修复）:
+      supported    — 能从上下文推出（忠实）
+      contradict   — 与上下文矛盾（真幻觉）
+      unsupported  — 上下文未提及, 既不推出也不矛盾（池外扩展,
+                     规划/常识类任务的正常行为, 不算幻觉）
+    """
+    prompt = (
+        "判断陈述与上下文的关系, 三选一输出一个词:\n"
+        "SUPPORTED - 能从上下文推出\n"
+        "CONTRADICT - 与上下文矛盾\n"
+        "UNSUPPORTED - 上下文未提及, 既不推出也不矛盾\n\n"
+        f"陈述: {claim}\n\n"
+        f"上下文:\n{context}"
+    )
+    for _attempt in range(3):
+        raw = llm.chat(prompt, max_tokens=64).strip().upper()
+        if "CONTRADICT" in raw:
+            return "contradict"
+        if "UNSUPPORTED" in raw:
+            return "unsupported"
+        if "SUPPORTED" in raw:
+            return "supported"
+    return "unsupported"
+
+
 def judge_claims_batch(llm: GatewayLLM, claims: list, context: str,
                        batch_size: int = 6) -> list:
     """批量判定（2026-08-11 提速）: 一次 LLM 调用判多条 claims。
@@ -311,6 +337,8 @@ def run_faithfulness(llm: GatewayLLM, n: int = 5):
     print("=== Faithfulness (n=%d 任务) ===" % n)
     total_claims = 0
     supported = 0
+    contradict_total = 0
+    unsupported_total = 0
     per_task = []
     tasks = list(TASKS.items())[:n]
     for task_name, (query, pool) in tasks:
@@ -335,24 +363,47 @@ def run_faithfulness(llm: GatewayLLM, n: int = 5):
             per_task.append({"task": task_name, "error": "no claims"})
             continue
         q_supported = 0
+        q_contradict = 0
+        q_unsupported = 0
         for c in claims:
-            q_supported += 1 if judge_claim(llm, c, ctx) else 0
+            verdict = judge_claim3(llm, c, ctx)
+            if verdict == "supported":
+                q_supported += 1
+            elif verdict == "contradict":
+                q_contradict += 1
+            else:
+                q_unsupported += 1
             time.sleep(0.3)
         total_claims += len(claims)
         supported += q_supported
+        contradict_total += q_contradict
+        unsupported_total += q_unsupported
         f = q_supported / len(claims)
         per_task.append({"task": task_name, "claims": len(claims),
                          "supported": q_supported,
+                         "contradict": q_contradict,
+                         "unsupported": q_unsupported,
                          "faithfulness": round(f, 3),
-                         "hallucination_rate": round(1 - f, 3)})
-        print("  [%s] claims=%d supported=%d F=%.2f 幻觉率=%.2f" % (
-            task_name, len(claims), q_supported, f, 1 - f))
+                         "contradiction_rate": round(
+                             q_contradict / len(claims), 3),
+                         "unsupported_rate": round(
+                             q_unsupported / len(claims), 3)})
+        print("  [%s] claims=%d 支持=%d 矛盾=%d 池外=%d F=%.2f "
+              "真幻觉率=%.2f" % (task_name, len(claims), q_supported,
+                                q_contradict, q_unsupported, f,
+                                q_contradict / len(claims)))
     if total_claims:
         f_total = supported / total_claims
-        print("Faithfulness: %.3f | 幻觉率: %.3f (%d/%d claims)" % (
-            f_total, 1 - f_total, supported, total_claims))
+        c_total = contradict_total / total_claims
+        u_total = unsupported_total / total_claims
+        print("Faithfulness: %.3f | 真幻觉率(矛盾): %.3f | "
+              "池外扩展率: %.3f (%d claims)" % (
+                  f_total, c_total, u_total, total_claims))
     out = {"mode": "faithfulness", "faithfulness": f_total if total_claims else None,
-           "hallucination_rate": 1 - f_total if total_claims else None,
+           "contradiction_rate": (
+               contradict_total / total_claims if total_claims else None),
+           "unsupported_rate": (
+               unsupported_total / total_claims if total_claims else None),
            "claims_total": total_claims, "claims_supported": supported,
            "per_task": per_task}
     with open("docs/test/FAITHFULNESS_20260811.json", "w",
