@@ -30,6 +30,14 @@ def _make_loop(responses):
     return loop, calls
 
 
+def test_build_inject_includes_project_map():
+    """A2 落地（2026-08-15）: 蓝图约束注入必须带项目粗结构全景。"""
+    inj = TaskRunner.build_inject(TaskConstraint(
+        goal="规划代码审查任务", scope="", allowed_tools=[]))
+    assert "## 项目结构概览" in inj
+    assert "core/" in inj and "docs/" in inj
+
+
 def _fail_resp():
     return {"steps": [{"round": 1, "tool": "run_shell", "ok": False,
                        "latency_ms": 10, "error": "boom"} for _ in range(2)],

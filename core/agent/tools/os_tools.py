@@ -151,6 +151,71 @@ def _dir_list(path: str = ".", **kwargs) -> ToolResult:
         return ToolResult("dir_list", False, error=str(e))
 
 
+_PROJECT_MAP_CACHE = {"ts": 0.0, "text": "", "root": ""}
+
+
+def _project_map(path: str = ".", max_depth: int = 2, **kwargs) -> ToolResult:
+    """项目粗结构概览（2026-08-15, A2 地图式递归图落地）。
+
+    规划/探索类任务先给全景（2 层目录骨架 + 根文件）— 模型不再逐格
+    dir_list 盲探（实测 23 次死循环的治本: 粗视图一次给收敛判据,
+    dir_list 变成定向缩放）。**只列目录不铺文件**（文件洪流会挤掉
+    其他模块视图）; 细节用 dir_list/file_read 放大。进程内缓存 60s。
+    """
+    import os
+    import time
+    cache = _PROJECT_MAP_CACHE
+    root = os.path.abspath(path or ".")
+    if (time.time() - cache["ts"] < 60 and cache["text"]
+            and cache["root"] == root):
+        return ToolResult("project_map", True, data={
+            "path": root,
+            "tree": cache["text"], "chars": len(cache["text"]), "cached": True})
+    try:
+        skip = {".git", ".venv", ".venv-test", "node_modules", "__pycache__",
+                "dist", "build", ".idea", ".pytest_cache", "target",
+                ".hermes", "gateway", "models", "tools", "data",
+                "persistence_rs"}
+        lines = []
+
+        def walk(d, depth, prefix=""):
+            if len(lines) >= 200:
+                return
+            try:
+                entries = sorted(os.listdir(d))
+            except Exception:
+                return
+            dirs = [e for e in entries
+                    if os.path.isdir(os.path.join(d, e))
+                    and e not in skip
+                    and not e.startswith((".", "_"))]
+            files = [e for e in entries
+                     if not os.path.isdir(os.path.join(d, e))
+                     and not e.startswith((".", "_"))]
+            if depth == 0:
+                for e in files[:20]:
+                    lines.append(prefix + e)
+                for e in dirs[:30]:
+                    lines.append(prefix + e + "/")
+                    walk(os.path.join(d, e), depth + 1, prefix + "  ")
+            else:
+                # 骨架层: 只列子目录, 不铺文件（文件细节用 dir_list）
+                for e in dirs[:20]:
+                    lines.append(prefix + e + "/")
+
+        walk(root, 0)
+        text = "\n".join(lines)
+        if len(text) > 2000:
+            text = text[:2000] + "\n...(截断)"
+        cache["ts"] = time.time()
+        cache["text"] = text
+        cache["root"] = root
+        return ToolResult("project_map", True, data={
+            "path": root, "tree": text, "chars": len(text), "cached": False})
+    except Exception as e:
+        return ToolResult("project_map", False, error=str(e))
+
+
 def _grep(pattern: str = "", path: str = ".", max_results: int = 50,
           **kwargs) -> ToolResult:
     """代码探索: 递归搜索文本/正则（实现软件: 找代码在哪）。"""
@@ -388,6 +453,15 @@ def register_os_tools() -> None:
         input_schema={"path": "目录路径(默认当前)"},
         category="file",
         handler=_dir_list,
+    ))
+    ToolRegistry.register(ToolAdapter(
+        name="project_map",
+        description="项目结构概览（2 层粗树, 探索前先看全景; 再配合 "
+                    "dir_list 定向深入）。参数: path(默认项目根)。",
+        keywords_zh=["结构", "全景", "地图", "概览", "tree"],
+        input_schema={"path": "项目根目录(默认当前)"},
+        category="file",
+        handler=_project_map,
     ))
     ToolRegistry.register(ToolAdapter(
         name="grep",

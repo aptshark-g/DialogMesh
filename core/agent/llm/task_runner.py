@@ -128,6 +128,18 @@ class TaskRunner:
     def build_inject(constraint: TaskConstraint) -> str:
         """把蓝图节点约束编译成 system 注入文本（层1 → 层2 投影）。"""
         parts = [f"## 当前任务节点目标\n{constraint.goal}"]
+        # 2026-08-15（A2 地图式递归图落地）: 探索前先注入项目粗结构 —
+        # 规划/探索任务模型曾逐格 dir_list 盲探（23 次死循环）; 粗视图
+        # 一次给收敛判据, dir_list 变成定向缩放。
+        try:
+            from core.agent.tools.os_tools import _project_map
+            pm = _project_map()
+            if pm.success and pm.data.get("tree"):
+                parts.append(
+                    "## 项目结构概览（粗颗粒度, 先看全景再定向深入）\n"
+                    + pm.data["tree"])
+        except Exception:
+            pass
         if constraint.scope:
             parts.append(f"## 允许范围\n{constraint.scope}")
         if constraint.allowed_tools:

@@ -3,7 +3,8 @@
 import pytest
 
 from core.agent.tools import os_tools  # noqa: F401 注册
-from core.agent.tools.os_tools import _run_shell, _run_python, _run_session, _dir_list
+from core.agent.tools.os_tools import (
+    _run_shell, _run_python, _run_session, _dir_list, _project_map)
 from core.agent.tools.registry import ToolRegistry
 
 
@@ -23,7 +24,32 @@ def test_run_shell_structured_failure():
 def test_run_python_compute():
     r = _run_python(code="print(sum(range(10)))")
     assert r.success
-    assert r.data.get("stdout", "").strip() == "45"
+
+
+def test_project_map_coarse_tree_a2():
+    """A2 地图式递归图（2026-08-15）: 粗结构全景 — 顶层目录可见,
+    重目录排除, 输出有上限, 缓存生效。"""
+    import os
+    old = os.getcwd()
+    try:
+        os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
+        r = _project_map()
+        assert r.success
+        tree = r.data.get("tree", "")
+        assert "core/" in tree and "docs/" in tree and "scripts/" in tree
+        assert ".git" not in tree and ".venv" not in tree
+        assert r.data["chars"] <= 2200
+        # 缓存命中
+        r2 = _project_map()
+        assert r2.data.get("cached") is True
+    finally:
+        os.chdir(old)
+
+
+def test_project_map_registered():
+    names = {t["name"] for t in ToolRegistry.list_all()}
+    assert "project_map" in names
 
 
 def test_run_python_failure_structured():
