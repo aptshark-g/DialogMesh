@@ -4,7 +4,16 @@ Bypasses heavy legacy imports. Only loads v6-specific modules.
 """
 
 import os, sys, time, subprocess
+import logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 2026-08-15 排查: app logger 无 handler → 错误静默吞掉; 补 stdout 日志
+# + HF 离线（模型已缓存, 消灭每次请求 10013 联网重试 ~6s 噪音）。
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATEWAY_EXE = os.path.join(PROJECT_ROOT, "gateway", "gateway.exe")

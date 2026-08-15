@@ -693,9 +693,22 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 data=_json.dumps(body).encode(),
                 headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(http_req, timeout=60) as resp:
-                data = _json.loads(resp.read())
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = ""
+            data = {}
+            # 2026-08-15 修复: deepseek-v4-flash 密集输出随机空返回 →
+            # 空响应重试 2 次（与 tool_loop/call_switch 同模式）。
+            for _attempt in range(3):
+                try:
+                    with urllib.request.urlopen(http_req, timeout=60) as resp:
+                        data = _json.loads(resp.read())
+                    content = data.get("choices", [{}])[0].get(
+                        "message", {}).get("content", "")
+                    if content:
+                        break
+                except Exception:
+                    pass
+                import time as _t
+                _t.sleep(0.4 * (_attempt + 1))
             if not content:
                 content = str(data)
 

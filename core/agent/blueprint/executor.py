@@ -56,19 +56,32 @@ def call_switch(messages: List[dict], provider: str = DEFAULT_PROVIDER,
         body["temperature"] = temperature
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
-    try:
-        data = json.dumps(body).encode()
-        req = urllib.request.Request(
-            SWITCH_URL,
-            data=data,
-            headers={"Authorization": f"Bearer {SWITCH_KEY}", "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read())
-        return result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        logger.warning("switch call failed: %s", e)
-        return ""
+    # 2026-08-15 修复: deepseek-v4-flash 密集输出随机空返回 → 重试 2 次
+    # （与 tool_loop._call_gateway / claim_eval 同模式, 空回复根因）。
+    import time as _time
+    last = ""
+    for _attempt in range(3):
+        try:
+            data = json.dumps(body).encode()
+            req = urllib.request.Request(
+                SWITCH_URL,
+                data=data,
+                headers={"Authorization": f"Bearer {SWITCH_KEY}",
+                         "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read())
+            text = result.get("choices", [{}])[0].get(
+                "message", {}).get("content", "")
+            if text:
+                return text
+            last = text
+            _time.sleep(0.4 * (_attempt + 1))
+        except Exception as e:
+            logger.warning("switch call failed: %s", e)
+            last = ""
+            _time.sleep(0.4 * (_attempt + 1))
+    return last
 
 
 @dataclass

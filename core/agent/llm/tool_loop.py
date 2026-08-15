@@ -68,8 +68,26 @@ def _call_gateway(messages: List[Dict], tools: List[Dict],
         GATEWAY_URL, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer dm-client"})
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        return json.loads(resp.read())
+    # 2026-08-15 修复: deepseek-v4-flash 对密集输出任务随机空返回
+    # （content="" 且无 tool_calls, claim_eval 08-13 实测）→ 空响应
+    # 重试 2 次（与 claim_eval 同模式）。此前生产调用点无重试,
+    # 规划类任务（密集输出）偶发空回复根因。
+    import time as _time
+    last = None
+    for _attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read())
+            choice = (data.get("choices") or [{}])[0]
+            msg = choice.get("message", {})
+            if (msg.get("content") or "") or (msg.get("tool_calls") or []):
+                return data
+            last = data
+            _time.sleep(0.4 * (_attempt + 1))
+        except Exception as e:
+            last = {"error": str(e)[:200]}
+            _time.sleep(0.4 * (_attempt + 1))
+    return last or {}
 
 
 def _execute_tool_call(tc: Dict) -> Dict:
@@ -188,6 +206,27 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
                     "tool_call_id": tc.get("id", ""),
                     "content": json.dumps(result, ensure_ascii=False)[:4000],
                 })
+            # doom loop 止损（2026-08-15, 空回复真因）: 同一工具连续
+            # 重复 >=3 次（不限输入 — 实测 dir_list 探索循环输入各异）
+            # → 停止工具调用, 追加"直接回答"轮。规划类任务模型陷入
+            # dir_list 探索循环（23 次调用）烧完轮数无回答 → 空回复。
+            recent_tools = [s.get("tool", "") for s in trace[-3:]]
+            if (len(recent_tools) >= 3
+                    and len({t for t in recent_tools}) == 1):
+                msgs.append({
+                    "role": "user",
+                    "content": "你已经连续多次执行同一操作但没有进展。"
+                               "请停止调用工具，直接基于当前信息回答用户问题。",
+                })
+                resp = _call_gateway(msgs, [], model)
+                msg = (resp.get("choices") or [{}])[0].get("message", {})
+                return {
+                    "content": msg.get("content", ""),
+                    "tool_calls": executed,
+                    "rounds": _round + 1,
+                    "trace": trace,
+                    "doom_loop_stop": True,
+                }
             # 符号注入（2026-08-10）: 每 N 轮压缩早期轮次为状态图
             if symbol_interval > 0 and (_round + 1) % symbol_interval == 0:
                 try:
