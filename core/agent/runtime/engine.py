@@ -158,6 +158,11 @@ class CognitiveRuntimeEngine:
         # TREE_TIERING (2026-08-07): feed 后自动 Hot→Warm 落盘（OS 式 page-out）
         self._discourse_tree._persist_hook = self._persist_discourse_tree
         self._discourse_last_persist = 0.0
+        # A5/A11 七树容器（per-session AgentTreeManager, 2026-08-15 生产接线）:
+        # 执行轨迹落树（ExecutionTree）挂在这里, 与对话树（DiscourseBlockTreeManager）
+        # 分离 —— 生产路径统一经 get_agent_tree(session_id) 取树, 不再从
+        # _discourse_tree._trees 错取（后者是对话树管理器, 无 execution 属性）。
+        self._agent_trees: Dict[str, Any] = {}
         # Granularity regulator: BDI+BOR adaptive split/merge
         from core.agent.compiler.discourse_block_tree import DiscourseBlockGranularityRegulator
         self._granularity_regulator = DiscourseBlockGranularityRegulator()
@@ -1140,6 +1145,161 @@ class CognitiveRuntimeEngine:
 
     # ── 执行树消费端（2026-08-14, 阶段 5 接线）────────────────
 
+    def get_agent_tree(self, session_id: str = "default") -> Any:
+        """per-session 七树容器（A5: 树是推理工作台, 七树并行成森林）。
+
+        惰性创建 AgentTreeManager（discourse/execution/constraint/association/
+        behavior/meta/profile）。生产调用方（TaskRunner/statemachine/元认知
+        消费）统一从这里取 execution 树 —— 2026-08-15 修复: 此前从
+        _discourse_tree._trees 取 execution 恒 None（对话树管理器无该属性）。
+        """
+        sid = session_id or "default"
+        mgr = self._agent_trees.get(sid)
+        if mgr is None:
+            from core.agent.execution.tree_manager import AgentTreeManager
+            mgr = AgentTreeManager()
+            # Warm→Hot page-in: 从盘恢复既有七树（含执行树, A17 记录不删）
+            restored = AgentTreeManager.load(self._agent_tree_path(sid))
+            if restored is not None:
+                mgr = restored
+            self._agent_trees[sid] = mgr
+        return mgr
+
+    # ── 七树 Warm 层持久化（2026-08-15, 与 discourse_trees 同模式）──
+
+    def _agent_tree_dir(self) -> str:
+        import os as _os
+        from pathlib import Path as _Path
+        base = _os.environ.get("DM_AGENT_TREES_DIR") or _os.path.join(
+            str(_Path(__file__).resolve().parents[3]),
+            "data", "agent_trees")
+        _os.makedirs(base, exist_ok=True)
+        return base
+
+    def _agent_tree_path(self, session_id: str = "default") -> str:
+        import os as _os
+        return _os.path.join(self._agent_tree_dir(), f"{session_id or 'default'}.json")
+
+    def _persist_agent_tree(self, session_id: str = "default",
+                            force: bool = False) -> bool:
+        """Hot→Warm page-out: 七树序列化落盘（debounce 3s, force 旁路）。
+
+        调用点: TaskRunner 收尾（v3_session_api）/ _consume_execution_tree
+        消费后 / 会话持久化收尾。执行树等七树内容重启可恢复（A17）。
+        """
+        import time as _t
+        mgr = self._agent_trees.get(session_id or "default")
+        if mgr is None:
+            return False
+        now = _t.time()
+        if not force and now - getattr(self, "_agent_tree_last_persist", 0.0) < 3.0:
+            return True  # debounce
+        self._agent_tree_last_persist = now
+        return mgr.save(self._agent_tree_path(session_id))
+
+    def query_agent_trees(self, query_text: str,
+                          session_id: str = "default",
+                          max_results: int = 10) -> list:
+        """跨树联邦查询（A5: 跨树查询驱动; Q-style pull）。
+
+        白盒入口: 一次查询横跨七树（执行/行为/元认知/关联/画像...）。
+        返回 [{tree, node_id, content}] 带树名归属（global_query 只给节点）。
+        """
+        mgr = self.get_agent_tree(session_id or "default")
+        out = []
+        ql = (query_text or "").lower()
+        for tree in mgr._all_trees:
+            for node in tree.query_nodes():
+                if ql in str(node.content).lower():
+                    out.append({
+                        "tree": tree.name, "node_id": node.node_id,
+                        "content": str(node.content)[:400],
+                    })
+                    if len(out) >= max_results:
+                        return out
+        return out
+
+    def query_all_agent_trees(self, query_text: str,
+                              max_results: int = 20) -> list:
+        """跨会话联邦查询（2026-08-16）: 已加载会话 + 盘上 Warm 层会话。
+
+        返回 [{session_id, tree, node_id, content}]。盘上会话逐文件
+        load 扫描（不整体驻留内存, 查完即弃）。
+        """
+        import os as _os
+        from core.agent.execution.tree_manager import AgentTreeManager
+        out = []
+        ql = (query_text or "").lower()
+
+        def _scan(mgr, sid):
+            for tree in mgr._all_trees:
+                for node in tree.query_nodes():
+                    if ql in str(node.content).lower():
+                        out.append({
+                            "session_id": sid, "tree": tree.name,
+                            "node_id": node.node_id,
+                            "content": str(node.content)[:400],
+                        })
+                        if len(out) >= max_results:
+                            return False
+            return True
+
+        # 已加载会话（内存）
+        for sid, mgr in list(self._agent_trees.items()):
+            if not _scan(mgr, sid):
+                return out
+        # 盘上未加载会话（Warm 层）
+        try:
+            d = self._agent_tree_dir()
+            for fn in sorted(_os.listdir(d)):
+                if not fn.endswith(".json"):
+                    continue
+                sid = fn[:-5]
+                if sid in self._agent_trees:
+                    continue
+                mgr = AgentTreeManager.load(_os.path.join(d, fn))
+                if mgr is None:
+                    continue
+                if not _scan(mgr, sid):
+                    return out
+        except Exception:
+            pass
+        return out
+
+    def agent_tree_sessions(self) -> list:
+        """全部会话七树统计（2026-08-16, 白盒聚合）: 已加载 + 盘上。
+
+        每项 {session_id, loaded, stats: [{tree_name, total_nodes, ...}]}。
+        """
+        import os as _os
+        from core.agent.execution.tree_manager import AgentTreeManager
+        out = []
+        seen = set()
+        for sid, mgr in self._agent_trees.items():
+            seen.add(sid)
+            out.append({
+                "session_id": sid, "loaded": True,
+                "stats": [s.__dict__ for s in mgr.get_all_stats()],
+            })
+        try:
+            d = self._agent_tree_dir()
+            for fn in sorted(_os.listdir(d)):
+                if not fn.endswith(".json"):
+                    continue
+                sid = fn[:-5]
+                if sid in seen:
+                    continue
+                mgr = AgentTreeManager.load(_os.path.join(d, fn))
+                if mgr is None:
+                    continue
+                out.append({
+                    "session_id": sid, "loaded": False,
+                    "stats": [s.__dict__ for s in mgr.get_all_stats()],
+                })
+        except Exception:
+            pass
+        return out
+
     def _consume_execution_tree(self, session_id: str = "",
                                 force: bool = False) -> dict:
         """执行树消费（元认知偏差审计 + 执行模式沉淀）。
@@ -1150,10 +1310,8 @@ class CognitiveRuntimeEngine:
         最小间隔, 配置不能变高频写手）。调用方: TaskRunner/v3 收尾。
         """
         try:
-            dt = getattr(self, "_discourse_tree", None)
-            if dt is None or not hasattr(dt, "_trees"):
-                return {"consumed": False, "reason": "no_tree_manager"}
-            mgr = dt._trees.get(session_id or "")
+            # 2026-08-15 修复: 七树容器与对话树分离 — 从 _agent_trees 取树
+            mgr = self.get_agent_tree(session_id or "")
             exec_tree = getattr(mgr, "execution", None) if mgr else None
             if exec_tree is None:
                 return {"consumed": False, "reason": "no_exec_tree"}
@@ -1177,11 +1335,48 @@ class CognitiveRuntimeEngine:
                 reflux = self._audit_feedback_loop.consume_event(ev)
             patterns = self._execution_pattern_store.consume(
                 exec_tree, session_id=session_id, force=force)
+            # ── 七树消费接线（2026-08-15）──
+            # audit 事件 → MetaTree.record_decision（元认知裁决落树）;
+            # doom/failing → BehaviorTree.record_pattern（工具风险模式,
+            # 与 BehaviorBrain 用户模型隔离——执行模式非用户行为）;
+            # 执行任务 → 关联树映射（跨树联邦可查）。
+            tree_writes = {
+                "meta": 0, "behavior": 0, "association": 0}
+            exec_root_ids = [
+                n.node_id for n in exec_tree.get_tasks()]
+            try:
+                for i, ev in enumerate(audit.get("events", [])):
+                    meta_node = mgr.meta.record_decision(
+                        decision_type=f"exec_tree_audit.{ev.get('signal', '?')}",
+                        inputs={"session_id": ev.get("session_id", ""),
+                                "payload": ev.get("payload", {})},
+                        verdict=ev.get("signal", "unknown"),
+                        reasoning=ev.get("reason", ""))
+                    tree_writes["meta"] += 1
+                    if ev.get("signal") in ("doom_loop", "failing_tool"):
+                        tool = ((ev.get("payload") or {}).get("tool")
+                                or (ev.get("payload") or {}).get("count")
+                                or "?")
+                        mgr.behavior.record_pattern(
+                            tool=str(tool), approved=False, risk="high")
+                        tree_writes["behavior"] += 1
+                    if exec_root_ids:
+                        mgr.association.map_nodes(
+                            "execution", exec_root_ids[
+                                i % len(exec_root_ids)], "meta",
+                            meta_node.node_id,
+                            relation_type="audit")
+                        tree_writes["association"] += 1
+            except Exception as _tw:
+                logger.debug("seven-tree write failed: %s", _tw)
+            # 七树 Warm 层落盘（force: 终端状态立即持久化, 重启可恢复）
+            self._persist_agent_tree(session_id or "", force=force)
             return {
                 "consumed": True,
                 "audit_events": len(audit.get("events", [])),
                 "reflux_actions": len(reflux.get("actions", [])),
                 "patterns": patterns.get("skipped", True) is False,
+                "tree_writes": tree_writes,
             }
         except Exception as e:
             logger.debug("execution tree consume failed: %s", e)

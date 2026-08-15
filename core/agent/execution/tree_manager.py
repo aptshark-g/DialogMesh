@@ -59,6 +59,42 @@ class AgentTreeNode:
         self.status = NodeStatus.REOPENED
         self.version += 1
 
+    # ── 序列化（2026-08-15: 七树持久化, Warm 层落盘）──
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "parent_id": self.parent_id,
+            "children": list(self.children),
+            "status": self.status.value,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+            "archived_at": self.archived_at,
+            "content": self.content,
+            "pointers": list(self.pointers),
+            "queries": list(self.queries),
+            "metadata": self.metadata,
+            "version": self.version,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentTreeNode":
+        node = cls(
+            node_id=data.get("node_id", ""),
+            parent_id=data.get("parent_id"),
+            children=list(data.get("children", [])),
+            status=NodeStatus(data.get("status", "active")),
+            created_at=data.get("created_at", time.time()),
+            completed_at=data.get("completed_at"),
+            archived_at=data.get("archived_at"),
+            content=dict(data.get("content", {})),
+            pointers=list(data.get("pointers", [])),
+            queries=list(data.get("queries", [])),
+            metadata=dict(data.get("metadata", {})),
+            version=int(data.get("version", 0)),
+        )
+        return node
+
 
 @dataclass
 class TreeStats:
@@ -111,6 +147,36 @@ class AgentTree:
             if n.status == NodeStatus.COMPLETED and n.completed_at:
                 if now - n.completed_at > ticks_threshold * 1.0:
                     n.archive()
+
+    def get_stats(self) -> TreeStats:
+        stats = TreeStats(tree_name=self.name, total_nodes=len(self._nodes))
+        for n in self._nodes.values():
+            if n.status == NodeStatus.ACTIVE: stats.active += 1
+            elif n.status == NodeStatus.COMPLETED: stats.completed += 1
+            elif n.status == NodeStatus.ARCHIVED: stats.archived += 1
+        return stats
+
+    # ── 序列化（2026-08-15: 七树持久化）──
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "roots": list(self._roots),
+            "nodes": [n.to_dict() for n in self._nodes.values()],
+        }
+
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """原地重建树（保持实例引用, 不换对象）。"""
+        self._nodes.clear()
+        self._roots.clear()
+        self.name = data.get("name", self.name)
+        for nd in data.get("nodes", []):
+            node = AgentTreeNode.from_dict(nd)
+            self._nodes[node.node_id] = node
+        self._roots = list(data.get("roots", []))
+
+    def node_count(self) -> int:
+        return len(self._nodes)
 
     def get_stats(self) -> TreeStats:
         stats = TreeStats(tree_name=self.name, total_nodes=len(self._nodes))
@@ -501,3 +567,51 @@ class AgentTreeManager:
 
     def get_all_stats(self) -> List[TreeStats]:
         return [t.get_stats() for t in self._all_trees]
+
+    # ── 持久化（2026-08-15: Warm 层落盘, A17 记录不删）──
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "trees": {
+                tree.name: tree.to_dict() for tree in self._all_trees
+            },
+        }
+
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """原地恢复七树（保持实例引用, 不换对象）。"""
+        trees = data.get("trees") or {}
+        by_name = {tree.name: tree for tree in self._all_trees}
+        for name, payload in trees.items():
+            tree = by_name.get(name)
+            if tree is not None and isinstance(payload, dict):
+                tree.from_dict(payload)
+
+    def save(self, path: str) -> bool:
+        """原子写盘（tmp + replace, 与 discourse 落盘同模式）。"""
+        import json as _json
+        import os as _os
+        try:
+            _os.makedirs(_os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump(self.to_dict(), f, ensure_ascii=False)
+            _os.replace(tmp, path)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def load(cls, path: str) -> Optional["AgentTreeManager"]:
+        """从盘恢复（不存在/损坏 → None, 调用方回退新建）。"""
+        import json as _json
+        import os as _os
+        if not _os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            mgr = cls()
+            mgr.from_dict(data)
+            return mgr
+        except Exception:
+            return None

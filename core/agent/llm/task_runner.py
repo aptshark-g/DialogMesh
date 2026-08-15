@@ -34,6 +34,9 @@ class TaskConstraint:
     """蓝图节点约束 — 注入执行 LLM 的系统提示。"""
     goal: str                                  # 节点目标（必须）
     scope: str = ""                            # 允许范围描述
+    steps: Optional[List[str]] = None          # 规划产物步骤（任务图节点,
+                                               # 2026-08-15: 落执行树 +
+                                               # 注入执行上下文）
     allowed_tools: Optional[List[str]] = None  # 工具白名单（None = 全部）
     max_rounds: int = 6                        # 轮次预算
     timeout_s: float = 120.0                   # 总执行截止（tool_loop 硬截止）
@@ -128,6 +131,13 @@ class TaskRunner:
     def build_inject(constraint: TaskConstraint) -> str:
         """把蓝图节点约束编译成 system 注入文本（层1 → 层2 投影）。"""
         parts = [f"## 当前任务节点目标\n{constraint.goal}"]
+        # 2026-08-15（规划→执行步骤级接线）: 用户确认的任务图节点作为
+        # 步骤地图注入 — 执行层不再只有原始 goal, 而是沿规划产物走。
+        if constraint.steps:
+            parts.append(
+                "## 任务步骤地图（规划产物, 沿此推进, 可在范围内细化）\n"
+                + "\n".join(
+                    f"{i + 1}. {s}" for i, s in enumerate(constraint.steps)))
         # 2026-08-15（A2 地图式递归图落地）: 探索前先注入项目粗结构 —
         # 规划/探索任务模型曾逐格 dir_list 盲探（23 次死循环）; 粗视图
         # 一次给收敛判据, dir_list 变成定向缩放。
@@ -184,7 +194,8 @@ class TaskRunner:
         if tree is not None:
             try:
                 tree_node_id = tree.create_task(
-                    {"steps": [constraint.goal],
+                    {"steps": (constraint.steps
+                               if constraint.steps else [constraint.goal]),
                      "strategy": "TOOL_LOOP"}).node_id
             except Exception as e:
                 logger.debug("execution tree create_task failed: %s", e)

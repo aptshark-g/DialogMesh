@@ -38,8 +38,10 @@ import type {
   V6AnnotationsResponse, V6AnnotationStatsResponse,
   // v8 Corrections
   V6ProfileCorrectionsResponse, V6ProfileCorrection,
-  // v8 Meta Retrospect
-  V6MetaRetrospectResponse,
+    // v8 Meta Retrospect
+    V6MetaRetrospectResponse,
+    // v8 Seven Trees
+    V6AgentTreesResponse,
   // v8 Behavior Predict / Belief / OCEAN Params
   V6BehaviorPredictResponse, V6BeliefResponse, V6OceanParamsResponse,
   // v8 Engineering Chain
@@ -473,6 +475,21 @@ export function triggerMetaRetrospect(target?: string, category?: string): Promi
   if (category) params.set('category', category);
   const qs = params.toString();
   return apiFetch<V6MetaRetrospectResponse>(`/v6/meta/retrospect${qs ? `?${qs}` : ''}`, { method: 'POST' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 七树白盒 (Seven Trees, 2026-08-16)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getAgentTrees(
+  sid?: string,
+  q?: string,
+): Promise<V6AgentTreesResponse> {
+  const params = new URLSearchParams();
+  if (sid) params.set('sid', sid);
+  if (q) params.set('q', q);
+  const qs = params.toString();
+  return apiFetch<V6AgentTreesResponse>(`/v6/agent-trees${qs ? `?${qs}` : ''}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

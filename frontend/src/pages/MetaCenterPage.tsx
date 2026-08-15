@@ -21,6 +21,7 @@ import {
   Search,
   ShieldCheck,
   Gavel,
+  Trees,
 } from 'lucide-react';
 import {
   getMetaStats,
@@ -29,6 +30,7 @@ import {
   triggerMetaRetrospect,
   getVersions,
   rollbackVersion,
+  getAgentTrees,
 } from '../api/v6';
 import type {
   V6MetaStatsResponse,
@@ -36,6 +38,7 @@ import type {
   V6MetaRetrospectResponse,
   V6VersionCommit,
   V6VersionsResponse,
+  V6AgentTreesResponse,
 } from '../types/api';
 import { useUIStore } from '../stores/uiStore';
 import { Toast } from '../components/ui/Toast';
@@ -55,7 +58,7 @@ const VERSION_CATEGORIES = [
   'config',
 ] as const;
 
-type MetaTab = 'overview' | 'queue' | 'versions';
+type MetaTab = 'overview' | 'queue' | 'versions' | 'trees';
 
 interface ToastState {
   id: number;
@@ -148,6 +151,14 @@ export function MetaCenterPage() {
   const [versionsError, setVersionsError] = useState<string | null>(null);
   const [rollbackId, setRollbackId] = useState<string | null>(null);
 
+  // ─── 七树白盒 ───
+  const [trees, setTrees] = useState<V6AgentTreesResponse | null>(null);
+  const [treesLoading, setTreesLoading] = useState(false);
+  const [treesError, setTreesError] = useState<string | null>(null);
+  const [treeQuery, setTreeQuery] = useState('');
+  const [treeHits, setTreeHits] = useState<V6AgentTreesResponse | null>(null);
+  const [treesSearching, setTreesSearching] = useState(false);
+
   // ─── Toast ───
   const [toast, setToast] = useState<ToastState | null>(null);
   const showToast = useCallback((type: ToastState['type'], message: string) => {
@@ -200,6 +211,46 @@ export function MetaCenterPage() {
   useEffect(() => {
     fetchVersions(versionCategory, appliedTarget);
   }, [versionCategory, appliedTarget, fetchVersions]);
+
+  // ─── 七树加载 / 联邦查询 ───
+  const fetchTrees = useCallback(async () => {
+    setTreesLoading(true);
+    setTreesError(null);
+    try {
+      const res = await getAgentTrees();
+      setTrees(res);
+    } catch (err) {
+      setTreesError(err instanceof Error ? err.message : '获取七树数据失败');
+    } finally {
+      setTreesLoading(false);
+    }
+  }, []);
+
+  const searchTrees = useCallback(async () => {
+    const q = treeQuery.trim();
+    if (!q) {
+      setTreeHits(null);
+      return;
+    }
+    setTreesSearching(true);
+    try {
+      const res = await getAgentTrees(undefined, q);
+      setTreeHits(res);
+    } catch (err) {
+      setTreeHits({
+        error: err instanceof Error ? err.message : '联邦查询失败',
+      });
+    } finally {
+      setTreesSearching(false);
+    }
+  }, [treeQuery]);
+
+  // 进入七树 tab 时加载一次
+  useEffect(() => {
+    if (activeTab === 'trees' && !trees) {
+      fetchTrees();
+    }
+  }, [activeTab, trees, fetchTrees]);
 
   // ─── 主动扫描 ───
   const handleScan = useCallback(async () => {
@@ -316,6 +367,7 @@ export function MetaCenterPage() {
             { key: 'overview' as const, label: '概览', icon: LayoutDashboard },
             { key: 'queue' as const, label: '审核队列', icon: ListChecks },
             { key: 'versions' as const, label: '版本控制', icon: GitBranch },
+            { key: 'trees' as const, label: '七树', icon: Trees },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -728,6 +780,138 @@ export function MetaCenterPage() {
                 {versionsError ? '加载失败' : '暂无版本记录'}
               </div>
             )}
+          </motion.section>
+        )}
+
+        {/* ─── 七树 Tab ─── */}
+        {activeTab === 'trees' && (
+          <motion.section key="trees" {...fadeIn(0.05)} className="space-y-6">
+            {/* 联邦查询 */}
+            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                  <Search className="h-4 w-4 text-text-muted" />
+                  跨会话联邦查询
+                </h2>
+                <button
+                  onClick={fetchTrees}
+                  disabled={treesLoading}
+                  className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${treesLoading ? 'animate-spin' : ''}`} />
+                  刷新
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={treeQuery}
+                  onChange={(e) => setTreeQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') searchTrees(); }}
+                  placeholder="跨七树检索关键字, 如: run_shell / exec_tree_audit / hello.py"
+                  className="flex-1 rounded-lg border border-subtle bg-surface-sidebar px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={searchTrees}
+                  disabled={treesSearching || !treeQuery.trim()}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {treesSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                  查询
+                </button>
+              </div>
+              {treeHits?.error && (
+                <div className="mt-3 rounded-lg bg-status-error/5 text-status-error text-sm px-4 py-2">
+                  {treeHits.error}
+                </div>
+              )}
+              {treeHits?.hits && (
+                <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
+                  {treeHits.hits.length === 0 ? (
+                    <div className="text-center py-6 text-sm text-text-muted">无命中</div>
+                  ) : (
+                    treeHits.hits.map((hit, i) => (
+                      <div key={`${hit.session_id ?? '?'}-${hit.node_id}-${i}`}
+                        className="rounded-lg bg-surface-sidebar border border-subtle p-3">
+                        <div className="flex items-center gap-2 mb-1 text-xs">
+                          <span className="font-mono text-text-secondary">{hit.tree}</span>
+                          {hit.session_id && (
+                            <span className="text-text-muted">session: {hit.session_id}</span>
+                          )}
+                          <span className="text-text-muted truncate font-mono">{hit.node_id}</span>
+                        </div>
+                        <p className="text-xs text-text-secondary break-all whitespace-pre-wrap font-mono line-clamp-3">
+                          {hit.content}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 会话聚合统计 */}
+            {treesError && (
+              <div className="rounded-xl bg-status-error/5 text-status-error text-sm px-4 py-3">
+                {treesError}
+              </div>
+            )}
+            {treesLoading && !trees ? (
+              <div className="space-y-3">
+                <Skeleton height={90} className="rounded-xl" />
+                <Skeleton height={200} className="rounded-xl" />
+              </div>
+            ) : trees?.sessions ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-surface-card rounded-xl border border-gray-200 p-4">
+                    <div className="text-xs text-text-muted">会话树</div>
+                    <div className="mt-1 text-2xl font-semibold text-text-primary">
+                      {trees.session_count ?? trees.sessions.length}
+                    </div>
+                  </div>
+                  <div className="bg-surface-card rounded-xl border border-gray-200 p-4">
+                    <div className="text-xs text-text-muted">节点总数</div>
+                    <div className="mt-1 text-2xl font-semibold text-text-primary">
+                      {trees.total_nodes ?? 0}
+                    </div>
+                  </div>
+                </div>
+                {trees.sessions.length === 0 ? (
+                  <div className="bg-surface-card rounded-xl border border-gray-200 p-10 text-center text-sm text-text-muted">
+                    <Trees className="h-8 w-8 mx-auto mb-2" />
+                    暂无七树数据 —— 执行过任务后这里会显示执行/行为/元认知等树
+                  </div>
+                ) : (
+                  trees.sessions.map((sess) => (
+                    <div key={sess.session_id}
+                      className="bg-surface-card rounded-xl border border-gray-200 p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-mono text-text-primary break-all">
+                          {sess.session_id}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {sess.loaded ? '内存' : '盘上'} · {sess.stats.reduce((s, t) => s + t.total_nodes, 0)} 节点
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                        {sess.stats.map((t) => (
+                          <div key={t.tree_name}
+                            className="rounded-lg bg-surface-sidebar border border-subtle p-3">
+                            <div className="text-xs font-medium text-text-secondary">{t.tree_name}</div>
+                            <div className="mt-1 text-lg font-semibold text-text-primary">{t.total_nodes}</div>
+                            <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-text-muted">
+                              <span>活跃 {t.active}</span>
+                              <span>完成 {t.completed}</span>
+                              <span>归档 {t.archived}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            ) : null}
           </motion.section>
         )}
       </div>

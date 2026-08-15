@@ -449,6 +449,11 @@ async def send_message(session_id: str, req: SendMessageRequest):
                              "discourse_tree": (
                                  getattr(_eng, "_discourse_tree", None)
                                  if _eng is not None else None),
+                             # 2026-08-15: 七树容器（ExecutionTree 挂载点）—
+                             # agentic 节点从 agent_tree.execution 落树
+                             "agent_tree": (
+                                 _eng.get_agent_tree(session_id)
+                                 if _eng is not None else None),
                              "model": req.model or "deepseek-v4-flash"},
                 )
                 dag_results = chain_result.get("results", {})
@@ -469,6 +474,16 @@ async def send_message(session_id: str, req: SendMessageRequest):
                                       success=True)
                 except Exception as _le:
                     logger.debug("learn_from_execution failed: %s", _le)
+                # 2026-08-15（七树闭环）: run_dag 内 agentic 工具节点
+                # （statemachine → TaskRunner）落树后立即消费+持久化 —
+                # 此前只有 Phase 4 独立 TaskRunner 触发消费, DAG 内节点
+                # 的执行树从不落盘（A17 记录不删）。
+                try:
+                    if _eng is not None and hasattr(
+                            _eng, "_consume_execution_tree"):
+                        _eng._consume_execution_tree(session_id, force=True)
+                except Exception as _ce:
+                    logger.debug("dag execution tree consume failed: %s", _ce)
                 # Build context enrichment
                 chain_parts = []
                 for node_id, output in dag_results.items():
@@ -566,6 +581,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     TaskRunner, TaskConstraint)
                 # 已确认任务图 → 允许范围约束（蓝图宏观 → 执行层微观）
                 scope = ""
+                steps = None
                 try:
                     _tg = _get_task_graph_ws(session_id) or {}
                     _tgn = _tg.get("nodes") or []
@@ -574,8 +590,13 @@ async def send_message(session_id: str, req: SendMessageRequest):
                             [{"id": n.get("id"),
                               "name": n.get("name", n.get("type", ""))}
                              for n in _tgn], ensure_ascii=False)[:1500])
+                        # 2026-08-15（规划→执行步骤级接线）: 任务图节点
+                        # 作为步骤地图注入执行层（落执行树 + 注入上下文）
+                        steps = [
+                            str(n.get("name", n.get("type", "?")))
+                            for n in _tgn[:12]]
                 except Exception:
-                    pass
+                    steps = None
                 _dbus2 = None
                 _mf2 = None
                 _eng2 = None
@@ -598,11 +619,14 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 # 执行轨迹落树（P0）: per-session AgentTreeManager.execution
                 _exec_tree = None
                 try:
-                    _dt = getattr(_eng2, "_discourse_tree", None)
-                    if _dt is not None and hasattr(_dt, "_trees"):
-                        _mgr = _dt._trees.get(session_id)
-                        if _mgr is not None:
-                            _exec_tree = getattr(_mgr, "execution", None)
+                    # 2026-08-15 修复: 七树容器挂 engine._agent_trees —
+                    # 旧代码从 _discourse_tree._trees 取 execution 恒 None
+                    # （DiscourseBlockTreeManager 无 execution 属性）。
+                    if _eng2 is not None and hasattr(
+                            _eng2, "get_agent_tree"):
+                        _exec_tree = getattr(
+                            _eng2.get_agent_tree(session_id),
+                            "execution", None)
                 except Exception:
                     _exec_tree = None
                 _runner = TaskRunner(decision_bus=_dbus2,
@@ -646,7 +670,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     _tr = _runner.run(
                         goal=req.content,
                         constraint=TaskConstraint(
-                            goal=req.content, scope=scope,
+                            goal=req.content, scope=scope, steps=steps,
                             max_rounds=6, timeout_s=120, max_replans=1),
                         node_id="root_task", session_id=session_id,
                         request_id=msg_id, messages=all_messages,

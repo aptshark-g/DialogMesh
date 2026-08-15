@@ -1,37 +1,44 @@
 {
  "mode": "faithfulness",
- "faithfulness": 0.4375,
- "hallucination_rate": 0.5625,
- "claims_total": 64,
- "claims_supported": 28,
+ "faithfulness": 0.3333333333333333,
+ "contradiction_rate": 0.1111111111111111,
+ "unsupported_rate": 0.5555555555555556,
+ "claims_total": 45,
+ "claims_supported": 15,
  "per_task": [
   {
    "task": "simple",
    "claims": 20,
-   "supported": 11,
-   "faithfulness": 0.55,
-   "hallucination_rate": 0.45
+   "supported": 9,
+   "contradict": 1,
+   "unsupported": 10,
+   "faithfulness": 0.45,
+   "contradiction_rate": 0.05,
+   "unsupported_rate": 0.5
   },
   {
    "task": "code",
-   "claims": 4,
+   "claims": 5,
    "supported": 1,
-   "faithfulness": 0.25,
-   "hallucination_rate": 0.75
+   "contradict": 0,
+   "unsupported": 4,
+   "faithfulness": 0.2,
+   "contradiction_rate": 0.0,
+   "unsupported_rate": 0.8
   },
   {
    "task": "explain",
-   "claims": 20,
-   "supported": 2,
-   "faithfulness": 0.1,
-   "hallucination_rate": 0.9
+   "error": "empty reply"
   },
   {
    "task": "recall_fact",
    "claims": 20,
-   "supported": 14,
-   "faithfulness": 0.7,
-   "hallucination_rate": 0.3
+   "supported": 5,
+   "contradict": 4,
+   "unsupported": 11,
+   "faithfulness": 0.25,
+   "contradiction_rate": 0.2,
+   "unsupported_rate": 0.55
   }
  ]
 }

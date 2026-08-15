@@ -35,6 +35,11 @@ html.light body {
     --border-subtle: #2A2635;
     --border-medium: #3A3548;
     --border-strong: #4A4560;
+    --border-hairline: rgba(255, 255, 255, 0.06);
+    --bg-dock: #1F1B2C;
+
+    --r-card: 10px;
+    --r-pill: 999px;
     
     --color-amber: #D97706;
     --color-amber-light: #F59E0B;
@@ -75,6 +80,8 @@ html.light body {
     --border-subtle: #E5E7EB;
     --border-medium: #D1D5DB;
     --border-strong: #9CA3AF;
+    --border-hairline: rgba(28, 28, 26, 0.08);
+    --bg-dock: #FFFFFF;
   }
 
   html {
@@ -102,10 +109,19 @@ html.light body {
     overflow: hidden;
   }
 
-  /* === 自定义滚动条 === */
+  /* === 自定义滚动条:overlay 式,默认隐藏,hover 滚动区时淡入 === */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover {
+    scrollbar-color: var(--border-medium) transparent;
+  }
+
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
@@ -113,12 +129,12 @@ html.light body {
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--border-medium);
-    border-radius: 3px;
+    background: transparent;
+    border-radius: 999px;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--border-strong);
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--border-medium);
   }
 
   /* === 选中文字高亮 === */

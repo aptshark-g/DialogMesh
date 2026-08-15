@@ -1139,7 +1139,7 @@ export function GatewayPage() {
                     </div>
                     <div className="bg-surface-sidebar rounded-lg p-3">
                       <span className="text-xs text-text-muted">Tokens</span>
-                      <p className="text-lg font-semibold text-text-primary">{(stats.tokens || 0).toLocaleString()}</p>
+                      <p className="text-lg font-semibold text-text-primary">{((stats.tokens_prompt ?? 0) + (stats.tokens_completion ?? 0)).toLocaleString()}</p>
                     </div>
                     <div className="bg-surface-sidebar rounded-lg p-3">
                       <span className="text-xs text-text-muted">缓存命中率</span>

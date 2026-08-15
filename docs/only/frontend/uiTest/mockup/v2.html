@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-variant="a">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DialogMesh · Mockup v2 双槽位</title>
+<style>
+/* ============ Design Tokens(与 v1 一致) ============ */
+[data-theme="dark"] {
+  --bg:#0B0D10; --rail:#0E1116; --surface:#151A22; --wash:rgba(255,255,255,.045);
+  --hairline:rgba(255,255,255,.06);
+  --text:#E8EAED; --text-2:rgba(232,234,237,.62); --text-3:rgba(232,234,237,.40);
+  --accent:#F5A524; --ok:#3FB68B; --bad:#E06767; --violet:#7C8CFF;
+  --bubble:rgba(255,255,255,.055); --btn-bg:#F5A524; --btn-text:#17130B;
+  --scroll:rgba(255,255,255,.14); --track:rgba(255,255,255,.08);
+}
+[data-theme="light"] {
+  --bg:#FAFAF7; --rail:#F3F3EF; --surface:#FFFFFF; --wash:rgba(28,28,26,.045);
+  --hairline:rgba(28,28,26,.08);
+  --text:#1D1D1B; --text-2:rgba(29,29,27,.62); --text-3:rgba(29,29,27,.42);
+  --accent:#C2410C; --ok:#2F9E77; --bad:#D05555; --violet:#5B6BE0;
+  --bubble:#EFEEE8; --btn-bg:#1D1D1B; --btn-text:#FAFAF7;
+  --scroll:rgba(29,29,27,.16); --track:rgba(29,29,27,.08);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; }
+body {
+  font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+  background:var(--bg); color:var(--text); font-size:13px; line-height:1.65;
+  -webkit-font-smoothing:antialiased; font-feature-settings:"tnum";
+}
+* { scrollbar-width:thin; scrollbar-color:transparent transparent; }
+*:hover { scrollbar-color:var(--scroll) transparent; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:transparent; border-radius:99px; }
+*:hover::-webkit-scrollbar-thumb { background:var(--scroll); }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+svg { display:block; }
+
+.app { display:flex; height:100vh; overflow:hidden; }
+
+/* ============ 侧栏 ============ */
+.rail { width:228px; flex:none; background:var(--rail); display:flex; flex-direction:column; padding:14px 10px 10px; }
+.brand { display:flex; align-items:center; gap:9px; padding:2px 8px 10px; }
+.brand .logo { width:20px; height:20px; color:var(--accent); }
+.brand .name { font-size:14px; font-weight:600; letter-spacing:.01em; }
+.brand .ver { font-size:10px; color:var(--text-3); margin-top:2px; }
+
+/* 项目切换器 */
+.proj {
+  display:flex; align-items:center; gap:9px;
+  margin:0 2px 12px; padding:7px 8px; border-radius:10px;
+  background:var(--wash); width:calc(100% - 4px); text-align:left;
+}
+.proj:hover { background:var(--surface); }
+.proj .pav {
+  width:24px; height:24px; border-radius:7px; flex:none;
+  background:var(--accent); color:var(--btn-text);
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700;
+}
+.proj .pmeta { min-width:0; flex:1; }
+.proj .pname { font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.proj .psub { font-size:10px; color:var(--text-3); margin-top:-1px; }
+.proj > svg { width:12px; height:12px; color:var(--text-3); flex:none; }
+
+.btn-primary {
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  background:var(--btn-bg); color:var(--btn-text);
+  border-radius:999px; padding:8px 0; margin:0 4px 16px;
+  font-size:13px; font-weight:500;
+}
+.btn-primary .kbd { font-size:10px; opacity:.55; border:1px solid currentColor; border-radius:4px; padding:0 4px; line-height:1.4; }
+
+.nav { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:20px; padding:0 2px; }
+.nav-group .glabel { font-size:10px; font-weight:600; letter-spacing:.12em; color:var(--text-3); padding:0 10px 6px; }
+.nav-item {
+  display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:8px;
+  color:var(--text-2); font-size:13px; position:relative; width:100%; text-align:left;
+}
+.nav-item svg { width:15px; height:15px; stroke-width:1.5; flex:none; }
+.nav-item:hover { background:var(--wash); color:var(--text); }
+.nav-item.active { background:var(--wash); color:var(--text); font-weight:500; }
+.nav-item.active::before { content:""; position:absolute; left:-2px; top:20%; bottom:20%; width:3px; border-radius:99px; background:var(--accent); }
+.nav-item.active svg { color:var(--accent); }
+
+/* 项目组:与页面导航区分,激活态用右侧范围点而非左侧橙条 */
+.glabel.grow { display:flex; align-items:center; }
+.gadd { margin-left:auto; width:16px; height:16px; border-radius:5px; display:flex; align-items:center; justify-content:center; color:var(--text-3); }
+.gadd:hover { background:var(--wash); color:var(--text); }
+.gadd svg { width:11px; height:11px; stroke-width:2; }
+.proj-item .pav2 { width:15px; height:15px; border-radius:5px; flex:none; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; }
+.proj-item .pt { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.proj-item .scope-dot { width:5px; height:5px; border-radius:99px; background:var(--accent); margin-left:auto; flex:none; opacity:0; }
+.proj-item.active::before { display:none; }
+.proj-item.active .scope-dot { opacity:1; }
+.rail-foot { display:flex; align-items:center; gap:8px; padding:10px 10px 2px; font-size:11px; color:var(--text-3); }
+.dot { width:6px; height:6px; border-radius:99px; background:var(--ok); flex:none; }
+
+/* ============ 主区骨架 ============ */
+.main { flex:1; display:flex; flex-direction:column; min-width:0; }
+.topbar { height:52px; flex:none; display:flex; align-items:center; gap:14px; padding:0 18px; }
+.crumb { display:flex; align-items:baseline; gap:8px; min-width:0; }
+.crumb .page { font-size:15px; font-weight:600; }
+.crumb .sep { color:var(--text-3); font-size:12px; }
+.crumb .sub { font-size:13px; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.topbar .spacer { flex:1; }
+/* 监控数据降为状态点 */
+.stat { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-3); padding:4px 8px; border-radius:999px; }
+.stat:hover { background:var(--wash); color:var(--text-2); }
+.cmdk { display:flex; align-items:center; gap:8px; background:var(--surface); color:var(--text-3); border-radius:999px; padding:5px 12px; font-size:12px; }
+.cmdk .kbd { font-size:10px; border:1px solid var(--hairline); border-radius:4px; padding:0 4px; }
+.pill { display:flex; align-items:center; gap:6px; background:var(--surface); color:var(--text-2); border-radius:999px; padding:5px 12px; font-size:12px; }
+.ghost { width:30px; height:30px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:var(--text-3); flex:none; }
+.ghost:hover { background:var(--wash); color:var(--text); }
+.ghost svg { width:15px; height:15px; stroke-width:1.5; }
+
+.content { flex:1; display:flex; min-height:0; }
+
+/* ============ 变体显隐(优先级必须压过 .chat/.dock/.canvas 的 display) ============ */
+[data-variant] .variant { display:none; }
+[data-variant="a"] .va, [data-variant="b"] .vb { display:flex; }
+
+/* ============ 聊天列(变体 A 主槽) ============ */
+.chat { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.chat-scroll { flex:1; overflow-y:auto; }
+.chat-inner { max-width:720px; margin:0 auto; padding:26px 36px 20px; }
+.turn { margin-bottom:30px; }
+.turn .meta { display:flex; align-items:baseline; gap:8px; margin-bottom:7px; }
+.turn .who { font-size:12px; font-weight:600; color:var(--text-2); }
+.turn .time { font-size:11px; color:var(--text-3); }
+.turn.user .body { background:var(--bubble); border-radius:12px; padding:10px 14px; display:inline-block; max-width:85%; }
+.turn.user .row { display:flex; justify-content:flex-end; }
+.turn.user .meta { justify-content:flex-end; }
+.turn.assistant .row { display:flex; gap:12px; align-items:flex-start; }
+.turn.assistant .avatar { width:22px; height:22px; flex:none; margin-top:2px; color:var(--accent); }
+.turn.assistant .body { min-width:0; }
+.turn.assistant .body p { margin-bottom:10px; }
+.turn.assistant .body p:last-child { margin-bottom:0; }
+.turn.assistant ol { padding-left:20px; margin-bottom:10px; }
+.turn.assistant li { margin-bottom:6px; }
+.turn.assistant b { font-weight:600; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface); border-radius:999px; padding:4px 11px; font-size:11.5px; color:var(--text-2); }
+.chip svg { width:11px; height:11px; stroke-width:1.5; color:var(--text-3); }
+.chip .tag { color:var(--text-3); }
+.composer { flex:none; padding:6px 36px 18px; }
+.composer-inner { max-width:720px; margin:0 auto; background:var(--surface); border-radius:999px; display:flex; align-items:center; gap:4px; padding:6px 6px 6px 18px; }
+.composer input { flex:1; background:none; border:0; outline:0; color:var(--text); font:inherit; font-size:13.5px; }
+.composer input::placeholder { color:var(--text-3); }
+.send { width:32px; height:32px; border-radius:999px; flex:none; background:var(--btn-bg); color:var(--btn-text); display:flex; align-items:center; justify-content:center; }
+.send svg { width:14px; height:14px; stroke-width:2; }
+.cghost { width:30px; height:30px; border-radius:999px; flex:none; display:flex; align-items:center; justify-content:center; color:var(--text-3); }
+.cghost:hover { background:var(--wash); color:var(--text); }
+.cghost svg { width:15px; height:15px; stroke-width:1.5; }
+
+/* ============ 副槽(两变体共用骨架) ============ */
+.dock { width:316px; flex:none; background:var(--surface); border-radius:14px; margin:2px 12px 12px 4px; display:flex; flex-direction:column; overflow:hidden; }
+.dock-head { display:flex; align-items:center; gap:6px; padding:14px 12px 10px 14px; flex:none; }
+/* 表面切换器 */
+.surf {
+  display:flex; align-items:center; gap:6px;
+  background:var(--wash); border-radius:999px; padding:5px 11px;
+  font-size:12.5px; font-weight:500;
+}
+.surf:hover { background:var(--track); }
+.surf svg { width:11px; height:11px; color:var(--text-3); }
+.dock-sub { font-size:11px; color:var(--text-3); padding:0 14px 10px; flex:none; }
+.dock-body { flex:1; overflow-y:auto; padding:2px 14px 12px; }
+
+.dsec { margin-bottom:16px; }
+.dsec .stitle { font-size:10px; font-weight:600; letter-spacing:.12em; color:var(--text-3); margin-bottom:8px; display:flex; align-items:center; }
+.dsec .stitle .right { margin-left:auto; letter-spacing:0; text-transform:none; font-weight:500; font-size:11px; color:var(--text-3); }
+.dsec .stitle .right:hover { color:var(--text); }
+
+/* 上下文构成条 */
+.ctx-bar {
+  background:var(--wash); border-radius:10px; padding:9px 12px;
+  display:flex; align-items:center; gap:8px; font-size:12px;
+}
+.ctx-bar .n { font-weight:600; font-variant-numeric:tabular-nums; }
+.ctx-bar .link { margin-left:auto; font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:3px; }
+.ctx-bar .link:hover { color:var(--text); }
+.ctx-bar .link svg { width:11px; height:11px; }
+
+/* 记忆卡:可操作 */
+.mem { background:var(--wash); border-radius:10px; padding:9px 12px; margin-bottom:6px; position:relative; }
+.mem .t { display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:500; margin-bottom:4px; }
+.mem .t .mdot { width:5px; height:5px; border-radius:99px; flex:none; }
+.mem .x { font-size:11.5px; color:var(--text-2); line-height:1.55; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.mem .f { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:10.5px; color:var(--text-3); }
+.mem .f .tag { border:1px solid var(--hairline); border-radius:4px; padding:0 5px; line-height:1.6; }
+.mem .ops { display:flex; gap:2px; margin-left:auto; }
+.mem .ops button { width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--text-3); }
+.mem .ops button:hover { background:var(--surface); color:var(--text); }
+.mem .ops svg { width:12px; height:12px; stroke-width:1.6; }
+.mem.pinned { box-shadow:inset 2px 0 0 var(--accent); }
+.mem.pinned .ops .pin { color:var(--accent); }
+.mem.removed { opacity:.5; }
+.mem.removed .x { text-decoration:line-through; }
+.mem.removed .t { text-decoration:line-through; }
+.mem .restore { font-size:10.5px; color:var(--accent); font-weight:500; }
+
+/* 图谱预览卡 */
+.minimap { background:var(--wash); border-radius:10px; padding:4px; }
+.minimap svg { width:100%; height:118px; }
+
+.dock-foot { flex:none; padding:8px 14px 12px; }
+.ghost-pill { display:flex; align-items:center; justify-content:center; gap:6px; border:1px dashed var(--hairline); border-radius:999px; padding:7px 0; font-size:12px; color:var(--text-3); width:100%; }
+.ghost-pill:hover { color:var(--text); background:var(--wash); }
+
+/* ============ 变体 B:画布主槽 ============ */
+.canvas { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.canvas-tools { display:flex; align-items:center; gap:8px; padding:10px 16px 4px; flex:none; }
+.canvas-tools .spacer { flex:1; }
+.tool-pill { display:flex; align-items:center; gap:6px; background:var(--surface); color:var(--text-2); border-radius:999px; padding:4px 11px; font-size:11.5px; }
+.tool-pill svg { width:11px; height:11px; color:var(--text-3); }
+.live { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--ok); background:var(--wash); border-radius:999px; padding:4px 11px; }
+.live .pulse { width:6px; height:6px; border-radius:99px; background:var(--ok); animation:pu 1.6s ease-in-out infinite; }
+@keyframes pu { 50% { opacity:.25; } }
+.canvas-body { flex:1; margin:10px 4px 12px 16px; background:var(--surface); border-radius:14px; position:relative; overflow:hidden; }
+.canvas-body > svg { width:100%; height:100%; }
+.canvas-status {
+  position:absolute; left:12px; bottom:10px;
+  display:flex; align-items:center; gap:10px;
+  background:var(--bg); border-radius:999px; padding:6px 13px;
+  font-size:11px; color:var(--text-2);
+  box-shadow:0 4px 16px rgba(0,0,0,.18);
+}
+.canvas-status .sp { width:44px; height:3px; border-radius:99px; background:var(--track); overflow:hidden; }
+.canvas-status .sp i { display:block; height:100%; width:43%; background:var(--accent); border-radius:99px; }
+
+/* ============ 变体 B:对话副槽(精简) ============ */
+.thread { flex:1; overflow-y:auto; padding:2px 14px; }
+.mmsg { margin-bottom:16px; }
+.mmsg .mh { display:flex; align-items:baseline; gap:6px; margin-bottom:3px; }
+.mmsg .mw { font-size:11px; font-weight:600; color:var(--text-2); }
+.mmsg .mt { font-size:10px; color:var(--text-3); }
+.mmsg .mb { font-size:12.5px; line-height:1.6; }
+.mmsg.user .mb { background:var(--bubble); border-radius:10px; padding:7px 10px; }
+.mini-composer { flex:none; padding:8px 12px 12px; }
+.mini-composer .inner { background:var(--wash); border-radius:999px; display:flex; align-items:center; gap:2px; padding:4px 4px 4px 14px; }
+.mini-composer input { flex:1; background:none; border:0; outline:0; color:var(--text); font:inherit; font-size:12.5px; }
+.mini-composer input::placeholder { color:var(--text-3); }
+.mini-send { width:26px; height:26px; border-radius:999px; flex:none; background:var(--btn-bg); color:var(--btn-text); display:flex; align-items:center; justify-content:center; }
+.mini-send svg { width:12px; height:12px; stroke-width:2; }
+
+/* Mockup 控件 */
+.mock-ctl { position:fixed; right:14px; bottom:14px; z-index:9; display:flex; gap:8px; }
+.mock-ctl button { background:var(--surface); color:var(--text-2); border-radius:999px; padding:6px 14px; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,.18); }
+html.shot .mock-ctl { display:none; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= 侧栏 ================= -->
+  <aside class="rail">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 22 12 12 22 2 12Z"/></svg>
+      <span class="name">DialogMesh</span>
+      <span class="ver">v6.0</span>
+    </div>
+
+    <button class="btn-primary">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      新会话
+      <span class="kbd">⌘N</span>
+    </button>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="glabel">主导航</div>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>总览</button>
+        <button class="nav-item" data-nav="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.3-2.9A8 8 0 1 1 21 12Z"/></svg>聊天</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>会话</button>
+      </div>
+      <div class="nav-group">
+        <div class="glabel grow">项目<button class="gadd" title="新建项目"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
+        <button class="nav-item proj-item active"><span class="pav2" style="background:var(--accent);color:var(--btn-text)">振</span><span class="pt">毕设 · 主动振动控制</span><span class="scope-dot"></span></button>
+        <button class="nav-item proj-item"><span class="pav2" style="background:var(--violet);color:#fff">M</span><span class="pt">memorygraph</span><span class="scope-dot"></span></button>
+        <button class="nav-item proj-item"><span class="pav2" style="background:var(--ok);color:#fff">投</span><span class="pt">学报投稿 · 端云蒸馏</span><span class="scope-dot"></span></button>
+      </div>
+
+      <div class="nav-group">
+        <div class="glabel">洞察</div>
+        <button class="nav-item" data-nav="graph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="10" cy="18" r="2.5"/><path d="M8.2 7.3 15.7 7.8M7.3 8.3 9 15.7M16.9 10.2 11.3 16.2"/></svg>图谱</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>画像</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.5"/></svg>元认知</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg>行为</button>
+      </div>
+      <div class="nav-group">
+        <div class="glabel">工程</div>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5a4 4 0 0 0-5.6 5.6L3 18l3 3 5.9-5.9a4 4 0 0 0 5.6-5.6L14 13l-3-3 3.5-3.5Z"/></svg>工程</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.2 7 10 4-1.8 7-5.5 7-10V6l-7-3Z"/></svg>网关</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="7" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>管道</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/><path d="M10.5 10.5 13.5 13.5"/></svg>深层链</button>
+      </div>
+      <div class="nav-group">
+        <div class="glabel">系统</div>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.7h4l.4-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg>设置</button>
+      </div>
+    </nav>
+
+    <div class="rail-foot">
+      <span class="dot"></span>Backend Online<span style="margin-left:auto">12ms</span>
+    </div>
+  </aside>
+
+  <!-- ================= 主区 ================= -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">
+        <span class="page" id="crumb-page">聊天</span>
+        <span class="sep">/</span>
+        <span class="sub" id="crumb-sub">FxLMS 高频段收敛问题</span>
+      </div>
+      <div class="spacer"></div>
+      <button class="stat" title="画像健康度"><span class="dot"></span>82</button>
+      <button class="cmdk">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        搜索或命令…<span class="kbd">⌘K</span>
+      </button>
+      <button class="pill">deepseek-v4.2
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <button class="ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg></button>
+      <button class="ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+    </header>
+
+    <div class="content">
+
+      <!-- ============ 变体 A:聊天主 + 上下文工作台副 ============ -->
+      <section class="chat variant va">
+        <div class="chat-scroll">
+        <div class="chat-inner">
+
+          <div class="turn user">
+            <div class="meta"><span class="who">你</span><span class="time">15:42</span></div>
+            <div class="row"><div class="body">FxLMS 在 200Hz 以上的窄带扰动收敛明显变慢,步长已经调到稳定上限了。可能是什么原因?</div></div>
+          </div>
+
+          <div class="turn assistant">
+            <div class="meta"><span class="who">DialogMesh</span><span class="time">15:42</span></div>
+            <div class="row">
+              <svg class="avatar" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 22 12 12 22 2 12Z"/></svg>
+              <div class="body">
+                <p>两个最可疑的方向:</p>
+                <ol>
+                  <li><b>次级通道估计 Ŝ(z) 的高频相位误差。</b>200Hz 以上相位滞后一旦接近 90°,Filtered-X 结构的有效步长会被急剧压缩,表现为"没到发散阈值但几乎不收敛"。</li>
+                  <li><b>环路总时延。</b>如果 FPGA 流水线 + ADC/DAC 的总时延接近采样周期的 1/4,高频段参考信号与误差信号先去相关,收敛速率随频率平方下降。</li>
+                </ol>
+                <p>建议先重跑一次次级通道辨识,看 200–400Hz 的相位裕度,再决定是否压缩流水线级数。</p>
+                <div class="chips">
+                  <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>记忆 · 次级通道辨识方法对比<span class="tag">2 周前</span></span>
+                  <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>记忆 · FPGA 时延预算表<span class="tag">上周</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="turn user">
+            <div class="meta"><span class="who">你</span><span class="time">15:44</span></div>
+            <div class="row"><div class="body">辨识脚本上周写过一版 sweep 的,帮我找出来,把采样率改到 96kHz。</div></div>
+          </div>
+
+          <div class="turn assistant">
+            <div class="meta"><span class="who">DialogMesh</span><span class="time">15:44</span></div>
+            <div class="row">
+              <svg class="avatar" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 22 12 12 22 2 12Z"/></svg>
+              <div class="body">
+                <p>找到了——3 天前对话里的 <b>sysid_sweep.py</b>(48kHz 版)。升到 96kHz 有两处联动要改:sweep 上限从 8kHz 提到 Nyquist/2 以内,FIR 阶数建议翻倍以保住低频分辨率。已按此生成新版:</p>
+                <div class="chips">
+                  <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/></svg>sysid_sweep_96k.py<span class="tag">已生成</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        </div>
+        <div class="composer">
+          <div class="composer-inner">
+            <input placeholder="发送消息…" />
+            <button class="cghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8L13 3.4a3.7 3.7 0 0 1 5.2 5.2l-8.2 8.2a1.85 1.85 0 0 1-2.6-2.6l7.8-7.8"/></svg></button>
+            <button class="send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 变体 A 副槽:上下文工作台 -->
+      <aside class="dock variant va">
+        <div class="dock-head">
+          <button class="surf">
+            上下文
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div style="flex:1"></div>
+          <button class="ghost" style="width:26px;height:26px" title="与主槽交换"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></button>
+          <button class="ghost" style="width:26px;height:26px" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m13 6 6 6-6 6"/></svg></button>
+        </div>
+        <div class="dock-sub">当前会话 · 注入上下文实时视图</div>
+
+        <div class="dock-body">
+          <div class="dsec">
+            <div class="stitle">本轮注入</div>
+            <div class="ctx-bar">
+              <span><span class="n">3</span> 条记忆 · 子图 <span class="n">12</span> 节点</span>
+              <span class="link">编译明细<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+          </div>
+
+          <div class="dsec">
+            <div class="stitle">相关记忆片段<span class="right">钉住 = 注入下轮</span></div>
+            <div class="mem pinned">
+              <div class="t"><span class="mdot" style="background:var(--ok)"></span>NLMS 步长收敛曲线</div>
+              <div class="x">步长 0.3–0.5 区间收敛最快,超过 0.6 后出现稳态失调抖动……</div>
+              <div class="f">3 天前<span class="tag">实验记录</span>
+                <span class="ops">
+                  <button class="pin" title="已钉住"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M15 3h6v6l-3 3-5-5 3-3ZM9 9l6 6M3 21l6-6"/></svg></button>
+                  <button title="本轮移除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+                  <button title="查看来源"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></button>
+                </span>
+              </div>
+            </div>
+            <div class="mem">
+              <div class="t"><span class="mdot" style="background:var(--accent)"></span>FPGA 流水线时延预算表</div>
+              <div class="x">乘法器 3 级 + 累加 2 级,96kHz 下总时延占采样周期 21%……</div>
+              <div class="f">上周<span class="tag">设计文档</span>
+                <span class="ops">
+                  <button class="pin" title="钉住"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6l-3 3-5-5 3-3ZM9 9l6 6M3 21l6-6"/></svg></button>
+                  <button title="本轮移除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+                  <button title="查看来源"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></button>
+                </span>
+              </div>
+            </div>
+            <div class="mem removed">
+              <div class="t"><span class="mdot" style="background:var(--violet)"></span>次级通道辨识方法对比</div>
+              <div class="x">扫频法精度高但耗时,白噪声法快但高频 SNR 不足……</div>
+              <div class="f">本轮已移除<button class="restore">恢复</button></div>
+            </div>
+          </div>
+
+          <div class="dsec" style="margin-bottom:6px">
+            <div class="stitle">话题图谱 · 预览<span class="right" style="display:inline-flex;align-items:center;gap:4px">在主槽打开<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></span></div>
+            <div class="minimap">
+              <svg viewBox="0 0 272 132" fill="none">
+                <g stroke="rgba(128,136,148,.35)" stroke-width="1">
+                  <line x1="136" y1="66" x2="52" y2="26"/><line x1="136" y1="66" x2="224" y2="30"/>
+                  <line x1="136" y1="66" x2="40" y2="100"/><line x1="136" y1="66" x2="232" y2="98"/>
+                  <line x1="136" y1="66" x2="136" y2="16"/>
+                </g>
+                <g font-size="9.5" fill="rgba(150,156,166,.9)" text-anchor="middle" font-family="inherit">
+                  <circle cx="52" cy="26" r="12" fill="var(--surface)" stroke="rgba(128,136,148,.4)"/><text x="52" y="46">步长 μ</text>
+                  <circle cx="224" cy="30" r="12" fill="var(--surface)" stroke="rgba(128,136,148,.4)"/><text x="224" y="50">Ŝ(z)</text>
+                  <circle cx="40" cy="100" r="12" fill="var(--surface)" stroke="rgba(128,136,148,.4)"/><text x="40" y="120">采样率</text>
+                  <circle cx="232" cy="98" r="12" fill="var(--surface)" stroke="rgba(128,136,148,.4)"/><text x="232" y="118">FPGA 时延</text>
+                  <circle cx="136" cy="16" r="12" fill="var(--surface)" stroke="rgba(128,136,148,.4)"/><text x="136" y="8" dy="-2">辨识</text>
+                </g>
+                <circle cx="136" cy="66" r="16" fill="var(--accent)" fill-opacity=".15" stroke="var(--accent)" stroke-width="1.2"/>
+                <text x="136" y="69" text-anchor="middle" font-size="9" font-weight="600" fill="var(--accent)">FxLMS</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="dock-foot">
+          <button class="ghost-pill">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            添加记忆
+          </button>
+        </div>
+      </aside>
+
+      <!-- ============ 变体 B:画布主 + 对话副 ============ -->
+      <section class="canvas variant vb">
+        <div class="canvas-tools">
+          <span class="live"><span class="pulse"></span>Agent 操作中 · 第 3/7 步</span>
+          <div class="spacer"></div>
+          <button class="tool-pill">力导布局<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button class="tool-pill">范围: 当前项目<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button class="tool-pill">100%</button>
+        </div>
+        <div class="canvas-body">
+          <svg viewBox="0 0 860 620" fill="none" preserveAspectRatio="xMidYMid meet">
+            <g stroke="rgba(128,136,148,.32)" stroke-width="1">
+              <line x1="430" y1="300" x2="220" y2="140"/>
+              <line x1="430" y1="300" x2="640" y2="150"/>
+              <line x1="430" y1="300" x2="180" y2="420"/>
+              <line x1="430" y1="300" x2="660" y2="430"/>
+              <line x1="430" y1="300" x2="430" y2="90"/>
+              <line x1="220" y1="140" x2="430" y2="90"/>
+              <line x1="640" y1="150" x2="660" y2="430" stroke-dasharray="4 4"/>
+              <line x1="180" y1="420" x2="320" y2="530"/>
+              <line x1="660" y1="430" x2="560" y2="540"/>
+              <line x1="430" y1="300" x2="320" y2="530" stroke-dasharray="4 4"/>
+            </g>
+            <g font-family="inherit" text-anchor="middle">
+              <g font-size="11" fill="rgba(150,156,166,.95)">
+                <circle cx="220" cy="140" r="26" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="220" y="144">步长 μ</text>
+                <circle cx="640" cy="150" r="26" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="640" y="154">次级通道</text>
+                <circle cx="180" cy="420" r="26" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="180" y="424">采样率</text>
+                <circle cx="660" cy="430" r="26" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="660" y="434">FPGA 时延</text>
+                <circle cx="430" cy="90" r="26" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="430" y="94">通道辨识</text>
+                <circle cx="320" cy="530" r="24" fill="var(--bg)" stroke="var(--violet)" stroke-width="1.2" stroke-opacity=".7"/>
+                <text x="320" y="534" fill="var(--violet)">辨识脚本</text>
+                <circle cx="560" cy="540" r="24" fill="var(--bg)" stroke="rgba(128,136,148,.45)" stroke-width="1.2"/>
+                <text x="560" y="544">THD 指标</text>
+              </g>
+              <circle cx="430" cy="300" r="38" fill="var(--accent)" fill-opacity=".14" stroke="var(--accent)" stroke-width="1.5"/>
+              <text x="430" y="304" font-size="13" font-weight="600" fill="var(--accent)">FxLMS 收敛</text>
+            </g>
+          </svg>
+          <div class="canvas-status">
+            <span class="dot"></span>正在编辑:辨识脚本 · 采样率 48k→96k
+            <span class="sp"><i></i></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 变体 B 副槽:精简对话 -->
+      <aside class="dock variant vb">
+        <div class="dock-head">
+          <button class="surf">
+            对话
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div style="flex:1"></div>
+          <button class="ghost" style="width:26px;height:26px" title="与主槽交换"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></svg></button>
+          <button class="ghost" style="width:26px;height:26px" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m13 6 6 6-6 6"/></svg></button>
+        </div>
+        <div class="dock-sub">就当前画布讨论 · 自动化协同</div>
+
+        <div class="thread">
+          <div class="mmsg user">
+            <div class="mh"><span class="mw">你</span><span class="mt">16:02</span></div>
+            <div class="mb">把"辨识脚本"节点按 96kHz 版本更新,顺便看看它和 FPGA 时延的冲突。</div>
+          </div>
+          <div class="mmsg">
+            <div class="mh"><span class="mw">DialogMesh</span><span class="mt">16:02</span></div>
+            <div class="mb">收到。正在把脚本节点切到 96kHz 参数,同时检查环路时延占比——目前 21%,仍在安全区。画布上已高亮受影响的两条边。</div>
+          </div>
+          <div class="mmsg">
+            <div class="mh"><span class="mw">DialogMesh</span><span class="mt">16:03</span></div>
+            <div class="mb">第 3 步完成:FIR 阶数 64→128。接下来建议重跑通道辨识确认相位裕度,要我继续吗?</div>
+          </div>
+          <div class="mmsg user">
+            <div class="mh"><span class="mw">你</span><span class="mt">16:04</span></div>
+            <div class="mb">继续,跑完把结果标在 THD 节点上。</div>
+          </div>
+        </div>
+
+        <div class="mini-composer">
+          <div class="inner">
+            <input placeholder="就画布继续讨论…" />
+            <button class="mini-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+</div>
+
+<div class="mock-ctl">
+  <button onclick="const h=document.documentElement;h.dataset.variant=h.dataset.variant==='a'?'b':'a';document.getElementById('crumb-page').textContent=h.dataset.variant==='a'?'聊天':'图谱';document.getElementById('crumb-sub').textContent=h.dataset.variant==='a'?'FxLMS 高频段收敛问题':'话题图谱 · 当前项目';document.querySelector('[data-nav=chat]').classList.toggle('active',h.dataset.variant==='a');document.querySelector('[data-nav=graph]').classList.toggle('active',h.dataset.variant==='b');">切换变体 A/B</button>
+  <button onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">切换主题 ⇄</button>
+</div>
+<script>
+if (location.hash === '#shot') document.documentElement.classList.add('shot');
+</script>
+</body>
+</html>

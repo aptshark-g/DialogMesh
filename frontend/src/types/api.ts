@@ -945,6 +945,40 @@ export interface V6VersionsResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v8 NEW — Seven Trees (七树白盒, 2026-08-16)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface V6TreeStats {
+  tree_name: string;
+  total_nodes: number;
+  active: number;
+  completed: number;
+  archived: number;
+  failed: number;
+}
+
+export interface V6AgentTreeSession {
+  session_id: string;
+  loaded: boolean;
+  stats: V6TreeStats[];
+}
+
+export interface V6AgentTreesResponse {
+  sessions?: V6AgentTreeSession[];
+  session_count?: number;
+  total_nodes?: number;
+  stats?: V6TreeStats[];
+  hits?: Array<{
+    session_id?: string;
+    tree: string;
+    node_id: string;
+    content: string;
+  }>;
+  query?: string;
+  error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // v8 NEW — Inertia
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -163,6 +163,51 @@ async def get_discourse_tree(sid: Optional[str] = Query(default=None)):
     return kernel_discourse_tree(sid)
 
 
+@router.get("/agent-trees")
+async def get_agent_trees(
+    sid: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+):
+    """七树白盒（A19/A5）: 联邦查询 + 统计（2026-08-16 支持跨会话聚合）。
+
+    GET /v6/agent-trees — 全部会话七树统计（已加载 + 盘上 Warm 层）;
+    GET /v6/agent-trees?q=关键字 — 跨会话联邦查询;
+    GET /v6/agent-trees?sid=xxx[&q=关键字] — 单会话统计/查询。
+    """
+    from core.agent.cli.engine import get_engine
+    eng = get_engine()
+    if eng is None or not hasattr(eng, "get_agent_tree"):
+        return {"error": "engine unavailable"}
+    try:
+        if not sid:
+            if q:
+                hits = eng.query_all_agent_trees(q)
+                sessions = eng.agent_tree_sessions()
+                return {
+                    "query": q, "hits": hits,
+                    "session_count": len(sessions),
+                }
+            sessions = eng.agent_tree_sessions()
+            return {
+                "sessions": sessions,
+                "session_count": len(sessions),
+                "total_nodes": sum(
+                    sum(s.get("total_nodes", 0) for s in sess["stats"])
+                    for sess in sessions),
+            }
+        mgr = eng.get_agent_tree(sid)
+        if q:
+            hits = eng.query_agent_trees(q, sid)
+            return {
+                "session_id": sid, "query": q,
+                "hits": hits,
+            }
+        stats = [s.__dict__ for s in mgr.get_all_stats()]
+        return {"session_id": sid, "stats": stats}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

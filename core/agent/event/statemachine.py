@@ -293,14 +293,21 @@ class DeciderStateMachine:
                         # 执行轨迹落树（P0）: 会话级 ExecutionTree
                         _exec_tree = None
                         try:
-                            _dt = getattr(context, "get", lambda k: None)(
-                                "discourse_tree")
-                            if _dt is not None and hasattr(_dt, "_trees"):
-                                _mgr = _dt._trees.get(
-                                    context.get("session_id") or "")
-                                if _mgr is not None:
-                                    _exec_tree = getattr(
-                                        _mgr, "execution", None)
+                            # 2026-08-15 修复: 七树容器经 context.agent_tree
+                            # 注入（v3_session_api run_dag 已传）— 旧代码从
+                            # discourse_tree._trees 取 execution 恒 None。
+                            _mgr = getattr(context, "get", lambda k: None)(
+                                "agent_tree")
+                            if _mgr is None:
+                                _dt = getattr(context, "get", lambda k: None)(
+                                    "discourse_tree")
+                                if _dt is not None and hasattr(
+                                        _dt, "get_agent_tree"):
+                                    _mgr = _dt.get_agent_tree(
+                                        context.get("session_id") or "")
+                            if _mgr is not None:
+                                _exec_tree = getattr(
+                                    _mgr, "execution", None)
                         except Exception:
                             _exec_tree = None
                         runner = TaskRunner(

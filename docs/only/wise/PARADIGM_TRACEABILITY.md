@@ -13,23 +13,23 @@
 |---|---|---|---|---|
 | A1 视角/颗粒度 | PCR V2 zone / 各模块一级视角; 二级视角（结构/语义/时序/反例） | 🟡 一级有, 二级验证零散 | 蒸馏四视角调整（部分） | 待审计 |
 | A2 颗粒度递归 | 颗粒度变体表; full_text 原文通路 + 聊天链路放大（2026-08-15） | ✅ 存储+生成上下文都接 | test_full_text_backfilled_p9; 幻觉收敛实测 | 变体表已回写契约文档 |
-| A3 关系第一公民 | 子图/vault 图 + graph_anchors | 🟡 有图, 关系消费有限 | graph_anchors 测试 | 待审计 |
+| A3 关系第一公民 | 子图/vault 图 + graph_anchors + 关联树映射 | 🟡 有图; 执行→meta audit 映射已接（2026-08-15）, 关系消费仍有限 | test_consume_writes_seven_trees_and_persists | 待审计 |
 | A4 信念 7 维 | Hypothesis Engine（chapter2） | ⚪ 待核 | — | 待审计 |
-| A5 树是推理工作台 | 对话树/七树/ExecutionTree | 🟡 树有, "推理工作台"语义部分 | 执行树消费 13/13 | 待审计 |
+| A5 树是推理工作台 | 对话树/七树/ExecutionTree | ✅ 生产接线 + 跨树联邦（query_agent_trees + /v6/agent-trees, 2026-08-16 跨会话聚合） | test_execution_tree_production_wiring 10/10 + 端到端实测 | 生产取树此前错取对话树管理器（恒 None）, 已修 |
 | A6 自我纠错 | recall feedback()/A18 持久化 | ✅ | test_feedback_persists | 无异常 |
 | A7 信息论 | P9 分治; 概率/价值算子 | ✅ 原文保留已落地（算子未, 启发式） | 真幻觉率 0.175→0.045 实测 | 算子缺 → 契约 §三补丁 |
 | A8 表达形式 | 符号注入 Mermaid/JSON | 🟡 | 符号注入端到端（08-10） | 待审计 |
-| A9 行为一等公民 | 行为链 + ExecutionTree 消费 | 🟡 消费器有, 深度偏好 W7 未 | exec_consume_eval | 待审计 |
-| A10 元认知 | AuditFeedbackLoop / decision_bus | 🟡 | 执行树消费测试 | 待审计 |
-| A11 执行层可回溯 | tool_loop + 执行树落树 | ✅ | test_execution_trace_lands_in_tree | 08-14 NameError 已修（输入摘要回写） |
+| A9 行为一等公民 | 行为链 + ExecutionTree 消费 | 🟡 消费器有（ExecutionPatternStore 持久化 + BehaviorTree 风险模式接线）, 深度偏好 W7 未 | _consume_execution_tree 生产路径实测 | 生产接线修复后消费端可达 |
+| A10 元认知 | AuditFeedbackLoop / decision_bus | ✅ 生产消费闭环（MetaTreeConsumer→AuditFeedbackLoop） | test_consume_execution_tree_production_path | 2026-08-15 接线修复 |
+| A11 执行层可回溯 | tool_loop + 执行树落树 | ✅ 生产落树（TaskRunner→execution 树 create/spawn/complete） | test_task_runner_lands_execution_tree（engine 真实接线） | 2026-08-15: 生产取树恒 None 已修（engine._agent_trees 挂载） |
 | A12 约束空间 | PCR zone / 约束投影 | 🟡 | SPO 约束投影测试 | 待审计 |
 | A13 长证明后验 | 信念凝聚器（L2.5） | ⚪ 待核 | — | 待审计 |
 | A14 工程链约束 | ConstraintEngine | ❌ 未接入（07-22 表同） | — | 设计空转已记录 |
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |
 | A16 冷热编排 | 快反馈后修正（三层回写） | 🟡 | 待审计 | 待审计 |
-| A17 记录 | 事件溯源/NodeEditRecord | 🟡 decision_bus 有, 全量记录待核 | 事件测试 | 待审计 |
+| A17 记录 | 事件溯源/NodeEditRecord + 七树持久化 | ✅ 七树 Warm 层落盘（data/agent_trees, 重启恢复实测） | test_engine_persist_and_restore + 端到端持久化文件 | 2026-08-15 补 |
 | A18 参数自适应 | recall weights/feedback + 变体开关 | ✅ | A18 持久化测试 33/33 | 无异常 |
-| A19 白盒 | CLI CRUD / 设计点追踪 | 🟡 CLI 部分, 追踪缺失（本矩阵补） | — | 本矩阵即回写 |
+| A19 白盒 | CLI CRUD / 设计点追踪 + /v6/agent-trees | 🟡 七树白盒端点已加, CLI CRUD 仍部分 | /v6/agent-trees 端到端 200 | 本矩阵即回写 |
 | A20 竞争吸收 | md_big / OPENSOURCE_SURVEY | ✅ 清单有 | — | 吸收未验证（A18 要求） |
 | A21 安全 | 权限门/沙箱/Guard | ✅ | permission 12/12 | 无异常 |
 | A22 因果克制 | CausalSubstrate | ❌ 未（L5 待实现） | — | 设计空转已记录 |
