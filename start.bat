@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul 2>&1
 setlocal EnableDelayedExpansion
 
@@ -36,7 +36,7 @@ timeout /t 1 /nobreak >nul
 :api_port_free
 
 echo [2/3] Starting DialogMesh API ... http://localhost:8000
-start "DialogMesh API" cmd /k "python scripts\start_server.py --no-gateway"
+start "DialogMesh API" cmd /k "C:\Users\APTShark\PycharmProjects\DialogMesh\.venv\Scripts\python.exe scripts\start_server.py --no-gateway"
 echo [INFO] Waiting 3 seconds for API...
 timeout /t 3 /nobreak >nul
 
