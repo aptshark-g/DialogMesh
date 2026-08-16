@@ -12,6 +12,11 @@ prior 证据注入（贝叶斯式累积）。
 2026-08-16 P1-③: design_lesson 凝练支持 LLM（DM_DIAG_LLM_LESSON=1 开启,
 默认模板）——伪二阶抽象: 从"scope 失败 + 修复 + 设计约束"凝练可逆推的
 教训, 而非固定句式。
+
+2026-08-16 P2-①: 经验检索升级 RAG —— 条目写入时向量化（BGE-M3, 1024 维,
+sidecar 持久化 `self_repairs.vectors.json`）; 检索 = 语义余弦 + 关键词加权
+（DM_EXPERIENCE_RAG=0 可关; BGE 不可用自动降级关键词）。语义检索让"网关
+连不上"能命中"connection refused 工具失败"这类无关键词重合的既往经验。
 """
 from __future__ import annotations
 
@@ -21,6 +26,8 @@ import os
 import threading
 import time
 from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +51,65 @@ def _default_path() -> str:
 
 
 class ExperienceStore:
-    """自愈经验库（JSONL 追加; 线程安全）。"""
+    """自愈经验库（JSONL 追加 + 向量 sidecar; 线程安全）。
 
-    def __init__(self, path: str = "", max_entries: int = 500):
+    RAG（2026-08-16 P2-①）: add 时经 vectorizer 编码 → sidecar 持久化;
+    search = 语义余弦 + 关键词加权, 排序后取 top-k。向量与条目按 ts 对齐
+    （JSONL 追加, ts 单调）。vectorizer 可注入（测试/离线）, 默认
+    SemanticEncoder（BGE-M3）。编码失败/禁用 → 关键词检索兜底。
+    """
+
+    def __init__(self, path: str = "", max_entries: int = 500,
+                 vectorizer: Any = None, rag_enabled: Optional[bool] = None):
         self._path = path or _default_path()
         self._lock = threading.Lock()
         self._entries: List[Dict[str, Any]] = []
+        self._vectors: List[Optional[np.ndarray]] = []
         self._max = max_entries
+        self._vectorizer = vectorizer
+        self._rag_enabled = self._resolve_rag(rag_enabled)
         self._load()
+
+    @staticmethod
+    def _resolve_rag(rag_enabled: Optional[bool]) -> bool:
+        if rag_enabled is not None:
+            return bool(rag_enabled)
+        return os.environ.get("DM_EXPERIENCE_RAG", "1").lower() not in (
+            "0", "false", "off", "no")
+
+    def _vector_path(self) -> str:
+        return os.path.splitext(self._path)[0] + ".vectors.json"
+
+    @staticmethod
+    def _entry_text(e: Dict[str, Any]) -> str:
+        return " ".join([
+            str(e.get("scope", "")), str(e.get("root_cause", "")),
+            str(e.get("fix_summary", "")), str(e.get("design_lesson", ""))])
+
+    def _vectorize(self, texts: List[str]) -> Optional[np.ndarray]:
+        """编码文本; 不可用/失败 → None（走关键词兜底）。"""
+        if not self._rag_enabled or not texts:
+            return None
+        vec = self._vectorizer
+        if vec is None:
+            try:
+                from core.agent.compiler.semantic_encoder import (
+                    _global_encoder, get_encoder)
+                # 不触发冷加载: 模型未就绪（未预热/测试环境）→ 关键词兜底。
+                # 生产由启动预热（prewarm_models）保证就绪。
+                if _global_encoder is None or not _global_encoder._initialized:
+                    return None
+                vec = get_encoder()
+            except Exception:
+                vec = None
+        if vec is None or not hasattr(vec, "encode"):
+            return None
+        try:
+            arr = np.asarray(vec.encode(texts), dtype=np.float64)
+            return arr
+        except Exception as e:
+            logger.debug("experience vectorize failed: %s", e)
+            return None
 
     def _load(self) -> None:
         try:
@@ -67,6 +125,37 @@ class ExperienceStore:
                             pass
         except Exception as e:
             logger.debug("experience load failed: %s", e)
+        finally:
+            self._load_vectors()
+
+    def _load_vectors(self) -> None:
+        """sidecar 按 ts 对齐; 缺失向量惰性补算（重算不丢语义检索）。"""
+        self._vectors = [None] * len(self._entries)
+        try:
+            vp = self._vector_path()
+            if not os.path.exists(vp):
+                return
+            with open(vp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            by_ts = {}
+            for d in data:
+                vec = d.get("vec")
+                if vec:
+                    by_ts[float(d.get("ts", 0))] = np.asarray(
+                        vec, dtype=np.float64)
+            for i, e in enumerate(self._entries):
+                self._vectors[i] = by_ts.get(float(e.get("ts", 0)))
+        except Exception as e:
+            logger.debug("experience vectors load failed: %s", e)
+        # 惰性补算缺失向量（如 sidecar 重建/条目被 trim 后重新对齐）
+        missing = [i for i, v in enumerate(self._vectors) if v is None]
+        if missing:
+            arr = self._vectorize(
+                [self._entry_text(self._entries[i]) for i in missing])
+            if arr is not None:
+                for j, i in enumerate(missing):
+                    self._vectors[i] = arr[j]
+                self._persist_vectors()
 
     def add(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         """追加经验条目（根因/修复/设计教训/影响公理）。"""
@@ -80,11 +169,20 @@ class ExperienceStore:
             "verify_passed": bool(entry.get("verify_passed", True)),
             "source": str(entry.get("source", "diagnosis")),
         }
+        vec = None
+        if self._rag_enabled:
+            arr = self._vectorize([self._entry_text(rec)])
+            if arr is not None:
+                vec = arr[0]
         with self._lock:
             self._entries.append(rec)
+            self._vectors.append(vec)
             if len(self._entries) > self._max:
                 self._entries = self._entries[-self._max:]
+                self._vectors = self._vectors[-self._max:]
             self._persist(rec)
+        if self._rag_enabled and vec is not None:
+            self._persist_vectors()
         return rec
 
     def _persist(self, rec: Dict[str, Any]) -> None:
@@ -95,28 +193,69 @@ class ExperienceStore:
         except Exception as e:
             logger.debug("experience persist failed: %s", e)
 
+    def _persist_vectors(self) -> None:
+        """sidecar 全量落盘（条目 ≤500, 体积小; 简单可靠）。"""
+        try:
+            with self._lock:
+                data = []
+                for e, v in zip(self._entries, self._vectors):
+                    if v is not None:
+                        data.append({
+                            "ts": e.get("ts", 0),
+                            "vec": np.asarray(v, dtype=np.float64).tolist(),
+                        })
+            os.makedirs(os.path.dirname(self._path), exist_ok=True)
+            tmp = self._vector_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, self._vector_path())
+        except Exception as e:
+            logger.debug("experience vectors persist failed: %s", e)
+
     def search(self, text: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """检索相似经验（诊断时作为 prior 证据注入, 贝叶斯先验）。"""
+        """检索相似经验（语义 + 关键词混合; 诊断时作为 prior 证据注入）。"""
         q = (text or "").lower()
         if not q:
             return []
+        qvec = None
+        if self._rag_enabled:
+            arr = self._vectorize([text])
+            if arr is not None:
+                qvec = arr[0]
         scored = []
         with self._lock:
-            for e in self._entries:
-                hay = " ".join([
-                    e.get("scope", ""), e.get("root_cause", ""),
-                    e.get("fix_summary", ""), e.get("design_lesson", "")])
+            for i, e in enumerate(self._entries):
+                hay = self._entry_text(e).lower()
                 score = sum(1 for w in q.split()[:8]
-                            if w.lower() in hay)
-                if score > 0:
-                    scored.append((score, e))
+                            if w in hay)
+                sim = 0.0
+                if qvec is not None and self._vectors[i] is not None:
+                    sim = float(np.dot(self._vectors[i], qvec))
+                if qvec is not None and self._vectors[i] is not None:
+                    if sim < 0.15 and score == 0:
+                        continue  # 语义噪声过滤（无关键词重合且不相似）
+                    total = sim + 0.15 * score
+                else:
+                    if score == 0:
+                        continue
+                    total = float(score)
+                scored.append((total, e))
         scored.sort(key=lambda x: -x[0])
         return [e for _, e in scored[:limit]]
 
     def stats(self) -> Dict[str, Any]:
         with self._lock:
+            vectorized = sum(1 for v in self._vectors if v is not None)
             return {
                 "total": len(self._entries),
+                "rag": {
+                    "enabled": self._rag_enabled,
+                    "vectorized": vectorized,
+                    "backend": (
+                        "semantic" if self._rag_enabled and vectorized > 0
+                        else ("semantic_pending" if self._rag_enabled
+                              else "keyword")),
+                },
                 "recent": list(self._entries[-10:]),
             }
 

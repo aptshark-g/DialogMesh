@@ -7,6 +7,8 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
+
 from core.agent.meta.experience import (
     ExperienceStore,
     _llm_lesson,
@@ -53,6 +55,115 @@ class TestExperienceStore(unittest.TestCase):
         # a 的设计约束摘要应非空（AGENTS.md 存在）
         dc = _design_constraints()
         self.assertGreater(len(dc), 0)
+
+
+class CharBigramVectorizer:
+    """字符二元组 one-hot（归一化）——语义近似模拟, 不加载真实模型。"""
+
+    def __init__(self):
+        self.calls = 0
+
+    def encode(self, texts):
+        self.calls += 1
+        texts = [texts] if isinstance(texts, str) else texts
+        out = []
+        for t in texts:
+            v = np.zeros(1024)
+            for i in range(len(t) - 1):
+                v[hash(t[i:i + 2]) % 1024] += 1
+            n = np.linalg.norm(v)
+            out.append(v / n if n else v)
+        return np.array(out)
+
+
+class TestExperienceRAG(unittest.TestCase):
+    """P2-①: 经验检索 RAG（语义 + 关键词混合 / 持久化 / 降级）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="dm_exp_rag_")
+        self.path = os.path.join(self.tmp, "self_repairs.jsonl")
+
+    def _store(self, **kw):
+        kw.setdefault("path", self.path)
+        return ExperienceStore(**kw)
+
+    def test_rag_semantic_search_hits_without_keyword_overlap(self):
+        vec = CharBigramVectorizer()
+        store = self._store(vectorizer=vec)
+        store.add({"scope": "tool_loop", "root_cause": "网关连接拒绝导致工具调用失败",
+                   "fix_summary": "熔断前检查 + 预算感知重试",
+                   "design_lesson": "先核对网关健康与预算余量", "axioms": [],
+                   "verify_passed": True})
+        store.add({"scope": "llm_reply", "root_cause": "deepseek 返回空",
+                   "fix_summary": "空返回重试两次", "design_lesson": "空回复重试",
+                   "axioms": [], "verify_passed": True})
+        # 无关键词重合（query 不是任一条目子串）→ 关键词检索会空; RAG 命中
+        hits = store.search("网关连不上工具失败了")
+        self.assertGreaterEqual(len(hits), 1)
+        self.assertIn("网关", hits[0]["root_cause"])
+        s = store.stats()
+        self.assertEqual(s["rag"]["backend"], "semantic")
+        self.assertEqual(s["rag"]["vectorized"], 2)
+
+    def test_rag_persistence_reload_no_recompute(self):
+        vec1 = CharBigramVectorizer()
+        store1 = self._store(vectorizer=vec1)
+        store1.add({"scope": "a", "root_cause": "网关连接拒绝 connection refused",
+                    "fix_summary": "f1", "design_lesson": "d1",
+                    "axioms": [], "verify_passed": True})
+        store1.add({"scope": "b", "root_cause": "LLM 空返回",
+                    "fix_summary": "f2", "design_lesson": "d2",
+                    "axioms": [], "verify_passed": True})
+        calls_after_add = vec1.calls
+        self.assertGreater(calls_after_add, 0)
+        # 重启: 新实例从 JSONL + vectors sidecar 恢复, 不重算条目向量
+        vec2 = CharBigramVectorizer()
+        store2 = self._store(vectorizer=vec2)
+        s = store2.stats()
+        self.assertEqual(s["rag"]["vectorized"], 2)
+        self.assertEqual(vec2.calls, 0)  # 加载零编码
+        hits = store2.search("网关连接断了")
+        self.assertGreaterEqual(len(hits), 1)
+        self.assertEqual(vec2.calls, 1)  # 只编码 query
+
+    def test_rag_disabled_uses_keyword(self):
+        store = self._store(rag_enabled=False)
+        store.add({"scope": "planning", "root_cause": "LLM 解析失败",
+                   "fix_summary": "骨架兜底", "design_lesson": "依赖骨架",
+                   "axioms": [], "verify_passed": True})
+        # 子串命中（关键词）
+        self.assertEqual(len(store.search("LLM 解析失败")), 1)
+        # 无子串重合 → 空（关键词检索边界）
+        self.assertEqual(store.search("网络问题"), [])
+        self.assertEqual(store.stats()["rag"]["backend"], "keyword")
+
+    def test_vectorize_failure_falls_back_to_keyword(self):
+        class BrokenVectorizer:
+            def encode(self, texts):
+                raise RuntimeError("model unavailable")
+        store = self._store(vectorizer=BrokenVectorizer())
+        store.add({"scope": "tool_loop", "root_cause": "网关连接拒绝",
+                   "fix_summary": "f", "design_lesson": "d",
+                   "axioms": [], "verify_passed": True})
+        # 编码失败 → 关键词兜底, 不抛
+        self.assertEqual(len(store.search("网关连接拒绝")), 1)
+        s = store.stats()
+        self.assertEqual(s["rag"]["vectorized"], 0)
+
+    def test_trim_keeps_entries_vectors_aligned(self):
+        vec = CharBigramVectorizer()
+        store = self._store(vectorizer=vec, max_entries=3)
+        for i in range(5):
+            store.add({"scope": f"s{i}",
+                       "root_cause": f"根因 {i} 网关连接",
+                       "fix_summary": "f", "design_lesson": "d",
+                       "axioms": [], "verify_passed": True})
+        s = store.stats()
+        self.assertEqual(s["total"], 3)
+        self.assertEqual(s["rag"]["vectorized"], 3)
+        # 检索不崩（entries/vectors 对齐）
+        hits = store.search("网关")
+        self.assertGreaterEqual(len(hits), 1)
 
 
 class TestLessonCondense(unittest.TestCase):
