@@ -1,6 +1,15 @@
 ﻿# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
+> ****2026-08-17 HyDE 方向收尾（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_ABLATION_20260816.md`
+> （延续）。完成: 域门控（_hot_is_doc query 级, 会话域完全禁用 HyDE）+
+> DM_SPO_LLM_JUDGE 隔离（修 SPO LLM 判定测量混淆）→ HyDE K=3 干净对照
+> = 基线（doc 50.8% / dialogue 76.9%, 无增益, 早期 +3.3pp 是假设方差）;
+> HyDE→BM25 词项扩展（Rocchio 近似）实测负（§四.5, 假设文档缺内部词汇）;
+> DM_HYDE 默认 0 维持。全量 2068 绿。待办: Query2Doc 语料引导生成（若
+> 再试 HyDE）/ 前端绑定（用户 UI 改完后）。未推 GitHub。
+> （新施工前必读: AGENTS.md + 追踪矩阵 + HYDE_EVAL_20260817.md）
 > ****2026-08-17 真 HyDE 进评测（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_ABLATION_20260816.md`
 > （延续）。完成: eval_100 --hyde（真网关 LLM）+ 多假设 RRF（K=3）+

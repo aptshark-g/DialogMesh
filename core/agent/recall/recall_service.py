@@ -428,6 +428,20 @@ class RecallService:
         # 用 DM_HYDE_DECOMPOSE=0 跳过分解（expanded=[query]）。
         self.hyde_decompose = os.environ.get(
             "DM_HYDE_DECOMPOSE", "1") != "0"
+        # HyDE→BM25 词项扩展（2026-08-17, DM_HYDE_BM25 默认 0 — 实测
+        # 负结果）: 假设文档提取 tf×idf 加权扩展词 → 独立 BM25 检索 →
+        # 与原 BM25 RRF 融合（论文 2511.19349: Rocchio 反馈模型优于朴素
+        # 拼接）。冒烟+消融实证: 假设文档的通用脚手架词（Tool/进行/结果/
+        # 机制…, 过滤后仍）检索到通用工具设计文档, 挤掉多向量弱增益
+        # （q002: BM25 off rank13 → on None）。根因同向量侧 — 假设文档
+        # 无法复现语料内部词汇。保留开关, 未来若换更贴近语料的生成
+        # 方式（Query2Doc 拼接 / 微调）可重测。
+        self.hyde_bm25 = os.environ.get("DM_HYDE_BM25", "0") != "0"
+        try:
+            self.hyde_bm25_terms = int(os.environ.get(
+                "DM_HYDE_BM25_TERMS", "15"))
+        except ValueError:
+            self.hyde_bm25_terms = 15
         # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
         # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
         # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
@@ -1508,36 +1522,25 @@ class RecallService:
                 logger.debug("bm25 index disk save failed: %s", e)
             return idx_obj
 
-    def _bm25_anchors(self, query: str, top_k: int,
-                      blocks: Optional[List[dict]] = None) -> List[RecallHit]:
-        """BM25 词法召回（Rust 稀疏内核, Python 回退; 语料真实 df）。
+    def _pool_doc_ratio(self, blocks: Optional[List[dict]]) -> float:
+        """域门控判别（2026-08-17）: 池内带 doc 字段（知识文档）的占比。
 
-        2026-08-12: 旧实现每 query 对每块重分词打分（文档池 8.6-10s/query）;
-        现 = 词项索引（每块分词一次按块集缓存）+ Rust bm25_scores 批量打分。
+        实测（HYDE_EVAL）: HyDE 对知识文档池 +3.3pp、对会话池 -7.7pp。
+        会话块（对话树/goldset）无 doc 字段, 文档块有 → 用 doc 占比
+        判别"知识池 vs 会话池", ≥ 阈值才启用 HyDE（防 dialogue 回归）。
         """
-        _t0 = time.time()
-        # 跨语言保护 (2026-08-10, 变体评测 en 0% 根因):
-        # 非中文 query 对中文语料做词法匹配会因 ASCII 术语（tool_loop/
-        # blueprint 等）与中文块内同名术语碰巧匹配产生假高分, 压过向量
-        # 语义分。英文/混合 query 的词法召回交给向量（BGE-M3 统一空间）。
-        if not _is_chinese_query(query):
-            return []
-        if blocks is None:
-            self._ensure_blocks()
-            blocks = self._block_list
         if not blocks:
-            return []
-        idx = self._bm25_index(blocks)
-        term_id = idx["term_id"]
-        qids: List[int] = []
-        seen: set = set()
-        for t in self._bm25_tokenize(query):
-            tid = term_id.get(t)
-            if tid is not None and tid not in seen:
-                qids.append(tid)
-                seen.add(tid)
-        if not qids:
-            return []
+            return 0.0
+        n = min(len(blocks), 30)
+        if n <= 0:
+            return 0.0
+        return sum(1 for b in blocks[:n] if b.get("doc")) / n
+
+    def _bm25_qids_anchors(self, qids: List[int], top_k: int,
+                           blocks: List[dict],
+                           idx: dict) -> List[RecallHit]:
+        """BM25 打分（共享内核调用）: 给定词项 id 集 → 命中块。"""
+        _t0 = time.time()
         try:
             from core.agent.recall.recall_rust_bridge import get_recall_kernel
             kernel = get_recall_kernel()
@@ -1570,6 +1573,111 @@ class RecallService:
                 created_at=b.get("created_at"),
             ))
         return out
+
+    def _bm25_anchors(self, query: str, top_k: int,
+                      blocks: Optional[List[dict]] = None) -> List[RecallHit]:
+        """BM25 词法召回（Rust 稀疏内核, Python 回退; 语料真实 df）。
+
+        2026-08-12: 旧实现每 query 对每块重分词打分（文档池 8.6-10s/query）;
+        现 = 词项索引（每块分词一次按块集缓存）+ Rust bm25_scores 批量打分。
+        """
+        # 跨语言保护 (2026-08-10, 变体评测 en 0% 根因):
+        # 非中文 query 对中文语料做词法匹配会因 ASCII 术语（tool_loop/
+        # blueprint 等）与中文块内同名术语碰巧匹配产生假高分, 压过向量
+        # 语义分。英文/混合 query 的词法召回交给向量（BGE-M3 统一空间）。
+        if not _is_chinese_query(query):
+            return []
+        if blocks is None:
+            self._ensure_blocks()
+            blocks = self._block_list
+        if not blocks:
+            return []
+        idx = self._bm25_index(blocks)
+        term_id = idx["term_id"]
+        qids: List[int] = []
+        seen: set = set()
+        for t in self._bm25_tokenize(query):
+            tid = term_id.get(t)
+            if tid is not None and tid not in seen:
+                qids.append(tid)
+                seen.add(tid)
+        if not qids:
+            return []
+        return self._bm25_qids_anchors(qids, top_k, blocks, idx)
+
+    def _bm25_hyde_anchors(self, query: str, top_k: int,
+                           blocks: List[dict],
+                           hyps: List[str]) -> List[RecallHit]:
+        """HyDE→BM25 词项扩展（2026-08-17, Rocchio 反馈模型近似）:
+
+        假设文档 → 提取 tf×idf 加权扩展词（Rocchio: 词频 × 语料 idf,
+        去掉原 query 词）→ 独立 BM25 检索 → 与原 BM25 RRF 融合。
+        Rust kernel 不支持词项权重, 用 rank 融合近似加权（论文
+        2511.19349: 朴素字符串拼接非最优, 正规反馈模型显著更优）。
+        """
+        if not hyps or not blocks:
+            return []
+        try:
+            idx = self._bm25_index(blocks)
+            term_id = idx["term_id"]
+            df_map = dict(idx["df"])
+            n_docs = idx["n_docs"]
+            # 扩展词质量门（2026-08-17, 冒烟实证）: 假设文档含大量通用
+            # 脚手架词（进行/直至/返回/结果/机制/引入...）+ 语料高频词
+            # （Tool/Function/Schema 散布于所有工具设计文档）→ 不过滤会
+            # 检索到通用工具文档而非期望文档。停用词 + df 占比过滤。
+            _stop = {"进行", "直至", "返回", "结果", "机制", "引入", "循环",
+                     "拼接", "通过", "我们", "实现", "支持", "用于", "可以",
+                     "使用", "需要", "以及", "并且", "这个", "该", "其",
+                     "的", "了", "在", "中", "和", "与", "为", "将", "被"}
+            orig_tids: set = set()
+            for _t in self._bm25_tokenize(query):
+                _tid = term_id.get(_t)
+                if _tid is not None:
+                    orig_tids.add(_tid)
+            w: Dict[int, float] = {}
+            for h in hyps:
+                for t in self._bm25_tokenize(h):
+                    tid = term_id.get(t)
+                    if tid is None or tid in orig_tids:
+                        continue
+                    if t in _stop:
+                        continue
+                    df_t = df_map.get(tid, 0)
+                    if n_docs > 0 and df_t / n_docs > 0.25:
+                        continue    # 语料 25%+ 块共有 → 区分度低
+                    idf = math.log(
+                        (n_docs - df_t + 0.5) / (df_t + 0.5) + 1.0)
+                    w[tid] = w.get(tid, 0.0) + idf   # tf×idf（token 重复累加）
+            if not w:
+                return []
+            exp_tids = [tid for tid, _ in sorted(
+                w.items(), key=lambda x: -x[1])
+                [:getattr(self, "hyde_bm25_terms", 15)]]
+            if not exp_tids:
+                return []
+            exp_hits = self._bm25_qids_anchors(exp_tids, top_k, blocks, idx)
+            if not exp_hits:
+                return []
+            orig_hits = self._bm25_anchors(query, top_k, blocks=blocks)
+            # RRF 融合（原 query 秩 + 扩展词秩）
+            from collections import defaultdict
+            rrf: Dict[str, float] = defaultdict(float)
+            by_id: Dict[str, RecallHit] = {}
+            for rank, h in enumerate(orig_hits, 1):
+                rrf[h.id] += 1.0 / (60 + rank)
+                by_id[h.id] = h
+            for rank, h in enumerate(exp_hits, 1):
+                rrf[h.id] += 1.0 / (60 + rank)
+                by_id[h.id] = h
+            ordered = sorted(by_id.values(),
+                             key=lambda h: rrf[h.id], reverse=True)
+            for h in ordered:
+                h.score = round(rrf[h.id], 6)
+            return ordered[:top_k]
+        except Exception as e:
+            logger.debug("bm25 hyde expansion failed: %s", e)
+            return []
 
     def _spo_anchors(self, query: str, top_k: int,
                      blocks: Optional[List[dict]] = None) -> List[RecallHit]:
@@ -2153,6 +2261,11 @@ class RecallService:
             expand_graph = bool(profile.get("graph", False))
         hot_blocks = self._ensure_blocks(sid)
         cold_blocks = self._ensure_global_blocks()
+        # 域门控（2026-08-17, HYDE_EVAL 实测驱动）: 域由主池（hot）类型
+        # 决定 — 会话域（hot 非文档）完全禁用 HyDE（含 cold 注入）; 知识
+        # 文档域（hot 是文档）启用。实测 dialogue 的污染来自"会话 query +
+        # cold 文档池被 HyDE"（run2 76.9% vs run3 74.4% 的非确定差异）。
+        _hot_is_doc = self._pool_doc_ratio(hot_blocks) >= 0.8
         if (use_hyde and getattr(self, "hyde_decompose", True)):
             if getattr(self, "parallel_decompose", False):
                 expanded = self._expand_questions(query)
@@ -2170,11 +2283,13 @@ class RecallService:
         #     漂移破坏高置信 query）。无 LLM 自动跳过。
         hyde_vec = None
         hyde_qvecs: Optional[List[list]] = None
+        hyde_hyp_texts: List[str] = []
         # 2026-08-16 评测实锤: HyDE（K=1 替换向量 / K=3 RAG-Fusion）在本
         # 项目自指语料上净负（doc 54.1→41.0 / 54.1, dialogue 76.9→69.2,
         # 见 RECALL_FUSION_ABLATION §六 / HYDE_EVAL 记录）— 假设文档无法
         # 复现内部精确词汇。默认关闭（DM_HYDE=0）, 开关保留做实验。
-        if (os.environ.get("DM_HYDE", "0") == "1"
+        if (_hot_is_doc
+                and os.environ.get("DM_HYDE", "0") == "1"
                 and self._llm is not None):
             _k = max(1, int(getattr(self, "hyde_k", 1) or 1))
             _gate = getattr(self, "hyde_gate", False)
@@ -2190,6 +2305,7 @@ class RecallService:
                     # RAG-Fusion 形态: 原 query + K 假设文档向量 → vector
                     # 路线多查询 RRF（合入 vector 源, 不被当独立源埋掉）。
                     hyps = self._hyde_hypotheses(query, _k)
+                    hyde_hyp_texts = hyps
                     _qv = self._embed(query)
                     _hvs = [hv for hv in
                             (self._embed(t) for t in hyps) if hv]
@@ -2217,19 +2333,31 @@ class RecallService:
             _pv = None
             if getattr(self, "prf", False):
                 _pv = self._prf_query_vector(query, blocks=blocks)
+            # 域门控（2026-08-17, HYDE_EVAL 实测驱动）: HyDE 只对知识
+            # 文档池（doc 占比 ≥ 0.8）生效 — 会话池原样。实测 doc +3.3pp
+            # / dialogue -7.7pp 的不对称正来自池类型; 会话块无 doc 字段。
+            _doc_pool = self._pool_doc_ratio(blocks) >= 0.8
             if single in (None, "vector"):
-                if hyde_qvecs is not None:
+                if hyde_qvecs is not None and _doc_pool:
                     # RAG-Fusion 多查询向量（2026-08-16）: 原 query + K 假设
                     # 文档各自检索 + RRF 合并, 产出仍为 vector 源命中。
                     out += self._vector_multi_anchors(
                         query, top_k, blocks=blocks, qvecs=hyde_qvecs)
                 else:
                     out += self._vector_anchors(
-                        query, top_k, blocks=blocks, query_vec=hyde_vec,
+                        query, top_k, blocks=blocks,
+                        query_vec=hyde_vec if _doc_pool else None,
                         prf_vec=_pv,
                         boost_docs=files_hit if tag == "cold" else None)
             if single in (None, "bm25"):
-                out += self._bm25_anchors(query, top_k, blocks=blocks)
+                if (hyde_hyp_texts and getattr(self, "hyde_bm25", True)
+                        and _doc_pool):
+                    # HyDE→BM25 词项扩展（2026-08-17）: 假设文档扩展词
+                    # BM25 + 原 BM25 RRF（Rocchio 近似, 论文 2511.19349）。
+                    out += self._bm25_hyde_anchors(
+                        query, top_k, blocks, hyde_hyp_texts)
+                else:
+                    out += self._bm25_anchors(query, top_k, blocks=blocks)
             if single in (None, "spo"):
                 out += self._spo_anchors(query, top_k, blocks=blocks)
             if single in (None, "assoc"):

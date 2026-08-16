@@ -7,6 +7,8 @@
 2026-08-08 软编码升级: 硬编码表 = 种子缓存; 未命中收集 + LLM 判定兜底。
 """
 
+import os
+
 # 关系类型集（A12 约束空间投影, 15+ 类）
 RELATION_TYPES = {
     "is_a":       "归属",      # 是/属于/源于
@@ -118,7 +120,8 @@ def map_predicate(pred: str) -> str:
     # 软编码: LLM 判定缓存
     if p in LLM_CACHE:
         return LLM_CACHE[p]
-    if _llm is not None:
+    if (_llm is not None
+            and os.environ.get("DM_SPO_LLM_JUDGE", "1") != "0"):
         global _llm_judge_calls
         if _llm_judge_calls < MAX_LLM_JUDGE_CALLS:
             _llm_judge_calls += 1

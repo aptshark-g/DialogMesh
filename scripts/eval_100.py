@@ -112,6 +112,11 @@ def _run(rerank_on: bool, use_hyde: bool = False):
     os.environ.setdefault("DM_RERANK", "1" if rerank_on else "0")
     if use_hyde:
         os.environ.setdefault("DM_HYDE", "1")
+        # 隔离 SPO 谓词 LLM 判定（2026-08-17）: 注入 svc._llm 供 HyDE 后,
+        # _spo_anchors 的 set_llm 会让 SPO 也走 LLM 谓词归一（预算内）,
+        # 改变 dialogue SPO 打分 — 是测量混淆, 不是 HyDE 本身。评测关掉
+        # SPO LLM 判定, 让 HyDE 与基线（静态谓词映射）对齐。
+        os.environ["DM_SPO_LLM_JUDGE"] = "0"
     queries = load_query_set("docs/test/recall_queries_100.md")
     gold = load_goldset()
     svc = build_service(
