@@ -98,6 +98,51 @@ class BlueprintDAG:
                 return n
         return None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化（学习模板持久化, 2026-08-16）。"""
+        return {
+            "strategy": self.strategy,
+            "confidence": float(self.confidence),
+            "design_rationale": self.design_rationale,
+            "nodes": [
+                {"node_id": n.node_id, "chain": n.chain,
+                 "priority": n.priority, "checkpoint": n.checkpoint,
+                 "params": dict(n.params)}
+                for n in self.nodes
+            ],
+            "edges": [
+                {"from_node": e.from_node, "to_node": e.to_node,
+                 "data_key": e.data_key, "required": e.required}
+                for e in self.edges
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BlueprintDAG":
+        """反序列化（学习模板持久化恢复）。"""
+        return cls(
+            strategy=str(data.get("strategy", "TEMPLATE")),
+            confidence=float(data.get("confidence", 1.0)),
+            design_rationale=str(data.get("design_rationale", "")),
+            nodes=[
+                BlueprintNode(
+                    node_id=str(n["node_id"]), chain=str(n["chain"]),
+                    priority=int(n.get("priority", 0)),
+                    checkpoint=bool(n.get("checkpoint", False)),
+                    params=dict(n.get("params", {})),
+                )
+                for n in data.get("nodes", [])
+            ],
+            edges=[
+                BlueprintEdge(
+                    from_node=str(e["from_node"]), to_node=str(e["to_node"]),
+                    data_key=str(e.get("data_key", "")),
+                    required=bool(e.get("required", True)),
+                )
+                for e in data.get("edges", [])
+            ],
+        )
+
     def incoming_edges(self, node_id: str) -> List[BlueprintEdge]:
         return [e for e in self.edges if e.to_node == node_id]
 

@@ -10,6 +10,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import json
+import threading
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
@@ -40,6 +43,65 @@ BUILTIN_TEMPLATES: Dict[str, BlueprintDAG] = {}
 # G2 (FLOW_SELF_GROWTH): 学习沉淀的动态模板区（执行成功 → 沉淀）
 # match 顺序: LEARNED 优先（成功经验 > 通用种子）
 LEARNED_TEMPLATES: Dict[str, BlueprintDAG] = {}
+
+# ── 学习模板持久化（2026-08-16）────────────────────────────
+# 此前 LEARNED_TEMPLATES 纯内存, 学到即丢（重启归零）——"工作流自增长"
+# 核心闭环断。落盘 data/learned_templates.json; DM_LEARNED_TEMPLATES_PATH
+# 可覆盖（测试隔离）。启动恢复 + learn/pop 后原子写盘。
+_templates_lock = threading.Lock()
+
+
+def _templates_path() -> str:
+    env = os.environ.get("DM_LEARNED_TEMPLATES_PATH", "")
+    if env:
+        return env
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))),
+        "data", "learned_templates.json")
+
+
+def _load_learned_templates() -> None:
+    """启动/导入时恢复 LEARNED_TEMPLATES（A17 记录不丢 + 自增长闭环）。"""
+    global LEARNED_TEMPLATES
+    try:
+        p = _templates_path()
+        if not os.path.exists(p):
+            return
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        restored = {}
+        for intent, dag_data in (data or {}).items():
+            try:
+                restored[str(intent)] = BlueprintDAG.from_dict(dag_data)
+            except Exception:
+                continue
+        if restored:
+            # 原地更新保持 dict 对象同一性（外部 `from ... import
+            # LEARNED_TEMPLATES` 的引用不失效; 曾重绑导致测试引用旧空 dict）
+            LEARNED_TEMPLATES.clear()
+            LEARNED_TEMPLATES.update(restored)
+            logger.info("LEARNED_TEMPLATES restored: %d", len(restored))
+    except Exception as e:
+        logger.debug("learned templates load failed: %s", e)
+
+
+def _persist_learned_templates() -> None:
+    """原子写盘（tmp+replace）。"""
+    try:
+        p = _templates_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(
+                {k: v.to_dict() for k, v in LEARNED_TEMPLATES.items()},
+                f, ensure_ascii=False, indent=1)
+        os.replace(tmp, p)
+    except Exception as e:
+        logger.debug("learned templates persist failed: %s", e)
+
+
+_load_learned_templates()
 
 
 def _tick0_pair(analysis_rationale: str) -> list:
@@ -440,6 +502,8 @@ class SkillRegistry:
             f"LEARNED (from: dynamic_learn, source_dag={source_dag_id or '?'})"
         )
         LEARNED_TEMPLATES[intent] = learned
+        # 2026-08-16: 学习闭环持久化 —— 学到即落盘, 重启不丢
+        _persist_learned_templates()
         # GAP-D5: 生命周期登记（活性状态机原料）
         if self._lifecycle is not None:
             try:

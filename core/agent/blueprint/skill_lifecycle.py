@@ -123,6 +123,13 @@ class SkillLifecycle:
         if any(counts[k] for k in ("active_to_stale", "stale_to_archived",
                                    "archived_to_pruned")):
             logger.info("SkillLifecycle: %s", counts)
+            # 2026-08-16: 裁剪后同步落盘（保持与 LEARNED 持久化一致）
+            try:
+                from core.agent.blueprint.skill_registry import (
+                    _persist_learned_templates)
+                _persist_learned_templates()
+            except Exception:
+                pass
         return counts
 
     def prune_archived(self, now: Optional[float] = None) -> int:
@@ -162,4 +169,3 @@ class SkillLifecycle:
 
     def meta(self) -> Dict[str, Dict[str, Any]]:
         return dict(self._meta)
-

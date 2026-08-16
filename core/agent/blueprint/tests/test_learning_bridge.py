@@ -11,6 +11,10 @@
 """
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from core.agent.blueprint.models import (
     BlueprintDAG, BlueprintNode, BlueprintEdge,
 )
@@ -20,6 +24,28 @@ from core.agent.blueprint.learning_bridge import (
     LearningBridge, ExecutionTrace, ExecutionTraceStore,
 )
 from core.agent.blueprint.skill_lifecycle import SkillLifecycle
+
+
+@pytest.fixture(autouse=True)
+def _isolate_learned_templates(tmp_path):
+    """LEARNED_TEMPLATES 隔离 + 落盘路径重定向（2026-08-16 持久化后）。
+
+    此文件测试 mutate 全局 LEARNED_TEMPLATES 且 learn 会写盘 —— 不隔离
+    会跨测试污染（组合跑 3 failed 实测）+ 写生产 data/learned_templates.json。
+    """
+    from core.agent.blueprint import skill_registry as sr
+    saved = dict(sr.LEARNED_TEMPLATES)
+    old = os.environ.get("DM_LEARNED_TEMPLATES_PATH", "")
+    os.environ["DM_LEARNED_TEMPLATES_PATH"] = str(
+        tmp_path / "learned_templates.json")
+    sr.LEARNED_TEMPLATES.clear()
+    yield
+    sr.LEARNED_TEMPLATES.clear()
+    sr.LEARNED_TEMPLATES.update(saved)
+    if old:
+        os.environ["DM_LEARNED_TEMPLATES_PATH"] = old
+    else:
+        os.environ.pop("DM_LEARNED_TEMPLATES_PATH", None)
 
 
 def _tool_dag(tool: str = "arxiv_search") -> BlueprintDAG:

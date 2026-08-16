@@ -14,6 +14,32 @@
 """
 from __future__ import annotations
 
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_learned_templates(tmp_path):
+    """学习模板落盘隔离到 tmp（2026-08-16 持久化后, 防污染生产数据）。
+
+    此前 LEARNED_TEMPLATES 纯内存无落盘; 现在 learn 会写
+    data/learned_templates.json —— 生产路径测试必须隔离。
+    """
+    from core.agent.blueprint import skill_registry as sr
+    saved = dict(sr.LEARNED_TEMPLATES)
+    old = os.environ.get("DM_LEARNED_TEMPLATES_PATH", "")
+    os.environ["DM_LEARNED_TEMPLATES_PATH"] = str(
+        tmp_path / "learned_templates.json")
+    sr.LEARNED_TEMPLATES.clear()
+    yield
+    sr.LEARNED_TEMPLATES.clear()
+    sr.LEARNED_TEMPLATES.update(saved)
+    if old:
+        os.environ["DM_LEARNED_TEMPLATES_PATH"] = old
+    else:
+        os.environ.pop("DM_LEARNED_TEMPLATES_PATH", None)
+
 
 def test_production_injection_code_exists():
     """T1: v3_session_api 生产注入契约（源级断言, 防回归）.
@@ -99,4 +125,3 @@ def test_full_production_path_grows_learned_templates():
     assert after - before, \
         "生产路径后 LEARNED_TEMPLATES 必须增长（学习闭环生产通）"
     assert len(lb.trace_store) >= 1, "蒸馏原料必须收集"
-
