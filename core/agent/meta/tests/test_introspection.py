@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from core.agent.meta.diagnosis import AsyncDiagnoser
+from core.agent.meta.experience import ExperienceStore
 from core.agent.meta.introspection import (
     SystemIntrospector,
     scan_git_history,
@@ -111,15 +112,29 @@ class TestSelfRepairRealApply(unittest.TestCase):
     """真实 git apply + 验证 + 回滚（P1）。"""
 
     def setUp(self):
+        import core.agent.meta.experience as exp_mod
         self.repo = _make_git_repo()
         self.bug_py = os.path.join(self.repo, "bug.py")
         self.d = AsyncDiagnoser(min_interval=0.0, llm_enabled=False,
                                 auto_attach=False)
         self.d._repo_root = self.repo
+        # 经验凝练回写隔离到临时库（避免污染生产 data/self_repairs.jsonl,
+        # 2026-08-16 修复: 此前 apply_repair 经全局 store 写入生产数据）。
+        self._exp_store = ExperienceStore(
+            path=os.path.join(tempfile.mkdtemp(prefix="dm_exp_iso_"),
+                              "self_repairs.jsonl"),
+            rag_enabled=False)
+        self._orig_record = exp_mod.record_experience
+        self._orig_get = exp_mod.get_experience_store
+        exp_mod.record_experience = lambda entry: self._exp_store.add(entry)
+        exp_mod.get_experience_store = lambda path="": self._exp_store
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.repo, ignore_errors=True)
+        import core.agent.meta.experience as exp_mod
+        exp_mod.record_experience = self._orig_record
+        exp_mod.get_experience_store = self._orig_get
 
     def _queue(self, patch, verify):
         res = self.d._apply_suggestion({
@@ -145,8 +160,7 @@ class TestSelfRepairRealApply(unittest.TestCase):
             self.assertIn("return 2", f.read())
         self.assertEqual(self.d.repairs()[0]["status"], "applied")
         # 凝练回写经验库（伪二阶抽象: 教训而非补丁）
-        from core.agent.meta.experience import get_experience_store
-        exp = get_experience_store()
+        exp = self._exp_store
         self.assertGreaterEqual(exp.stats()["total"], 1)
         recent = exp.stats()["recent"][-1]
         self.assertIn("design_lesson", recent)

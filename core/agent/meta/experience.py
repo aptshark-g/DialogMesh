@@ -133,18 +133,17 @@ class ExperienceStore:
         self._vectors = [None] * len(self._entries)
         try:
             vp = self._vector_path()
-            if not os.path.exists(vp):
-                return
-            with open(vp, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            by_ts = {}
-            for d in data:
-                vec = d.get("vec")
-                if vec:
-                    by_ts[float(d.get("ts", 0))] = np.asarray(
-                        vec, dtype=np.float64)
-            for i, e in enumerate(self._entries):
-                self._vectors[i] = by_ts.get(float(e.get("ts", 0)))
+            if os.path.exists(vp):
+                with open(vp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                by_ts = {}
+                for d in data:
+                    vec = d.get("vec")
+                    if vec:
+                        by_ts[float(d.get("ts", 0))] = np.asarray(
+                            vec, dtype=np.float64)
+                for i, e in enumerate(self._entries):
+                    self._vectors[i] = by_ts.get(float(e.get("ts", 0)))
         except Exception as e:
             logger.debug("experience vectors load failed: %s", e)
         # 惰性补算缺失向量（如 sidecar 重建/条目被 trim 后重新对齐）
