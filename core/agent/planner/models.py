@@ -190,8 +190,9 @@ class PlannerConfig(BaseModel):
     llm_max_tokens: int = Field(default=2048, ge=1)
     llm_timeout_ms: int = Field(default=30000, ge=1000)
     llm_system_prompt: str = (
-        "You are a task planner for a reverse-engineering assistant. "
-        "Given a user intent, output a JSON task graph with nodes and edges."
+        "你是通用任务规划器。给定用户意图, 输出 JSON 任务图"
+        "（nodes + edges）; 节点带 name/layer(1概念/2工程/3执行)/goal/"
+        "tool_name, 边带 dep_type(sequential|conditional|parallel|fallback)。"
     )
 
     # 重试与回退

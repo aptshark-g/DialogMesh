@@ -22,7 +22,7 @@
 | A9 行为一等公民 | 行为链 + ExecutionTree 消费 | 🟡 消费器有（ExecutionPatternStore 持久化 + BehaviorTree 风险模式接线）, 深度偏好 W7 未 | _consume_execution_tree 生产路径实测 | 生产接线修复后消费端可达 |
 | A10 元认知 | AuditFeedbackLoop / decision_bus | ✅ 生产消费闭环（MetaTreeConsumer→AuditFeedbackLoop） | test_consume_execution_tree_production_path | 2026-08-15 接线修复 |
 | A11 执行层可回溯 | tool_loop + 执行树落树 | ✅ 生产落树（TaskRunner→execution 树 create/spawn/complete） | test_task_runner_lands_execution_tree（engine 真实接线） | 2026-08-15: 生产取树恒 None 已修（engine._agent_trees 挂载） |
-| A12 约束空间 | PCR zone / 约束投影 | 🟡 | SPO 约束投影测试 | 待审计 |
+| A12 约束空间 | PCR zone / 约束投影 + PlanningSkill 任务图约束（2026-08-16 接入） | 🟡 规划通道已接（HYBRID 骨架+LLM 细化）, 投影仍部分 | test_planning_skill_wiring 8/8 + 端到端（task_graph 落盘 read_code→analyze→modify→test→report） | 通用模板补入规则层 |
 | A13 长证明后验 | 信念凝聚器（L2.5） | ⚪ 待核 | — | 待审计 |
 | A14 工程链约束 | ConstraintEngine | ❌ 未接入（07-22 表同） | — | 设计空转已记录 |
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |

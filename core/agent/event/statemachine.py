@@ -207,7 +207,9 @@ class DeciderStateMachine:
         return {"phases": list(results.keys()), "checkpoint": self._state.checkpoint,
                 "results": results}
 
-    def run_dag(self, dag, context: dict = None) -> dict:
+    def run_dag(self, dag, context: dict = None,
+                defer_llm: bool = False,
+                defer_async: bool = False) -> dict:
         """Execute a BlueprintDAG — 订阅表语义 (§14.3): 同 Tick 并行、跨 Tick 串行.
 
         Nodes are grouped by priority (= Tick). Within one Tick, ready nodes
@@ -384,6 +386,21 @@ class DeciderStateMachine:
                     }
                 except Exception as ex:
                     return nid, {"status": "error", "error": str(ex)[:200]}
+            # llm_reply 链: 生产路径（v3_session_api）的主回复在 Phase 4
+            # （LLM / TaskRunner）生成。run_dag 内执行 llm_reply 节点会
+            # 触发 handle_llm 再调一次 LLM → 双重调用（实测 180s+ 卡死,
+            # 2026-08-16）。defer_llm=True（生产）跳过节点; 测试默认
+            # False 保持原语义（注册 handler 是轻量假的）。
+            if node.chain == "llm_reply" and defer_llm:
+                return nid, {"skipped": "llm_reply deferred to phase 4",
+                             "deferred": True}
+            # async 段（priority>=9: behavior/meta/association...）:
+            # 生产路径这些写入由 post-LLM 管线/事件订阅完成, run_dag 内
+            # 同步等待 BehaviorBrain 初始化/学习实测阻塞 19s（2026-08-16）。
+            # defer_async=True（生产）跳过; 测试默认 False 保持原语义。
+            if defer_async and node.priority >= 9:
+                return nid, {"skipped": "async segment deferred",
+                             "deferred": True}
             phase = CHAIN_TO_PHASE.get(node.chain)
             handler = self._phase_handlers.get(phase) if phase else None
             if handler:

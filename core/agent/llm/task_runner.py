@@ -317,6 +317,17 @@ class TaskRunner:
             result.verdict = "abort"
             result.reason = "重规划次数耗尽"
 
+        # 2026-08-16 兜底: 预算内未完成（timeout/ask_user/replan）但已有
+        # 工具产出 → 生成摘要内容, 不返回空回复（空回复是用户最痛的点）。
+        if not result.content and result.tool_calls:
+            names = [str(c.get("name", "?")) for c in result.tool_calls[:8]]
+            ok_n = sum(1 for c in result.tool_calls if c.get("ok"))
+            result.content = (
+                f"任务未在预算内完全收尾（{result.reason or result.status}）, "
+                f"已完成 {len(result.tool_calls)} 步工具调用"
+                f"（{ok_n} 步成功: {', '.join(names)}）。"
+                "可继续追问, 我会基于已有产出接着做。")
+
         result.latency_ms = (time.time() - t0) * 1000
         # Cold 复盘: 非 continue 写 meta_advice 事件（可回看）
         self._monitor.review(

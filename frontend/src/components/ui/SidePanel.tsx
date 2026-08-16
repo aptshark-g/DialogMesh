@@ -71,19 +71,23 @@ export function SidePanel({ children, className }: SidePanelProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              'bg-surface-sidebar border-l border-subtle flex flex-col shrink-0 overflow-hidden relative',
+              'flex flex-col shrink-0 relative',
               'fixed inset-y-0 right-0 z-drawer lg:static lg:z-auto',
+              'lg:mt-2 lg:mb-3 lg:mr-3 lg:ml-1.5',
               className
             )}
             style={{ width }}
           >
-            {/* Resize handle — drag left edge to adjust width (desktop) */}
+            {/* Resize handle — 横跨卡片左缘与栏间缝隙（desktop） */}
             <div
               onPointerDown={onResizeStart}
-              className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/40 hidden lg:block z-10"
+              className="group absolute -left-1.5 top-0 bottom-0 w-3 py-2 cursor-col-resize hidden lg:block z-10"
               aria-label="调整右栏宽度"
-            />
-            <div className="h-full flex flex-col" style={{ width }}>
+            >
+              <div className="ml-auto h-full w-1 rounded-full group-hover:bg-primary/30 group-active:bg-primary/40 transition-colors" />
+            </div>
+            {/* P0-C: 浮动卡片外壳 — 发色/圆角/裁剪在内层, aside 仅作定位壳（移动端仍为全尺寸抽屉） */}
+            <div className="h-full flex flex-col bg-surface-dock lg:rounded-dock overflow-hidden" style={{ width }}>
               {children}
             </div>
           </motion.aside>

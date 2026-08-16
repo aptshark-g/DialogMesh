@@ -30,6 +30,8 @@ export default {
           'card-active': '#312E40',
           input: '#1A1724',
           overlay: 'rgba(0, 0, 0, 0.6)',
+          // P0-C: dock 浮动卡片底色(CSS 变量, 双主题自适应)
+          dock: 'var(--bg-dock)',
         },
         // === 文字色 ===
         text: {
@@ -43,6 +45,8 @@ export default {
           subtle: '#2A2635',
           medium: '#3A3548',
           strong: '#4A4560',
+          // P0-C: 发丝线(CSS 变量, 双主题自适应)
+          hairline: 'var(--border-hairline)',
         },
         // === 状态色 ===
         status: {
@@ -96,6 +100,10 @@ export default {
         'md': '8px',
         'lg': '12px',
         'xl': '16px',
+        // P0-C: 语义圆角（卡片/pill 走 CSS 变量, dock 外壳 14px 对齐 mockup v2）
+        'card': 'var(--r-card)',
+        'pill': 'var(--r-pill)',
+        'dock': '14px',
       },
       boxShadow: {
         'card': '0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2)',

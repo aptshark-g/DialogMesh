@@ -68,8 +68,8 @@ export function RightDock() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      {/* Slim header — 内容选择移入侧栏 DockPicker（B5） */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-subtle shrink-0">
+      {/* Slim header — 内容选择移入侧栏 DockPicker（B5）; P0-C: 去发丝线, 头部融入浮动卡片 */}
+      <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-1.5 shrink-0">
         <h2 className="text-sm font-semibold text-text-primary flex-1 truncate">
           {DOCK_TITLES[dockContent]}
         </h2>

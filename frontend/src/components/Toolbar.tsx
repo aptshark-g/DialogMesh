@@ -31,7 +31,7 @@ export function Toolbar({ sessionTitle, onSearch }: ToolbarProps) {
   );
 
   return (
-    <header className="h-12 flex items-center justify-between pl-14 pr-4 lg:px-4 border-b border-subtle bg-surface shrink-0">
+    <header className="h-12 flex items-center justify-between pl-14 pr-4 lg:px-4 bg-surface shrink-0">
       {/* Left: Session Title */}
       <div className="flex items-center gap-2 min-w-0">
         <button

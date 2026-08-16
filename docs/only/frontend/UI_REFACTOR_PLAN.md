@@ -19,8 +19,8 @@
 | 阶段 | 内容 | 改动面 | 状态 |
 |---|---|---|---|
 | P0-A | token 增补(hairline/radius/dock 底色)+ 滚动条 overlay 化 | index.css / light.css | ✅ 本轮完成 |
-| P0-B | Sidebar 分组(主导航/项目/洞察/工程/系统)+ 双激活态区分 + 底部瘦身(悬浮/嵌入移走,Backend 状态点化) | Sidebar.tsx | 待做 |
-| P0-C | 分隔重做:Layout/RightPanel 砍通长分割线,dock 改浮动卡片(栏间 12px 缝) | Layout.tsx, RightPanel.tsx, tailwind 语义类 | 待做 |
+| P0-B | Sidebar 分组(主导航/项目/洞察/工程/系统)+ 双激活态区分 + 底部瘦身(悬浮/嵌入移走,Backend 状态点化) | Sidebar.tsx | ✅ 已完成(08-16, 截图 real_p0b_chat.png) |
+| P0-C | 分隔重做:砍通长分割线,dock 改浮动卡片(栏间缝 + 圆角 14px);附带修掉 dock 双标题头(DockPanel 内层头移除) | SidePanel.tsx, RightDock.tsx, DockContents.tsx, Toolbar.tsx, tailwind.config.js(语义类), light.css(dock 例外) | ✅ 已完成(08-16, 截图 real_p0c_chat_{dark,light}.png) |
 | P1-A | 双槽位骨架:布局 store(zustand)+ 表面注册表 + 副槽切换器/交换⇄/收起 | 新 lib/layoutStore.ts, Layout.tsx | 待做 |
 | P1-B | 聊天页副槽 = 上下文工作台(本轮注入条 + 记忆卡三态,操作先本地状态) | RightPanel/dock 组件, ChatPage | 待做 |
 | P1-C | 顶栏瘦身:搜索框 → ⌘K 触发器,画像监控降为状态点 | Toolbar.tsx 等 | 待做 |

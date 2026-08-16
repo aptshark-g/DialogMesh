@@ -8,6 +8,9 @@ html.light body,
 html.light [class*="bg-surface"]:not([class*="bg-surface-card-hover"]):not([class*="hover:"]) { background-color: #FDFCF8 !important; }
 html.light .bg-surface-card,
 html.light [class*="bg-surface-card"]:not([class*="hover"]):not([class*="bg-surface-card-hover"]) { background-color: #FFFFFF !important; }
+/* P0-C: dock 浮动卡片 — 特异性对齐上面的广泛规则(0,4,1)且位置靠后, 才能压住 [class*="bg-surface"] 兜底 */
+html.light .bg-surface-dock,
+html.light [class*="bg-surface-dock"]:not([class*="hover"]):not([class*="bg-surface-card-hover"]) { background-color: #FFFFFF !important; }
 html.light .bg-surface-sidebar,
 html.light [class*="bg-surface-sidebar"] { background-color: #F5F0E8 !important; }
 html.light .bg-surface-input,

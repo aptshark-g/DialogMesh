@@ -35,7 +35,7 @@ class _GatewayLLMAdapter:
             "http://127.0.0.1:8080/v1/chat/completions", data=body,
             headers={"Content-Type": "application/json",
                      "Authorization": "Bearer dm-client"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:
             d = json.loads(resp.read())
         return d["choices"][0]["message"].get("content") or ""
 
@@ -53,12 +53,19 @@ class _GatewayLLMAdapter:
             "数据搜索（查数据/查配置/找文件）|"
             "因果推理（为什么/原因/因果）|"
             "通用讨论（观点/设计/架构讨论）|"
-            "casual（问候/闲聊/寒暄）|"
+            "casual（仅问候/闲聊/寒暄, 如'你好''在吗'）|"
             "通用对话（其他）"
         )
         prompt = (
-            "把用户消息归类为以下意图之一（只输出类别名, 不要其他文字）：\n"
-            f"{categories}\n\n用户消息: {text[:300]}"
+            "把用户消息归类为以下意图之一（只输出类别名, 不要其他文字）。\n"
+            "注意: 让 AI 写代码/做程序/实现功能/运行测试/写文件属于"
+            "'代码分析'或'任务规划', 绝不是 casual。\n"
+            f"{categories}\n\n"
+            "示例:\n"
+            "用户: 帮我写个五子棋 → 代码分析\n"
+            "用户: 你好呀 → casual\n"
+            "用户: 规划一下这个功能的实现步骤 → 任务规划\n\n"
+            f"用户消息: {text[:300]}"
         )
         raw = self.generate(prompt, max_tokens=20, temperature=0.0)
         for cat in ("记忆召回", "任务规划", "代码分析", "数据搜索",
@@ -66,6 +73,122 @@ class _GatewayLLMAdapter:
             if cat in raw:
                 return cat
         return "通用对话"
+
+
+class _PlanningGatewayProvider:
+    """PlanningSkill 期望的 generate_async → switch 网关（2026-08-16）。
+
+    PlanningSkill（六策略规划器, 此前从未接生产）的 LLM provider 适配:
+    把 GenerateRequest_v3 转网关调用（deepseek-v4-flash, thinking 关）。
+    """
+
+    def __init__(self, gateway_url: str = "http://127.0.0.1:8080/v1/chat/completions"):
+        self._url = gateway_url
+
+    async def generate_async(self, request):
+        import asyncio as _aio
+        import types as _types
+        text = await _aio.to_thread(self._call, request)
+        return _types.SimpleNamespace(
+            success=bool(text), text=text,
+            error_type=None if text else "empty")
+
+    def _call(self, request):
+        import urllib.request
+        prompt = str(getattr(request, "prompt", "") or "")
+        if not prompt:
+            return ""
+        body = json.dumps({
+            "provider": "deepseek", "model": "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "thinking": {"type": "disabled"},
+            "max_tokens": int(getattr(request, "max_tokens", 2048)),
+            "temperature": float(getattr(request, "temperature", 0.2)),
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            self._url, data=body,
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer dm-client"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            d = json.loads(resp.read())
+        return d["choices"][0]["message"].get("content") or ""
+
+
+def _taskgraph_topological_steps(tg) -> list:
+    """TaskGraph_v3 节点 → 拓扑序步骤名（Kahn; 环保护追加剩余）。"""
+    import collections
+    indeg = {nid: 0 for nid in tg.nodes}
+    adj = {nid: [] for nid in tg.nodes}
+    for e in tg.edges:
+        if e.source_id in tg.nodes and e.target_id in tg.nodes:
+            adj[e.source_id].append(e.target_id)
+            indeg[e.target_id] += 1
+    q = collections.deque([nid for nid, d in indeg.items() if d == 0])
+    out = []
+    while q:
+        nid = q.popleft()
+        node = tg.nodes[nid]
+        out.append(str(node.name or node.goal or nid))
+        for t in adj[nid]:
+            indeg[t] -= 1
+            if indeg[t] == 0:
+                q.append(t)
+    if len(out) < len(tg.nodes):
+        done = set(out)
+        for nid, node in tg.nodes.items():
+            label = str(node.name or node.goal or nid)
+            if label not in done:
+                out.append(label)
+                done.add(label)
+    return out
+
+
+def _taskgraph_to_frontend(tg) -> list:
+    """TaskGraph_v3 → 前端 task_graph 格式（对齐 _parse_plan_json 输出）。"""
+    front = []
+    for nid, node in tg.nodes.items():
+        deps = [e.source_id for e in tg.edges if e.target_id == nid]
+        front.append({
+            "id": nid,
+            "name": node.name or node.goal or nid,
+            "type": "plan",
+            "status": "pending",
+            "dependencies": deps,
+            "description": node.goal or "",
+        })
+    return front
+
+
+async def _plan_with_skill(text: str, intent_label: str):
+    """第二规划通道（2026-08-16）: PlanningSkill 生成任务图。
+
+    返回 (steps: List[str] | None, frontend_task_graph: List[dict] | None)。
+    HYBRID 策略: 网关可用 → 规则骨架 + LLM 细化; 网关不可用 →
+    规则骨架兜底（_plan_hybrid 内部捕获）。全失败 → (None, None),
+    调用方静默回退现有路径, 不阻塞主链路。
+    """
+    try:
+        from core.agent.planner.planner import PlanningSkill
+        from core.agent.v3_legacy.data_models import Intent_v3
+        from core.agent.v3_common.models import IntentCategory
+        intent = Intent_v3(
+            raw_input=text, normalized_input=text,
+            category=IntentCategory.UNKNOWN,
+            confidence=0.8,
+            metadata={"intent_label": intent_label},
+        )
+        planner = PlanningSkill(llm_provider=_PlanningGatewayProvider())
+        result = await planner.plan(intent)
+        tg = getattr(result, "task_graph", None)
+        if not result.success or tg is None or not tg.nodes:
+            return None, None
+        steps = _taskgraph_topological_steps(tg)
+        if not steps:
+            return None, None
+        return steps, _taskgraph_to_frontend(tg)
+    except Exception as e:
+        logger.debug("planning skill skipped: %s", e)
+        return None, None
 
 
 # ═══ Persistence ═══
@@ -439,6 +562,13 @@ async def send_message(session_id: str, req: SendMessageRequest):
             if sm is not None and hasattr(sm, "run_dag"):
                 chain_result = sm.run_dag(
                     dag,
+                    # 2026-08-16: 生产路径主回复在 Phase 4 生成 —
+                    # DAG 内 llm_reply 节点跳过（防双重 LLM 调用卡死）
+                    defer_llm=True,
+                    # async 段（behavior/meta）由 post-LLM 管线/事件订阅
+                    # 完成, run_dag 内同步等待实测阻塞 19s（BehaviorBrain
+                    # 初始化）→ 生产跳过, 请求不再被异步段拖住
+                    defer_async=True,
                     context={"text": req.content, "session_id": session_id,
                              "request_id": msg_id,
                              "intent": intent,
@@ -597,6 +727,25 @@ async def send_message(session_id: str, req: SendMessageRequest):
                             for n in _tgn[:12]]
                 except Exception:
                     steps = None
+                # 第二规划通道（2026-08-16）: 无用户确认任务图时, 尝试
+                # PlanningSkill 六策略规划器（HYBRID: 通用骨架+LLM 细化）。
+                # 失败静默回退现有路径（PlanningSkill 从不阻塞主链路）。
+                if not steps:
+                    try:
+                        _plan_label = {
+                            "任务规划": "task_planning",
+                            "代码分析": "code_analysis",
+                            "数据搜索": "data_search",
+                            "记忆召回": "recall",
+                        }.get(intent, "task_planning")
+                        _psteps, _pfront = await _plan_with_skill(
+                            req.content, _plan_label)
+                        if _psteps:
+                            steps = _psteps
+                            if _pfront:
+                                _seed_task_graph(session_id, _pfront)
+                    except Exception:
+                        steps = None
                 _dbus2 = None
                 _mf2 = None
                 _eng2 = None
@@ -671,7 +820,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         goal=req.content,
                         constraint=TaskConstraint(
                             goal=req.content, scope=scope, steps=steps,
-                            max_rounds=6, timeout_s=120, max_replans=1),
+                            max_rounds=6, timeout_s=100, max_replans=1),
                         node_id="root_task", session_id=session_id,
                         request_id=msg_id, messages=all_messages,
                         anchors=anchors)

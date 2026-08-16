@@ -20,7 +20,6 @@ import {
   Brain,
   Radar,
   Wrench,
-  Activity,
 } from 'lucide-react';
 import { useHealth } from '../hooks/useHealth.ts';
 import { DockPicker } from './dock/DockPicker';

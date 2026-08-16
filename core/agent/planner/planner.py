@@ -390,12 +390,114 @@ class PlanningSkill:
             graph.add_edge(TaskEdge_v3(source_id=n2.id, target_id=n3.id, dep_type=DependencyType.CONDITIONAL))
 
         else:
-            # 默认：单节点兜底
-            n1 = TaskNode_v3(
-                name="execute_intent", goal=f"Execute {category.value}",
-                layer=2, tool_name=category.value,
-            )
-            graph.add_node(n1)
+            # ── 通用任务模板（2026-08-16, DialogMesh 适配层）──
+            # v3.0 规则模板源自旧项目（逆向/内存修改）; DialogMesh 是
+            # 通用 agent, 生产接入按 intent_label 给通用骨架, 让 HYBRID
+            # LLM 细化有真实基础而非单节点兜底。
+            label = str(intent.metadata.get("intent_label", ""))
+            if label == "task_planning":
+                n1 = TaskNode_v3(
+                    name="read_input", goal="读取并理解任务要求",
+                    layer=1, tool_name="read")
+                n2 = TaskNode_v3(
+                    name="design_plan", goal="拆解任务为可执行步骤",
+                    layer=2, tool_name="plan")
+                n3 = TaskNode_v3(
+                    name="implement", goal="按计划实施（写文件/改代码）",
+                    layer=3, tool_name="write_file")
+                n4 = TaskNode_v3(
+                    name="verify", goal="验证结果（运行/检查）",
+                    layer=3, tool_name="run_shell")
+                n5 = TaskNode_v3(
+                    name="report", goal="汇总交付", layer=1)
+                for n in (n1, n2, n3, n4, n5):
+                    graph.add_node(n)
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n1.id, target_id=n2.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n2.id, target_id=n3.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n3.id, target_id=n4.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n4.id, target_id=n5.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+
+            elif label == "code_analysis":
+                n1 = TaskNode_v3(
+                    name="read_code", goal="定位并读取目标代码",
+                    layer=2, tool_name="read")
+                n2 = TaskNode_v3(
+                    name="analyze", goal="分析实现与问题",
+                    layer=2, tool_name="grep")
+                n3 = TaskNode_v3(
+                    name="modify", goal="修复/实现改动",
+                    layer=3, tool_name="write_file")
+                n4 = TaskNode_v3(
+                    name="test", goal="运行验证", layer=3,
+                    tool_name="run_python")
+                n5 = TaskNode_v3(
+                    name="report", goal="输出分析报告", layer=1)
+                for n in (n1, n2, n3, n4, n5):
+                    graph.add_node(n)
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n1.id, target_id=n2.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n2.id, target_id=n3.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n3.id, target_id=n4.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n4.id, target_id=n5.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+
+            elif label == "data_search":
+                n1 = TaskNode_v3(
+                    name="search", goal="检索目标内容",
+                    layer=2, tool_name="grep")
+                n2 = TaskNode_v3(
+                    name="read", goal="读取命中的真实内容",
+                    layer=3, tool_name="read")
+                n3 = TaskNode_v3(
+                    name="report", goal="整理结论", layer=1)
+                for n in (n1, n2, n3):
+                    graph.add_node(n)
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n1.id, target_id=n2.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n2.id, target_id=n3.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+
+            elif label == "recall":
+                n1 = TaskNode_v3(
+                    name="recall", goal="粗召回记忆锚点",
+                    layer=2, tool_name="recall_decompose")
+                n2 = TaskNode_v3(
+                    name="expand", goal="子图扩展补全上下文",
+                    layer=2, tool_name="subgraph")
+                n3 = TaskNode_v3(
+                    name="report", goal="基于召回内容回答", layer=1)
+                for n in (n1, n2, n3):
+                    graph.add_node(n)
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n1.id, target_id=n2.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+                graph.add_edge(TaskEdge_v3(
+                    source_id=n2.id, target_id=n3.id,
+                    dep_type=DependencyType.SEQUENTIAL))
+
+            else:
+                # 默认：单节点兜底
+                n1 = TaskNode_v3(
+                    name="execute_intent", goal=f"Execute {category.value}",
+                    layer=2, tool_name=category.value,
+                )
+                graph.add_node(n1)
 
         return graph
 

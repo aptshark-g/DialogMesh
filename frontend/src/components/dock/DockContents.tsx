@@ -14,12 +14,11 @@ import type { V6HeuristicsResponse, V6ChangelogResponse, V6ChangelogEvent } from
 
 /* ── 通用面板骨架 ─────────────────────────────────────────── */
 
-export const DockPanel: FC<{ title: string; children: ReactNode }> = ({ title, children }) => (
+/* P0-C: 内层标题头移除 — RightDock 外壳头部已统一渲染标题（原先双头并列是右栏凌乱的主因）。
+   title 保留在 props 类型中，避免改动全部调用点。 */
+export const DockPanel: FC<{ title: string; children: ReactNode }> = ({ children }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    <div className="flex items-center justify-between px-4 py-3 border-b border-subtle shrink-0">
-      <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-    </div>
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-hide">{children}</div>
+    <div className="flex-1 overflow-y-auto px-4 pt-2 pb-4 space-y-4 scrollbar-hide">{children}</div>
   </div>
 );
 
@@ -173,7 +172,7 @@ export function ProfileDockContent() {
       </div>
       <MetricCards metrics={metricCards} />
       <StatusProgress />
-      <div className="pt-2 border-t border-subtle flex items-center justify-between">
+      <div className="pt-2 border-t border-hairline flex items-center justify-between">
         <span className="text-xs text-text-muted">实时认知维度分析</span>
         <button
           type="button"
@@ -242,7 +241,7 @@ export function ContextDockContent() {
         {entries.length === 0 && <DockEmpty text="暂无上下文条目" />}
       </div>
       {/* GAP-4: 压缩质量反馈闭环 */}
-      <div className="border-t border-subtle pt-3">
+      <div className="border-t border-hairline pt-3">
         <div className="text-xs text-text-muted mb-2">压缩质量反馈</div>
         <div className="flex items-center gap-2">
           <button

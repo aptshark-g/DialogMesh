@@ -53,7 +53,8 @@ def build_tools_schema(allowed_tools: Optional[List[str]] = None) -> List[Dict]:
 
 
 def _call_gateway(messages: List[Dict], tools: List[Dict],
-                  model: str = DEFAULT_MODEL) -> Dict:
+                  model: str = DEFAULT_MODEL,
+                  timeout_s: float = 90.0) -> Dict:
     body = {
         "model": model,
         "messages": messages,
@@ -76,16 +77,21 @@ def _call_gateway(messages: List[Dict], tools: List[Dict],
     last = None
     for _attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=90) as resp:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                 data = json.loads(resp.read())
             choice = (data.get("choices") or [{}])[0]
             msg = choice.get("message", {})
             if (msg.get("content") or "") or (msg.get("tool_calls") or []):
                 return data
             last = data
+            # 2026-08-16: 预算感知 — 剩余预算少时不再磨蹭重试
+            if timeout_s < 30.0:
+                return last
             _time.sleep(0.4 * (_attempt + 1))
         except Exception as e:
             last = {"error": str(e)[:200]}
+            if timeout_s < 30.0:
+                return last
             _time.sleep(0.4 * (_attempt + 1))
     return last or {}
 
@@ -161,7 +167,18 @@ def tool_loop(messages: List[Dict], model: str = DEFAULT_MODEL,
                     "rounds": _round + 1, "tool_calls": executed,
                     "trace": trace}
         try:
-            resp = _call_gateway(msgs, tools, model)
+            # 2026-08-16 修复: 单次 LLM 调用按剩余预算截断（此前固定
+            # 90s × 重试 3 次 → 单轮最长 270s, 与 deadline 检查只在轮间
+            # 组合 → 实测 180s+ 卡死）。每轮最多用剩余预算, 总时长受
+            # timeout_s 硬约束。
+            _remaining = (deadline - time.time()) if deadline else 0.0
+            if deadline and _remaining <= 0:
+                return {"content": "", "error": "timeout",
+                        "rounds": _round + 1, "tool_calls": executed,
+                        "trace": trace}
+            resp = _call_gateway(
+                msgs, tools, model,
+                timeout_s=min(90.0, _remaining) if deadline else 90.0)
         except Exception as e:
             return {"content": "", "error": f"gateway: {str(e)[:200]}",
                     "rounds": _round + 1, "tool_calls": executed,
