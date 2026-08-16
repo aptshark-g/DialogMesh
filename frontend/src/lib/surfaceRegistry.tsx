@@ -53,7 +53,7 @@ export interface SurfaceDef {
 export const SURFACES: readonly SurfaceDef[] = [
   { key: 'profile', label: '画像', title: '认知画像', icon: User, component: ProfileDockContent, mainRoute: '/profile' },
   { key: 'chat', label: '对话', title: '对话', icon: MessageSquare, component: ChatSideSurface, mainRoute: '/chat' },
-  { key: 'context', label: '上下文', title: '上下文', icon: Braces, component: ContextDockContent, mainRoute: '/pipeline' },
+  { key: 'context', label: '上下文', title: '上下文工作台', icon: Braces, component: ContextDockContent, mainRoute: '/pipeline' },
   { key: 'engineering', label: '工程链', title: '工程链', icon: GitBranch, component: EngineeringDockContent, mainRoute: '/engineering' },
   { key: 'tasks', label: '任务', title: '任务', icon: ListChecks, component: TasksDockContent, mainRoute: '/tasks' },
   { key: 'legend', label: '图例', title: '图例', icon: Palette, component: LegendDockContent, mainRoute: '/graph' },
@@ -73,13 +73,14 @@ export function routePrefix(pathname: string): string {
   return seg ? `/${seg}` : '/';
 }
 
-/** auto(联动)模式的默认配对。修正: 任务页路由是 /tasks(旧 ROUTE_DOCK_MAP 写的 /task-planning 从不命中) */
+/** auto(联动)模式的默认配对。修正: 任务页路由是 /tasks(旧 ROUTE_DOCK_MAP 写的 /task-planning 从不命中);
+ *  P1-B: /chat 默认副槽 = 上下文工作台(中间对话 + 右边调整上下文) */
 const ROUTE_PAIR_DEFAULT: { prefix: string; surface: SurfaceKey }[] = [
   { prefix: '/graph', surface: 'legend' },
   { prefix: '/tasks', surface: 'tasks' },
   { prefix: '/engineering', surface: 'engineering' },
   { prefix: '/pipeline', surface: 'context' },
-  { prefix: '/chat', surface: 'profile' },
+  { prefix: '/chat', surface: 'context' },
 ];
 
 export function defaultSurfaceFor(pathname: string): SurfaceKey {

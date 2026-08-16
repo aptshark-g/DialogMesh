@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -22,6 +23,8 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))))
 GATEWAY_URL = "http://127.0.0.1:8080/v1/chat/completions"
 DIAG_PROMPT_TEMPLATE = (
     "你是 DialogMesh 元认知诊断器。基于以下执行链路故障证据, 诊断根因, "
@@ -29,9 +32,23 @@ DIAG_PROMPT_TEMPLATE = (
     "{{\"root_cause\": \"根因(中文, ≤80字)\", \"confidence\": 0.0-1.0, "
     "\"evidence_summary\": \"关键证据(≤200字)\", "
     "\"suggestions\": [{{\"action_type\": \"adjust_breaker|adjust_retry|"
-    "adjust_budget|note\", \"scope\": \"...\", \"params\": {{}}, "
-    "\"reason\": \"...\"}}]}}\n\n"
+    "adjust_budget|code_fix|note\", \"scope\": \"...\", \"params\": {{}}, "
+    "\"reason\": \"...\"}}]}}\n"
+    "code_fix 使用规则: 仅当根因是明确代码缺陷; params 必须含 "
+    "patch（unified diff, 可被 git apply --check 接受）与 verify_plan"
+    "（验证命令列表, 如 [\"pytest core/agent/meta -q\"]）; "
+    "不确定时用 note, 不要编造 patch。\n\n"
+    "设计约束（被修系统 a 的视角, 诊断先验, 修复须符合设计意图）:\n"
+    "{design}\n\n"
+    "既往自愈经验（贝叶斯 prior, 相似根因参考）:\n{experience}\n\n"
     "证据: {evidence}"
+)
+
+
+# 验证命令白名单（A21: 自修复验证只允许确定性检查, 防任意命令执行）
+ALLOWED_VERIFY_PREFIXES = (
+    "pytest", "python -m pytest", "python -m compileall",
+    "python -c", "python3 -m pytest",
 )
 
 
@@ -42,6 +59,38 @@ class DiagnosisTask:
         self.reason = reason
         self.evidence = dict(evidence or {})
         self.ts = time.time()
+
+
+def _design_constraints() -> str:
+    """a 的设计约束摘要（prior）: AGENTS.md 铁律 + 追踪矩阵关键行。
+
+    外部修复（bc）缺的就是这个 —— 元认知持有 a 的设计意图, 诊断/修复
+    才有逆推验证的锚点（伪二阶抽象）。
+    """
+    parts = []
+    try:
+        agents_md = os.path.join(PROJECT_ROOT, "AGENTS.md")
+        if os.path.exists(agents_md):
+            with open(agents_md, "r", encoding="utf-8",
+                      errors="ignore") as f:
+                lines = f.readlines()[:80]
+            for line in lines:
+                s = line.strip()
+                if s.startswith(("1.", "2.", "3.", "4.", "5.")) or "铁律" in s:
+                    parts.append(s[:150])
+    except Exception:
+        pass
+    try:
+        tb = os.path.join(PROJECT_ROOT,
+                          "docs/only/wise/PARADIGM_TRACEABILITY.md")
+        if os.path.exists(tb):
+            with open(tb, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f.readlines():
+                    if "| A" in line and "|" in line:
+                        parts.append(line.strip()[:160])
+    except Exception:
+        pass
+    return "\n".join(parts[:25]) or "（设计约束不可用）"
 
 
 class AsyncDiagnoser:
@@ -62,6 +111,8 @@ class AsyncDiagnoser:
         self._thread: Optional[threading.Thread] = None
         self._last_trigger: Dict[str, float] = {}
         self._reports: List[Dict[str, Any]] = []
+        self._repairs: List[Dict[str, Any]] = []
+        self._repo_root: str = PROJECT_ROOT
         self._running = True
 
     def attach_engine(self, engine: Any) -> None:
@@ -162,7 +213,22 @@ class AsyncDiagnoser:
         if not self._llm_enabled:
             return base
         try:
+            # 贝叶斯 prior: 设计约束（a 的视角）+ 既往自愈经验
+            design = _design_constraints()
+            try:
+                from core.agent.meta.experience import search_experience
+                past = search_experience(
+                    f"{task.scope} {task.reason}", limit=5)
+            except Exception:
+                past = []
+            experience_txt = "\n".join(
+                f"- [{e.get('scope')}] {e.get('root_cause', '')} "
+                f"→ {e.get('fix_summary', '')} (教训: "
+                f"{e.get('design_lesson', '')[:80]})"
+                for e in past) or "（无既往经验）"
             prompt = DIAG_PROMPT_TEMPLATE.format(
+                design=design[:1500],
+                experience=experience_txt[:1200],
                 evidence=json.dumps(evidence, ensure_ascii=False)[:1500])
             text = self._call_llm(prompt)
             if not text:
@@ -221,20 +287,12 @@ class AsyncDiagnoser:
     def _finalize(self, task: DiagnosisTask,
                   report: Dict[str, Any]) -> None:
         """落决策事件 + MetaTree + 自调节 apply。"""
-        bus = self._bus
-        if bus is not None and hasattr(bus, "log"):
-            try:
-                bus.log(
-                    kind="diagnosis_report",
-                    dimension=f"governor.{task.scope}",
-                    before=None,
-                    after={"scope": task.scope,
-                           "root_cause": report.get("root_cause", ""),
-                           "suggestions": len(report.get("suggestions", []))},
-                    reason=report.get("root_cause", "") or task.reason,
-                    actor="meta", attribution="diagnosis")
-            except Exception as e:
-                logger.debug("diagnosis bus log failed: %s", e)
+        self._log_action(
+            "diagnosis_report", task.scope, {
+                "scope": task.scope,
+                "root_cause": report.get("root_cause", ""),
+                "suggestions": len(report.get("suggestions", []))},
+            reason=report.get("root_cause", "") or task.reason)
         # MetaTree.record_decision（元认知裁决落树）
         eng = self._engine
         sid = (task.evidence or {}).get("session_id", "")
@@ -279,10 +337,213 @@ class AsyncDiagnoser:
                 # 当前记录为 note, 供后续按 scope 分预算时消费。
                 return {"action": "adjust_budget",
                         "note": "budget adjust recorded, per-scope split P2"}
+            if action_type == "code_fix":
+                return self._queue_repair(scope, s)
             return None  # note 类: 仅记录在报告里
         except Exception as e:
             logger.debug("diagnosis apply failed: %s", e)
             return {"action": action_type, "error": str(e)[:100]}
+
+    # ── SelfRepair（受控自修复, A21: 默认不自动应用）───────────
+
+    def _log_action(self, kind: str, scope: str,
+                    detail: Dict[str, Any], reason: str = "") -> None:
+        bus = self._bus
+        if bus is not None and hasattr(bus, "log"):
+            try:
+                bus.log(
+                    kind=kind, dimension=f"governor.{scope}",
+                    before=None, after=detail, reason=reason,
+                    actor="meta", attribution="diagnosis")
+            except Exception as e:
+                logger.debug("diagnosis bus log failed: %s", e)
+
+    def _queue_repair(self, scope: str,
+                      suggestion: Dict[str, Any]) -> Dict[str, Any]:
+        """code_fix 建议 → 修复包入待审队列（高风险, 需 gate）。"""
+        import uuid as _uuid
+        repair = {
+            "id": f"fix_{_uuid.uuid4().hex[:8]}",
+            "ts": time.time(),
+            "source": f"diagnosis.{scope}",
+            "files": (suggestion.get("params") or {}).get(
+                "files", []),
+            "summary": str(suggestion.get("reason", ""))[:300],
+            "suggestion": str(
+                (suggestion.get("params") or {}).get(
+                    "suggestion", ""))[:500],
+            "verify_plan": (suggestion.get("params") or {}).get(
+                "verify_plan", ["pytest -q --tb=short"]),
+            "patch": str((suggestion.get("params") or {}).get(
+                "patch", "")),
+            "risk": "high",
+            "status": "pending",
+            "apply_result": None,
+        }
+        # 验证命令白名单校验（A21）: 不合规直接拒收
+        for cmd in repair["verify_plan"]:
+            cmd_s = str(cmd).strip()
+            if not any(cmd_s.startswith(p) for p in ALLOWED_VERIFY_PREFIXES):
+                return {"action": "code_fix", "error": (
+                    f"verify_plan command not allowed: {cmd_s[:80]}")}
+        if not repair["patch"]:
+            return {"action": "code_fix",
+                    "error": "patch required for code_fix"}
+        with self._lock:
+            self._repairs.append(repair)
+            if len(self._repairs) > 100:
+                self._repairs = self._repairs[-100:]
+        logger.info("diagnosis: repair queued %s (source=%s)",
+                    repair["id"], repair["source"])
+        return {"action": "code_fix", "repair_id": repair["id"],
+                "status": "pending"}
+
+    def repairs(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return list(self._repairs)
+
+    def apply_repair(self, repair_id: str) -> Dict[str, Any]:
+        """审批 gate → 真实应用（git apply + 验证 + 失败自动回滚）。
+
+        A21 安全（2026-08-16 P1）:
+          1. patch 必须存在且可被 `git apply --check` 接受
+          2. 验证命令受 ALLOWED_VERIFY_PREFIXES 白名单约束
+          3. 应用后跑验证计划; 失败 → `git apply -R` 自动回滚
+          4. 全部动作记录（bus + apply_result）
+        """
+        with self._lock:
+            for r in self._repairs:
+                if r["id"] == repair_id:
+                    target = r
+                    break
+            else:
+                return {"error": "repair not found"}
+            if target["status"] != "pending":
+                return {"error": f"repair already {target['status']}"}
+            target["status"] = "verifying"
+            patch = target.get("patch", "")
+        if not patch:
+            with self._lock:
+                target["status"] = "pending"
+            return {"error": "patch required (code_fix must include diff)"}
+        import subprocess
+        root = self._repo_root
+        # 1. 预检（不落盘）
+        chk = subprocess.run(
+            ["git", "apply", "--check"], input=patch.encode("utf-8"),
+            cwd=root, capture_output=True, timeout=30)
+        if chk.returncode != 0:
+            with self._lock:
+                target["status"] = "pending"
+            return {"error": "patch check failed",
+                    "detail": chk.stderr.decode("utf-8", "ignore")[:300]}
+        # 2. 应用
+        ap = subprocess.run(
+            ["git", "apply"], input=patch.encode("utf-8"),
+            cwd=root, capture_output=True, timeout=30)
+        if ap.returncode != 0:
+            with self._lock:
+                target["status"] = "pending"
+            return {"error": "patch apply failed",
+                    "detail": ap.stderr.decode("utf-8", "ignore")[:300]}
+        target["apply_result"] = {"applied_at": time.time()}
+        # 3. 验证（白名单命令）
+        verify_out = ""
+        passed = True
+        for cmd in target.get("verify_plan", []):
+            cmd_s = str(cmd).strip()
+            if not any(cmd_s.startswith(p)
+                       for p in ALLOWED_VERIFY_PREFIXES):
+                passed = False
+                verify_out += f"$ {cmd_s}\nBLOCKED (not in allowlist)\n"
+                break
+            try:
+                v = subprocess.run(
+                    cmd_s, shell=True, cwd=root,
+                    capture_output=True, text=True, timeout=300)
+                verify_out += f"$ {cmd_s}\n{v.stdout[-400:]}{v.stderr[-200:]}\n"
+                if v.returncode != 0:
+                    passed = False
+                    break
+            except Exception as e:
+                passed = False
+                verify_out += f"$ {cmd_s}\nERROR {e}\n"
+                break
+        if passed:
+            with self._lock:
+                target["status"] = "applied"
+                target["apply_result"].update(
+                    {"passed": True,
+                     "verify_output": verify_out[-800:]})
+            self._log_action(
+                "repair_applied", target["source"], {
+                    "repair_id": repair_id,
+                    "reason": target["summary"][:120]})
+            # 凝练回写经验库（伪二阶抽象: 存"可逆推的教训"而非补丁）:
+            # 后验 → 先验, 下次诊断可检索（贝叶斯累积）。
+            try:
+                from core.agent.meta.experience import record_experience
+                record_experience({
+                    "scope": target["source"],
+                    "root_cause": target["summary"][:200],
+                    "fix_summary": target.get("suggestion", "")[:200],
+                    "design_lesson": (
+                        "scope %s 曾失败并修复: %s — 复用时先核对该 scope "
+                        "的设计约束与测试, 修复须可逆推回设计意图。"
+                        % (target["source"], target["summary"][:120])),
+                    "axioms": ["A11", "A21"],
+                    "verify_passed": True,
+                    "source": "self_repair",
+                })
+            except Exception as e:
+                logger.debug("experience record failed: %s", e)
+            return {"repair_id": repair_id, "status": "applied"}
+        # 4. 失败 → 自动回滚
+        rollback_ok = False
+        try:
+            rb = subprocess.run(
+                ["git", "apply", "-R"], input=patch.encode("utf-8"),
+                cwd=root, capture_output=True, timeout=30)
+            rollback_ok = rb.returncode == 0
+        except Exception:
+            rollback_ok = False
+        with self._lock:
+            target["status"] = "failed"
+            target["apply_result"].update({
+                "passed": False, "rollback": rollback_ok,
+                "verify_output": verify_out[-800:]})
+        self._log_action(
+            "repair_failed_rolled_back", target["source"], {
+                "repair_id": repair_id, "rollback": rollback_ok,
+                "reason": target["summary"][:120]})
+        return {"repair_id": repair_id, "status": "failed",
+                "rollback": rollback_ok}
+
+    def confirm_repair(self, repair_id: str,
+                       passed: bool = True) -> Dict[str, Any]:
+        """验证结果回写（passed → applied; failed → 建议回滚）。"""
+        with self._lock:
+            for r in self._repairs:
+                if r["id"] == repair_id:
+                    target = r
+                    break
+            else:
+                return {"error": "repair not found"}
+            if passed:
+                target["status"] = "applied"
+                target["apply_result"] = {
+                    "ts": time.time(), "passed": True,
+                    "note": "verify passed (patch apply is P1)"}
+                self._log_action("repair_applied", target["source"], {
+                    "repair_id": repair_id,
+                    "reason": target["summary"][:120]})
+            else:
+                target["status"] = "failed"
+                target["apply_result"] = {
+                    "ts": time.time(), "passed": False,
+                    "note": "verify failed — rollback suggested"}
+            return {"repair_id": repair_id,
+                    "status": target["status"]}
 
     # ── 白盒 ────────────────────────────────────────────────
 
@@ -290,6 +551,7 @@ class AsyncDiagnoser:
         with self._lock:
             return {
                 "pending": len(self._queue),
+                "repairs": list(self._repairs[-20:]),
                 "last_trigger": {
                     k: round(v, 1) for k, v in self._last_trigger.items()},
                 "reports": list(self._reports[-20:]),

@@ -254,6 +254,59 @@ async def get_diagnosis():
         return {"error": str(e)[:200]}
 
 
+@router.get("/system-profile")
+async def get_system_profile(
+    force: bool = Query(default=False),
+):
+    """系统自画像（2026-08-16, SelfIntrospection）:
+
+    元认知读自己的系统 —— 模块地图 / 测试覆盖 / 变更历史 / 已知薄弱点。
+    供诊断/修复时作为证据注入（A19 白盒）。
+    """
+    from core.agent.meta.introspection import system_profile
+    try:
+        return system_profile(force=force)
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.get("/repairs")
+async def get_repairs():
+    """自修复待审队列（2026-08-16, SelfRepair gate）:
+
+    code_fix 诊断建议 → 修复包（风险 high, 默认 pending 不自动应用）。
+    """
+    from core.agent.meta.diagnosis import get_diagnoser
+    try:
+        return {"repairs": get_diagnoser().repairs()}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.post("/repairs/{repair_id}/apply")
+async def apply_repair(repair_id: str):
+    """审批 gate: 确认修复包 → 返回验证计划（真实补丁落地 P1）。"""
+    from core.agent.meta.diagnosis import get_diagnoser
+    try:
+        return get_diagnoser().apply_repair(repair_id)
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.post("/repairs/{repair_id}/confirm")
+async def confirm_repair(
+    repair_id: str,
+    body: dict = Body(default={}),
+):
+    """验证结果回写（passed → applied / failed → 建议回滚）。"""
+    from core.agent.meta.diagnosis import get_diagnoser
+    try:
+        passed = bool(body.get("passed", True))
+        return get_diagnoser().confirm_repair(repair_id, passed=passed)
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

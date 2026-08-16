@@ -1,13 +1,14 @@
 /** RightDock 候选内容 — 三屏结构中右栏可切换的各类上下文面板。 */
 import { useState, useEffect } from 'react';
 import type { FC, ReactNode } from 'react';
-import { RefreshCw, Loader2, AlertTriangle, Radar } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2 } from 'lucide-react';
 import { CognitiveRadarChart } from '../CognitiveRadarChart';
 import { MetricCards } from '../MetricCards';
 import { useV6Profile } from '../../hooks/useV6Profile';
 import { getContext, getEngineering, submitCompressionFeedback, getHeuristics, getChangelog, interveneChangelog } from '../../api/v6';
 import { useTaskGraphStore } from '../../stores/taskStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useContextWorkbench, entryKey } from '../../stores/contextWorkbenchStore';
 import { cn } from '../../lib/utils';
 import type { V6HeuristicsResponse, V6ChangelogResponse, V6ChangelogEvent } from '../../types/api';
 
@@ -208,25 +209,56 @@ export function ProfileDockContent() {
   );
 }
 
-/* ── Context（上下文视图, /v6/context） ───────────────────── */
+/* ── Context（上下文工作台, /v6/context, P1-B） ─────────────── */
+
+/** 域标签: 运行时取值单字母/全单词混存(kernel/handlers 实测), 未知值回退原样 */
+const DOMAIN_LABEL: Record<string, string> = {
+  D: '对话', dialogue: '对话', conversation: '对话',
+  C: '会话', context: '会话',
+  K: '知识', knowledge: '知识',
+  E: '工程', engineering: '工程',
+  B: '行为', behavior: '行为',
+  P: '画像', profile: '画像',
+  document: '文档', general: '通用',
+};
+
+/** 注入条分段色板(分类色, 按域 token 占比排序后循环) */
+const DOMAIN_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#0D9488', '#E11D48', '#64748B'];
+
+interface CtxEntry {
+  domain?: string;
+  type?: string;
+  content?: string;
+  confidence?: number;
+  estimated_tokens?: number;
+}
 
 export function ContextDockContent() {
-  const [data, setData] = useState<{ intent_category?: string; entries?: unknown[]; total_tokens?: number } | null>(null);
+  const [data, setData] = useState<{ intent_category?: string; entries?: CtxEntry[]; total_tokens?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quality, setQuality] = useState<'good' | 'bad' | null>(null);
   const [comment, setComment] = useState('');
   const [feedbackSent, setFeedbackSent] = useState<boolean | null>(null);
+  const marks = useContextWorkbench((s) => s.marks);
+  const togglePin = useContextWorkbench((s) => s.togglePin);
+  const toggleRemove = useContextWorkbench((s) => s.toggleRemove);
+  const resetMarks = useContextWorkbench((s) => s.resetMarks);
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    if (!silent) setLoading(true);
     getContext()
-      .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
+      .then((d) => { setData(d); setError(null); })
+      .catch((e) => { if (!silent) setError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
-  useEffect(load, []);
+  // 静默轮询: 本轮注入随对话轮次更新(8s 一次, 与画像 5s 轮询同族; 不闪 loading)
+  useEffect(() => {
+    load();
+    const t = setInterval(() => load(true), 8000);
+    return () => clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitFeedback = () => {
     if (!quality) return;
@@ -235,31 +267,142 @@ export function ContextDockContent() {
       .catch(() => setFeedbackSent(false));
   };
 
-  if (loading) return <DockPanel title="上下文"><div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div></DockPanel>;
-  if (error) return <DockPanel title="上下文"><DockError text={error} /></DockPanel>;
+  if (loading) return <DockPanel title="上下文工作台"><div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div></DockPanel>;
+  if (error) return <DockPanel title="上下文工作台"><DockError text={error} /></DockPanel>;
 
-  const entries = (data?.entries ?? []) as { domain?: string; type?: string; content?: string; confidence?: number }[];
+  const entries = (data?.entries ?? []) as CtxEntry[];
+  // 注入总量: 后端暂未返回 total_tokens/budget(B10), 用条目估算值求和
+  const totalTok = data?.total_tokens ?? entries.reduce((s, e) => s + (e.estimated_tokens ?? 0), 0);
+  const domainTok = new Map<string, number>();
+  entries.forEach((e) => {
+    const d = e.domain || '?';
+    domainTok.set(d, (domainTok.get(d) ?? 0) + (e.estimated_tokens ?? 0));
+  });
+  const segments = [...domainTok.entries()].sort((a, b) => b[1] - a[1]);
+  const pinnedCount = Object.values(marks).filter((m) => m === 'pinned').length;
+  const removedCount = Object.values(marks).filter((m) => m === 'removed').length;
 
   return (
-    <DockPanel title="上下文">
-      <div className="text-xs text-text-muted">
-        {data?.intent_category ? `意图域: ${data.intent_category}` : '当前会话上下文'}
-        {data?.total_tokens != null && ` · ~${data.total_tokens} tokens`}
+    <DockPanel title="上下文工作台">
+      {/* 本轮注入条: 域分布 + token 占比 */}
+      <div className="bg-surface-card rounded-lg border border-subtle p-3 space-y-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs font-semibold text-text-primary">本轮注入</span>
+          <span className="text-[11px] text-text-muted">
+            {entries.length} 片段 · ~{totalTok} tok
+          </span>
+        </div>
+        {entries.length > 0 && totalTok > 0 && (
+          <>
+            <div className="h-1.5 rounded-full overflow-hidden flex bg-surface-card-hover">
+              {segments.map(([d, tok], i) => (
+                <div
+                  key={d}
+                  className="h-full"
+                  style={{
+                    width: `${(tok / totalTok) * 100}%`,
+                    backgroundColor: DOMAIN_COLORS[i % DOMAIN_COLORS.length],
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {segments.map(([d, tok], i) => (
+                <span key={d} className="flex items-center gap-1 text-[10px] text-text-muted">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: DOMAIN_COLORS[i % DOMAIN_COLORS.length] }}
+                  />
+                  {DOMAIN_LABEL[d] ?? d} {Math.round((tok / totalTok) * 100)}%
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+        {data?.intent_category && (
+          <div className="text-[11px] text-text-muted">意图域: {data.intent_category}</div>
+        )}
       </div>
+
+      {/* 记忆卡三态: 正常 / 钉住(下轮强制注入) / 移除(下轮不注入) — 当前仅本地表达(B3) */}
       <div className="space-y-2">
-        {entries.slice(0, 12).map((e, i) => (
-          <div key={i} className="bg-surface-card rounded-lg border border-subtle p-2.5">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{e.domain ?? '?'}</span>
-              <span className="text-[10px] text-text-muted">{e.type ?? ''}</span>
-              {e.confidence != null && (
-                <span className="ml-auto text-[10px] text-text-muted">{Math.round(e.confidence * 100)}%</span>
+        <div className="flex items-center text-[11px] text-text-muted">
+          <span>记忆片段 {entries.length}</span>
+          {(pinnedCount > 0 || removedCount > 0) && (
+            <>
+              <span className="ml-2">
+                {pinnedCount > 0 && `钉住 ${pinnedCount}`}
+                {pinnedCount > 0 && removedCount > 0 && ' · '}
+                {removedCount > 0 && `移除 ${removedCount}`}
+              </span>
+              <button
+                type="button"
+                onClick={resetMarks}
+                className="ml-auto hover:text-text-secondary transition-colors"
+              >
+                全部恢复
+              </button>
+            </>
+          )}
+        </div>
+        {entries.slice(0, 12).map((e) => {
+          const key = entryKey(e);
+          const mark = marks[key];
+          return (
+            <div
+              key={key}
+              className={cn(
+                'bg-surface-card rounded-lg border p-2.5 transition-opacity',
+                mark === 'pinned' ? 'border-primary/60' : 'border-subtle',
+                mark === 'removed' && 'opacity-45'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                  {DOMAIN_LABEL[e.domain ?? ''] ?? e.domain ?? '?'}
+                </span>
+                <span className="text-[10px] text-text-muted truncate">{e.type ?? ''}</span>
+                {e.confidence != null && (
+                  <span className="text-[10px] text-text-muted shrink-0">
+                    {Math.round(e.confidence * 100)}%
+                    {e.estimated_tokens != null && ` · ~${e.estimated_tokens}t`}
+                  </span>
+                )}
+                <span className="ml-auto flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => togglePin(key)}
+                    aria-label={mark === 'pinned' ? '取消钉住' : '钉住片段'}
+                    className={cn(
+                      'p-1 rounded hover:bg-surface-card-hover transition-colors',
+                      mark === 'pinned' ? 'text-primary' : 'text-text-muted hover:text-text-secondary'
+                    )}
+                  >
+                    <Pin className="w-3 h-3" fill={mark === 'pinned' ? 'currentColor' : 'none'} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleRemove(key)}
+                    aria-label={mark === 'removed' ? '恢复片段' : '移除片段'}
+                    className="p-1 rounded hover:bg-surface-card-hover transition-colors text-text-muted hover:text-text-secondary"
+                  >
+                    {mark === 'removed' ? <Undo2 className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                  </button>
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary line-clamp-3 break-words">{e.content ?? ''}</p>
+              {mark === 'pinned' && (
+                <div className="mt-1 text-[10px] text-primary">已钉住 · 下轮强制注入(待后端生效)</div>
+              )}
+              {mark === 'removed' && (
+                <div className="mt-1 text-[10px] text-text-muted">已移除 · 下轮不注入(待后端生效)</div>
               )}
             </div>
-            <p className="text-xs text-text-secondary line-clamp-3 break-words">{e.content ?? ''}</p>
-          </div>
-        ))}
-        {entries.length === 0 && <DockEmpty text="暂无上下文条目" />}
+          );
+        })}
+        {entries.length === 0 && (
+          <DockEmpty text="暂无上下文条目 — 发送消息后,这里展示本轮编译注入的记忆片段" />
+        )}
       </div>
       {/* GAP-4: 压缩质量反馈闭环 */}
       <div className="border-t border-hairline pt-3">
