@@ -2,6 +2,18 @@
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
 > ****2026-08-15 召回加固 + 空回复根治 + 设计过程基建（最新）:
+> ****2026-08-16 执行链路高可用 + 元认知治理/自修自迭代（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_SELFREPAIR_20260816.md`。
+> 完成: 请求级预算+LLM 观测（call_recorder /v6/llm-calls）+ ExecutionGovernor
+> （熔断/定向重试/幂等/自调节）+ AsyncDiagnoser（A10 大环, 网关挂→自动
+> 诊断报告）+ SelfIntrospection（系统自画像 /v6/system-profile）+
+> SelfRepair P1（git apply+白名单验证+失败回滚 /v6/repairs）+ 自愈经验库
+> （贝叶斯 prior, 诊断注入设计约束+既往经验, 凝练回写）。用户判断:
+> 对内自修 vs 多 agent —— 外部修缺 a 设计约束=无先验无演进; 元认知
+> 持 a 视角=贝叶斯共识根本。提交: 713b27c→dde499c→9b8ab82（均未推）。
+> 待办: 主动体检 / Phase1-2 预算 / LLM 凝练教训 / 约束空间化 / 前端绑定。
+> 环境: 8000+8080 跑; 重启后首次请求先 /v6/health 预热。
+> （新施工前必读: AGENTS.md + 追踪矩阵 + 4 份新设计文档）
 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_20260815.md`。
 完成: 语料卫生(50.8%) + 四精排试点全输 fused(cap=4 唯一正收益) +
 P9 全文加固(真幻觉率 0.175→0.000) + claim 三分口径 + 空回复根治
