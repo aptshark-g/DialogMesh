@@ -345,6 +345,48 @@ class RecallService:
                 "DM_SOURCE_GUARANTEE_BOOST", "1.5"))
         except ValueError:
             self.guarantee_boost = 1.5
+        # 强独有信号保底 v2（2026-08-16, B 类修复消融）: 与
+        # DM_SOURCE_GUARANTEE 的区别 — 旧版对"所有非 vector 命中"×1.5
+        # （噪声同抬, 实测负增益）; 新版只对"无 vector 证据 + bm25/spo
+        # 源内强分（≥阈值）"的块上浮（A25 多信号交叉: vector 失效时
+        # 信任确定性词法/结构信号）。实测数据: q002/q033/q044/q052 期望
+        # 块在 bm25 rank1-2 (score 0.89-1.0), vector 完全漏检, 被
+        # vector_primary 长尾埋掉 → fused MISS。
+        self.route_unique = os.environ.get(
+            "DM_ROUTE_UNIQUE", "0") != "0"
+        try:
+            self.route_unique_threshold = float(os.environ.get(
+                "DM_ROUTE_UNIQUE_THRESHOLD", "0.8"))
+        except ValueError:
+            self.route_unique_threshold = 0.8
+        # 向量置信门控（2026-08-16, A 类稀释修复消融）: 本次 query 的
+        # vector top-1 分 ≥ 阈值 → 向量可靠, 跳过重排（vector_primary
+        # 直接按向量序, 防重排归一化把强纯 vector 命中稀释 — 实测
+        # 记忆分层 vec=1→fused=19、G3 四保护 vec=1→fused=8 等 7 条）。
+        # 对齐 RECALL_MAINSTREAM_GAP 引用的 Adaptive Hybrid（固定 Top-L
+        # 融合 ≠ 全列表融合; 按 query 动态深度）与 SAGE（按查询难度动态
+        # 选 k）— 这里是"按查询向量置信度动态选融合方式"。
+        self.vector_gate = os.environ.get("DM_VEC_GATE", "0") != "0"
+        try:
+            self.vector_gate_threshold = float(os.environ.get(
+                "DM_VEC_GATE_THRESHOLD", "0.70"))
+        except ValueError:
+            self.vector_gate_threshold = 0.70
+        # 伪相关反馈（2026-08-16, DM_PRF, 默认关）: bm25 top-k 块向量
+        # 质心 + 原 query 向量（Rocchio 混合）→ 二次 vector 检索。
+        # 探查实证（_prf_probe）: B 类 4 条（q002/q033/q044/q052）期望块
+        # 全不在 vector top-100（query-cos 0.43-0.51, BGE-M3 提问式 vs
+        # 陈述式块缺陷）; PRF alpha=0.5-0.7 拉到 rank 1/1/None/1。
+        # 主流技术（RECALL_MAINSTREAM_GAP: HyDE 的廉价替代/补充, 无 LLM）。
+        self.prf = os.environ.get("DM_PRF", "0") != "0"
+        try:
+            self.prf_alpha = float(os.environ.get("DM_PRF_ALPHA", "0.5"))
+        except ValueError:
+            self.prf_alpha = 0.5
+        try:
+            self.prf_fb_blocks = int(os.environ.get("DM_PRF_FB", "3"))
+        except ValueError:
+            self.prf_fb_blocks = 3
         # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
         # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
         # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
@@ -1069,11 +1111,51 @@ class RecallService:
             return None
         return self._embed(resp.strip())
 
+    def _prf_query_vector(self, query: str,
+                          blocks: Optional[List[dict]] = None,
+                          top_k: Optional[int] = None,
+                          alpha: Optional[float] = None) -> Optional[list]:
+        """伪相关反馈查询向量（2026-08-16, Rocchio）:
+
+        aug = (1-α)·q_vec + α·mean(bm25 top-k 块向量), 归一化。
+        用确定性词法命中的"相关块质心"拉近提问式 query 与陈述式块在
+        嵌入空间的距离（BGE-M3 对称嵌入的已知缺陷）。无 bm25 命中/无
+        向量 → None（回退原 query）。A18: 参数 α / k 可消融。
+        """
+        if top_k is None:
+            top_k = getattr(self, "prf_fb_blocks", 3)
+        if alpha is None:
+            alpha = getattr(self, "prf_alpha", 0.5)
+        qv = self._embed(query)
+        if qv is None:
+            return None
+        try:
+            import numpy as np
+            hits = self._bm25_anchors(query, top_k, blocks=blocks)
+            vecs = []
+            for h in hits[:top_k]:
+                v = (self._embeddings.get(h.id)
+                     or next((b.get("vector") for b in blocks or []
+                              if b["id"] == h.id), None))
+                if v is not None and len(v) == len(qv):
+                    vecs.append(np.asarray(v, dtype=np.float32))
+            if not vecs:
+                return None
+            centroid = sum(vecs) / len(vecs)
+            aug = np.asarray(qv, dtype=np.float32) * (1.0 - alpha) \
+                + centroid * alpha
+            norm = float(np.linalg.norm(aug))
+            return (aug / norm).tolist() if norm else None
+        except Exception as e:
+            logger.debug("prf query vector failed: %s", e)
+            return None
+
     # ── 混合锚点 ─────────────────────────────────────────────────
 
     def _vector_anchors(self, query: str, top_k: int,
                         blocks: Optional[List[dict]] = None,
                         query_vec: Optional[list] = None,
+                        prf_vec: Optional[list] = None,
                         boost_docs: Optional[set] = None,
                         pool_docs: Optional[set] = None) -> List[RecallHit]:
         """BGE 向量召回（余弦）; BGE 不可用 → ChunkStore 关键词兜底。"""
@@ -1081,8 +1163,10 @@ class RecallService:
         if blocks is None:
             self._ensure_blocks()
             blocks = self._block_list
-        # HyDE 查询向量（2026-08-13）: 假设答案嵌入, 语义含域术语
-        qv = query_vec if query_vec is not None else self._embed(query)
+        # 查询向量优先级（2026-08-16）: PRF 质心（Rocchio, 词法证据
+        # 交叉）> HyDE 假设答案（LLM 域术语）> 原 query 嵌入。
+        qv = prf_vec if prf_vec is not None else (
+            query_vec if query_vec is not None else self._embed(query))
         if qv is not None:
             scored = []
             batch_vecs = []
@@ -1939,6 +2023,19 @@ class RecallService:
                     and "vector" not in h.scores
                     and h.scores):
                 feat *= getattr(self, "guarantee_boost", 1.5)
+            # 强独有信号保底 v2（2026-08-16, DM_ROUTE_UNIQUE）:
+            # 无 vector 证据 + bm25/spo 源内强分（≥ 阈值）→ 该块只被
+            # 确定性信号命中且很强（q002/q052 bm25 score=1.0）→ 上浮。
+            # 与旧 source_guarantee 区别: 只对"强分独有"生效, 不抬噪声
+            # 长尾; 且加性（不乘）, 不与其它源分数叠加失控。
+            if (getattr(self, "route_unique", False)
+                    and "vector" not in h.scores and h.scores):
+                route_vals = [v for k, v in h.scores.items()
+                              if k.split(":", 1)[-1]
+                              in ("bm25", "spo", "hyde")]
+                best_route = max(route_vals, default=0.0)
+                if best_route >= getattr(self, "route_unique_threshold", 0.8):
+                    feat += 0.5 * best_route
             h.rerank_score = round(feat, 6)
         cands.sort(key=lambda h: (-h.rerank_score, order[id(h)]))
         return cands + tail
@@ -1997,9 +2094,16 @@ class RecallService:
 
         def _run(blocks, tag):
             out = []
+            # 伪相关反馈（2026-08-16, DM_PRF）: bm25 命中块质心扩展
+            # query 向量 → vector 路。只影响向量检索, 与 bm25/spo 路
+            # 正交（质心来自 bm25, 喂回 vector — 两信号交叉, A25）。
+            _pv = None
+            if getattr(self, "prf", False):
+                _pv = self._prf_query_vector(query, blocks=blocks)
             if single in (None, "vector"):
                 out += self._vector_anchors(
                     query, top_k, blocks=blocks, query_vec=hyde_vec,
+                    prf_vec=_pv,
                     boost_docs=files_hit if tag == "cold" else None)
             if single in (None, "bm25"):
                 out += self._bm25_anchors(query, top_k, blocks=blocks)
@@ -2138,7 +2242,16 @@ class RecallService:
                 and bool(profile.get("rerank", True))
                 and os.environ.get("DM_RERANK", "1") != "0"
                 and len(ordered) > 1):
-            ordered = self._rerank(ordered, intent_n, file_sims)
+            # 向量置信门控（2026-08-16, DM_VEC_GATE）: vector top-1 分
+            # 高 → 向量可靠, 跳过重排防稀释（A 类 7 条 vec=1→fused>1 的
+            # 根因是重排归一化让多源弱块压过强纯 vector 块）。
+            _vec_top = max(
+                (h.scores.get("vector", 0.0) for h in ordered), default=0.0)
+            _skip = (getattr(self, "vector_gate", False)
+                     and _vec_top >= getattr(
+                         self, "vector_gate_threshold", 0.70))
+            if not _skip:
+                ordered = self._rerank(ordered, intent_n, file_sims)
         # 2026-08-15 加固（P9/A7 细节保留）: 全文回填 — 锚点展示仍用
         # text[:200], 但 hit 携带全文供生成上下文/子图/执行层取用。
         # 此前 7 条召回路径全部 [:200] 截断, "低概率高价值原样保留"

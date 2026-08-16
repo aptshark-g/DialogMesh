@@ -46,7 +46,9 @@ def _run(rerank_on: bool):
     from scripts.recall_goldset import load_goldset, build_service
     import scripts.doc_recall_bench as drb
 
-    os.environ["DM_RERANK"] = "1" if rerank_on else "0"
+    # setdefault: 保留默认行为（rerank_on=True → ON）, 同时允许消融脚本
+    # 预置 DM_RERANK=0 跑"重排 OFF"对照（A18 消融驱动, 2026-08-16）。
+    os.environ.setdefault("DM_RERANK", "1" if rerank_on else "0")
     queries = load_query_set("docs/test/recall_queries_100.md")
     gold = load_goldset()
     svc = build_service(

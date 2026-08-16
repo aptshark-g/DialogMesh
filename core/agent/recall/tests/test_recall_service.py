@@ -160,7 +160,7 @@ class TestA18Persistence:
                      "temperature": "active"}]
 
         def fake_vec(q, top_k, blocks=None, query_vec=None,
-                     boost_docs=None, pool_docs=None):
+                     prf_vec=None, boost_docs=None, pool_docs=None):
             return [fake_hit] if pool_docs else []
 
         monkeypatch.setattr(svc, "_file_doc_scores", fake_doc_scores)

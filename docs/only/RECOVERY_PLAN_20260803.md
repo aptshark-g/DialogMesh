@@ -3,6 +3,15 @@
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
 > ****2026-08-16 第一版稳定化（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_V1_STABILIZE_20260816.md`。
+> ****2026-08-16 融合消融 + doc 域 miss 根因（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_ABLATION_20260816.md`。
+> 完成: doc 域 29 条 miss 全量归因（A/B/C）+ 12+ 组融合消融矩阵
+> （route_unique/vec_gate/PRF/CE 三种候选口径/BGE 指令前缀全净负 →
+> 基线局部最优, 证据: RECALL_FUSION_ABLATION_20260816.md）+ q059
+> 地面真相修正（doc top1 52.5→54.1%, C 类 1→0）+ 三个实验开关
+> （默认关）+ eval_100 setdefault 化。全量 2068 绿。待办: 真 HyDE
+> 进评测 / goldset 文档级粒度 / CE 路线并集+段落级打分。
+> （新施工前必读: AGENTS.md + 追踪矩阵 + 消融文档）
 > 完成: 全量 2068 绿 / 4:21 / 峰值 3.3GB（内存根因 = SemanticEncoder 非单例
 > ×8 + stanza 联网挂起 ×6 + HF ×4 + pytest-asyncio 缺失）; 学习闭环持久化
 > （LEARNED_TEMPLATES 落盘 + 二阶抽象测试）; 经验 RAG（0.45 语义阈值）;

@@ -102,6 +102,6 @@
 | q056 | v2 执行层四壳是哪四层，监控怎么介入 | docs/only/execution/V2_EXECUTION_LAYER_IMPL_20260809.md | complex | 执行层四壳 | 记忆召回 |
 | q057 | 存储分层 H/W/C/A 怎么升降，阈值多少 | docs/only/G10_STORAGE_DECISION_20260803.md; docs/only/discourse_tree/TREE_TIERING_DECISION_20260807.md | complex | 存储分层 | 记忆召回 |
 | q058 | 前端 B5 UI 测试怎么跑，Playwright 基建在哪 | docs/only/frontend/B5_UI_TEST_PLAN_20260807.md | simple | 前端测试 | 记忆召回 |
-| q059 | PCR zone 和意图分类怎么映射到召回策略 | docs/only/recall/RECALL_MAINSTREAM_GAP_20260811.md | complex | 意图→召回 | 记忆召回 |
+| q059 | PCR zone 和意图分类怎么映射到召回策略 | docs/only/recall/INTENT_AWARE_RECALL_IMPL_20260813.md | complex | 意图→召回 | 记忆召回 |
 | q060 | 设计哲学里偏差为什么是养分，归因回流到哪层 | docs/only/wise/PARADIGM.md | cross | 哲学公理 | 记忆召回 |
 | q061 | 子图扩展的 DAG 分层和同步剪枝怎么实现 | docs/only/recall/SUBGRAPH_EXPANSION_UPGRADE_20260811.md | complex | 子图增强 | 记忆召回 |
