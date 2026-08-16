@@ -12,15 +12,15 @@ interface MetricCardsProps {
   metrics?: MetricCardData[];
 }
 
-const defaultMetrics: MetricCardData[] = [
-  { label: '推理深度', value: 76, trend: 8 },
-  { label: '元认知', value: 84, trend: 6 },
-  { label: '表达清晰度', value: 71, trend: 5 },
-];
-
-export const MetricCards: FC<MetricCardsProps> = ({
-  metrics = defaultMetrics,
-}) => {
+/* 去示范数据:无数据时呈现诚实空态(第一次使用/后端未连接), 不放 76/84/71 之类的假精度 */
+export const MetricCards: FC<MetricCardsProps> = ({ metrics }) => {
+  if (!metrics || metrics.length === 0) {
+    return (
+      <div className="py-4 text-center text-xs text-text-muted">
+        暂无指标数据
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       {metrics.map((metric, idx) => (
@@ -41,10 +41,13 @@ export const MetricCards: FC<MetricCardsProps> = ({
             {metric.value}
           </motion.span>
           <span className="text-xs text-text-muted mt-1">{metric.label}</span>
-          <div className="flex items-center gap-0.5 mt-1 text-status-success text-xs font-medium">
-            <ArrowUp className="w-3 h-3" />
-            <span>{metric.trend}</span>
-          </div>
+          {/* 趋势仅非 0 时显示 — 接线前 trend 恒为 0, 显示 ↑0 是假精度 */}
+          {metric.trend !== 0 && (
+            <div className="flex items-center gap-0.5 mt-1 text-status-success text-xs font-medium">
+              <ArrowUp className="w-3 h-3" />
+              <span>{metric.trend}</span>
+            </div>
+          )}
         </motion.div>
       ))}
     </div>

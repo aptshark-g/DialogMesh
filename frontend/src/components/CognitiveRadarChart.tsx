@@ -20,19 +20,19 @@ interface CognitiveRadarChartProps {
   showLegend?: boolean;
 }
 
-const defaultData: RadarDataPoint[] = [
-  { dimension: '元认知', value: 84, fullMark: 100 },
-  { dimension: '推理深度', value: 76, fullMark: 100 },
-  { dimension: '置信度', value: 68, fullMark: 100 },
-  { dimension: '稳定性', value: 72, fullMark: 100 },
-  { dimension: '发散度', value: 58, fullMark: 100 },
-];
-
+/* 去示范数据:无数据时呈现虚线占位, 不渲染假雷达 */
 export const CognitiveRadarChart: FC<CognitiveRadarChartProps> = ({
-  data = defaultData,
+  data,
   size: _size,
   showLegend = false,
 }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="mx-auto w-full h-full min-h-[180px] flex items-center justify-center rounded-lg border border-dashed border-border-subtle text-xs text-text-muted">
+        暂无画像数据
+      </div>
+    );
+  }
   return (
     <div className="mx-auto w-full h-full">
       <ResponsiveContainer width="100%" height="100%">

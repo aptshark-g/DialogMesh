@@ -49,12 +49,8 @@ interface ProjectItem {
   initial: string;
 }
 
-// P0 假数据(P2 接入真实映射,见 UI_REFACTOR_PLAN B1)
-const demoProjects: ProjectItem[] = [
-  { id: 'vibration', name: '毕设 · 主动振动控制', color: 'var(--color-amber)', fg: '#17130B', initial: '振' },
-  { id: 'memorygraph', name: 'memorygraph', color: '#7C8CFF', fg: '#FFFFFF', initial: 'M' },
-  { id: 'paper', name: '学报投稿 · 端云蒸馏', color: 'var(--status-success)', fg: '#FFFFFF', initial: '投' },
-];
+// P2 接入真实项目映射(见 UI_REFACTOR_PLAN B1);去示范数据 — 无数据时呈现空态
+const projects: ProjectItem[] = [];
 
 const navGroups: NavGroup[] = [
   {
@@ -99,7 +95,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   // P0 项目范围(本地态;P2 迁入全局 store 并接真实数据,见 UI_REFACTOR_PLAN B1)
-  const [activeProject, setActiveProject] = useState('vibration');
+  const [activeProject, setActiveProject] = useState<string | null>(null);
   const location = useLocation();
   const { health, error } = useHealth();
 
@@ -224,7 +220,10 @@ export function Sidebar() {
               )}
               {group.type === 'projects' ? (
                 <div className="space-y-1">
-                  {demoProjects.map((p) => {
+                  {projects.length === 0 && !collapsed && (
+                    <div className="px-3 py-1.5 text-[11px] text-text-muted">暂无项目</div>
+                  )}
+                  {projects.map((p) => {
                     const isScope = activeProject === p.id;
                     return (
                       <button

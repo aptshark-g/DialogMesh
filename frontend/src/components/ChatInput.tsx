@@ -65,9 +65,10 @@ export default function ChatInput({
   const isOverLimit = maxLength !== undefined && charCount > maxLength;
 
   return (
-    <div className="px-3 py-2 md:px-4 md:py-3 bg-surface-card border-t border-border-subtle">
-      {/* 主输入容器 */}
-      <div className="flex items-end gap-2 rounded-lg border border-border-subtle bg-surface-card p-2 md:p-3 focus-within:border-border-strong transition-colors">
+    <div className="px-3 pt-1 pb-3 md:px-4">
+      {/* 主输入容器 — 浮动圆角条, 与消息列同宽居中(max-w-3xl) */}
+      <div className="w-full max-w-3xl mx-auto">
+      <div className="flex items-end gap-2 rounded-2xl border border-border-subtle bg-surface-card shadow-card p-2 md:p-3 focus-within:border-border-strong transition-colors">
         <div className="flex-1 relative flex flex-col">
           <textarea
             ref={textareaRef}
@@ -153,6 +154,7 @@ export default function ChatInput({
             </button>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

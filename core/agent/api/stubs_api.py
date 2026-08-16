@@ -208,6 +208,52 @@ async def get_agent_trees(
         return {"error": str(e)[:200]}
 
 
+@router.get("/llm-calls")
+async def get_llm_calls(
+    recent: int = Query(default=20, ge=0, le=500),
+):
+    """LLM 调用观测（2026-08-16, 执行链路高可用）:
+
+    各阶段（tool_loop/intent_classify/planning/llm_reply）的延迟/空返回/
+    错误/重试统计 + 最近调用明细 —— 排查"卡在哪/为什么空"不再靠猜。
+    """
+    from core.agent.llm.call_recorder import llm_call_recent, llm_call_stats
+    try:
+        return {
+            "stats": llm_call_stats(),
+            "recent": llm_call_recent(recent),
+        }
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.get("/governor")
+async def get_governor_state():
+    """链路治理白盒（2026-08-16, 元认知子模块 ExecutionGovernor）:
+
+    各 scope 熔断状态/失败统计 + 幂等在飞数 + 最近治理动作（熔断/降级/
+    幂等短路）—— 高可用决策可查, 不猜。
+    """
+    from core.agent.meta.governor import get_governor
+    try:
+        return get_governor().stats()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.get("/diagnosis")
+async def get_diagnosis():
+    """元认知异步诊断白盒（2026-08-16, A10 大环）:
+
+    诊断队列 pending / 最近触发 / 诊断报告（根因/置信度/建议/是否自调节）。
+    """
+    from core.agent.meta.diagnosis import get_diagnoser
+    try:
+        return get_diagnoser().stats()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

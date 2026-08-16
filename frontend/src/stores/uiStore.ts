@@ -3,10 +3,11 @@
 import { create } from 'zustand';
 import type { ReactNode } from 'react';
 
-export type DockContentKey = 'profile' | 'context' | 'engineering' | 'tasks' | 'legend' | 'thinking' | 'heuristics' | 'changelog' | 'node_detail';
+export type DockContentKey = 'profile' | 'chat' | 'context' | 'engineering' | 'tasks' | 'legend' | 'thinking' | 'heuristics' | 'changelog' | 'node_detail';
 
 export const DOCK_TITLES: Record<DockContentKey, string> = {
   profile: '认知画像',
+  chat: '对话',
   context: '上下文',
   engineering: '工程链',
   tasks: '任务',
@@ -45,7 +46,8 @@ function loadInitialWidth(): number {
     const v = parseInt(localStorage.getItem(SIDEPANEL_WIDTH_KEY) || '', 10);
     if (v >= SIDEPANEL_MIN && v <= SIDEPANEL_MAX) return v;
   } catch {}
-  return 340;
+  // P0-D 比例: 默认 340→320, 贴近 mockup v2 dock(316px)
+  return 320;
 }
 
 function loadInitialCenterWidth(): number {

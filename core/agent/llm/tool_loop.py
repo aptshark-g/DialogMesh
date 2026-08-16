@@ -74,6 +74,13 @@ def _call_gateway(messages: List[Dict], tools: List[Dict],
     # 重试 2 次（与 claim_eval 同模式）。此前生产调用点无重试,
     # 规划类任务（密集输出）偶发空回复根因。
     import time as _time
+    _t0 = _time.time()
+    # 2026-08-16（ExecutionGovernor, 元认知子模块）: 链路级熔断 —
+    # 该 scope 熔断开断时快速失败, 不再发请求磨蹭重试。
+    from core.agent.meta.governor import get_governor
+    _gov = get_governor()
+    if not _gov.allow("tool_loop"):
+        return {"error": "governor_open", "content": ""}
     last = None
     for _attempt in range(3):
         try:
@@ -82,15 +89,39 @@ def _call_gateway(messages: List[Dict], tools: List[Dict],
             choice = (data.get("choices") or [{}])[0]
             msg = choice.get("message", {})
             if (msg.get("content") or "") or (msg.get("tool_calls") or []):
+                from core.agent.llm.call_recorder import record_llm_call
+                record_llm_call(
+                    stage="tool_loop",
+                    latency_ms=(_time.time() - _t0) * 1000,
+                    ok=True, empty=False, retries=_attempt)
+                _gov.observe("tool_loop", True)
                 return data
             last = data
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="tool_loop",
+                latency_ms=(_time.time() - _t0) * 1000,
+                ok=False, empty=True, retries=_attempt,
+                error="empty_response")
+            _gov.observe("tool_loop", False, error="empty_response")
             # 2026-08-16: 预算感知 — 剩余预算少时不再磨蹭重试
             if timeout_s < 30.0:
                 return last
             _time.sleep(0.4 * (_attempt + 1))
         except Exception as e:
             last = {"error": str(e)[:200]}
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="tool_loop",
+                latency_ms=(_time.time() - _t0) * 1000,
+                ok=False, retries=_attempt, error=str(e)[:120])
+            # 2026-08-16（纠错收敛）: 错误类型定向重试 — parse 类不重试,
+            # 预算少不重试; 其余按 policy。
+            _action, _max_retries = _gov.retry_policy_for(str(e))
+            _gov.observe("tool_loop", False, error=str(e))
             if timeout_s < 30.0:
+                return last
+            if _action == "none" or _attempt >= _max_retries:
                 return last
             _time.sleep(0.4 * (_attempt + 1))
     return last or {}

@@ -23,8 +23,15 @@ class _GatewayLLMAdapter:
     """
 
     def generate(self, prompt: str, max_tokens: int = 300,
-                 temperature: float = 0.1, **kwargs) -> str:
+                 temperature: float = 0.1, timeout_s: float = 20.0,
+                 **kwargs) -> str:
         import urllib.request
+        import time as _time
+        _t0 = _time.time()
+        from core.agent.meta.governor import get_governor
+        _gov = get_governor()
+        if not _gov.allow("intent_classify"):
+            raise ConnectionError("governor_open: intent_classify")
         body = json.dumps({
             "provider": "deepseek", "model": "deepseek-v4-flash",
             "messages": [{"role": "user", "content": prompt}],
@@ -35,11 +42,25 @@ class _GatewayLLMAdapter:
             "http://127.0.0.1:8080/v1/chat/completions", data=body,
             headers={"Content-Type": "application/json",
                      "Authorization": "Bearer dm-client"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            d = json.loads(resp.read())
-        return d["choices"][0]["message"].get("content") or ""
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                d = json.loads(resp.read())
+            text = d["choices"][0]["message"].get("content") or ""
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="intent_classify", latency_ms=(_time.time() - _t0) * 1000,
+                ok=bool(text), empty=not text)
+            _gov.observe("intent_classify", bool(text))
+            return text
+        except Exception as e:
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="intent_classify", latency_ms=(_time.time() - _t0) * 1000,
+                ok=False, error=str(e)[:120])
+            _gov.observe("intent_classify", False, error=str(e))
+            raise
 
-    def classify_intent(self, text: str) -> str:
+    def classify_intent(self, text: str, budget_s: float = 20.0) -> str:
         """LLM 意图分类（2026-08-13, W1 正解）: 自由问句 → 固定意图集。
 
         泛化: LLM 理解改写/换说法, 不像关键词字面匹配那样脆;
@@ -67,7 +88,11 @@ class _GatewayLLMAdapter:
             "用户: 规划一下这个功能的实现步骤 → 任务规划\n\n"
             f"用户消息: {text[:300]}"
         )
-        raw = self.generate(prompt, max_tokens=20, temperature=0.0)
+        from core.agent.meta.governor import get_governor
+        if not get_governor().allow("intent_classify"):
+            return ""  # 熔断开断 → 快速降级（调用方走 DualTrack fallback）
+        raw = self.generate(prompt, max_tokens=20, temperature=0.0,
+                            timeout_s=budget_s)
         for cat in ("记忆召回", "任务规划", "代码分析", "数据搜索",
                     "因果推理", "通用讨论", "casual", "通用对话"):
             if cat in raw:
@@ -82,8 +107,10 @@ class _PlanningGatewayProvider:
     把 GenerateRequest_v3 转网关调用（deepseek-v4-flash, thinking 关）。
     """
 
-    def __init__(self, gateway_url: str = "http://127.0.0.1:8080/v1/chat/completions"):
+    def __init__(self, gateway_url: str = "http://127.0.0.1:8080/v1/chat/completions",
+                 budget_s: float = 15.0):
         self._url = gateway_url
+        self._budget_s = budget_s
 
     async def generate_async(self, request):
         import asyncio as _aio
@@ -95,6 +122,12 @@ class _PlanningGatewayProvider:
 
     def _call(self, request):
         import urllib.request
+        import time as _time
+        _t0 = _time.time()
+        from core.agent.meta.governor import get_governor
+        _gov = get_governor()
+        if not _gov.allow("planning"):
+            raise ConnectionError("governor_open: planning")
         prompt = str(getattr(request, "prompt", "") or "")
         if not prompt:
             return ""
@@ -109,9 +142,26 @@ class _PlanningGatewayProvider:
             self._url, data=body,
             headers={"Content-Type": "application/json",
                      "Authorization": "Bearer dm-client"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            d = json.loads(resp.read())
-        return d["choices"][0]["message"].get("content") or ""
+        try:
+            with urllib.request.urlopen(
+                    req, timeout=min(15.0, self._budget_s)) as resp:
+                d = json.loads(resp.read())
+            text = d["choices"][0]["message"].get("content") or ""
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="planning",
+                latency_ms=(_time.time() - _t0) * 1000,
+                ok=bool(text), empty=not text)
+            _gov.observe("planning", bool(text))
+            return text
+        except Exception as e:
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="planning",
+                latency_ms=(_time.time() - _t0) * 1000,
+                ok=False, error=str(e)[:120])
+            _gov.observe("planning", False, error=str(e))
+            raise
 
 
 def _taskgraph_topological_steps(tg) -> list:
@@ -159,7 +209,8 @@ def _taskgraph_to_frontend(tg) -> list:
     return front
 
 
-async def _plan_with_skill(text: str, intent_label: str):
+async def _plan_with_skill(text: str, intent_label: str,
+                           budget_s: float = 15.0):
     """第二规划通道（2026-08-16）: PlanningSkill 生成任务图。
 
     返回 (steps: List[str] | None, frontend_task_graph: List[dict] | None)。
@@ -177,7 +228,8 @@ async def _plan_with_skill(text: str, intent_label: str):
             confidence=0.8,
             metadata={"intent_label": intent_label},
         )
-        planner = PlanningSkill(llm_provider=_PlanningGatewayProvider())
+        planner = PlanningSkill(llm_provider=_PlanningGatewayProvider(
+            budget_s=budget_s))
         result = await planner.plan(intent)
         tg = getattr(result, "task_graph", None)
         if not result.success or tg is None or not tg.nodes:
@@ -398,6 +450,14 @@ async def send_message(session_id: str, req: SendMessageRequest):
     _save_sessions()
 
     t0 = time.time()
+    # 2026-08-16（请求级总预算, HA_EXECUTION_ANALYSIS §三）: 单请求
+    # 150s 总预算, 沿 classify→planning→TaskRunner 传剩余时间; 任何
+    # 阶段超预算显式降级（骨架/直接回复）, 不再各层独立超时串行叠加。
+    _req_deadline = time.time() + 150.0
+
+    def _budget_left(min_s: float = 5.0) -> float:
+        return max(min_s, _req_deadline - time.time())
+
     content = ""
     msg_id = str(uuid.uuid4())[:8]  # generate early for tracing
     # 防御初始化（B4-1-P2 全栈实测）: task_graph 在 try 内 Phase 5 才赋值，
@@ -514,7 +574,8 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 from core.agent.intent.dual_track import DualTrackIntentPipeline
                 _adapter = _GatewayLLMAdapter()
                 try:
-                    _cat = _adapter.classify_intent(req.content)
+                    _cat = _adapter.classify_intent(
+                        req.content, budget_s=_budget_left())
                     if _cat:
                         intent = _cat
                 except Exception:
@@ -600,8 +661,16 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     if _learn_ok:
                         _learn_fn = getattr(_eng, "learn_from_execution", None)
                         if _learn_fn is not None:
-                            _learn_fn(dag, intent=intent, request_id=msg_id,
-                                      success=True)
+                            # 2026-08-16（高可用）: 学习沉淀/蒸馏是 async
+                            # 段 — 后台线程执行, 不阻塞响应（A16 快反馈）。
+                            import threading as _th_learn
+                            _th_learn.Thread(
+                                target=_learn_fn,
+                                args=(dag,),
+                                kwargs={"intent": intent,
+                                        "request_id": msg_id,
+                                        "success": True},
+                                daemon=True).start()
                 except Exception as _le:
                     logger.debug("learn_from_execution failed: %s", _le)
                 # 2026-08-15（七树闭环）: run_dag 内 agentic 工具节点
@@ -611,7 +680,16 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 try:
                     if _eng is not None and hasattr(
                             _eng, "_consume_execution_tree"):
-                        _eng._consume_execution_tree(session_id, force=True)
+                        # 2026-08-16（高可用）: 树消费/持久化也是 async 段,
+                        # 后台执行避免阻塞主响应（AgentTreeManager 每会话
+                        # 独立, 后台消费与后续 TaskRunner 落树无竞态——
+                        # 消费是只读观察 + 树写入）。
+                        import threading as _th_consume
+                        _th_consume.Thread(
+                            target=_eng._consume_execution_tree,
+                            args=(session_id,),
+                            kwargs={"force": True},
+                            daemon=True).start()
                 except Exception as _ce:
                     logger.debug("dag execution tree consume failed: %s", _ce)
                 # Build context enrichment
@@ -739,7 +817,8 @@ async def send_message(session_id: str, req: SendMessageRequest):
                             "记忆召回": "recall",
                         }.get(intent, "task_planning")
                         _psteps, _pfront = await _plan_with_skill(
-                            req.content, _plan_label)
+                            req.content, _plan_label,
+                            budget_s=_budget_left())
                         if _psteps:
                             steps = _psteps
                             if _pfront:
@@ -820,7 +899,9 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         goal=req.content,
                         constraint=TaskConstraint(
                             goal=req.content, scope=scope, steps=steps,
-                            max_rounds=6, timeout_s=100, max_replans=1),
+                            max_rounds=6,
+                            timeout_s=_budget_left(min_s=30.0),
+                            max_replans=1),
                         node_id="root_task", session_id=session_id,
                         request_id=msg_id, messages=all_messages,
                         anchors=anchors)
@@ -868,20 +949,41 @@ async def send_message(session_id: str, req: SendMessageRequest):
             )
             content = ""
             data = {}
+            import time as _llm_t0_mod
+            _llm_t0 = _llm_t0_mod.time()
+            from core.agent.meta.governor import get_governor
+            _gov = get_governor()
             # 2026-08-15 修复: deepseek-v4-flash 密集输出随机空返回 →
             # 空响应重试 2 次（与 tool_loop/call_switch 同模式）。
             for _attempt in range(3):
+                # 2026-08-16（高可用）: 预算感知 + 熔断 — 原 60s×3 固定
+                # 重试无预算上限（最坏 180s）。每轮按剩余预算截断, 熔断
+                # 开断快速失败, 预算不足不再磨蹭。
+                if not _gov.allow("llm_reply"):
+                    break
+                if _budget_left(min_s=0) < 8.0:
+                    break
                 try:
-                    with urllib.request.urlopen(http_req, timeout=60) as resp:
+                    with urllib.request.urlopen(
+                            http_req,
+                            timeout=min(60.0, _budget_left())) as resp:
                         data = _json.loads(resp.read())
                     content = data.get("choices", [{}])[0].get(
                         "message", {}).get("content", "")
                     if content:
+                        _gov.observe("llm_reply", True)
                         break
-                except Exception:
-                    pass
+                    _gov.observe("llm_reply", False, error="empty_response")
+                except Exception as _ge:
+                    _gov.observe("llm_reply", False, error=str(_ge)[:120])
                 import time as _t
                 _t.sleep(0.4 * (_attempt + 1))
+            from core.agent.llm.call_recorder import record_llm_call
+            record_llm_call(
+                stage="llm_reply",
+                latency_ms=(_llm_t0_mod.time() - _llm_t0) * 1000,
+                ok=bool(content), empty=not content,
+                retries=0, error="" if content else "empty_or_error")
             if not content:
                 content = str(data)
 
@@ -927,7 +1029,17 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         from core.agent.event.subscribers import wire_subscribers
                         wire_subscribers(eng)
                     except: pass
-                eng._publish("user_message", {"text": req.content, "reply": content[:500], "session_id": session_id})
+                # 2026-08-16（高可用）: _publish 名为 fire-and-forget 实为
+                # 同步广播 — 订阅者（behavior learn / causal planner 懒加载）
+                # 实测阻塞响应数十秒 → 改后台线程真正不阻塞（A16 快反馈）。
+                import threading as _th
+                _pub_payload = {
+                    "text": req.content, "reply": content[:500],
+                    "session_id": session_id}
+                _th.Thread(
+                    target=eng._publish,
+                    args=("user_message", _pub_payload),
+                    daemon=True).start()
                 # 情景溯源（RECALL_SUBGRAPH_BRIDGE §三）: 显式写带 msg_id
                 # 的事件（事件 id + trace_id = msg_id）, 让 _expand_from_event
                 # 能按 msg_id 反查"会话要求"支线。跨模块 trace 传播（§11.2）

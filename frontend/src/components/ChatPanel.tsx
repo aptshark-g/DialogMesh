@@ -55,14 +55,18 @@ export default function ChatPanel({
       </AnimatePresence>
 
       {onSelectProvider && (
-        <div className="flex items-center px-3 py-2 border-b border-subtle">
-          <ProviderSelector onSelect={onSelectProvider} active={activeProvider ?? null} />
+        <div className="px-3 pt-2">
+          <div className="w-full max-w-3xl mx-auto flex items-center">
+            <ProviderSelector onSelect={onSelectProvider} active={activeProvider ?? null} />
+          </div>
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
+        {/* 消息列:与输入条同宽居中(max-w-3xl), 空态在列内垂直居中 */}
+        <div className="w-full max-w-3xl mx-auto min-h-full flex flex-col space-y-1">
         {messages.length === 0 && !isThinking && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="flex-1 flex flex-col items-center justify-center text-center">
             <div className="w-14 h-14 rounded-2xl bg-surface-card border border-subtle flex items-center justify-center mb-4 shadow-card">
               <span className="text-2xl">🔶</span>
             </div>
@@ -93,6 +97,7 @@ export default function ChatPanel({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
 
       <ChatInput onSend={onSendMessage} disabled={isInputDisabled} placeholder="输入消息..." />

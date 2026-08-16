@@ -1,35 +1,13 @@
 /**
  * CenterDock — 内容坞"悬浮"浮层（B5, 2026-08-07）。
  * 覆盖在主内容区右侧, 可拖左边缘调宽（360-720, 持久化）, Esc/× 关闭。
- * 内容与右侧 Dock 共享（DockContents[dockContent]）。
+ * P1-A: 内容/标题改走表面注册表(SURFACE_MAP), 与副槽共享全部表面(含对话)。
  */
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useUIStore, useDockContent, DOCK_TITLES } from '@/stores/uiStore';
-import {
-  ProfileDockContent,
-  ContextDockContent,
-  EngineeringDockContent,
-  TasksDockContent,
-  LegendDockContent,
-  ThinkingDockContent,
-  HeuristicsDockContent,
-  ChangelogDockContent,
-  NodeDetailDockContent,
-} from './DockContents';
-
-const CENTER_CONTENTS = {
-  profile: ProfileDockContent,
-  context: ContextDockContent,
-  engineering: EngineeringDockContent,
-  tasks: TasksDockContent,
-  legend: LegendDockContent,
-  thinking: ThinkingDockContent,
-  heuristics: HeuristicsDockContent,
-  changelog: ChangelogDockContent,
-  node_detail: NodeDetailDockContent,
-} as const;
+import { useUIStore, useDockContent } from '@/stores/uiStore';
+import { SURFACE_MAP } from '@/lib/surfaceRegistry';
 
 export function CenterDock() {
   const isOpen = useUIStore((s) => s.centerPanel.isOpen);
@@ -66,7 +44,7 @@ export function CenterDock() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, closeCenterPanel]);
 
-  const Content = CENTER_CONTENTS[dockContent];
+  const Content = SURFACE_MAP[dockContent].component;
 
   return (
     <AnimatePresence>
@@ -88,7 +66,7 @@ export function CenterDock() {
           />
           <div className="flex items-center gap-2 px-3 py-2 border-b border-subtle shrink-0">
             <h2 className="text-sm font-semibold text-text-primary flex-1 truncate">
-              {DOCK_TITLES[dockContent]}
+              {SURFACE_MAP[dockContent].title}
             </h2>
             <span className="text-[10px] text-text-muted">悬浮显示</span>
             <button

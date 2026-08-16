@@ -13,24 +13,15 @@ interface StatusProgressProps {
   items?: StatusProgressItem[];
 }
 
-const defaultItems: StatusProgressItem[] = [
-  {
-    icon: 'success',
-    label: '成功状态',
-    percentage: 82,
-    description: '任务完成度高，推理路径稳定',
-  },
-  {
-    icon: 'risk',
-    label: '风险状态',
-    percentage: 18,
-    description: '存在知识不确定性，建议验证',
-  },
-];
-
-export const StatusProgress: FC<StatusProgressProps> = ({
-  items = defaultItems,
-}) => {
+/* 去示范数据:成功/风险指标尚无后端数据源(见 UI_REFACTOR_PLAN B6),无数据时呈现空态 */
+export const StatusProgress: FC<StatusProgressProps> = ({ items }) => {
+  if (!items || items.length === 0) {
+    return (
+      <div className="py-4 text-center text-xs text-text-muted">
+        暂无状态数据
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-4">
       {items.map((item) => {

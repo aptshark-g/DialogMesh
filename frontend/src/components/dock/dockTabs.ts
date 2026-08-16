@@ -1,9 +1,11 @@
-import { User, Braces, GitBranch, ListChecks, Palette, BrainCircuit, Lightbulb, History, Info } from 'lucide-react';
+import { User, MessageSquare, Braces, GitBranch, ListChecks, Palette, BrainCircuit, Lightbulb, History, Info } from 'lucide-react';
 import type { DockContentKey } from '@/stores/uiStore';
 
-/** 内容坞候选内容（共享: 右侧 Dock 头部 + 侧栏中/右选择器 + 中间浮层） */
+/** 内容坞候选内容（共享: 右侧 Dock 头部 + 侧栏中/右选择器 + 中间浮层）
+ *  P1-A: 新增 'chat' 对话表面(副槽迷你对话)。 */
 export const DOCK_TABS: { key: DockContentKey; label: string; icon: typeof User }[] = [
   { key: 'profile', label: '画像', icon: User },
+  { key: 'chat', label: '对话', icon: MessageSquare },
   { key: 'context', label: '上下文', icon: Braces },
   { key: 'engineering', label: '工程链', icon: GitBranch },
   { key: 'tasks', label: '任务', icon: ListChecks },

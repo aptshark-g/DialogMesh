@@ -1,10 +1,9 @@
 /** RightDock 候选内容 — 三屏结构中右栏可切换的各类上下文面板。 */
 import { useState, useEffect } from 'react';
 import type { FC, ReactNode } from 'react';
-import { RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle, Radar } from 'lucide-react';
 import { CognitiveRadarChart } from '../CognitiveRadarChart';
 import { MetricCards } from '../MetricCards';
-import { StatusProgress } from '../StatusProgress';
 import { useV6Profile } from '../../hooks/useV6Profile';
 import { getContext, getEngineering, submitCompressionFeedback, getHeuristics, getChangelog, interveneChangelog } from '../../api/v6';
 import { useTaskGraphStore } from '../../stores/taskStore';
@@ -165,13 +164,35 @@ export function ProfileDockContent() {
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
+  // 空态判定看维度数据本身:后端离线(profile=null)与首次使用(oceAN_dims 为空对象)统一走空态
+  const hasDims = !!profile && Object.keys(profile.oceAN_dims ?? {}).length > 0;
+
   return (
     <DockPanel title="认知画像">
-      <div className="flex flex-col items-center">
-        <CognitiveRadarChart data={radarData} size={200} />
-      </div>
-      <MetricCards metrics={metricCards} />
-      <StatusProgress />
+      {!hasDims && loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
+        </div>
+      ) : !hasDims ? (
+        /* 去示范数据:第一次使用/后端未连接 — 诚实空态, 不放假数值 */
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="w-10 h-10 rounded-full bg-surface-card border border-subtle flex items-center justify-center mb-3">
+            <Radar className="w-4 h-4 text-text-muted" />
+          </div>
+          <p className="text-xs text-text-muted">暂无画像数据</p>
+          <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+            开始对话后,这里会展示认知维度分析
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col items-center">
+            <CognitiveRadarChart data={radarData} size={200} />
+          </div>
+          <MetricCards metrics={metricCards} />
+        </>
+      )}
+      {/* 成功/风险状态卡移除:无后端数据源(见 UI_REFACTOR_PLAN B6) */}
       <div className="pt-2 border-t border-hairline flex items-center justify-between">
         <span className="text-xs text-text-muted">实时认知维度分析</span>
         <button
