@@ -36,8 +36,13 @@ class SemanticCorefScorer:
 
     def _init_model(self) -> bool:
         try:
+            # 2026-08-16: 离线优先（原联网 HF 校验, 网络受限无 CPU 挂起）
+            import os
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.MODEL_NAME)
+            self._model = SentenceTransformer(
+                self.MODEL_NAME, local_files_only=True)
             logger.info("SemanticCoref: model loaded (%s)", self.MODEL_NAME)
             return True
         except ImportError:

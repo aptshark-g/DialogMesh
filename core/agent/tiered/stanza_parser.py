@@ -24,8 +24,12 @@ class StanzaParser:
             return
         try:
             import stanza
+            # 2026-08-16: 离线优先（原 stanza.Pipeline 默认联网下载资源,
+            # 网络受限无 CPU 挂起 —— 全库 stanza 挂点统一修）。缺失模型
+            # 快速失败, available() 返回 False 降级。
             self._nlp = stanza.Pipeline(self._lang, processors="tokenize,lemma,pos,depparse",
-                                        verbose=False, use_gpu=False)
+                                        verbose=False, use_gpu=False,
+                                        download_method=None)
             logger.info("Stanza %s pipeline loaded", self._lang)
         except Exception as e:
             logger.warning("Stanza %s unavailable: %s", self._lang, e)

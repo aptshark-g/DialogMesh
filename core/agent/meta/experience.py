@@ -231,8 +231,11 @@ class ExperienceStore:
                 if qvec is not None and self._vectors[i] is not None:
                     sim = float(np.dot(self._vectors[i], qvec))
                 if qvec is not None and self._vectors[i] is not None:
-                    if sim < 0.15 and score == 0:
-                        continue  # 语义噪声过滤（无关键词重合且不相似）
+                    if sim < 0.45 and score == 0:
+                        # 语义噪声过滤: BGE-M3 空间里无关文本余弦常 0.3-0.5,
+                        # 相关文本 0.6+; 0.45 是"语义相关"合理下限（曾设 0.15
+                        # 过松, 无关查询也被召回, 2026-08-16 全量实测修正）。
+                        continue
                     total = sim + 0.15 * score
                 else:
                     if score == 0:

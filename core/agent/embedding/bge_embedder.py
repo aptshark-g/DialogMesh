@@ -17,6 +17,10 @@ class BgeEmbedder:
 
     def _load(self):
         if self._model is None:
+            # 2026-08-16: 离线优先 —— except 分支不再回退联网加载
+            import os
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
             from sentence_transformers import SentenceTransformer
             try:
                 self._model = SentenceTransformer(
@@ -25,7 +29,8 @@ class BgeEmbedder:
                 )
             except Exception:
                 self._model = SentenceTransformer(
-                    self.cfg.model_path or r"C:\Users\APTShark\PycharmProjects\DialogMesh\models\BAAI\bge-small-zh"
+                    self.cfg.model_path or r"C:\Users\APTShark\PycharmProjects\DialogMesh\models\BAAI\bge-small-zh",
+                    model_kwargs={"local_files_only": True},
                 )
             if self.cfg.use_gpu:
                 import torch

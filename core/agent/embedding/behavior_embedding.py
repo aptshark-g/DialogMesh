@@ -64,11 +64,16 @@ def get_bge_model():
     """Lazy-load BGE-small-zh model (deprecated, use BgeEmbedder)."""
     global _bge_model
     if _bge_model is None:
+        # 2026-08-16: 离线优先（except 分支不再回退联网）
+        import os
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         from sentence_transformers import SentenceTransformer
         try:
             _bge_model = SentenceTransformer(BGE_MODEL_PATH, model_kwargs={"local_files_only": True})
         except Exception:
-            _bge_model = SentenceTransformer(BGE_MODEL_PATH)
+            _bge_model = SentenceTransformer(
+                BGE_MODEL_PATH, model_kwargs={"local_files_only": True})
     return _bge_model
 
 

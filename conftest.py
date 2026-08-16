@@ -27,6 +27,15 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         pass
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
+# 2026-08-16: 测试进程统一离线 —— 模型加载绝不联网（HF hub / transformers
+# 在受限网络下无超时挂起, 实测 faulthandler 180s 杀进程）。生产由
+# start_server.py 与各加载点 local_files_only 兜底。
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault(
+    "SENTENCE_TRANSFORMERS_HOME",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models"))
+
 
 def _ascii_repr(value) -> str:
     """Locale-proof repr: escape any non-ASCII so GBK consoles don't mangle it."""
