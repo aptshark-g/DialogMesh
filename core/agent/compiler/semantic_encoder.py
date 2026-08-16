@@ -97,8 +97,14 @@ class SemanticEncoder:
                 f"python -m modelscope download {self.MODEL_ID}"
             )
 
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-        self._model = AutoModel.from_pretrained(self.model_path)
+        # 离线优先（2026-08-16, 真 HyDE 评测触发）: from_pretrained 对
+        # 本地完整快照仍会向 HF hub 发 HEAD 检查（无超时, 受限网络挂起
+        # — 交接经验 #3 "联网加载一律离线优先"）。local_files_only=True
+        # 强制纯本地, 文件缺失时快速失败而非静默挂起。
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_path, local_files_only=True)
+        self._model = AutoModel.from_pretrained(
+            self.model_path, local_files_only=True)
         self._model.to(self.device)
         self._model.eval()
         self._initialized = True

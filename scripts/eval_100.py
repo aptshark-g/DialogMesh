@@ -25,6 +25,67 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.query_set import load_query_set
 
 
+class _EvalGatewayAdapter:
+    """评测用薄网关适配器（2026-08-16, 真 HyDE 评测）:
+
+    与生产 _GatewayLLMAdapter 的区别: ①不依赖 ExecutionGovernor 熔断
+    状态（评测不该被生产断路器/进程内状态影响）; ②失败快速降级返回 ""
+    （HyDE 假设生成失败 → 无 hyde 命中, 评测如实记录）; ③不写
+    call_recorder（评测的 LLM 观测走 eval_100 自身）。
+    算法同源: 生成的 prompt 走 recall_service.HYDE_PROMPT, 多假设/融合/
+    门控全部在 recall_service（生产与评测共用同一份算法代码）。
+    """
+
+    def generate(self, prompt, max_tokens: int = 400,
+                 temperature: float = 0.0, timeout_s: float = 25.0,
+                 **kwargs) -> str:
+        import json
+        import time
+        import urllib.request
+        if hasattr(prompt, "prompt"):
+            _req = prompt
+            prompt = _req.prompt
+            if getattr(_req, "max_tokens", None):
+                max_tokens = _req.max_tokens
+            if getattr(_req, "temperature", None) is not None:
+                temperature = _req.temperature
+            if getattr(_req, "timeout_ms", None):
+                timeout_s = _req.timeout_ms / 1000.0
+        body = json.dumps({
+            "provider": "deepseek", "model": "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "thinking": {"type": "disabled"},
+            "max_tokens": max_tokens, "temperature": temperature,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8080/v1/chat/completions", data=body,
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer dm-client"})
+        try:
+            _t0 = time.time()
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                d = json.loads(resp.read())
+            _text = d["choices"][0]["message"].get("content") or ""
+            _dt = time.time() - _t0
+            try:
+                with open("scripts/_gw_call_log.txt", "a",
+                          encoding="utf-8") as f:
+                    f.write("%.1fs max_tokens=%d len=%d\n" % (
+                        _dt, max_tokens, len(_text)))
+            except Exception:
+                pass
+            return _text
+        except Exception:
+            try:
+                with open("scripts/_gw_call_log.txt", "a",
+                          encoding="utf-8") as f:
+                    f.write("FAIL timeout=%.1fs max_tokens=%d\n" % (
+                        timeout_s, max_tokens))
+            except Exception:
+                pass
+            return ""
+
+
 def _mrr_ndcg(hits, expected, top_k):
     exp = set(expected)
     mrr = 0.0
@@ -40,7 +101,7 @@ def _mrr_ndcg(hits, expected, top_k):
     return mrr, (dcg / idcg if idcg else 0.0)
 
 
-def _run(rerank_on: bool):
+def _run(rerank_on: bool, use_hyde: bool = False):
     """跑一遍完整评测; rerank_on 控制重排层开关（进程内环境翻转）。"""
     from collections import Counter
     from scripts.recall_goldset import load_goldset, build_service
@@ -49,6 +110,8 @@ def _run(rerank_on: bool):
     # setdefault: 保留默认行为（rerank_on=True → ON）, 同时允许消融脚本
     # 预置 DM_RERANK=0 跑"重排 OFF"对照（A18 消融驱动, 2026-08-16）。
     os.environ.setdefault("DM_RERANK", "1" if rerank_on else "0")
+    if use_hyde:
+        os.environ.setdefault("DM_HYDE", "1")
     queries = load_query_set("docs/test/recall_queries_100.md")
     gold = load_goldset()
     svc = build_service(
@@ -56,6 +119,10 @@ def _run(rerank_on: bool):
           "session": b.get("session", ""),
           "vector": b.get("vector")}
          for b in gold["blocks"]], mode="vector_primary")
+    if use_hyde:
+        # 真 HyDE 评测（2026-08-16）: 注入生产同源网关 LLM 适配器
+        # （deepseek-v4-flash, thinking 关闭）— 假设文档生成走真实路径。
+        svc._llm = _EvalGatewayAdapter()
     doc_blocks = drb.load_blocks()
     print("文档块: %d" % len(doc_blocks))
     # 批量编码 + 磁盘缓存（2026-08-11: 首次 GPU/批量 embed, 二次秒级）
@@ -67,6 +134,8 @@ def _run(rerank_on: bool):
 
     # 文档域用同一个 service（向量懒计算, 块池换文档块）
     doc_service = build_service(doc_blocks, mode="vector_primary")
+    if use_hyde:
+        doc_service._llm = _EvalGatewayAdapter()
 
     stats = {"dialogue": {"n": 0, "top1": 0, "top3": 0, "top5": 0,
                           "mrr": 0.0, "ndcg": 0.0, "cp": 0.0,
@@ -104,7 +173,7 @@ def _run(rerank_on: bool):
         t0 = time.time()
         # W1（2026-08-13）: 意图传入 recall → 按意图选融合配置/重排权重
         res = svc_use.recall(qi["query"], intent=intent, top_k=20,
-                             use_hyde=False)
+                             use_hyde=use_hyde)
         s["time_ms"] += (time.time() - t0) * 1000
         # 方案 B 返回层（2026-08-14）: 锚点附带父文件摘要的覆盖数
         s["pc"] += sum(1 for h in res.hits[:5] if h.parent_context)
@@ -163,10 +232,14 @@ def _run(rerank_on: bool):
                 num += tp / k
         s["cp"] += num / relevant if relevant else 0.0
 
+    _hyde_line = ("真 HyDE: ON（K=%s, gate=%s, 网关 LLM）" % (
+        os.environ.get("DM_HYDE_K", "1"),
+        os.environ.get("DM_HYDE_GATE", "0"))) if use_hyde else "真 HyDE: OFF"
     out = ["# 统一评测 100 条 — 意图感知 + 重排对比（%s）"
            % time.strftime("%Y-%m-%d"), "",
            f"- 数据: docs/test/recall_queries_100.md（100 条, 含 intent 列）",
            f"- 重排层: {'ON' if rerank_on else 'OFF（旧排序基线）'}",
+           f"- {_hyde_line}",
            f"- 总耗时: {time.time() - t_total:.0f}s", ""]
     for tag, s in stats.items():
         n = s["n"] or 1
@@ -234,9 +307,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--compare", action="store_true",
                     help="同进程跑 rerank OFF/ON 两次并输出对比表")
+    ap.add_argument("--hyde", action="store_true",
+                    help="真 HyDE 模式: 注入网关 LLM + use_hyde=True"
+                    "（DM_HYDE_K / DM_HYDE_GATE 调多假设与门控）")
     args = ap.parse_args()
     if not args.compare:
-        _, _, out = _run(rerank_on=True)
+        _, _, out = _run(rerank_on=True, use_hyde=args.hyde)
         with open("docs/test/EVAL_100_%s.md" % time.strftime("%Y%m%d"), "w",
                   encoding="utf-8") as f:
             f.write("\n".join(out))

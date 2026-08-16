@@ -1,6 +1,17 @@
 ﻿# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
+> ****2026-08-17 真 HyDE 进评测（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_ABLATION_20260816.md`
+> （延续）。完成: eval_100 --hyde（真网关 LLM）+ 多假设 RRF（K=3）+
+> 向量置信门控 + 泛化性设计（docs/only/recall/HYDE_EVAL_20260817.md,
+> 研究对照: HyDE 2212.10496 / RAG-Fusion / Rocchio+HyDE 2511.19349）;
+> 同语料实测 K1 全负、K3 doc+3.3pp 但 dialogue-7.7pp → DM_HYDE 默认关;
+> 顺带修 3 个真 bug（encoder 联网挂起 local_files_only / SPO 谓词 LLM
+> 判定爆炸 50 次预算 / generate 返回约定兼容）; 发现评测语料自污染
+> （自加文档漂移基线 doc top1 54.1→50.8, 非代码回归）。全量 2068 绿。
+> 待办 P1: HyDE→BM25 词项扩展（2511.19349 正解）/ 域门控（仅冷池）。
+> （新施工前必读: AGENTS.md + 追踪矩阵 + HYDE_EVAL_20260817.md）
 > ****2026-08-16 第一版稳定化（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_V1_STABILIZE_20260816.md`。
 > ****2026-08-16 融合消融 + doc 域 miss 根因（最新）:

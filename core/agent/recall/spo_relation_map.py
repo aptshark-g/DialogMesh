@@ -81,6 +81,14 @@ UNKNOWN_POOL = set()
 LLM_CACHE = {}
 # LLM 判定器（由 RecallService 注入）
 _llm = None
+# LLM 谓词归一有界预算（2026-08-16, 评测注入 LLM 触发千次调用实锤）:
+# _spo_anchors 对每个未覆盖谓词调 LLM（max_tokens=16）— 8338 块语料下
+# 每 query 可达上千次网关往返（挂起/爆炸）。语义归一只是 SPO 打分的一个
+# 加分项（字面一致 0.5 / 抽象一致 0.5 择一）, 静态表已覆盖常见谓词;
+# 预算耗尽回退字面兜底（A16 不阻断, A18 有界）。进程级计数, LLM_CACHE
+# 命中不计。
+_llm_judge_calls = 0
+MAX_LLM_JUDGE_CALLS = 50
 
 
 def set_llm(llm):
@@ -111,10 +119,13 @@ def map_predicate(pred: str) -> str:
     if p in LLM_CACHE:
         return LLM_CACHE[p]
     if _llm is not None:
-        rel = _llm_judge(_llm, p)
-        if rel:
-            LLM_CACHE[p] = rel
-            return rel
+        global _llm_judge_calls
+        if _llm_judge_calls < MAX_LLM_JUDGE_CALLS:
+            _llm_judge_calls += 1
+            rel = _llm_judge(_llm, p)
+            if rel:
+                LLM_CACHE[p] = rel
+                return rel
     UNKNOWN_POOL.add(p)
     return pred
 
@@ -132,7 +143,9 @@ def _llm_judge(llm, pred: str) -> str:
         res = llm.generate(GenerateRequest(
             prompt=prompt, max_tokens=16, temperature=0.1,
             timeout_ms=20000))
-        text = (res.text if res is not None else "").strip().lower()
+        text = (res.text if hasattr(res, "text")
+                else (res if isinstance(res, str) else ""))
+        text = text.strip().lower()
         if text in RELATION_TYPES:
             return text
         # 容错: 输出含类型 id

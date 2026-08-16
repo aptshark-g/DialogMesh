@@ -124,6 +124,24 @@ RERANK_WEIGHTS: Dict[str, float] = {
     "assoc": 0.05, "diffusion": 0.08, "graph": 0.10,
 }
 
+# 真 HyDE 通用 prompt（2026-08-16, 泛化性设计）: 固定模板、零样本、
+# 只含 query、不接触语料/评测标注 — 与 HyDE 原论文（2212.10496）一致,
+# 一个模板跨所有 query/域直接使用（不是针对评测集的手写标准）。
+# domain-aware: "像项目内部设计文档片段" — 这是按语料域（设计文档）给
+# 指令, 与 HyDE 论文按数据集给域指令（如 Wikipedia 风格段落）同构, 属于
+# 通用技术而非评测集特调。冒烟实测: 无此导向时假设文档太泛（ReAct/
+# Function Calling 通用描述）, 检索命中通用文档而非本项目设计文档。
+# 2026-08-16 从研究补充（见 RECALL_FUSION_ABLATION §六）:
+#   - 多假设采样（K>1, 温度梯度）: 降低单假设幻觉/方差（RAG-Fusion 形态）
+#   - 向量置信门控（DM_HYDE_GATE）: 向量 top-1 ≥ 阈值时不用 HyDE,
+#     防假设文档漂移破坏高置信 query（Adaptive Hybrid / SAGE 思路）
+#   - 结果作为独立 "hyde" 路线进 RRF 融合, 不替换原 query 向量
+HYDE_PROMPT = (
+    "根据问题，写一段假设性的设计文档片段（3-5 句，像项目内部设计文档"
+    "的描述：包含关键技术术语、模块名、机制名和事实），用于检索增强。"
+    "只输出段落，不要任何前言。\n问题: "
+)
+
 
 def normalize_intent(intent: Optional[str]) -> Optional[str]:
     """意图名归一: 空/未知名 → None（走默认 profile）。"""
@@ -387,6 +405,29 @@ class RecallService:
             self.prf_fb_blocks = int(os.environ.get("DM_PRF_FB", "3"))
         except ValueError:
             self.prf_fb_blocks = 3
+        # 多假设 HyDE（2026-08-16, DM_HYDE_K 默认 1 = 既有单假设 query_vec
+        # 行为不变）: >1 = 每假设文档独立检索 + RRF 合并（RAG-Fusion
+        # 形态, "hyde" 独立路线进融合）。泛化设计见 HYDE_PROMPT 注释。
+        try:
+            self.hyde_k = int(os.environ.get("DM_HYDE_K", "1"))
+        except ValueError:
+            self.hyde_k = 1
+        # 向量置信门控（DM_HYDE_GATE 默认关）: 本次 query 的 vector top-1
+        # 分 ≥ 阈值 → 向量可靠, 不启用 HyDE（防假设文档漂移破坏高置信
+        # query — 对齐 2026-08-16 消融: vec_gate 全量负是因为对 dialogue
+        # 高置信也跳重排; 这里只对低置信 query 加 HyDE, 不动其它机制）。
+        self.hyde_gate = os.environ.get("DM_HYDE_GATE", "0") != "0"
+        try:
+            self.hyde_gate_threshold = float(os.environ.get(
+                "DM_HYDE_GATE_THRESHOLD", "0.70"))
+        except ValueError:
+            self.hyde_gate_threshold = 0.70
+        # 旧查询分解路径开关（2026-08-16, DM_HYDE_DECOMPOSE 默认 1 保持
+        # 既有行为）: use_hyde=True 时旧行为会 LLM 拆子问题并逐个子问题全路
+        # 召回（_hyde_anchors）。真 HyDE 评测要隔离"多假设文档"的贡献,
+        # 用 DM_HYDE_DECOMPOSE=0 跳过分解（expanded=[query]）。
+        self.hyde_decompose = os.environ.get(
+            "DM_HYDE_DECOMPOSE", "1") != "0"
         # 时序约束（2026-08-09, 评测驱动发现）: 文档/块版本新旧降权。
         # 0 = 关闭（默认, 不改变既有行为）; >0 = 半衰期天数,
         # 排序分 = fused() × 2^(-age_days / half_life), 下限 0.3。
@@ -1073,7 +1114,8 @@ class RecallService:
         except Exception:
             return None
 
-    def _chat_once(self, prompt: str, max_tokens: int = 300) -> Optional[str]:
+    def _chat_once(self, prompt: str, max_tokens: int = 300,
+                   temperature: float = 0.0) -> Optional[str]:
         """经 self._llm 一次对话（兼容 chat/complete/generate 三接口）。"""
         llm = self._llm
         if llm is None:
@@ -1087,9 +1129,12 @@ class RecallService:
                 from core.agent.llm_providers.base import GenerateRequest
                 result = llm.generate(GenerateRequest(
                     prompt=prompt, max_tokens=max_tokens,
-                    temperature=0.0,
+                    temperature=temperature,
                     metadata={"thinking": {"type": "disabled"}}))
-                resp = result.text if result is not None else ""
+                # 兼容两种返回约定（2026-08-16）: GenerateResult（.text）
+                # 或纯字符串（_GatewayLLMAdapter 直返文本）。
+                resp = (result.text if hasattr(result, "text")
+                        else (result if isinstance(result, str) else ""))
             else:
                 return None
             return resp if isinstance(resp, str) else getattr(
@@ -1102,14 +1147,53 @@ class RecallService:
         作查询向量。域术语在假设段落里显式出现 → 把"措辞敏感"的答案块
         （实测 rank 13）拉到 top-1; 查询措辞脆弱性的正解。
         无 LLM（评测 bench）→ None, 行为不变。"""
-        prompt = (
-            "根据问题，写一段假设性的答案（3-5 句，包含可能的关键术语、"
-            "算法名和事实），用于检索增强。只输出答案段落：\n问题: " + query
-        )
+        prompt = HYDE_PROMPT + query
         resp = self._chat_once(prompt, max_tokens=400)
         if not resp or not resp.strip():
             return None
         return self._embed(resp.strip())
+
+    def _hyde_hypotheses(self, query: str, k: int = 3) -> List[str]:
+        """多假设生成（2026-08-16, 泛化性设计）: 同一通用 prompt, K 个
+        假设文档, 温度梯度采样（[0.0, 0.5, 0.9]）。单假设（k=1）→ 温度
+        0.0 稳定复现; 多假设 → 覆盖不同措辞/侧重, 降低单次幻觉方差。
+        部分生成失败 → 返回已成功的子集（RRF 对可用假设融合）。"""
+        if k <= 1:
+            temps = [0.0]
+        else:
+            temps = [0.0, 0.5, 0.9][:k]
+        out: List[str] = []
+        for t in temps:
+            resp = self._chat_once(HYDE_PROMPT + query, max_tokens=400,
+                                   temperature=t)
+            if resp and resp.strip():
+                out.append(resp.strip())
+        return out
+
+    def _vector_multi_anchors(self, query: str, top_k: int,
+                              blocks: Optional[List[dict]],
+                              qvecs: List[list]) -> List[RecallHit]:
+        """多查询向量 RRF（2026-08-16, RAG-Fusion 形态）:
+
+        原 query 向量 + K 个 HyDE 假设文档向量, 各自 vector 检索 top_k,
+        跨查询 RRF 合并 → 作为 vector 路线命中（保持 vector 主导融合,
+        不被当独立 "hyde" 源埋掉）。研究依据: HyDE 原论文（2212.10496）
+        + RAG-Fusion（多查询生成 + RRF）+ Revisiting Feedback Models
+        for HyDE（2511.19349: 朴素拼接非最优, 多信号需正规融合）。
+        """
+        from collections import defaultdict
+        rrf: Dict[str, float] = defaultdict(float)
+        by_id: Dict[str, RecallHit] = {}
+        for qv in qvecs:
+            for rank, h in enumerate(self._vector_anchors(
+                    query, top_k, blocks=blocks, query_vec=qv)):
+                rrf[h.id] += 1.0 / (60 + rank + 1)
+                by_id[h.id] = h
+        ordered = sorted(by_id.values(), key=lambda h: rrf[h.id],
+                         reverse=True)
+        for h in ordered:
+            h.score = round(rrf[h.id], 6)
+        return ordered[:top_k]
 
     def _prf_query_vector(self, query: str,
                           blocks: Optional[List[dict]] = None,
@@ -1623,7 +1707,8 @@ class RecallService:
                 from core.agent.llm_providers.base import GenerateRequest
                 result = self._llm.generate(GenerateRequest(
                     prompt=prompt, max_tokens=256, temperature=0.3))
-                resp = result.text if result is not None else ""
+                resp = (result.text if hasattr(result, "text")
+                        else (result if isinstance(result, str) else ""))
             else:
                 return [query]
             text = resp if isinstance(resp, str) else getattr(resp, "content", "")
@@ -1651,7 +1736,8 @@ class RecallService:
                 from core.agent.llm_providers.base import GenerateRequest
                 result = self._llm.generate(GenerateRequest(
                     prompt=prompt, max_tokens=256, temperature=0.3))
-                resp = result.text if result is not None else ""
+                resp = (result.text if hasattr(result, "text")
+                        else (result if isinstance(result, str) else ""))
             else:
                 return [query]
             text = resp if isinstance(resp, str) else getattr(resp, "content", "")
@@ -2067,19 +2153,50 @@ class RecallService:
             expand_graph = bool(profile.get("graph", False))
         hot_blocks = self._ensure_blocks(sid)
         cold_blocks = self._ensure_global_blocks()
-        if use_hyde and getattr(self, "parallel_decompose", False):
-            expanded = self._expand_questions(query)
-        elif use_hyde:
-            expanded = self._expand_questions_legacy(query)
+        if (use_hyde and getattr(self, "hyde_decompose", True)):
+            if getattr(self, "parallel_decompose", False):
+                expanded = self._expand_questions(query)
+            else:
+                expanded = self._expand_questions_legacy(query)
         else:
             expanded = [query]
         hits: List[RecallHit] = []
         single = getattr(self, "single_source", None)
-        # HyDE 查询向量（2026-08-13, 默认上线 DM_HYDE=1）: 假设答案
-        # 嵌入喂给 vector 路（bm25/spo 仍用原 query）; 无 LLM 自动跳过。
+        # 真 HyDE（2026-08-16 泛化性设计, 默认 DM_HYDE=1）:
+        #   K=1（默认）: 单假设文档嵌入作 query_vec（既有行为不变）;
+        #   K>1: 多假设文档各自检索 + RRF 合并 → "hyde" 独立路线进融合
+        #     （RAG-Fusion 形态, 不替换原 query 向量）;
+        #   DM_HYDE_GATE=1: 向量 top-1 ≥ 阈值 → 跳过 HyDE（防假设文档
+        #     漂移破坏高置信 query）。无 LLM 自动跳过。
         hyde_vec = None
-        if os.environ.get("DM_HYDE", "1") == "1" and self._llm is not None:
-            hyde_vec = self._hyde_query_vector(query)
+        hyde_qvecs: Optional[List[list]] = None
+        # 2026-08-16 评测实锤: HyDE（K=1 替换向量 / K=3 RAG-Fusion）在本
+        # 项目自指语料上净负（doc 54.1→41.0 / 54.1, dialogue 76.9→69.2,
+        # 见 RECALL_FUSION_ABLATION §六 / HYDE_EVAL 记录）— 假设文档无法
+        # 复现内部精确词汇。默认关闭（DM_HYDE=0）, 开关保留做实验。
+        if (os.environ.get("DM_HYDE", "0") == "1"
+                and self._llm is not None):
+            _k = max(1, int(getattr(self, "hyde_k", 1) or 1))
+            _gate = getattr(self, "hyde_gate", False)
+            _enabled = True
+            if _gate:
+                _pre = self._vector_anchors(
+                    query, 1, blocks=hot_blocks or cold_blocks)
+                _enabled = (not _pre) or (
+                    _pre[0].score < getattr(
+                        self, "hyde_gate_threshold", 0.70))
+            if _enabled:
+                if _k > 1:
+                    # RAG-Fusion 形态: 原 query + K 假设文档向量 → vector
+                    # 路线多查询 RRF（合入 vector 源, 不被当独立源埋掉）。
+                    hyps = self._hyde_hypotheses(query, _k)
+                    _qv = self._embed(query)
+                    _hvs = [hv for hv in
+                            (self._embed(t) for t in hyps) if hv]
+                    if _qv and _hvs:
+                        hyde_qvecs = [_qv] + _hvs
+                else:
+                    hyde_vec = self._hyde_query_vector(query)
         # 两级检索（2026-08-14, 方案 B+C 合并体）: 文件层定位 →
         # 命中文件的节块 boost。只对冷池（doc 语料）生效; 监控耗时。
         file_boost_ms = 0.0
@@ -2101,10 +2218,16 @@ class RecallService:
             if getattr(self, "prf", False):
                 _pv = self._prf_query_vector(query, blocks=blocks)
             if single in (None, "vector"):
-                out += self._vector_anchors(
-                    query, top_k, blocks=blocks, query_vec=hyde_vec,
-                    prf_vec=_pv,
-                    boost_docs=files_hit if tag == "cold" else None)
+                if hyde_qvecs is not None:
+                    # RAG-Fusion 多查询向量（2026-08-16）: 原 query + K 假设
+                    # 文档各自检索 + RRF 合并, 产出仍为 vector 源命中。
+                    out += self._vector_multi_anchors(
+                        query, top_k, blocks=blocks, qvecs=hyde_qvecs)
+                else:
+                    out += self._vector_anchors(
+                        query, top_k, blocks=blocks, query_vec=hyde_vec,
+                        prf_vec=_pv,
+                        boost_docs=files_hit if tag == "cold" else None)
             if single in (None, "bm25"):
                 out += self._bm25_anchors(query, top_k, blocks=blocks)
             if single in (None, "spo"):

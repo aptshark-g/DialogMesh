@@ -28,14 +28,14 @@
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |
 | A16 冷热编排 | 快反馈后修正（Governor 熔断/降级 + 诊断自调节低风险自动应用）+ 启动期有界预热 + run_dag 预算接入（2026-08-16 P1-②） | ✅ 自调节 + 预热（首请求 43.9s→1.8s）+ run_dag 挪 executor（请求期间 health 113ms 可响应, 事件循环不阻塞） | test_warmup 5 + test_probe 6 + 端到端（重启后首消息 1.8s） | 预算闸进 run_dag context（_budget_passed）; 子线程超时残留踩坑已记录 |
 | A17 记录 | 事件溯源/NodeEditRecord + 七树持久化 | ✅ 七树 Warm 层落盘（data/agent_trees, 重启恢复实测） | test_engine_persist_and_restore + 端到端持久化文件 | 2026-08-15 补 |
-| A18 参数自适应 | recall weights/feedback + 变体开关 | ✅ | A18 持久化测试 33/33 + 融合消融矩阵 12+ 组（2026-08-16, RECALL_FUSION_ABLATION: route_unique/vec_gate/PRF/CE 全负, 基线局部最优） | 负结果回写设计文档（不删开关, 保留消融钩子） |
+| A18 参数自适应 | recall weights/feedback + 变体开关 | ✅ | A18 持久化测试 33/33 + 融合消融矩阵 12+ 组（2026-08-16）+ 真 HyDE 全量评测（2026-08-17, HYDE_EVAL: K1 全负 / K3 doc+3.3pp 但 dialogue-7.7pp → 默认关） | 负结果回写设计文档（开关保留做实验; SPO 谓词 LLM 判定加 50 次进程预算防爆炸） |
 | A19 白盒 | CLI CRUD / 设计点追踪 + /v6/agent-trees + /v6/system-profile + /v6/repairs | 🟡 系统自画像+修复队列已加, CLI CRUD 仍部分 | /v6/system-profile 端到端（90 模块/174 测试文件） | 元认知可读自己系统 |
 | A20 竞争吸收 | md_big / OPENSOURCE_SURVEY | ✅ 清单有 | — | 吸收未验证（A18 要求） |
 | A21 安全 | 权限门/沙箱/Guard | ✅ | permission 12/12 | 无异常 |
 | A22 因果克制 | CausalSubstrate | ❌ 未（L5 待实现） | — | 设计空转已记录 |
 | A23 因果检验 | 三层检验 | ❌ 未（设计空白） | — | 设计空白已记录 |
 | A24 可逆推 | 蒸馏/启发链 + full_text 共存 | 🟡 蒸馏部分, 逆推验证未 | full_text 测试 | 双向等价机制（本矩阵） |
-| A25 召回重建上下文 | RRF+图扩散+可追源+parent_context+grounding 约束 | ✅ | eval_100（dialogue 76.9% / doc 54.1%, 2026-08-16）+ 三分 Faithfulness（幻觉收敛）+ miss 根因分类（A/B/C, doc 域） | 根因记录: B 类=期望块不在 vector top-100（嵌入覆盖）; 融合局部最优见 RECALL_FUSION_ABLATION_20260816 |
+| A25 召回重建上下文 | RRF+图扩散+可追源+parent_context+grounding 约束 + HyDE 多查询 RRF（DM_HYDE_K, 默认关） | ✅ | eval_100（dialogue 76.9% / doc 50.8%, 2026-08-17 当前语料）+ 三分 Faithfulness（幻觉收敛）+ miss 根因分类 + HyDE 评测（doc +3.3pp / dialogue -7.7pp） | 语料自污染发现: 自加评测主题文档漂移基线 54.1→50.8（非代码回归）; 未来方向=HyDE→BM25 词项扩展（2511.19349） |
 
 ## 派生原则（P1-P28, 关键项）
 

@@ -22,9 +22,21 @@ class _GatewayLLMAdapter:
     快且稳）。此前这些模块 llm=None 走结构式降级, 意图分类恒失效。
     """
 
-    def generate(self, prompt: str, max_tokens: int = 300,
+    def generate(self, prompt, max_tokens: int = 300,
                  temperature: float = 0.1, timeout_s: float = 20.0,
                  **kwargs) -> str:
+        # 兼容两种调用约定（2026-08-16, 真 HyDE 评测接入）:
+        #   _chat_once（recall_service._hyde_hypotheses）传 GenerateRequest
+        #   对象（含 metadata.thinking）; 直接调用方传纯字符串。
+        if hasattr(prompt, "prompt"):
+            _req = prompt
+            prompt = _req.prompt
+            if getattr(_req, "max_tokens", None):
+                max_tokens = _req.max_tokens
+            if getattr(_req, "temperature", None) is not None:
+                temperature = _req.temperature
+            if getattr(_req, "timeout_ms", None):
+                timeout_s = _req.timeout_ms / 1000.0
         import urllib.request
         import time as _time
         _t0 = _time.time()
