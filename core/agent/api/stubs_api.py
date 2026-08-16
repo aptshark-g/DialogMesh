@@ -331,6 +331,30 @@ async def run_probe():
         return {"ok": False, "error": str(e)[:200]}
 
 
+@router.get("/warmup")
+async def get_warmup_state():
+    """启动期预热白盒（2026-08-16 P1-②）:
+
+    冷启动税（首请求懒路径）实测 40s+ → 启动后台预热收敛; 本端点查
+    预热状态/最近历史（各懒路径 ms/超时/降级, A17 记录）。
+    """
+    from core.agent.meta.warmup import get_warmup
+    try:
+        return get_warmup().stats()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.post("/warmup/run")
+async def run_warmup():
+    """手动触发一轮预热（同步执行, 预算截断; 通常无需手动）。"""
+    from core.agent.meta.warmup import get_warmup
+    try:
+        return {"ok": True, "run": get_warmup().run()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

@@ -55,6 +55,12 @@ def register_all_handlers(engine, tracer=None):
     if getattr(sm, '_decider', None) is None:
         sm._decider = getattr(engine, '_decider', None)
 
+    def _budget_passed(ctx) -> bool:
+        """请求级预算闸（P1-②, 2026-08-16）: deadline 由 v3_session_api
+        run_dag context 传入; 超时 → handler 快速降级, 不阻塞事件循环。"""
+        dl = (ctx or {}).get("deadline")
+        return dl is not None and time.time() > dl
+
     def _trace(name: str, fn, *args):
         """Wrap a handler with trace recording."""
         start = time.time()
@@ -118,6 +124,9 @@ def register_all_handlers(engine, tracer=None):
             parser = getattr(engine, '_intent_parser', None)
         # 新包 pipeline: process(text) → PipelineResult(is_multi/segments/confidence/source)
         if parser is not None and hasattr(parser, "process") and text:
+            if _budget_passed(ctx):
+                return {"category": "general", "confidence": 0.5,
+                        "degraded": "budget_exhausted"}
             try:
                 from core.agent.intent.dual_track import PipelineResult
                 result = parser.process(text)
@@ -293,6 +302,8 @@ def register_all_handlers(engine, tracer=None):
         reply = ctx.get("reply", "")
         sid = ctx.get("session_id", "default")
         if dt:
+            if _budget_passed(ctx):
+                return {"blocks": 0, "degraded": "budget_exhausted"}
             # P5: Track A 认知状态 → 组块边界判据（KERNEL §八.8.4）
             cognitive_hints = None
             if hasattr(engine, 'cognitive_state'):

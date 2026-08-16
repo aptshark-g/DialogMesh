@@ -450,6 +450,13 @@ async def send_message(session_id: str, req: SendMessageRequest):
     _save_sessions()
 
     t0 = time.time()
+    # 2026-08-16（P1-② 观测）: 请求阶段计时 spans — 卡在哪直接查,
+    # 不再靠猜（HA_EXECUTION_ANALYSIS §二.2 同类观测原则）。
+    spans: dict = {"t0_ms": round(t0 * 1000, 1)}
+
+    def _mark(name: str) -> None:
+        spans[name] = round((time.time() - t0) * 1000, 1)
+
     # 2026-08-16（请求级总预算, HA_EXECUTION_ANALYSIS §三）: 单请求
     # 150s 总预算, 沿 classify→planning→TaskRunner 传剩余时间; 任何
     # 阶段超预算显式降级（骨架/直接回复）, 不再各层独立超时串行叠加。
@@ -476,6 +483,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
             # 管线, 避免与 L262 StateMachine 双跑）。保留 try/except fallback。
             from core.agent.cli.engine import get_engine
             eng = get_engine()
+            _mark("phase1_get_engine")
             route_meta, intent_meta = {}, {}
             if eng is not None:
                 pcr = getattr(eng, '_pcr_router', None)
@@ -487,22 +495,24 @@ async def send_message(session_id: str, req: SendMessageRequest):
                             eng._last_pcr = r
                     except Exception:
                         pass
-                parser = getattr(eng, '_intent_parser', None)
-                if parser is not None:
-                    try:
-                        pr = parser.parse(user_input=req.content)
-                        eng._last_parse_result = pr
-                        intent = getattr(pr, 'intent', None)
-                        if intent is not None:
-                            intent_meta = {
-                                "segments": (getattr(intent, 'segments', None)
-                                             or [req.content[:30]]),
-                                "confidence": getattr(intent, 'confidence', 0.5),
-                                "category": str(getattr(intent, 'category',
-                                                       'general')),
-                            }
-                    except Exception:
-                        pass
+            _mark("phase1_pcr")
+            parser = getattr(eng, '_intent_parser', None)
+            if parser is not None:
+                try:
+                    pr = parser.parse(user_input=req.content)
+                    eng._last_parse_result = pr
+                    intent = getattr(pr, 'intent', None)
+                    if intent is not None:
+                        intent_meta = {
+                            "segments": (getattr(intent, 'segments', None)
+                                         or [req.content[:30]]),
+                            "confidence": getattr(intent, 'confidence', 0.5),
+                            "category": str(getattr(intent, 'category',
+                                                   'general')),
+                        }
+                except Exception:
+                    pass
+            _mark("phase1_parse")
             if not route_meta:
                 route_meta = {"zone": "MIXED"}
             cognitive_ctx = {
@@ -514,6 +524,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
             }
         except Exception as e:
             logger.warning("Cognitive pipeline skipped: %s", e)
+        _mark("phase1_cognitive")
 
         # Phase 2: Fetch user profile + subgraph context
         profile_text = ""
@@ -531,6 +542,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
             )
         except Exception as e:
             logger.warning("Profile fetch failed: %s", e)
+        _mark("phase2_profile")
 
         # Phase 3: Build messages with full context
         system_prompt = _build_system_prompt(profile_text, cognitive_ctx)
@@ -621,32 +633,44 @@ async def send_message(session_id: str, req: SendMessageRequest):
             eng = get_engine()
             sm = getattr(eng, "_state_machine", None) if eng is not None else None
             if sm is not None and hasattr(sm, "run_dag"):
-                chain_result = sm.run_dag(
-                    dag,
-                    # 2026-08-16: 生产路径主回复在 Phase 4 生成 —
-                    # DAG 内 llm_reply 节点跳过（防双重 LLM 调用卡死）
-                    defer_llm=True,
-                    # async 段（behavior/meta）由 post-LLM 管线/事件订阅
-                    # 完成, run_dag 内同步等待实测阻塞 19s（BehaviorBrain
-                    # 初始化）→ 生产跳过, 请求不再被异步段拖住
-                    defer_async=True,
-                    context={"text": req.content, "session_id": session_id,
-                             "request_id": msg_id,
-                             "intent": intent,
-                             "decision_bus": _dbus,
-                             "meta_feedback": (getattr(_eng, "_meta_feedback", None)
-                                               if _eng is not None else None),
-                             # 执行轨迹落树（P0）: 传会话树供 agentic 节点
-                             "discourse_tree": (
-                                 getattr(_eng, "_discourse_tree", None)
-                                 if _eng is not None else None),
-                             # 2026-08-15: 七树容器（ExecutionTree 挂载点）—
-                             # agentic 节点从 agent_tree.execution 落树
-                             "agent_tree": (
-                                 _eng.get_agent_tree(session_id)
-                                 if _eng is not None else None),
-                             "model": req.model or "deepseek-v4-flash"},
-                )
+                # 2026-08-16（P1-② 预算接入）: run_dag 内部 handler 是
+                # 同步 LLM 调用（intent/discourse 首调实测 13-35s, 上游
+                # 慢时吃 provider 默认 60s×N）——直接同步调用会阻塞事件
+                # 循环, 健康端点都不可达（实测 120s+ 整机卡死）。
+                # → 挪 executor 异步等待（事件循环保持响应）+ deadline
+                # 传入 context（handler 预算闸, 见 event/handlers.py）。
+                _loop = __import__("asyncio").get_event_loop()
+                _dag_ctx = {
+                    "text": req.content, "session_id": session_id,
+                    "request_id": msg_id,
+                    "intent": intent,
+                    "deadline": _req_deadline,
+                    "decision_bus": _dbus,
+                    "meta_feedback": (getattr(_eng, "_meta_feedback", None)
+                                      if _eng is not None else None),
+                    # 执行轨迹落树（P0）: 传会话树供 agentic 节点
+                    "discourse_tree": (
+                        getattr(_eng, "_discourse_tree", None)
+                        if _eng is not None else None),
+                    # 2026-08-15: 七树容器（ExecutionTree 挂载点）—
+                    # agentic 节点从 agent_tree.execution 落树
+                    "agent_tree": (
+                        _eng.get_agent_tree(session_id)
+                        if _eng is not None else None),
+                    "model": req.model or "deepseek-v4-flash",
+                }
+                chain_result = await _loop.run_in_executor(
+                    None,
+                    lambda: sm.run_dag(
+                        dag,
+                        # 2026-08-16: 生产路径主回复在 Phase 4 生成 —
+                        # DAG 内 llm_reply 节点跳过（防双重 LLM 调用卡死）
+                        defer_llm=True,
+                        # async 段（behavior/meta）由 post-LLM 管线/事件
+                        # 订阅完成, run_dag 内同步等待实测阻塞 19s
+                        # （BehaviorBrain 初始化）→ 生产跳过
+                        defer_async=True,
+                        context=_dag_ctx))
                 dag_results = chain_result.get("results", {})
                 ticks_count = len(dag_results)
                 # GAP-D2/D1: 生产学习注入 — run_dag 成功后沉淀含 tool 节点
@@ -739,12 +763,14 @@ async def send_message(session_id: str, req: SendMessageRequest):
                     "chain_summary": chain_summary,
                     "ticks": ticks_count,
                     "errors": trace_errors,
+                    "phase_ms": spans,
                     "latency_ms": int((time.time() - t0) * 1000),
                 },
             )
         except Exception as e:
             logger.warning("Decider pipeline skipped: %s", e)
             trace_errors.append(str(e)[:200])
+        _mark("phase3_dag")
 
         # Enrich messages if decider provided context
         history = session["messages"][-20:]
@@ -933,6 +959,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
         except Exception as _tle:
             logger.debug("tool_loop skipped: %s", _tle)
             tool_loop_used = False
+        _mark("phase4_execute")
         if not tool_loop_used:
             body = {
                 "provider": req.provider or "deepseek",
@@ -984,6 +1011,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 latency_ms=(_llm_t0_mod.time() - _llm_t0) * 1000,
                 ok=bool(content), empty=not content,
                 retries=0, error="" if content else "empty_or_error")
+            _mark("phase4_llm_reply")
             if not content:
                 content = str(data)
 

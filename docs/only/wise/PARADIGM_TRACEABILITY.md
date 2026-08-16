@@ -26,7 +26,7 @@
 | A13 长证明后验 | 信念凝聚器（L2.5） | ⚪ 待核 | — | 待审计 |
 | A14 工程链约束 | ConstraintEngine | ❌ 未接入（07-22 表同） | — | 设计空转已记录 |
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |
-| A16 冷热编排 | 快反馈后修正（Governor 熔断/降级 + 诊断自调节低风险自动应用） | ✅ 2026-08-16（自调节: adjust_breaker/retry 自动应用+记录） | test_apply_suggestion_* | 低风险自动+记录, 高风险留建议 |
+| A16 冷热编排 | 快反馈后修正（Governor 熔断/降级 + 诊断自调节低风险自动应用）+ 启动期有界预热 + run_dag 预算接入（2026-08-16 P1-②） | ✅ 自调节 + 预热（首请求 43.9s→1.8s）+ run_dag 挪 executor（请求期间 health 113ms 可响应, 事件循环不阻塞） | test_warmup 5 + test_probe 6 + 端到端（重启后首消息 1.8s） | 预算闸进 run_dag context（_budget_passed）; 子线程超时残留踩坑已记录 |
 | A17 记录 | 事件溯源/NodeEditRecord + 七树持久化 | ✅ 七树 Warm 层落盘（data/agent_trees, 重启恢复实测） | test_engine_persist_and_restore + 端到端持久化文件 | 2026-08-15 补 |
 | A18 参数自适应 | recall weights/feedback + 变体开关 | ✅ | A18 持久化测试 33/33 | 无异常 |
 | A19 白盒 | CLI CRUD / 设计点追踪 + /v6/agent-trees + /v6/system-profile + /v6/repairs | 🟡 系统自画像+修复队列已加, CLI CRUD 仍部分 | /v6/system-profile 端到端（90 模块/174 测试文件） | 元认知可读自己系统 |

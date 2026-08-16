@@ -278,4 +278,15 @@ async def startup():
             logger.info("Proactive health probe started")
     except Exception as e:
         logger.warning("Proactive health probe start failed: %s", e)
+    # P1-② (2026-08-16): 启动期有界预热 —— 首请求不付冷启动税。
+    # 后台线程按预算跑懒路径（intent/discourse/topic/planner）;
+    # DM_WARMUP_ENABLED=0 可关; 不阻塞启动（A16）。
+    try:
+        from core.agent.meta.warmup import get_warmup
+        if os.environ.get("DM_WARMUP_ENABLED", "1").lower() not in (
+                "0", "false", "off", "no"):
+            get_warmup(engine=eng).start()
+            logger.info("Startup warm-up started")
+    except Exception as e:
+        logger.warning("Startup warm-up start failed: %s", e)
     logger.info("Orchestrator loaded — %d legacy routes", len(_loaded))

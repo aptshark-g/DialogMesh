@@ -42,6 +42,7 @@ class PipelineTracer:
             "ticks": data.get("ticks", 0),
             "llm_reply_snippet": (data.get("llm_reply", "") or "")[:100],
             "errors": data.get("errors", []),
+            "phase_ms": data.get("phase_ms", {}),
             "latency_ms": data.get("latency_ms", 0),
         }
         with _lock:
