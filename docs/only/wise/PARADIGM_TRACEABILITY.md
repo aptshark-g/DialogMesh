@@ -23,7 +23,7 @@
 | A10 元认知 | AuditFeedbackLoop / decision_bus / Governor+AsyncDiagnosis + ProactiveHealthProbe（主动体检, 2026-08-16 P1-①） | ✅ 小环（Governor 熔断/降级/重试）+ 大环（AsyncDiagnosis 异步诊断+自调节）+ 主动体检（无触发也定期巡检, 复用 introspection 薄弱点+诊断器） | test_governor 9 + test_diagnosis 7 + test_probe 6 + 真实链路（网关挂→自动诊断报告; /v6/probe/run 端到端） | 双环 A10 兑现: 小环秒级止血, 大环分钟级复盘, 定期体检补齐"无信号不检查"盲区 |
 | A11 执行层可回溯 | tool_loop + 执行树落树 | ✅ 生产落树（TaskRunner→execution 树 create/spawn/complete） | test_task_runner_lands_execution_tree（engine 真实接线） | 2026-08-15: 生产取树恒 None 已修（engine._agent_trees 挂载） |
 | A12 约束空间 | PCR zone / 约束投影 + PlanningSkill 任务图约束（2026-08-16 接入） | 🟡 规划通道已接（HYBRID 骨架+LLM 细化）, 投影仍部分 | test_planning_skill_wiring 8/8 + 端到端（task_graph 落盘 read_code→analyze→modify→test→report） | 通用模板补入规则层 |
-| A13 长证明后验 | 信念凝聚器（L2.5） | ⚪ 待核 | — | 待审计 |
+| A13 长证明后验 | 信念凝聚器（L2.5）+ 自愈经验库（贝叶斯 prior 累积, 2026-08-16）+ design_lesson LLM 凝练（DM_DIAG_LLM_LESSON, P1-③ 伪二阶抽象） | ✅ 经验库 JSONL + 诊断注入既往经验; 凝练开关开→LLM（失败降级模板）, 端到端实测 1.3s | test_experience 7 + test_diagnosis 7 | 后验→先验闭环: 修复凝练教训→下次诊断检索 |
 | A14 工程链约束 | ConstraintEngine | ❌ 未接入（07-22 表同） | — | 设计空转已记录 |
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |
 | A16 冷热编排 | 快反馈后修正（Governor 熔断/降级 + 诊断自调节低风险自动应用）+ 启动期有界预热 + run_dag 预算接入（2026-08-16 P1-②） | ✅ 自调节 + 预热（首请求 43.9s→1.8s）+ run_dag 挪 executor（请求期间 health 113ms 可响应, 事件循环不阻塞） | test_warmup 5 + test_probe 6 + 端到端（重启后首消息 1.8s） | 预算闸进 run_dag context（_budget_passed）; 子线程超时残留踩坑已记录 |

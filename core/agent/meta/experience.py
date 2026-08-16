@@ -8,6 +8,10 @@
 约束上下文执行, 没有 a 的视角）。元认知持有 a 的约束 → 修复历史按
 伪二阶抽象凝练为"可逆推的设计教训" → 写入经验库 → 后续诊断检索作为
 prior 证据注入（贝叶斯式累积）。
+
+2026-08-16 P1-③: design_lesson 凝练支持 LLM（DM_DIAG_LLM_LESSON=1 开启,
+默认模板）——伪二阶抽象: 从"scope 失败 + 修复 + 设计约束"凝练可逆推的
+教训, 而非固定句式。
 """
 from __future__ import annotations
 
@@ -19,6 +23,17 @@ import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+GATEWAY_URL = "http://127.0.0.1:8080/v1/chat/completions"
+LESSON_PROMPT_TEMPLATE = (
+    "你是 DialogMesh 元认知凝练器。基于一次修复（scope/根因/修复方式/设计约束）, "
+    "凝练一条**可逆推的设计教训**（伪二阶抽象: 教训须能反推回失败场景与修复意图, "
+    "不是泛泛而谈）。输出 JSON（不要其他文字）:\n"
+    "{{\"design_lesson\": \"≤120字, 中文, 含'复用时先核对…'的可操作指引\"}}\n\n"
+    "scope: {scope}\n根因: {root_cause}\n修复: {fix_summary}\n"
+    "设计约束: {design}"
+)
 
 
 def _default_path() -> str:
@@ -128,3 +143,62 @@ def search_experience(text: str, limit: int = 5) -> List[Dict[str, Any]]:
         return get_experience_store().search(text, limit=limit)
     except Exception:
         return []
+
+
+def _template_lesson(scope: str, root_cause: str,
+                     fix_summary: str) -> str:
+    """默认模板凝练（无 LLM / 开关关）——可逆推句式。"""
+    return (
+        "scope %s 曾失败并修复: %s — 复用时先核对该 scope 的设计约束与测试, "
+        "修复须可逆推回设计意图。" % (scope, (root_cause or fix_summary)[:120]))
+
+
+def _llm_lesson(scope: str, root_cause: str, fix_summary: str,
+                design: str, gateway_url: str = GATEWAY_URL) -> str:
+    """LLM 凝练（DM_DIAG_LLM_LESSON=1 时）; 失败/超时 → 空串（走模板）。"""
+    prompt = LESSON_PROMPT_TEMPLATE.format(
+        scope=scope, root_cause=(root_cause or "")[:200],
+        fix_summary=(fix_summary or "")[:200],
+        design=(design or "")[:800])
+    try:
+        import urllib.request
+        body = json.dumps({
+            "provider": "deepseek", "model": "deepseek-v4-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "thinking": {"type": "disabled"},
+            "max_tokens": 300, "temperature": 0.1,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            gateway_url, data=body,
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer dm-client"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            d = json.loads(resp.read())
+        text = (d["choices"][0]["message"].get("content") or "").strip()
+        t = text.strip()
+        if t.startswith("```"):
+            t = t.strip("`")
+            if t.startswith("json"):
+                t = t[4:]
+            t = t.strip()
+        start = t.find("{")
+        end = t.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(t[start:end + 1])
+            lesson = str(data.get("design_lesson", "")).strip()
+            if lesson:
+                return lesson[:300]
+    except Exception as e:
+        logger.debug("llm lesson failed: %s", e)
+    return ""
+
+
+def condense_lesson(scope: str, root_cause: str, fix_summary: str,
+                    design: str = "") -> str:
+    """凝练 design_lesson: LLM（开关开, 失败降级）→ 模板兜底。"""
+    if os.environ.get("DM_DIAG_LLM_LESSON", "").lower() in (
+            "1", "true", "on", "yes"):
+        lesson = _llm_lesson(scope, root_cause, fix_summary, design)
+        if lesson:
+            return lesson
+    return _template_lesson(scope, root_cause, fix_summary)

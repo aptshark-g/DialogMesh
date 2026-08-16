@@ -482,15 +482,20 @@ class AsyncDiagnoser:
             # 凝练回写经验库（伪二阶抽象: 存"可逆推的教训"而非补丁）:
             # 后验 → 先验, 下次诊断可检索（贝叶斯累积）。
             try:
-                from core.agent.meta.experience import record_experience
+                from core.agent.meta.experience import (
+                    condense_lesson, record_experience)
+                # P1-③ (2026-08-16): design_lesson 凝练支持 LLM 开关
+                # （DM_DIAG_LLM_LESSON=1, 伪二阶抽象; 失败/关 → 模板）。
+                _lesson = condense_lesson(
+                    target["source"],
+                    target["summary"][:200],
+                    target.get("suggestion", "")[:200],
+                    design=_design_constraints()[:800])
                 record_experience({
                     "scope": target["source"],
                     "root_cause": target["summary"][:200],
                     "fix_summary": target.get("suggestion", "")[:200],
-                    "design_lesson": (
-                        "scope %s 曾失败并修复: %s — 复用时先核对该 scope "
-                        "的设计约束与测试, 修复须可逆推回设计意图。"
-                        % (target["source"], target["summary"][:120])),
+                    "design_lesson": _lesson,
                     "axioms": ["A11", "A21"],
                     "verify_passed": True,
                     "source": "self_repair",
