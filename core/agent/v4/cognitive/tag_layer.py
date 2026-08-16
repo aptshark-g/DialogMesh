@@ -140,9 +140,10 @@ class TagAcquisitionEngine:
 
         # Personality trait detection (BGE semantic → no new keywords needed)
         try:
-            from core.agent.compiler.semantic_encoder import SemanticEncoder
             import numpy as np
-            bge = SemanticEncoder()
+            # 2026-08-16: 全局单例 get_encoder（避免每调用 new 实例加载模型）
+            from core.agent.compiler.semantic_encoder import get_encoder
+            bge = get_encoder()
             tv = bge.encode(user_text[:500])
             scored = []
 

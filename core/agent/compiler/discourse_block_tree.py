@@ -256,8 +256,9 @@ class MacroMicroQuantizer:
         if self._bge is not None:
             return
         try:
-            from core.agent.compiler.semantic_encoder import SemanticEncoder
-            self._bge = SemanticEncoder()
+            # 2026-08-16: 全局单例 get_encoder（避免每实例独立加载模型）
+            from core.agent.compiler.semantic_encoder import get_encoder
+            self._bge = get_encoder()
         except Exception:
             self._bge = False
 

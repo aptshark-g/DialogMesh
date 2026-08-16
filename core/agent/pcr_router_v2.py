@@ -205,8 +205,10 @@ class PCRRouterV2:
         # 已就绪, 优先用它（与上下文/子图共用单模型内存, 消除双模型并存）。
         # 无本地模型时静默回退现有链（不新增失败路径）。
         try:
-            from core.agent.compiler.semantic_encoder import SemanticEncoder
-            enc = SemanticEncoder()
+            # 2026-08-16: 用全局单例（get_encoder）——直接 SemanticEncoder()
+            # 每次实例化独立加载 ~2GB BGE-M3（多 engine 累积 15GB 根因）。
+            from core.agent.compiler.semantic_encoder import get_encoder
+            enc = get_encoder()
             # 本地模型存在才尝试（否则抛 FileNotFoundError → 回退）
             if enc is not None:
                 vecs = np.array([
@@ -529,8 +531,9 @@ class PCRRouterV2:
         if not text or not text.strip() or sf is None:
             return None
         try:
-            import stanza, urllib.request, json
-            nlp = cls._get_stanza()
+            import urllib.request, json
+            # 英文文本 → en 模型（原硬编码 zh, 中英错配）
+            nlp = cls._get_stanza("en")
             if not nlp:
                 return None
             doc = nlp(text)
@@ -632,15 +635,26 @@ class PCRRouterV2:
         return cls._local_embed(text)
 
     @classmethod
-    def _get_stanza(cls):
-        if not hasattr(cls, '_stanza_nlp'):
-            try:
-                import stanza
-                stanza.download('zh', verbose=False)
-                cls._stanza_nlp = stanza.Pipeline('zh', processors='tokenize,pos,lemma,depparse', verbose=False)
-            except Exception:
-                cls._stanza_nlp = None
-        return cls._stanza_nlp
+    def _get_stanza(cls, lang: str = "zh"):
+        """Stanza 解析器（离线优先, 绝不触发下载）。
+
+        2026-08-16 修: 原 `stanza.download('zh')` 在网络受限时无 CPU 挂起
+        （实测 faulthandler 40s 杀进程; 与 170s 卡死同源）。download_method
+        =None = 只用已缓存模型, 缺失快速失败 → 单元返回 None 走下一确定性
+        单元, 不阻塞链路。缓存按 lang 分开。
+        """
+        key = f"_stanza_nlp_{lang}"
+        if hasattr(cls, key):
+            return getattr(cls, key)
+        try:
+            import stanza
+            nlp = stanza.Pipeline(
+                lang, processors="tokenize,pos,lemma,depparse",
+                verbose=False, download_method=None)
+            setattr(cls, key, nlp)
+        except Exception:
+            setattr(cls, key, None)
+        return getattr(cls, key)
 
     # ── Zone routing ──
 

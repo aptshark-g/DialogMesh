@@ -90,8 +90,10 @@ def bge_importance_score(text: str, signal_descriptions: Dict[str, str], encoder
 
     try:
         if encoder is None:
-            from core.agent.compiler.semantic_encoder import SemanticEncoder
-            encoder = SemanticEncoder()
+            # 2026-08-16: 全局单例 get_encoder（避免每次调用新建实例
+            # 独立加载 ~2GB 模型）
+            from core.agent.compiler.semantic_encoder import get_encoder
+            encoder = get_encoder()
 
         text_vec = encoder.encode(text)
         best_cos = 0.0

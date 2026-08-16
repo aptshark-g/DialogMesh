@@ -83,9 +83,12 @@ class StanzaCorefResolver:
             try:
                 processors = ("tokenize,pos,lemma,depparse" if lang == "zh"
                               else "tokenize,coref")
+                # 2026-08-16: REUSE_RESOURCES → None —— 缺失时不再联网下载
+                # （网络受限会无 CPU 挂起, 与 PCR stanza 同源）。只读缓存,
+                # 缺失快速失败降级。
                 self._pipelines[lang] = stanza.Pipeline(
                     lang=lang, processors=processors,
-                    download_method=stanza.DownloadMethod.REUSE_RESOURCES
+                    download_method=None
                 )
             except Exception as e:
                 logger.warning("Stanza pipeline init failed for %s: %s", lang, e)

@@ -79,9 +79,12 @@ def _get_stanza():
     if _stanza_nlp is not None:
         return _stanza_nlp
     try:
-        import stanza, os
-        stanza.download('zh', verbose=False)
-        _stanza_nlp = stanza.Pipeline('zh', processors='tokenize,pos,lemma,depparse', verbose=False)
+        import stanza
+        # 2026-08-16: 不调 stanza.download（网络受限无 CPU 挂起, 全库
+        # 统一修）。download_method=None = 只读缓存, 缺失快速失败。
+        _stanza_nlp = stanza.Pipeline(
+            'zh', processors='tokenize,pos,lemma,depparse',
+            verbose=False, download_method=None)
         return _stanza_nlp
     except Exception:
         return None

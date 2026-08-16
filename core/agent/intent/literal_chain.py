@@ -135,8 +135,12 @@ Output JSON: {{"decision": "accept" or "reject", "confidence": 0.0-1.0, "segment
             return cls._stanza_nlp
         try:
             import stanza
-            stanza.download('zh', verbose=False)
-            cls._stanza_nlp = stanza.Pipeline('zh', processors='tokenize,pos,depparse', verbose=False)
+            # 2026-08-16: 不调 stanza.download（网络受限无 CPU 挂起, 与
+            # PCR/pronoun 同源, 实测 faulthandler 40s 杀进程）。download_method
+            # =None = 只读缓存, 缺失快速失败缓存 _stanza_failed。
+            cls._stanza_nlp = stanza.Pipeline(
+                'zh', processors='tokenize,pos,depparse',
+                verbose=False, download_method=None)
             return cls._stanza_nlp
         except Exception:
             cls._stanza_failed = True

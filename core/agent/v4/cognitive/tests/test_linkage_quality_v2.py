@@ -6,6 +6,7 @@ Adds:
   9. Generalization: mixed language (Chinese + English)
 """
 import sys, os, time, json
+import pytest
 sys.path.insert(0, '.')
 from core.agent.v4.cognitive.monitor_report import MonitorReport
 
@@ -39,6 +40,7 @@ def engine():
     assert result["status"] == "running", f"bootstrap failed: {result.get('failed')}"
     return eng
 
+@pytest.mark.slow
 def test_all():
     report = MonitorReport("linkage_quality")
     eng = engine(); ad = DialogAdapter()

@@ -210,9 +210,11 @@ class InternalSimulationEngine:
     def _semantic_similarity(self, text_a: str, text_b: str) -> float:
         """BGE cosine similarity. Falls back to token overlap."""
         try:
-            from core.agent.compiler.semantic_encoder import SemanticEncoder
             import numpy as np
-            bge = SemanticEncoder()
+            # 2026-08-16: 全局单例 get_encoder（原每次调用 new 实例 →
+            # 每次 encode 都可能触发模型加载, 多 engine 累积 15GB 根因）
+            from core.agent.compiler.semantic_encoder import get_encoder
+            bge = get_encoder()
             va = bge.encode(text_a[:200])
             vb = bge.encode(text_b[:200])
             a = va.flatten() if len(va.shape) > 1 else va

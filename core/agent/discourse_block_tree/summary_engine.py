@@ -186,8 +186,10 @@ Output only the compressed sentence."""
         """惰性复用全局编码器单例（对齐 7.7 统一异步预加载）。"""
         if getattr(self, "_semantic_encoder", None) is None:
             try:
-                from core.agent.compiler.semantic_encoder import SemanticEncoder
-                self._semantic_encoder = SemanticEncoder()
+                # 2026-08-16: 全局单例 get_encoder（原注释说单例但用
+                # SemanticEncoder() 新建 → 每实例独立加载 ~2GB 模型）。
+                from core.agent.compiler.semantic_encoder import get_encoder
+                self._semantic_encoder = get_encoder()
             except Exception:
                 self._semantic_encoder = False
         return self._semantic_encoder or None
