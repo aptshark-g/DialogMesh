@@ -6,6 +6,9 @@ Sources:
   - Correction journal — profile edits
   - Switch audit log — gateway admin operations (via proxy)
   - Frontend actions — explicit log_user_action() calls
+
+ARCHIVED (2026-08-16): A17 记录已由 decision_bus + 各子系统 JSONL 分散承担;
+统一审计聚合视图属 P2（前端绑定阶段再做聚合端点）。保留代码不删（A17）。
 """
 from __future__ import annotations
 import json, os, time, logging

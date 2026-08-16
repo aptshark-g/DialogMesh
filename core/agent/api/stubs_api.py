@@ -355,6 +355,24 @@ async def run_warmup():
         return {"ok": False, "error": str(e)[:200]}
 
 
+@router.get("/blueprint/suggestions")
+async def get_blueprint_suggestions():
+    """蓝图自增长建议（GAP-D3 接线, 2026-08-16）:
+
+    高频意图（≥3 次, 不在策略权重表）→ 建议新建 Blueprint 模板。
+    MetaFeedback.suggest_blueprints 此前零调用方（白盒闭环断）。
+    """
+    from core.agent.cli.engine import get_engine
+    try:
+        eng = get_engine()
+        mf = getattr(eng, "_meta_feedback", None)
+        if mf is None or not hasattr(mf, "suggest_blueprints"):
+            return {"suggestions": [], "note": "meta_feedback unavailable"}
+        return {"suggestions": mf.suggest_blueprints()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

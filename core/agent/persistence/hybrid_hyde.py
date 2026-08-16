@@ -1,4 +1,8 @@
-"""HybridSearch (keyword+summary) and HyDERetriever."""
+"""HybridSearch (keyword+summary) and HyDERetriever.
+
+ARCHIVED (2026-08-16): persistence 旧体系组件, 功能已被 recall_service 统一
+召回覆盖（sub_queries/HyDE 扩展 + RRF 融合 + 图扩散）。保留代码不删（A17）。
+"""
 from __future__ import annotations
 import logging
 from typing import Callable, List, Optional

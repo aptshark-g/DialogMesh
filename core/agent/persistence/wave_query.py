@@ -15,6 +15,9 @@ Water-wave query SQL generator.
   - 锚点（anchor）：查询起点节点
   - 水波（wave）：第 N 层扩散的节点集合
   - 路径（path）：anchor -> ... -> target 的节点链
+
+ARCHIVED (2026-08-16): 水波扩散旧体系 SQL 生成器, 功能已被 recall_service
+的 expand_graph/k-hop 扩散覆盖。保留代码不删（A17）。
 """
 
 from __future__ import annotations

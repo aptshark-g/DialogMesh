@@ -62,11 +62,18 @@ class LLMCallRecorder:
     def record(self, stage: str, latency_ms: float, ok: bool,
                empty: bool = False, retries: int = 0,
                error: str = "") -> None:
+        trace_id = ""
+        try:
+            from core.agent.event.tracer import get_trace_context
+            trace_id = get_trace_context().get("trace_id", "")
+        except Exception:
+            pass
         entry = {
             "ts": time.time(), "stage": stage,
             "latency_ms": round(latency_ms, 1),
             "ok": bool(ok), "empty": bool(empty),
             "retries": int(retries), "error": str(error)[:120],
+            "trace_id": trace_id,  # §11.2: 请求级贯穿, 按 trace_id 串链路
         }
         with self._lock:
             self._calls.append(entry)

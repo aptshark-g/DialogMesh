@@ -3,6 +3,9 @@
 All Commands first land in WAL (disk) before entering Decider.
 Never drop events. Backpressure = rate-limit pull, not queue-cap.
 Group Commit = batch N commands into 1 fsync.
+
+ARCHIVED (2026-08-16): 崩溃恢复属分布式/持久化阶段（G5 触发）, 当前单进程
+内存态无 WAL 需求。保留代码不删（A17）。
 """
 from __future__ import annotations
 import json, os, time, threading, logging

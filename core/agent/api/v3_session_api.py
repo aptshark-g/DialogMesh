@@ -108,9 +108,11 @@ class _PlanningGatewayProvider:
     """
 
     def __init__(self, gateway_url: str = "http://127.0.0.1:8080/v1/chat/completions",
-                 budget_s: float = 15.0):
+                 budget_s: float = 15.0, trace_id: str = ""):
         self._url = gateway_url
         self._budget_s = budget_s
+        self._trace_id = trace_id  # §11.2: planning 在 to_thread 线程,
+        # thread-local 不继承, 显式透传请求 trace_id
 
     async def generate_async(self, request):
         import asyncio as _aio
@@ -124,6 +126,12 @@ class _PlanningGatewayProvider:
         import urllib.request
         import time as _time
         _t0 = _time.time()
+        if self._trace_id:
+            try:
+                from core.agent.event.tracer import set_trace_context
+                set_trace_context(trace_id=self._trace_id)
+            except Exception:
+                pass
         from core.agent.meta.governor import get_governor
         _gov = get_governor()
         if not _gov.allow("planning"):
@@ -210,7 +218,7 @@ def _taskgraph_to_frontend(tg) -> list:
 
 
 async def _plan_with_skill(text: str, intent_label: str,
-                           budget_s: float = 15.0):
+                           budget_s: float = 15.0, trace_id: str = ""):
     """第二规划通道（2026-08-16）: PlanningSkill 生成任务图。
 
     返回 (steps: List[str] | None, frontend_task_graph: List[dict] | None)。
@@ -229,7 +237,7 @@ async def _plan_with_skill(text: str, intent_label: str,
             metadata={"intent_label": intent_label},
         )
         planner = PlanningSkill(llm_provider=_PlanningGatewayProvider(
-            budget_s=budget_s))
+            budget_s=budget_s, trace_id=trace_id))
         result = await planner.plan(intent)
         tg = getattr(result, "task_graph", None)
         if not result.success or tg is None or not tg.nodes:
@@ -467,6 +475,14 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
     content = ""
     msg_id = str(uuid.uuid4())[:8]  # generate early for tracing
+    # 2026-08-16（§11.2 trace_id 传播）: 请求级 trace_id 设置到 thread-local
+    # TraceContext —— tool_loop/事件链/执行树同线程自动继承, /v6/trace 可
+    # 按 trace_id 串整条链路（此前 msg_id 只在 post-LLM 事件出现）。
+    try:
+        from core.agent.event.tracer import set_trace_context
+        set_trace_context(trace_id=msg_id, session_id=session_id)
+    except Exception:
+        pass
     # 防御初始化（B4-1-P2 全栈实测）: task_graph 在 try 内 Phase 5 才赋值，
     # 网关离线走 except 跳过后 `if task_graph:` 会 UnboundLocalError —
     # 本环境 switch 8080 未运行时这正是常态路径。
@@ -844,7 +860,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
                         }.get(intent, "task_planning")
                         _psteps, _pfront = await _plan_with_skill(
                             req.content, _plan_label,
-                            budget_s=_budget_left())
+                            budget_s=_budget_left(), trace_id=msg_id)
                         if _psteps:
                             steps = _psteps
                             if _pfront:
@@ -1135,6 +1151,9 @@ async def send_message(session_id: str, req: SendMessageRequest):
         session_id=session_id,
         status="accepted",
         content=content,
+        # 2026-08-16: intent 此前未传 → 响应恒默认 "chat"（分类器实际
+        # 正确, 字段丢在响应层）。传真实意图供前端/路由观察。
+        intent=intent,
         task_graph=task_graph,
         latency_ms=latency,
     )

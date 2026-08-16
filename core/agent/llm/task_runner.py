@@ -170,6 +170,15 @@ class TaskRunner:
             anchors: Optional[str] = None) -> TaskResult:
         """执行一个蓝图节点。返回 TaskResult（含监控裁决 + 决策事件）。"""
         t0 = time.time()
+        # 2026-08-16（§11.2）: 请求级 trace_id 贯穿执行线程（tool_loop
+        # 同线程自动继承 thread-local TraceContext）。
+        try:
+            from core.agent.event.tracer import set_trace_context
+            if request_id:
+                set_trace_context(trace_id=request_id,
+                                  session_id=session_id or "")
+        except Exception:
+            pass
         constraint = constraint or TaskConstraint(goal=goal)
         if not constraint.goal:
             constraint.goal = goal

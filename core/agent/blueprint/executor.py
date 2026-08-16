@@ -13,6 +13,11 @@ llm_reply supports reply modes (§7.6):
 
 No fake data: when a chain component is unavailable the handler returns an
 explicit {"status": "unavailable"} instead of keyword-heuristic output.
+
+ARCHIVED NOTE (2026-08-16): 生产执行已走 StateMachine.run_dag（B2/G1）,
+BlueprintExecutor 保留为验证/回放工具。其中 _handle_discourse/_handle_engineering
+为 deferred 占位（生产 handler 见 event/handlers.py）; expand_from_dag_trace /
+route_mode 为 P2 设计承诺未兑现 —— 均不阻塞生产, 不删代码（A17）。
 """
 
 from __future__ import annotations

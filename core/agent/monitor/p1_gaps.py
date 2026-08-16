@@ -204,7 +204,8 @@ class ProfileEvolution:
 
 # ═══ Sandbox — Container Isolation ═══
 
-class SandboxExecutor:
+class SandboxExecutor:  # ARCHIVED (2026-08-16): 工具沙箱已由权限引擎
+    # （permission_engine RiskClass/Mode/path root）覆盖, 本类零调用方。
     """Basic sandbox for execution isolation.
 
     Three modes:
