@@ -268,4 +268,14 @@ async def startup():
             pass
     except Exception as e:
         logger.warning("White-box edit engine inject failed: %s", e)
+    # P1-① (2026-08-16): 主动体检 —— 元认知定期自检（无触发也巡检）。
+    # daemon 线程, 启动延迟后首检, 周期 interval; DM_PROBE_ENABLED=0 可关。
+    try:
+        from core.agent.meta.probe import get_probe
+        if os.environ.get("DM_PROBE_ENABLED", "1").lower() not in (
+                "0", "false", "off", "no"):
+            get_probe().start()
+            logger.info("Proactive health probe started")
+    except Exception as e:
+        logger.warning("Proactive health probe start failed: %s", e)
     logger.info("Orchestrator loaded — %d legacy routes", len(_loaded))

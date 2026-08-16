@@ -20,7 +20,7 @@
 | A7 信息论 | P9 分治; 概率/价值算子 | ✅ 原文保留已落地（算子未, 启发式） | 真幻觉率 0.175→0.045 实测 | 算子缺 → 契约 §三补丁 |
 | A8 表达形式 | 符号注入 Mermaid/JSON | 🟡 | 符号注入端到端（08-10） | 待审计 |
 | A9 行为一等公民 | 行为链 + ExecutionTree 消费 | 🟡 消费器有（ExecutionPatternStore 持久化 + BehaviorTree 风险模式接线）, 深度偏好 W7 未 | _consume_execution_tree 生产路径实测 | 生产接线修复后消费端可达 |
-| A10 元认知 | AuditFeedbackLoop / decision_bus / Governor+AsyncDiagnosis | ✅ 小环（Governor 熔断/降级/重试）+ 大环（AsyncDiagnosis 异步诊断+自调节, 2026-08-16） | test_governor 9 + test_diagnosis 7 + 真实链路（网关挂→自动诊断报告） | 双环 A10 兑现: 小环秒级止血, 大环分钟级复盘 |
+| A10 元认知 | AuditFeedbackLoop / decision_bus / Governor+AsyncDiagnosis + ProactiveHealthProbe（主动体检, 2026-08-16 P1-①） | ✅ 小环（Governor 熔断/降级/重试）+ 大环（AsyncDiagnosis 异步诊断+自调节）+ 主动体检（无触发也定期巡检, 复用 introspection 薄弱点+诊断器） | test_governor 9 + test_diagnosis 7 + test_probe 6 + 真实链路（网关挂→自动诊断报告; /v6/probe/run 端到端） | 双环 A10 兑现: 小环秒级止血, 大环分钟级复盘, 定期体检补齐"无信号不检查"盲区 |
 | A11 执行层可回溯 | tool_loop + 执行树落树 | ✅ 生产落树（TaskRunner→execution 树 create/spawn/complete） | test_task_runner_lands_execution_tree（engine 真实接线） | 2026-08-15: 生产取树恒 None 已修（engine._agent_trees 挂载） |
 | A12 约束空间 | PCR zone / 约束投影 + PlanningSkill 任务图约束（2026-08-16 接入） | 🟡 规划通道已接（HYBRID 骨架+LLM 细化）, 投影仍部分 | test_planning_skill_wiring 8/8 + 端到端（task_graph 落盘 read_code→analyze→modify→test→report） | 通用模板补入规则层 |
 | A13 长证明后验 | 信念凝聚器（L2.5） | ⚪ 待核 | — | 待审计 |

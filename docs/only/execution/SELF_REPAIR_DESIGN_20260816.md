@@ -141,7 +141,10 @@ apply 执行器留 P1（git 分支/补丁落地）。
 - 修复可追溯可回滚（git 原生）
 
 后续（P2）: 自愈经验库 RAG（诊断时检索既往修复）/ 修复模式沉淀为
-启发链 / 自修定期巡检（无触发也主动体检, 复用 introspection 薄弱点）。
+启发链。
+已实施: **自修定期巡检（无触发也主动体检, 复用 introspection 薄弱点）**
+—— 2026-08-16 P1-① 落地为 `core/agent/meta/probe.py`（ProactiveHealthProbe,
+见 PROACTIVE_PROBE_IMPL_20260816.md）。
 
 ## 九、加强: 贝叶斯 prior + 伪二阶抽象凝练（2026-08-16 追加）
 

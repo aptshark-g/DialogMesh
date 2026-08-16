@@ -307,6 +307,30 @@ async def confirm_repair(
         return {"error": str(e)[:200]}
 
 
+@router.get("/probe")
+async def get_probe_state():
+    """主动体检白盒（2026-08-16 P1-①）:
+
+    巡检状态（是否运行/周期/下次巡检）/ 最近巡检历史（findings/triggered/
+    skipped, A17 记录）。无触发也定期自检 —— 元认知第二大脑的定期体检。
+    """
+    from core.agent.meta.probe import get_probe
+    try:
+        return get_probe().stats()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.post("/probe/run")
+async def run_probe():
+    """立即执行一轮主动体检（诊断异步入诊断器队列, 不阻塞）。"""
+    from core.agent.meta.probe import get_probe
+    try:
+        return {"ok": True, "run": get_probe().run_once()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
 @router.get("/recall")
 async def recall(query: str = Query(default=""),
                  top_k: int = Query(default=10),

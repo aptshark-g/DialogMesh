@@ -20,9 +20,11 @@ logger = logging.getLogger(__name__)
 
 
 def _default_path() -> str:
+    # 项目根 data/（与 introspection/experience 等一致）; 2026-08-16 修:
+    # 此前少一层 dirname, 落到了 core/data/, 与 data/ 约定不一致。
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))),
+            os.path.dirname(os.path.abspath(__file__))))),
         "data", "llm_calls.jsonl")
 
 
