@@ -4,10 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getApiConfig, setApiConfig, resetApiConfig } from '../lib/config';
 
 const PROVIDERS = [
-  { id: 'custom', label: '自定义', providerUrl: '' },
-  { id: 'lmstudio', label: 'LM Studio', providerUrl: 'http://localhost:1234' },
-  { id: 'ollama', label: 'Ollama', providerUrl: 'http://localhost:11434' },
-  { id: 'openai', label: 'OpenAI', providerUrl: 'https://api.openai.com' },
+  { id: 'custom', label: '自定义', providerUrl: '', restUrl: '' },
+  { id: 'lmstudio', label: 'LM Studio', providerUrl: 'http://localhost:1234', restUrl: '' },
+  { id: 'ollama', label: 'Ollama', providerUrl: 'http://localhost:11434', restUrl: '' },
+  { id: 'openai', label: 'OpenAI', providerUrl: 'https://api.openai.com', restUrl: '' },
 ] as const;
 
 type ProviderId = (typeof PROVIDERS)[number]['id'];

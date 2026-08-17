@@ -74,7 +74,7 @@ export const useChatStore = create<ChatStore>((set, _get) => {
     setThinkingText: (t) => set({ thinkingText: t }),
     setPendingAsk: (t) => set({ pendingAsk: t }),
     consumeAsk: () => {
-      const t = useChatStore.getState().pendingAsk;
+      const t: string = useChatStore.getState().pendingAsk;
       if (t) set({ pendingAsk: '' });
       return t;
     },
