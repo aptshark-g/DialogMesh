@@ -54,7 +54,7 @@ export const SURFACES: readonly SurfaceDef[] = [
   { key: 'profile', label: '画像', title: '认知画像', icon: User, component: ProfileDockContent, mainRoute: '/profile' },
   { key: 'chat', label: '对话', title: '对话', icon: MessageSquare, component: ChatSideSurface, mainRoute: '/chat' },
   { key: 'context', label: '上下文', title: '上下文工作台', icon: Braces, component: ContextDockContent, mainRoute: '/pipeline' },
-  { key: 'engineering', label: '环境信息', title: '环境信息', icon: GitBranch, component: EnvironmentDockContent, mainRoute: '/engineering' },
+  { key: 'engineering', label: '工程链', title: '工程链', icon: GitBranch, component: EnvironmentDockContent, mainRoute: '/engineering' },
   { key: 'tasks', label: '任务', title: '任务', icon: ListChecks, component: TasksDockContent, mainRoute: '/tasks' },
   { key: 'legend', label: '图例', title: '图例', icon: Palette, component: LegendDockContent, mainRoute: '/graph' },
   { key: 'thinking', label: '思考流', title: '思考流', icon: BrainCircuit, component: ThinkingDockContent },

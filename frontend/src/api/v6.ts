@@ -423,6 +423,9 @@ export interface V6GitStatus {
   remote: string;
   ahead: number;
   behind: number;
+  branches: { name: string; current: boolean }[];
+  additions: number;
+  deletions: number;
   staged: number;
   unstaged: number;
   untracked: number;
@@ -433,6 +436,42 @@ export interface V6GitStatus {
 
 export function getGitStatus(): Promise<V6GitStatus> {
   return apiFetch<V6GitStatus>('/v6/git/status');
+}
+
+export function switchGitBranch(name: string, create = false): Promise<{ ok: boolean; branch: string }> {
+  return apiFetch<{ ok: boolean; branch: string }>('/v6/git/branch', {
+    method: 'POST',
+    body: JSON.stringify({ name, create }),
+  });
+}
+
+export function gitCommit(message: string): Promise<{ ok: boolean; detail: string }> {
+  return apiFetch<{ ok: boolean; detail: string }>('/v6/git/commit', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+export function gitPush(): Promise<{ ok: boolean; detail: string }> {
+  return apiFetch<{ ok: boolean; detail: string }>('/v6/git/push', { method: 'POST' });
+}
+
+// ═══ 系统后台进程（工程链副屏, 2026-08-18）═══ #
+
+export interface V6SystemProcesses {
+  threads: {
+    name: string;
+    label: string;
+    daemon: boolean;
+    alive: boolean;
+    ident: number | null;
+  }[];
+  count: number;
+  memory: Record<string, unknown>;
+}
+
+export function getSystemProcesses(): Promise<V6SystemProcesses> {
+  return apiFetch<V6SystemProcesses>('/v6/system/processes');
 }
 
 export function deleteProjectApi(id: string): Promise<{ deleted: boolean }> {

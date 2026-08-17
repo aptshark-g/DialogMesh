@@ -3,7 +3,9 @@ import { useState, useEffect, useCallback } from 'react';
 import type { FC, ReactNode } from 'react';
 import {
   RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2, Network,
-  SlidersHorizontal, GitBranch, GitCommitHorizontal, CircleDot, Wrench, Sparkles, Share2,
+  SlidersHorizontal, GitBranch, GitCommitHorizontal, Wrench, Sparkles,
+  ChevronDown, Terminal, Laptop, Smartphone, Send, ArrowUpFromLine, Plus,
+  Download, Check, Search, MessageSquare,
 } from 'lucide-react';
 import { CognitiveRadarChart } from '../CognitiveRadarChart';
 import { MetricCards } from '../MetricCards';
@@ -11,7 +13,8 @@ import { useV6Profile } from '../../hooks/useV6Profile';
 import {
   getContext, getEngineering, submitCompressionFeedback, getHeuristics,
   getChangelog, interveneChangelog, getGitStatus, getSkills, getGraph,
-  type V6GitStatus,
+  getSystemProcesses, switchGitBranch, gitCommit, gitPush,
+  type V6GitStatus, type V6SystemProcesses,
 } from '../../api/v6';
 import { useTaskGraphStore } from '../../stores/taskStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -533,60 +536,117 @@ export function ContextDockContent() {
 
 /* ── Environment（环境信息, 2026-08-17）: git 状态 / skills / 约束 / 图关系 ── */
 
-const SectionTitle: FC<{ icon: FC<{ className?: string }>; text: string; extra?: ReactNode }> =
-  ({ icon: Icon, text, extra }) => (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
+/** 工程链副屏可折叠分区头 */
+function EnvSectionHeader(props: {
+  open: boolean;
+  onToggle: () => void;
+  icon: FC<{ className?: string }>;
+  title: string;
+  extra?: ReactNode;
+}) {
+  const { open: isOpen, onToggle, icon: Icon, title, extra } = props;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full flex items-center justify-between py-1 text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors"
+    >
+      <span className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 text-text-muted" />
-        {text}
-      </div>
-      {extra}
-    </div>
+        {title}
+      </span>
+      <span className="flex items-center gap-1.5">
+        {extra}
+        <ChevronDown className={cn('w-3.5 h-3.5 text-text-muted transition-transform', isOpen && 'rotate-180')} />
+      </span>
+    </button>
   );
-
-const Chip: FC<{ label: string; value: string | number; tone?: 'ok' | 'warn' | 'muted' }> =
-  ({ label, value, tone = 'muted' }) => (
-    <div className="bg-wash rounded-card px-2.5 py-2 text-center">
-      <div className={cn(
-        'text-base font-semibold leading-tight',
-        tone === 'ok' ? 'text-status-success' : tone === 'warn' ? 'text-status-warning' : 'text-text-primary'
-      )}>
-        {value}
-      </div>
-      <div className="text-[10px] text-text-muted mt-0.5">{label}</div>
-    </div>
-  );
+}
 
 export function EnvironmentDockContent() {
   const [git, setGit] = useState<V6GitStatus | null>(null);
   const [skills, setSkills] = useState<V6SkillsResponse | null>(null);
   const [graph, setGraph] = useState<V6GraphResponse | null>(null);
   const [engineering, setEngineering] = useState<Record<string, unknown> | null>(null);
+  const [processes, setProcesses] = useState<V6SystemProcesses | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [open, setOpen] = useState<Record<string, boolean>>({
+    env: true, connection: false, branches: false, processes: false, skills: false,
+  });
+  const [skillQuery, setSkillQuery] = useState('');
+  const [commitMsg, setCommitMsg] = useState('');
+  const [newBranch, setNewBranch] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     Promise.allSettled([
-      getGitStatus(),
-      getSkills(),
-      getGraph(),
-      getEngineering(),
-    ]).then(([g, s, gr, e]) => {
+      getGitStatus(), getSkills(), getGraph(), getEngineering(), getSystemProcesses(),
+    ]).then(([g, s, gr, e, p]) => {
       setGit(g.status === 'fulfilled' ? g.value : null);
       setSkills(s.status === 'fulfilled' ? s.value : null);
       setGraph(gr.status === 'fulfilled' ? gr.value : null);
       setEngineering(e.status === 'fulfilled' ? e.value : null);
+      setProcesses(p.status === 'fulfilled' ? p.value : null);
       setLoading(false);
     });
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  const reloadGit = useCallback(() => {
+    getGitStatus().then(setGit).catch(() => {});
+  }, []);
+
+  const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+
+  const handleSwitchBranch = async (name: string, create = false) => {
+    setBusy(`switch-${name}`);
+    try {
+      await switchGitBranch(name, create);
+      setToast({ type: 'success', message: `已切换到 ${name}` });
+      reloadGit();
+    } catch (e) {
+      setToast({ type: 'error', message: `切换失败: ${e instanceof Error ? e.message : e}` });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleCommit = async () => {
+    const msg = commitMsg.trim();
+    if (!msg) return;
+    setBusy('commit');
+    try {
+      await gitCommit(msg);
+      setCommitMsg('');
+      setToast({ type: 'success', message: '已提交本地' });
+      reloadGit();
+    } catch (e) {
+      setToast({ type: 'error', message: `提交失败: ${e instanceof Error ? e.message : e}` });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handlePush = async () => {
+    setBusy('push');
+    try {
+      await gitPush();
+      setToast({ type: 'success', message: '已推送到远端' });
+      reloadGit();
+    } catch (e) {
+      setToast({ type: 'error', message: `推送失败: ${e instanceof Error ? e.message : e}` });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (loading && !git) {
     return (
-      <DockPanel title="环境信息">
+      <DockPanel title="工程链">
         <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div>
       </DockPanel>
     );
@@ -606,122 +666,323 @@ export function EnvironmentDockContent() {
     }
     return 0;
   })();
+  const filteredSkills = skills?.skills.filter((sk) =>
+    sk.name.toLowerCase().includes(skillQuery.trim().toLowerCase())
+  ) ?? [];
+  const changeTotal = git ? git.staged + git.unstaged + git.untracked : 0;
 
   return (
-    <DockPanel title="环境信息">
-      {/* 刷新 */}
+    <DockPanel title="工程链">
+      {toast && (
+        <div className={cn(
+          'rounded-lg px-2.5 py-2 text-[11px]',
+          toast.type === 'success' ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'
+        )}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* ── 环境信息 ── */}
+      <div className="space-y-2 border-b border-border-subtle pb-3">
+        <EnvSectionHeader
+          open={open.env}
+          onToggle={() => toggle('env')}
+          icon={GitBranch}
+          title="环境信息"
+          extra={git?.dirty ? <span className="text-[10px] text-status-warning">有变更</span> : <span className="text-[10px] text-status-success">干净</span>}
+        />
+        {open.env && (
+          <div className="space-y-2.5">
+            {/* Codex 式 Git 状态 */}
+            <div className="bg-wash rounded-card p-2.5 space-y-2">
+              <div className="flex items-end gap-3">
+                <div>
+                  <div className="text-[10px] text-text-muted">变更</div>
+                  <div className="flex items-baseline gap-2 text-sm">
+                    <span className="text-status-success font-semibold">+{git?.additions ?? 0}</span>
+                    <span className="text-status-error font-semibold">-{git?.deletions ?? 0}</span>
+                  </div>
+                </div>
+                <div className="flex-1" />
+                <div className="text-right">
+                  <div className="text-[10px] text-text-muted">本地</div>
+                  <div className="text-xs font-medium text-text-primary truncate max-w-[110px]">
+                    {git?.branch || '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { if (commitMsg.trim()) handleCommit(); }}
+                  disabled={busy !== null || !commitMsg.trim()}
+                  className="flex items-center gap-1 rounded-md bg-primary text-white px-2.5 py-1 text-[11px] font-medium hover:bg-primary-dark transition-colors disabled:opacity-40"
+                >
+                  <Send className="w-3 h-3" />
+                  提交
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePush}
+                  disabled={busy !== null}
+                  className="flex items-center gap-1 rounded-md border border-subtle px-2.5 py-1 text-[11px] text-text-secondary hover:text-primary transition-colors disabled:opacity-40"
+                >
+                  <ArrowUpFromLine className="w-3 h-3" />
+                  推送
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="比较分支（待接入）"
+                  className="flex items-center gap-1 rounded-md border border-subtle px-2.5 py-1 text-[11px] text-text-muted opacity-50"
+                >
+                  比较分支
+                </button>
+              </div>
+              <input
+                value={commitMsg}
+                onChange={(e) => setCommitMsg(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCommit(); }}
+                placeholder="提交信息…"
+                aria-label="提交信息"
+                className="w-full bg-surface-card rounded-md px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+              <p className="text-[10px] text-text-muted">无法获取拉取请求状态（PR 集成待接入）</p>
+
+              {git?.last_commit?.hash && (
+                <div className="flex items-start gap-1.5 text-[11px] text-text-secondary">
+                  <GitCommitHorizontal className="w-3 h-3 shrink-0 mt-0.5 text-text-muted" />
+                  <div className="min-w-0">
+                    <div className="truncate">{git.last_commit.message || '—'}</div>
+                    <div className="text-[10px] text-text-muted">
+                      {git.last_commit.hash} · {git.last_commit.author}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {changeTotal > 0 && (
+                <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                  {git?.changed_files.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+                      <span className={cn(
+                        'px-1 rounded font-mono shrink-0',
+                        f.status === '??' ? 'bg-wash text-text-muted' : 'bg-primary/10 text-primary'
+                      )}>{f.status}</span>
+                      <span className="truncate font-mono">{f.path}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 关系约束 + 图关系 */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-wash rounded-card px-2.5 py-2">
+                <div className="text-[10px] text-text-muted">项目关系约束</div>
+                <div className="text-sm font-semibold text-text-primary">{constraintCount}</div>
+              </div>
+              <div className="bg-wash rounded-card px-2.5 py-2">
+                <div className="text-[10px] text-text-muted">图关系</div>
+                <div className="text-sm font-semibold text-text-primary">{graphNodes} 节点 / {graphEdges} 边</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── 连接（占位: 本地/远程机器/飞书/微信） ── */}
+      <div className="space-y-2 border-b border-border-subtle pb-3">
+        <EnvSectionHeader
+          open={open.connection}
+          onToggle={() => toggle('connection')}
+          icon={Laptop}
+          title="连接"
+          extra={<span className="text-[10px] text-text-muted">占位</span>}
+        />
+        {open.connection && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <span className="px-2 py-1 rounded-md bg-primary/10 text-primary text-[11px]">本地</span>
+              <span className="px-2 py-1 rounded-md border border-subtle text-text-muted text-[11px]">连接机器（待接入）</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-[11px]">
+              {[
+                ['手机控制电脑', Smartphone],
+                ['飞书', Send],
+                ['微信', MessageSquare],
+              ].map(([label, Icon]) => (
+                <span key={label as string} className="flex items-center gap-1 px-2 py-1 rounded-md bg-wash text-text-muted">
+                  <Icon className="w-3 h-3" />
+                  {label as string} · 待接入
+                </span>
+              ))}
+            </div>
+            <p className="text-[10px] text-text-muted leading-relaxed">
+              后期支持手机远程控制电脑、飞书/微信消息桥接; 当前为占位骨架。
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Git 分支 ── */}
+      <div className="space-y-2 border-b border-border-subtle pb-3">
+        <EnvSectionHeader
+          open={open.branches}
+          onToggle={() => toggle('branches')}
+          icon={GitCommitHorizontal}
+          title="Git 分支"
+          extra={<span className="text-[10px] text-text-muted">{git?.branches.length ?? 0}</span>}
+        />
+        {open.branches && (
+          <div className="space-y-1.5">
+            {(git?.branches ?? []).map((b) => (
+              <div key={b.name} className="flex items-center gap-2 text-xs">
+                {b.current ? (
+                  <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                ) : (
+                  <span className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span className={cn('flex-1 truncate', b.current ? 'text-primary font-medium' : 'text-text-secondary')}>
+                  {b.name}
+                </span>
+                {!b.current && (
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchBranch(b.name)}
+                    disabled={busy !== null}
+                    className="px-2 py-0.5 rounded-md border border-subtle text-[11px] text-text-secondary hover:text-primary transition-colors disabled:opacity-40"
+                  >
+                    切换
+                  </button>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5 pt-1">
+              <input
+                value={newBranch}
+                onChange={(e) => setNewBranch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && newBranch.trim()) handleSwitchBranch(newBranch.trim(), true); }}
+                placeholder="新建分支名…"
+                aria-label="新建分支"
+                className="flex-1 bg-wash rounded-md px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+              <button
+                type="button"
+                onClick={() => newBranch.trim() && handleSwitchBranch(newBranch.trim(), true)}
+                disabled={busy !== null || !newBranch.trim()}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary-dark transition-colors disabled:opacity-40"
+              >
+                <Plus className="w-3 h-3" />
+                新建
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── 后台进程 ── */}
+      <div className="space-y-2 border-b border-border-subtle pb-3">
+        <EnvSectionHeader
+          open={open.processes}
+          onToggle={() => toggle('processes')}
+          icon={Terminal}
+          title="后台进程"
+          extra={<span className="text-[10px] text-text-muted">{processes?.count ?? 0}</span>}
+        />
+        {open.processes && (
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {(processes?.threads ?? []).map((t) => (
+              <div key={`${t.name}-${t.ident}`} className="flex items-center gap-2 text-[11px]">
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  t.alive ? 'bg-status-success' : 'bg-text-muted/40'
+                )} />
+                <span className="text-text-secondary font-mono truncate">{t.name}</span>
+                {t.label && <span className="text-text-muted truncate">{t.label}</span>}
+                {t.daemon && <span className="text-[10px] text-text-muted shrink-0">daemon</span>}
+              </div>
+            ))}
+            {(processes?.threads ?? []).length === 0 && (
+              <p className="text-[11px] text-text-muted">暂无进程信息</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Skills ── */}
+      <div className="space-y-2">
+        <EnvSectionHeader
+          open={open.skills}
+          onToggle={() => toggle('skills')}
+          icon={Wrench}
+          title="Skills"
+          extra={<span className="text-[10px] text-text-muted">{skills?.total ?? 0}</span>}
+        />
+        {open.skills && (
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="w-3 h-3 text-text-muted absolute left-2 top-1/2 -translate-y-1/2" />
+              <input
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+                placeholder="搜索 skill…"
+                aria-label="搜索 skill"
+                className="w-full bg-wash rounded-md pl-7 pr-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+            <div className="space-y-1.5 max-h-44 overflow-y-auto">
+              {filteredSkills.map((sk) => (
+                <div key={sk.name} className="bg-wash rounded-card px-2.5 py-2">
+                  <div className="text-xs font-medium text-text-primary flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                    <span className="truncate">{sk.name}</span>
+                  </div>
+                  {sk.strategies?.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {sk.strategies.slice(0, 3).map((st, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-primary/5 text-primary text-[10px]">{st}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {filteredSkills.length === 0 && (
+                <p className="text-[11px] text-text-muted py-1">无匹配 skill</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] text-text-muted">
+                渠道: {skills?.channels.find((c) => c.name === 'github')?.status === 'ok' ? 'github 可用' : 'github 待接入'}
+              </span>
+              <button
+                type="button"
+                disabled
+                title="联网下载 skill（待接入）"
+                className="flex items-center gap-1 px-2 py-1 rounded-md border border-subtle text-[11px] text-text-muted opacity-50"
+              >
+                <Download className="w-3 h-3" />
+                联网下载
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 全局刷新 */}
       <button
         type="button"
         onClick={load}
         className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-primary transition-colors"
       >
         <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
-        刷新环境信息
+        刷新
       </button>
-
-      {/* Git 状态 */}
-      <div className="space-y-2">
-        <SectionTitle
-          icon={GitBranch}
-          text="Git 工作区"
-          extra={git?.dirty ? <span className="text-[10px] text-status-warning">有未提交变更</span> : <span className="text-[10px] text-status-success">干净</span>}
-        />
-        <div className="grid grid-cols-3 gap-2">
-          <Chip label="分支" value={git?.branch || '—'} />
-          <Chip label="领先/落后" value={git ? `${git.ahead}/${git.behind}` : '—'} />
-          <Chip label="变更" value={git ? git.staged + git.unstaged + git.untracked : '—'} tone={(git?.dirty ?? false) ? 'warn' : 'ok'} />
-        </div>
-        <div className="space-y-1 text-xs">
-          {git?.remote && (
-            <div className="flex items-center gap-1.5 text-text-muted">
-              <Share2 className="w-3 h-3 shrink-0" />
-              <span className="truncate">{git.remote}</span>
-            </div>
-          )}
-          {git?.last_commit?.hash && (
-            <div className="flex items-start gap-1.5 text-text-secondary">
-              <GitCommitHorizontal className="w-3 h-3 shrink-0 mt-0.5 text-text-muted" />
-              <div className="min-w-0">
-                <div className="truncate">{git.last_commit.message || '—'}</div>
-                <div className="text-[10px] text-text-muted">
-                  {git.last_commit.hash} · {git.last_commit.author} · {git.last_commit.date?.slice(0, 16)}
-                </div>
-              </div>
-            </div>
-          )}
-          {git && (git.staged > 0 || git.unstaged > 0 || git.untracked > 0) && (
-            <div className="mt-1 space-y-0.5 max-h-28 overflow-y-auto">
-              <div className="text-[10px] text-text-muted">本轮变更文件（{git.changed_files.length} 显示）:</div>
-              {git.changed_files.map((f, i) => (
-                <div key={i} className="flex items-center gap-1.5 text-[11px] text-text-secondary">
-                  <span className={cn(
-                    'px-1 rounded font-mono shrink-0',
-                    f.status === '??' ? 'bg-wash text-text-muted' : 'bg-primary/10 text-primary'
-                  )}>{f.status}</span>
-                  <span className="truncate font-mono">{f.path}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <p className="text-[10px] text-text-muted leading-relaxed">
-          内置 git 可视化（提交图/分支视图）与 VS Code 联动为待办 —— 当前为只读状态面板。
-        </p>
-      </div>
-
-      {/* Skills */}
-      <div className="space-y-2">
-        <SectionTitle icon={Wrench} text="已启动 Skills" extra={skills ? <span className="text-[10px] text-text-muted">{skills.total}</span> : undefined} />
-        {skills && skills.skills.length > 0 ? (
-          <div className="space-y-1.5">
-            {skills.skills.slice(0, 8).map((sk) => (
-              <div key={sk.name} className="bg-wash rounded-card px-2.5 py-2">
-                <div className="text-xs font-medium text-text-primary flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-primary shrink-0" />
-                  <span className="truncate">{sk.name}</span>
-                </div>
-                {sk.strategies?.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {sk.strategies.slice(0, 4).map((st, i) => (
-                      <span key={i} className="px-1.5 py-0.5 rounded bg-primary/5 text-primary text-[10px]">{st}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-text-muted">暂无 skill 数据</p>
-        )}
-      </div>
-
-      {/* 项目关系约束 */}
-      <div className="space-y-2">
-        <SectionTitle icon={CircleDot} text="项目关系约束" />
-        <div className="bg-wash rounded-card px-2.5 py-2 text-xs text-text-secondary">
-          {constraintCount > 0
-            ? `工程约束/模块共 ${constraintCount} 项 — 见「工程」页编辑`
-            : '暂无约束数据'}
-        </div>
-        <p className="text-[10px] text-text-muted leading-relaxed">
-          关系约束案例见博客 chapter2（关系 &gt; 提示词）—— 项目级约束将逐步挂到会话/图节点。
-        </p>
-      </div>
-
-      {/* 图关系 */}
-      <div className="space-y-2">
-        <SectionTitle icon={Network} text="项目图关系" />
-        <div className="grid grid-cols-3 gap-2">
-          <Chip label="节点" value={graphNodes} />
-          <Chip label="边" value={graphEdges} />
-          <Chip label="子图锚点" value={graph?.subgraph_nodes?.length ?? 0} />
-        </div>
-      </div>
     </DockPanel>
   );
 }
 
-/** 兼容旧引用（surfaceRegistry 将改用 EnvironmentDockContent） */
+/** 工程链副屏（多模块: 环境信息/连接/分支/后台进程/skills） */
 export const EngineeringDockContent = EnvironmentDockContent;
 
 /* ── Tasks（任务概览, taskStore 状态） ─────────────────────── */
