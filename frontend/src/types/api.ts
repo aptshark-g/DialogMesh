@@ -756,6 +756,7 @@ export interface V6GatewayProvider {
   display_name: string;
   configured: boolean;
   healthy: boolean | null;
+  active?: boolean;
   base_url: string;
   models: V6GatewayModel[] | null;
   api_key?: string;

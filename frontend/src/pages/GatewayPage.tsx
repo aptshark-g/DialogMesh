@@ -47,6 +47,7 @@ import { getStatus, triggerCheckpoint, inspectSystem } from '../api/v4';
 import { cn } from '../lib/utils';
 import type {
   V6GatewayProvider,
+  V6GatewayProvidersResponse,
   V6GatewayModel,
   V6ProviderSwitchRequest,
   V6ProviderSwitchResponse,
@@ -61,6 +62,27 @@ import type {
 import { Modal } from '../components/ui/Modal';
 import { Toast } from '../components/ui/Toast';
 import { useUIStore } from '../stores/uiStore';
+
+// 2026-08-17: 新增 Provider 厂商预设（name 下拉自动填充 base_url/kind）。
+// 首个「其他」= 手动输入; 选中厂商自动填对应地址（用户仍可改）。
+const PROVIDER_PRESETS: { name: string; label: string; base_url: string; kind: string }[] = [
+  { name: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com', kind: 'openai_compatible' },
+  { name: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com', kind: 'openai_compatible' },
+  { name: 'anthropic', label: 'Anthropic', base_url: 'https://api.deepseek.com/anthropic', kind: 'openai_compatible' },
+  { name: 'gemini', label: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', kind: 'openai_compatible' },
+  { name: 'kimi', label: 'Kimi (Moonshot)', base_url: 'https://api.moonshot.cn/v1', kind: 'openai_compatible' },
+  { name: 'groq', label: 'Groq', base_url: 'https://api.groq.com/openai/v1', kind: 'openai_compatible' },
+  { name: 'openrouter', label: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', kind: 'openai_compatible' },
+  { name: 'lmstudio', label: 'LM Studio (本地)', base_url: 'http://127.0.0.1:1234/v1', kind: 'openai_compatible' },
+  { name: 'ollama', label: 'Ollama (本地)', base_url: 'http://localhost:11434', kind: 'ollama' },
+];
+
+const OTHER_PRESET = { name: '', label: '其他（手动填写）', base_url: '', kind: '' };
+
+/** 2026-08-17: 只显示已配置的 Provider（未配置的列表项无意义, 去除异常观感） */
+function configuredProviders(ps: V6GatewayProvidersResponse | null): V6GatewayProvider[] {
+  return (ps?.providers ?? []).filter((p) => p.configured || p.active);
+}
 
 
   // ─── Provider Card (memoized — only re-renders when provider data changes) ───
@@ -800,7 +822,7 @@ export function GatewayPage() {
                   <span className="ml-2 text-sm text-text-muted">加载 Provider...</span>
                 </div>
               )}
-              {(gatewayProviders?.providers ?? []).map((provider) => (
+              {configuredProviders(gatewayProviders).map((provider) => (
                 <ProviderCard key={provider.name} provider={provider}
                 isExpanded={expandedProvider === provider.name}
                 isActive={gatewayProviders?.active_provider === provider.name}
@@ -819,7 +841,7 @@ export function GatewayPage() {
                 onSetActive={handleSetActive}
                 onUpdateForm={updateConfigForm} />
               ))}
-              {gatewayProviders?.providers.length === 0 && (
+              {configuredProviders(gatewayProviders).length === 0 && (
                 <div className="text-center py-12 text-sm text-text-muted">
                   <Server className="h-8 w-8 mx-auto mb-2" />
                   暂无 Provider 配置
@@ -1336,7 +1358,7 @@ export function GatewayPage() {
                   className="rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
                 >
                   <option value="">选择 Provider</option>
-                  {gatewayProviders?.providers.map((p) => (
+                  {configuredProviders(gatewayProviders).map((p) => (
                     <option key={p.name} value={p.name}>
                       {p.display_name} ({p.name})
                     </option>
@@ -1488,13 +1510,25 @@ export function GatewayPage() {
         <div className="space-y-3">
           <div>
             <label className="text-xs text-text-muted">name *</label>
-            <input
-              type="text"
+            <select
               value={addForm.name}
-              onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="如 deepseek"
+              onChange={(e) => {
+                const sel = e.target.value;
+                const preset = PROVIDER_PRESETS.find((p) => p.name === sel);
+                setAddForm((prev) => ({
+                  ...prev,
+                  name: sel,
+                  base_url: preset?.base_url ?? '',
+                  kind: preset?.kind ?? '',
+                }));
+              }}
               className="w-full mt-1 rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-primary"
-            />
+            >
+              <option value="">{OTHER_PRESET.label}</option>
+              {PROVIDER_PRESETS.map((p) => (
+                <option key={p.name} value={p.name}>{p.label}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="text-xs text-text-muted">base_url *</label>
@@ -1517,7 +1551,7 @@ export function GatewayPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted">kind</label>
+            <label className="text-xs text-text-muted">kind（选中厂商自动填入, 可改）</label>
             <input
               type="text"
               value={addForm.kind}
