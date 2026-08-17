@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -52,30 +53,32 @@ class EmbeddingEngine:
     _custom_encoder: Optional[Tuple[str, Any]] = None  # (name, fn(text)->List[float])
     _encoder_name: str = "hash"       # 当前生效编码器身份
     _encoder_dim: int = 384           # 当前生效编码器维度
+    _model_lock = threading.Lock()    # 2026-08-17: 防并发双载（同 semantic_encoder 修复）
 
     @classmethod
     def _load_model(cls):
-        if cls._model is not None:
-            return cls._model
-        try:
-            # 2026-08-16: 离线优先 —— 原 SentenceTransformer(name) 联网
-            # HF hub 校验（无超时, 网络受限无 CPU 挂起 180s, 实测）。本地
-            # 缓存缺失时快速失败 → 编码器回退 hash。
-            import os
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
-            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-            from sentence_transformers import SentenceTransformer
-            cls._model = SentenceTransformer(
-                cls._model_name, local_files_only=True)
-            cls._encoder_name = f"sentence-transformers:{cls._model_name}"
+        with cls._model_lock:
+            if cls._model is not None:
+                return cls._model
             try:
-                cls._encoder_dim = int(cls._model.get_sentence_embedding_dimension())
+                # 2026-08-16: 离线优先 —— 原 SentenceTransformer(name) 联网
+                # HF hub 校验（无超时, 网络受限无 CPU 挂起 180s, 实测）。本地
+                # 缓存缺失时快速失败 → 编码器回退 hash。
+                import os
+                os.environ.setdefault("HF_HUB_OFFLINE", "1")
+                os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+                from sentence_transformers import SentenceTransformer
+                cls._model = SentenceTransformer(
+                    cls._model_name, local_files_only=True)
+                cls._encoder_name = f"sentence-transformers:{cls._model_name}"
+                try:
+                    cls._encoder_dim = int(cls._model.get_sentence_embedding_dimension())
+                except Exception:
+                    pass
+                return cls._model
             except Exception:
-                pass
-            return cls._model
-        except Exception:
-            # T1: 宽异常兜底 — 环境导入链任何异常（ValueError/TypeError 等）都回退
-            return None
+                # T1: 宽异常兜底 — 环境导入链任何异常（ValueError/TypeError 等）都回退
+                return None
 
     @classmethod
     def register_encoder(cls, name: str, fn) -> None:

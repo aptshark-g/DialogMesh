@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -110,6 +112,7 @@ def kernel_profile() -> dict:
                     dims = {k: float(v) for k, v in edims.items()}
     bfi = saved.get("bfi", {}) if isinstance(saved, dict) else {}
     bfi_history = saved.get("bfi_history", 0) if isinstance(saved, dict) else 0
+    health = _profile_health(dims, turn_count)
     return {
         "oceAN_dims": dims,
         "mbti": (saved.get("mbti", "INFJ") if isinstance(saved, dict) else "INFJ"),
@@ -117,6 +120,64 @@ def kernel_profile() -> dict:
         "top_dimensions": sorted(dims.keys())[:3],
         "bfi_history": bfi_history,
         "bfi_latest": bfi if isinstance(bfi, dict) else {},
+        # B4/B6（2026-08-17）: 画像健康度聚合 + 成功/风险状态（真实数据驱动,
+        # 非装饰; StatusProgress 卡从此有数据源）。
+        "health_score": health["score"],
+        "health_factors": health["factors"],
+        "status_items": health["status_items"],
+    }
+
+
+def _profile_health(dims: dict, turn_count: int) -> dict:
+    """画像健康度聚合 — 三因子, 全部来自真实数据:
+
+    - formation（画像形成度）: OCEAN+ 维度偏离默认 0.5 的平均幅度 ×2 → 0-100。
+      全部默认 = 0（冷启动）, 显著偏离 = 画像已形成。
+    - activity（活跃度）: turn_count 对数归一, 0 轮=0, ~100 轮以上≈100。
+    - stability（结构风险）: 近 200 条反馈中错误条目数, 每条 -3 分, 封顶 -60。
+      反馈无错误 = 100（健康基线, 非装饰值——它由 corrections/feedback 数据
+      推导, 空数据时如实返回 100, 由前端结合冷启动态展示）。
+
+    score = round(0.4×formation + 0.4×activity + 0.2×stability)。
+    """
+    formation = 0.0
+    if isinstance(dims, dict) and dims:
+        deviations = [abs(float(v) - 0.5) for v in dims.values()
+                      if isinstance(v, (int, float))]
+        if deviations:
+            formation = min(100.0, sum(deviations) / len(deviations) * 200.0)
+    activity = min(100.0, math.log2(turn_count + 1) * 15.0) if turn_count > 0 else 0.0
+    stability = 100.0
+    try:
+        fb = _disk_json("feedback.json", [])
+        if isinstance(fb, list):
+            errs = sum(1 for e in fb[-200:]
+                       if isinstance(e, dict) and e.get("errors"))
+            stability = max(40.0, 100.0 - errs * 3.0)
+    except Exception:
+        pass
+    score = int(round(0.4 * formation + 0.4 * activity + 0.2 * stability))
+    return {
+        "score": max(0, min(100, score)),
+        "factors": {
+            "formation": round(formation, 1),
+            "activity": round(activity, 1),
+            "stability": round(stability, 1),
+        },
+        "status_items": [
+            {
+                "icon": "success",
+                "label": "画像形成度",
+                "percentage": int(round(formation)),
+                "description": f"OCEAN+ {len(dims)} 维偏离默认的均值 ×2（真实画像数据）",
+            },
+            {
+                "icon": "risk",
+                "label": "结构稳定性",
+                "percentage": int(round(stability)),
+                "description": "近 200 条反馈中的错误条目扣分（无错误=100）",
+            },
+        ],
     }
 
 
@@ -742,23 +803,137 @@ def kernel_parameters() -> dict:
 def kernel_context() -> dict:
     engine = get_engine()
     if engine is None:
-        return {"intent_category": None, "entries": []}
+        return {"intent_category": None, "entries": [], "total_tokens": 0,
+                "budget": _context_budget()}
     last = getattr(engine, "_last_context", None)
     if last is not None:
         entries = getattr(last, "entries", None)
+        marks = _context_marks()
         out = []
         if isinstance(entries, list):
-            for e in entries:
+            for idx, e in enumerate(entries):
+                content = str(getattr(e, "content", ""))
+                eid = _stable_id(f"{getattr(e, 'domain', '')}|{getattr(e, 'type', '')}|{idx}|{content}")
+                mark = marks.get(eid, "")
+                if mark == "removed":
+                    continue  # B3: 移除的片段不进下轮编译
                 out.append({
+                    # B10（2026-08-17）: 稳定 ID — 确定性 hash, 跨请求稳定,
+                    # 供工作台钉住/移除做记忆片段级锚点（B3）。
+                    "id": eid,
                     "domain": getattr(e, "domain", ""),
                     "type": getattr(e, "type", ""),
-                    "content": str(getattr(e, "content", ""))[:200],
+                    "content": content[:200],
                     "confidence": getattr(e, "confidence", 0.5),
-                    "estimated_tokens": len(str(getattr(e, "content", ""))) // 4,
+                    "estimated_tokens": len(content) // 4,
+                    "mark": mark or None,
                 })
+        # B3: pinned 置顶（同域内保持原相对顺序）
+        out.sort(key=lambda x: (0 if x.get("mark") == "pinned" else 1,))
+        total = sum(e.get("estimated_tokens", 0) for e in out)
         return {"intent_category": getattr(last, "intent_category", None),
-                "entries": out}
-    return {"intent_category": None, "entries": []}
+                "entries": out,
+                "total_tokens": total,
+                "budget": _context_budget()}
+    return {"intent_category": None, "entries": [], "total_tokens": 0,
+            "budget": _context_budget()}
+
+
+def _context_budget() -> int:
+    """B10: 上下文注入预算（token）。默认 8000, 可用 DM_CONTEXT_BUDGET_TOKENS
+    覆盖; 前端用它渲染预算水位条。无配置时取保守默认 — 与 DeepChain 子图
+    预算字段同一语义（注入上限, 非硬限制）。"""
+    return max(100, int(os.environ.get("DM_CONTEXT_BUDGET_TOKENS", "8000")))
+
+
+def _stable_id(text: str) -> str:
+    """确定性短 ID — 同内容跨请求稳定（B3 钉住锚点的基础）。"""
+    return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+# ── B3（2026-08-17）: 上下文钉住/移除 — 记忆片段级 marks 持久化 ── #
+
+_CONTEXT_MARKS_FILE = os.path.join("data", "context_marks.json")
+_CONTEXT_MARKS_LOCK = __import__("threading").RLock()
+_context_marks_cache: Optional[Dict[str, str]] = None
+
+
+def _load_context_marks() -> Dict[str, str]:
+    global _context_marks_cache
+    if _context_marks_cache is not None:
+        return _context_marks_cache
+    try:
+        if os.path.exists(_CONTEXT_MARKS_FILE):
+            with open(_CONTEXT_MARKS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                _context_marks_cache = {k: str(v) for k, v in data.items()
+                                        if v in ("pinned", "removed")}
+                return _context_marks_cache
+    except Exception:
+        pass
+    _context_marks_cache = {}
+    return _context_marks_cache
+
+
+def _save_context_marks() -> None:
+    with _CONTEXT_MARKS_LOCK:
+        try:
+            os.makedirs(os.path.dirname(_CONTEXT_MARKS_FILE) or ".", exist_ok=True)
+            tmp = _CONTEXT_MARKS_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(_context_marks_cache or {}, f, ensure_ascii=False)
+            os.replace(tmp, _CONTEXT_MARKS_FILE)
+        except Exception:
+            pass
+
+
+def _context_marks() -> Dict[str, str]:
+    return _load_context_marks()
+
+
+def kernel_context_marks() -> dict:
+    """B3: 当前全部钉住/移除标记（白盒可查）。"""
+    marks = _load_context_marks()
+    return {
+        "marks": marks,
+        "pinned": [k for k, v in marks.items() if v == "pinned"],
+        "removed": [k for k, v in marks.items() if v == "removed"],
+        "total": len(marks),
+    }
+
+
+def kernel_context_mark(entry_id: str, mark: str) -> dict:
+    """B3: 设置/清除某记忆片段的钉住/移除标记。
+
+    mark ∈ {pinned, removed, none} — none 清除。持久化到
+    data/context_marks.json（跨重启保留; A17 记录不可删不适用 — 这是
+    用户显式白盒操作, 可清除）。返回应用后该片段状态。
+    """
+    if not entry_id:
+        raise ValueError("entry_id required")
+    marks = _load_context_marks()
+    with _CONTEXT_MARKS_LOCK:
+        if mark in ("pinned", "removed"):
+            marks[entry_id] = mark
+        elif mark in ("none", ""):
+            marks.pop(entry_id, None)
+        else:
+            raise ValueError(f"invalid mark: {mark}")
+        _context_marks_cache = marks
+        _save_context_marks()
+    return {"id": entry_id, "mark": marks.get(entry_id) or None,
+            "pinned": [k for k, v in marks.items() if v == "pinned"],
+            "removed": [k for k, v in marks.items() if v == "removed"]}
+
+
+def kernel_context_marks_reset() -> dict:
+    """B3: 清空全部标记（前端「重置」按钮）。"""
+    global _context_marks_cache
+    with _CONTEXT_MARKS_LOCK:
+        _context_marks_cache = {}
+        _save_context_marks()
+    return {"marks": {}, "total": 0}
 
 
 def kernel_subgraph(perspective: Optional[str] = None) -> dict:
@@ -976,8 +1151,34 @@ def kernel_sessions() -> dict:
                 continue
             msgs = s.get("messages", [])
             out.append({"id": sid, "name": sid[:12], "turns": len(msgs),
-                        "last": msgs[-1].get("content", "")[:60] if msgs else ""})
+                        "last": msgs[-1].get("content", "")[:60] if msgs else "",
+                        "title": _session_title(s),
+                        "updated_at": s.get("updated_at", s.get("created_at", 0)),
+                        "created_at": s.get("created_at", 0)})
     return {"sessions": out, "total": len(out)}
+
+
+def _session_title(s: dict) -> str:
+    """B5（2026-08-17）: 会话标题摘要 — 首条 user 消息提炼。
+
+    去掉「## 管线分析」之后的调试噪音（真实消息常带尾注），折叠空白，
+    截断到 30 字符；空会话返回「新会话」。
+    """
+    msgs = s.get("messages", [])
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") != "user":
+            continue
+        text = str(m.get("content", "")).strip()
+        cut = text.find("## 管线分析")
+        if cut > 0:
+            text = text[:cut]
+        text = " ".join(text.split())
+        if text:
+            return text[:30]
+        break
+    return "新会话"
 
 
 def kernel_versions(category: str = "profile") -> dict:

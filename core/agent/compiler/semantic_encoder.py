@@ -73,6 +73,7 @@ class SemanticEncoder:
         self._multilingual_model = None
         self._multilingual_tokenizer = None
         self._multilingual_loaded = False
+        self._load_lock = threading.Lock()
         self._cache_size = enc_cfg.cache_size if enc_cfg else 10000
 
         # 延迟加载
@@ -126,32 +127,37 @@ class SemanticEncoder:
         
         Falls back to word-overlap features if model unavailable.
         """
-        if self._multilingual_loaded:
-            return
-        self._multilingual_loaded = True
-        try:
-            # Local-first: never hit the network here. Remote model
-            # fetching is a dedicated capability (future "connectivity"
-            # module); until then the gateway/LLM layer handles network.
-            # (2026-08-10: modelscope download was retried on every
-            # non-Chinese encode — 15s+ stalls in benchmarks.)
-            import sentence_transformers
-            for local_path in [
-                self.MULTILINGUAL_MODEL_PATH,
-                # HF snapshot cache (offline) — downloaded previously
-                os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
-                             "models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2",
-                             "snapshots", "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"),
-                "models/all-MiniLM-L6-v2",
-                "models/models--sentence-transformers--all-MiniLM-L6-v2",
-            ]:
-                if os.path.exists(local_path):
-                    self._multilingual_model = sentence_transformers.SentenceTransformer(local_path)
-                    self._multilingual_tokenizer = self._multilingual_model.tokenizer
-                    logger.info(f"Multilingual model loaded locally: {local_path}")
-                    return
-        except Exception as e:
-            logger.warning(f"Multilingual model unavailable: {e}")
+        # 2026-08-17: 加锁防并发双载 — 无锁时两个线程同时看到
+        # _multilingual_loaded=False, 各自 SentenceTransformer(local_path)
+        # 加载同一模型（日志 25ms 间隔两次 all-MiniLM 实锤）。多 engine
+        # 各实例也各自触发 — 进程级单例锁兜底。
+        with self._load_lock:
+            if self._multilingual_loaded:
+                return
+            self._multilingual_loaded = True
+            try:
+                # Local-first: never hit the network here. Remote model
+                # fetching is a dedicated capability (future "connectivity"
+                # module); until then the gateway/LLM layer handles network.
+                # (2026-08-10: modelscope download was retried on every
+                # non-Chinese encode — 15s+ stalls in benchmarks.)
+                import sentence_transformers
+                for local_path in [
+                    self.MULTILINGUAL_MODEL_PATH,
+                    # HF snapshot cache (offline) — downloaded previously
+                    os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                                 "models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2",
+                                 "snapshots", "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"),
+                    "models/all-MiniLM-L6-v2",
+                    "models/models--sentence-transformers--all-MiniLM-L6-v2",
+                ]:
+                    if os.path.exists(local_path):
+                        self._multilingual_model = sentence_transformers.SentenceTransformer(local_path)
+                        self._multilingual_tokenizer = self._multilingual_model.tokenizer
+                        logger.info(f"Multilingual model loaded locally: {local_path}")
+                        return
+            except Exception as e:
+                logger.warning(f"Multilingual model unavailable: {e}")
 
     def _detect_language(self, texts) -> str:
         """Detect primary language of input. Returns 'zh' or 'other'."""

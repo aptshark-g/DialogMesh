@@ -598,7 +598,9 @@ async def get_sessions():
         sp = {}
     return [{"id": s.get("id", ""), "name": s["name"],
              "size": s["turns"],
-             "project_id": sp.get(s.get("id", "")) or None}
+             "project_id": sp.get(s.get("id", "")) or None,
+             "title": s.get("title", s.get("name", "")),
+             "updated_at": s.get("updated_at", 0)}
             for s in res.get("sessions", [])]
 
 
@@ -729,6 +731,35 @@ async def compression_feedback(req: CompressionFeedbackReq):
 async def compression_feedback_stats():
     """GAP-4: 压缩反馈统计。"""
     return kernel_compression_feedback_stats()
+
+
+# ── B3（2026-08-17）: 上下文钉住/移除（记忆片段级, 作用下轮编译）── #
+
+class ContextMarkReq(BaseModel):
+    id: str
+    mark: str  # pinned | removed | none
+
+
+@router.get("/context/marks")
+async def get_context_marks():
+    from core.agent.kernel import kernel_context_marks
+    return kernel_context_marks()
+
+
+@router.put("/context/marks")
+async def set_context_mark(req: ContextMarkReq):
+    from fastapi import HTTPException
+    from core.agent.kernel import kernel_context_mark
+    try:
+        return kernel_context_mark(req.id, req.mark)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.delete("/context/marks")
+async def reset_context_marks():
+    from core.agent.kernel import kernel_context_marks_reset
+    return kernel_context_marks_reset()
 
 
 @router.get("/heuristics")

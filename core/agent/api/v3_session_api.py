@@ -453,6 +453,7 @@ async def create_session(req: Optional[CreateSessionRequest] = None):
     sid = str(uuid.uuid4())[:12]
     pid = (req.project_id if req else None) or None
     _sessions[sid] = {"created_at": time.time(), "messages": [],
+                      "updated_at": time.time(),
                       "project_id": pid}
     if pid:
         # B16（2026-08-17）: 新建会话携带项目 → 同步归属映射。
@@ -474,10 +475,12 @@ async def send_message(session_id: str, req: SendMessageRequest):
     if session_id not in _sessions:
         # Auto-create session if needed
         _sessions[session_id] = {"created_at": time.time(), "messages": [],
+                                 "updated_at": time.time(),
                                  "project_id": None}
 
     session = _sessions[session_id]
     session["messages"].append({"role": "user", "content": req.content})
+    session["updated_at"] = time.time()
     _save_sessions()
 
     t0 = time.time()
@@ -1160,6 +1163,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
         content = _fallback_reply(req.content)
     latency = int((time.time() - t0) * 1000)
     session["messages"].append({"role": "assistant", "content": content})
+    session["updated_at"] = time.time()
     _save_sessions()
 
     # Also save task_graph as standalone resource — only if no user-confirmed version exists

@@ -27,9 +27,9 @@
 | A14 工程链约束 | ConstraintEngine | ❌ 未接入（07-22 表同） | — | 设计空转已记录 |
 | A15 温度×价值 | HCWA 分层 + 变体档位 | 🟡 温度有, 价值轴未 | 变体表 | 价值算子缺 |
 | A16 冷热编排 | 快反馈后修正（Governor 熔断/降级 + 诊断自调节低风险自动应用）+ 启动期有界预热 + run_dag 预算接入（2026-08-16 P1-②） | ✅ 自调节 + 预热（首请求 43.9s→1.8s）+ run_dag 挪 executor（请求期间 health 113ms 可响应, 事件循环不阻塞） | test_warmup 5 + test_probe 6 + 端到端（重启后首消息 1.8s） | 预算闸进 run_dag context（_budget_passed）; 子线程超时残留踩坑已记录 |
-| A17 记录 | 事件溯源/NodeEditRecord + 七树持久化 | ✅ 七树 Warm 层落盘（data/agent_trees, 重启恢复实测） | test_engine_persist_and_restore + 端到端持久化文件 | 2026-08-15 补 |
+| A17 记录 | 事件溯源/NodeEditRecord + 七树持久化 + 项目归属持久化（data/projects.json, 2026-08-17）+ 上下文 marks 持久化（data/context_marks.json, 2026-08-17） | ✅ 七树 Warm 层落盘 + 项目 CRUD/会话归属（B15+B1） + 上下文钉住/移除（B3） | test_engine_persist_and_restore + test_projects_api 9 + test_context_marks_b3 | 2026-08-15 补; 2026-08-17 项目/marks 持久化 |
 | A18 参数自适应 | recall weights/feedback + 变体开关 | ✅ | A18 持久化测试 33/33 + 融合消融矩阵 12+ 组（2026-08-16）+ 真 HyDE 全量评测（2026-08-17, HYDE_EVAL: K1 全负 / K3 干净对照 = 基线, 方差内无增益 / HyDE→BM25 负 → 默认关） | 负结果回写设计文档; 顺带交付域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离（净正架构改进）; SPO 谓词 LLM 判定加 50 次进程预算 |
-| A19 白盒 | CLI CRUD / 设计点追踪 + /v6/agent-trees + /v6/system-profile + /v6/repairs | 🟡 系统自画像+修复队列已加, CLI CRUD 仍部分 | /v6/system-profile 端到端（90 模块/174 测试文件） | 元认知可读自己系统 |
+| A19 白盒 | CLI CRUD / 设计点追踪 + /v6/agent-trees + /v6/system-profile + /v6/repairs + B 类后端（/v6/projects CRUD、/v6/sessions 标题、/v6/context 预算+marks、画像健康度, 2026-08-17） | 🟡 系统自画像+修复队列已加, CLI CRUD 仍部分 | /v6/system-profile 端到端 + test_kernel_dispatch 57 + test_projects_api 9（144 api 绿） | 元认知可读自己系统; B 类前端绑定待 UI 稳定后 |
 | A20 竞争吸收 | md_big / OPENSOURCE_SURVEY | ✅ 清单有 | — | 吸收未验证（A18 要求） |
 | A21 安全 | 权限门/沙箱/Guard | ✅ | permission 12/12 | 无异常 |
 | A22 因果克制 | CausalSubstrate | ❌ 未（L5 待实现） | — | 设计空转已记录 |

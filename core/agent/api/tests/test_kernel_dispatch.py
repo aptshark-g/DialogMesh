@@ -39,6 +39,96 @@ def client():
 # ── 1. 内核函数真实数据 ─────────────────────────────────────── #
 
 class TestKernelReal:
+    def test_session_title_no_noise(self, engine):
+        """B5: 标题提炼去掉「## 管线分析」尾注 + 折叠空白 + 截断 30 字。"""
+        from core.agent.kernel.dispatch import _session_title
+        s = {"messages": [
+            {"role": "user", "content": "写一个  python 脚本  打印 hello world 并运行它\n\n## 管线分析\n路由: {}"},
+            {"role": "assistant", "content": "ok"},
+        ]}
+        t = _session_title(s)
+        assert "## 管线分析" not in t
+        assert t.startswith("写一个 python 脚本 打印 hello world 并")
+        assert len(t) <= 30
+
+    def test_session_title_empty(self, engine):
+        from core.agent.kernel.dispatch import _session_title
+        assert _session_title({"messages": []}) == "新会话"
+
+    def test_session_title_truncate(self, engine):
+        from core.agent.kernel.dispatch import _session_title
+        long_msg = "这是一条" * 20
+        t = _session_title({"messages": [{"role": "user", "content": long_msg}]})
+        assert len(t) <= 30
+
+    def test_sessions_endpoint_has_title(self, engine):
+        """B5: /v6/sessions 列表项含 title/updated_at/created_at。"""
+        from core.agent.api.v6_app import app
+        from fastapi.testclient import TestClient
+        c = TestClient(app, headers={"X-Session-Id": "b5-title-check"})
+        r = c.get("/v6/sessions")
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        for item in data:
+            assert "title" in item
+            assert "updated_at" in item
+
+    def test_context_budget_b10(self, engine):
+        """B10: /v6/context 补 total_tokens/budget + 稳定 ID。"""
+        from core.agent.kernel import kernel_context
+        c = kernel_context()
+        assert "entries" in c
+        assert "total_tokens" in c
+        assert "budget" in c
+        assert c["budget"] >= 100
+        assert c["total_tokens"] >= 0
+        ids = [e.get("id") for e in c["entries"]]
+        assert all(isinstance(i, str) and i for i in ids)
+        assert len(set(ids)) == len(ids)  # 稳定且不重复
+
+    def test_stable_id_deterministic(self, engine):
+        from core.agent.kernel.dispatch import _stable_id
+        a = _stable_id("same-content")
+        b = _stable_id("same-content")
+        c = _stable_id("other-content")
+        assert a == b
+        assert a != c
+        assert len(a) == 16
+
+    def test_context_marks_b3(self, engine):
+        """B3: 钉住/移除持久化 + kernel_context 应用（removed 剔除 / pinned 置顶）。"""
+        import tempfile
+        from core.agent import kernel as _kernel_mod
+        from core.agent.kernel import dispatch as _dispatch_mod
+        from core.agent.kernel.dispatch import (
+            kernel_context_mark, kernel_context_marks_reset,
+            _stable_id,
+        )
+        from core.agent.kernel import kernel_context
+        # 隔离: marks 写 tmp 文件, 不落生产 data/（交接经验 #8）。
+        _tmp = tempfile.mkstemp(prefix="dm_marks_", suffix=".json")
+        os.close(_tmp[0])
+        _orig_file = _dispatch_mod._CONTEXT_MARKS_FILE
+        _dispatch_mod._CONTEXT_MARKS_FILE = _tmp[1]
+        _dispatch_mod._context_marks_cache = None
+        try:
+            kernel_context_marks_reset()
+            eid = _stable_id("P|X|0|测试片段内容")
+            r = kernel_context_mark(eid, "pinned")
+            assert r["mark"] == "pinned"
+            assert eid in r["pinned"]
+            rid = _stable_id("P|Y|1|要移除的片段")
+            r2 = kernel_context_mark(rid, "removed")
+            assert rid in r2["removed"]
+            ctx = kernel_context()
+            assert "entries" in ctx
+            kernel_context_marks_reset()
+        finally:
+            _dispatch_mod._CONTEXT_MARKS_FILE = _orig_file
+            _dispatch_mod._context_marks_cache = None
+            os.remove(_tmp[1])
+
     def test_engine_status(self, engine):
         from core.agent.kernel import kernel_engine_status
         st = kernel_engine_status()
@@ -52,6 +142,22 @@ class TestKernelReal:
         assert isinstance(p["oceAN_dims"], dict)
         assert p["oceAN_dims"]  # 真实维度，非空
         assert isinstance(p["turn_count"], int)
+
+    def test_profile_health_b4(self, engine):
+        """B4/B6: /v6/profile 返回健康度聚合 + 成功/风险状态项（真实数据驱动）。"""
+        from core.agent.kernel import kernel_profile
+        p = kernel_profile()
+        assert "health_score" in p
+        assert 0 <= p["health_score"] <= 100
+        assert "health_factors" in p
+        assert {"formation", "activity", "stability"} <= set(p["health_factors"])
+        assert "status_items" in p
+        items = p["status_items"]
+        assert len(items) == 2
+        assert {it["icon"] for it in items} == {"success", "risk"}
+        for it in items:
+            assert 0 <= it["percentage"] <= 100
+            assert it["label"] and it["description"]
 
     def test_mind_real(self, engine):
         from core.agent.kernel import kernel_mind
