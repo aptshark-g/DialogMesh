@@ -102,3 +102,36 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 - docs/only/recall/HYDE_EVAL_20260817.md（HyDE 泛化+研究+负结果）
 - docs/only/recall/RECALL_FUSION_ABLATION_20260816.md（融合消融全记录）
 - docs/test/EVAL_100_20260817.md（当前语料基线: doc 50.8% / dialogue 76.9%）
+
+## 五、B15+B1+B16 施工状态（2026-08-17 续, 已单测绿, 全量待跑）
+
+> 用户"先补 B 类后端" → 从项目闭环（B15+B1+B16）开工。
+
+### 已实现（5 个文件, 未提交）
+- **新增 `core/agent/api/projects_api.py`**（`/v6/projects` CRUD + 会话归属）:
+  GET /v6/projects → `{projects, session_project}`（结构对齐前端
+  Project{id,name,color,created_at} + sessionProject 映射）; POST 建项目;
+  PATCH 改名/改色; DELETE 删项目（归属自动清除）; PUT /v6/sessions/{id}/
+  project 归属写（B1）。持久化 `data/projects.json`, RLock 保护。
+- **`v3_session_api.py`**: `POST /v3/session` 支持 body `{project_id}`（B16,
+  无 body 兼容旧前端）; session dict 挂 project_id; 创建时同步归属映射。
+- **`stubs_api.py`**: `/v6/sessions` 列表项补 `id`/`project_id`（B1）;
+  前端过滤可用 `/v6/projects` 的 session_project（无需改 /v6/sessions）。
+- **`v6_app.py`**: `_try_include projects_api` 注册路由。
+- **新增测试 `core/agent/api/tests/test_projects_api.py`（9 项）**:
+  CRUD/持久化重载/归属写与清除/删除清归属/端点/404/POST /v3/session 带
+  project_id。**9/9 绿**; kernel_dispatch 回归 49 绿（合计 58 passed）。
+
+### 关键 bug（已修, 记录防重蹈）
+- **threading.Lock 不可重入死锁**: `create_project` 等 `with _PROJECTS_LOCK:`
+  后调 `_save()`（内部再 `with _PROJECTS_LOCK:`）→ 同线程二次 acquire 永久
+  阻塞（pytest 卡 5min+ 真因）。改 `RLock`。**凡"持锁函数内部再调持锁
+  函数"必须用 RLock**。
+
+### 待办
+- **全量 pytest 待跑**: 当前 8000/8080/4173 服务占用 ~4.6GB 内存,
+  全量 pytest 再加载模型 → OOM 被系统杀（aborted）。跑全量前先停服务
+  或确认内存充足。
+- B15 前端切换（projectStore 从 localStorage → /v6/projects）下一轮做;
+  B1 的 task/graph-node 挂 project 未做（先 session 层闭环）。
+- 上线迁移: 前端本地 dm_projects 数据 → 初始导入后端。

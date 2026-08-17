@@ -411,6 +411,10 @@ class CreateSessionResponse(BaseModel):
     session_ttl_seconds: int
 
 
+class CreateSessionRequest(BaseModel):
+    project_id: Optional[str] = None
+
+
 class SendMessageRequest(BaseModel):
     content: str
     provider: Optional[str] = None
@@ -445,9 +449,15 @@ class ClarifyResponse(BaseModel):
 # ═══ Endpoints ═══
 
 @router.post("", response_model=CreateSessionResponse)
-async def create_session():
+async def create_session(req: Optional[CreateSessionRequest] = None):
     sid = str(uuid.uuid4())[:12]
-    _sessions[sid] = {"created_at": time.time(), "messages": []}
+    pid = (req.project_id if req else None) or None
+    _sessions[sid] = {"created_at": time.time(), "messages": [],
+                      "project_id": pid}
+    if pid:
+        # B16（2026-08-17）: 新建会话携带项目 → 同步归属映射。
+        from core.agent.api.projects_api import set_session_project
+        set_session_project(sid, pid)
     _save_sessions()
     return CreateSessionResponse(
         session_id=sid,
@@ -463,7 +473,8 @@ async def create_session():
 async def send_message(session_id: str, req: SendMessageRequest):
     if session_id not in _sessions:
         # Auto-create session if needed
-        _sessions[session_id] = {"created_at": time.time(), "messages": []}
+        _sessions[session_id] = {"created_at": time.time(), "messages": [],
+                                 "project_id": None}
 
     session = _sessions[session_id]
     session["messages"].append({"role": "user", "content": req.content})

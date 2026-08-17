@@ -65,6 +65,7 @@ _try_include("core.agent.api.api_gateway","router")  # /v6/gateway/*
 _try_include("core.agent.api.api_annotate","router")  # /v6/annotate (真实 JSONL 注释系统)
 _try_include("core.agent.api.api_sessions","router")  # /v6/sessions
 _try_include("core.agent.api.api_trace","router")  # /v6/trace
+_try_include("core.agent.api.projects_api","router")  # /v6/projects + 会话归属（B15/B1, 2026-08-17）
 _try_include("core.agent.api.api_profile","router")  # /v6/profile
 _try_include("core.agent.api.api_objects","router")  # /v6/objects
 _try_include("core.agent.api.api_rules","router")  # /v6/rules

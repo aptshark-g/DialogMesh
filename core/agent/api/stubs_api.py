@@ -591,7 +591,14 @@ async def get_profile_corrections():
 @router.get("/sessions")
 async def get_sessions():
     res = kernel_sessions()
-    return [{"name": s["name"], "size": s["turns"]}
+    try:
+        from core.agent.api.projects_api import session_project_map
+        sp = session_project_map()
+    except Exception:
+        sp = {}
+    return [{"id": s.get("id", ""), "name": s["name"],
+             "size": s["turns"],
+             "project_id": sp.get(s.get("id", "")) or None}
             for s in res.get("sessions", [])]
 
 
