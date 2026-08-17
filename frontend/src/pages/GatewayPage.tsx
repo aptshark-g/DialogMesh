@@ -42,6 +42,9 @@ import {
   addGatewayProvider,
   removeGatewayProvider,
   getGatewayCost,
+  getGatewayPrices,
+  syncGatewayPrices,
+  type V6GatewayPrices,
 } from '../api/v6';
 import { getStatus, triggerCheckpoint, inspectSystem } from '../api/v4';
 import { cn } from '../lib/utils';
@@ -79,7 +82,27 @@ const PROVIDER_PRESETS: { name: string; label: string; base_url: string; kind: s
 
 const OTHER_PRESET = { name: '', label: '其他（手动填写）', base_url: '', kind: '' };
 
-/** 2026-08-17: 只显示已配置的 Provider（未配置的列表项无意义, 去除异常观感） */
+/**
+ * 2026-08-17: Provider 状态五态化（替代「健康/异常」二态）——
+ * 未配置 / 无网络 / 未启用 / 可使用 / 待检测。
+ * switch 数据模型: active = enabled 且有 key; healthy 与 active 同源,
+ * circuit_state=open 才是真实连通故障信号; testResult 为显式连通测试结果。
+ */
+function providerStatus(
+  p: V6GatewayProvider,
+  testResult?: { healthy: boolean; latency: number; error: string | null } | null
+): { label: string; tone: string } {
+  if (!p.configured) return { label: '未配置', tone: 'text-text-muted' };
+  if (testResult && !testResult.healthy) return { label: '无网络', tone: 'text-status-error' };
+  if (p.circuit_state === 'open') return { label: '无网络', tone: 'text-status-error' };
+  if (p.healthy === false && !p.active) return { label: '未启用', tone: 'text-status-warning' };
+  if (!p.active) return { label: '未启用', tone: 'text-status-warning' };
+  if (p.healthy === false) return { label: '无网络', tone: 'text-status-error' };
+  if (p.healthy === true) return { label: '可使用', tone: 'text-status-success' };
+  return { label: '待检测', tone: 'text-text-muted' };
+}
+
+/** 引擎切换下拉只列已配置项（未配置的无法切换） */
 function configuredProviders(ps: V6GatewayProvidersResponse | null): V6GatewayProvider[] {
   return (ps?.providers ?? []).filter((p) => p.configured || p.active);
 }
@@ -116,13 +139,8 @@ const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesti
                 )}
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className={cn(
-                  'text-xs',
-                  provider.healthy === true ? 'text-status-success' :
-                  provider.healthy === false ? 'text-status-error' : 'text-text-muted'
-                )}>
-                  {provider.healthy === true ? '● 健康' :
-                   provider.healthy === false ? '● 异常' : '● 未配置'}
+                <span className={cn('text-xs', providerStatus(provider, testResult).tone)}>
+                  {`● ${providerStatus(provider, testResult).label}`}
                 </span>
                 <span className="text-xs text-text-muted">{provider.base_url}</span>
               </div>
@@ -323,6 +341,28 @@ export function GatewayPage() {
     load();
     const timer = setInterval(load, 15000);
     return () => { alive = false; clearInterval(timer); };
+  }, []);
+
+  // ─── 价格目录同步（2026-08-17: LiteLLM 源, 启动自动 + 手动刷新）───
+  const [priceSync, setPriceSync] = useState<V6GatewayPrices | null>(null);
+  const [priceSyncLoading, setPriceSyncLoading] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getGatewayPrices()
+      .then((d) => { if (alive) setPriceSync(d); })
+      .catch(() => { /* 后端未就绪时静默 */ });
+    return () => { alive = false; };
+  }, []);
+  const handleSyncPrices = useCallback(async () => {
+    setPriceSyncLoading(true);
+    try {
+      const r = await syncGatewayPrices(true);
+      setPriceSync(r);
+    } catch (e) {
+      console.error('price sync failed', e);
+    } finally {
+      setPriceSyncLoading(false);
+    }
   }, []);
 
   // ─── 系统运维状态 (引擎 / Provider 切换 / 上下文配置) ───
@@ -806,15 +846,33 @@ export function GatewayPage() {
 
             {/* Gateway Providers */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted">网关 Provider 列表</span>
-                <button
-                  onClick={() => setAddProviderOpen(true)}
-                  className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  新增 Provider
-                </button>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-text-muted">网关 Provider 列表</span>
+                  {priceSync && (
+                    <span className="text-xs text-text-muted">
+                      价格目录 {priceSync.model_count ?? 0} 模型
+                      {priceSync.fetched_at ? ` · ${new Date(priceSync.fetched_at).toLocaleString('zh-CN')}` : ' · 未同步'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSyncPrices}
+                    disabled={priceSyncLoading}
+                    className="flex items-center gap-1 rounded-lg bg-surface-sidebar border border-subtle px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                  >
+                    {priceSyncLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    {priceSyncLoading ? '同步中...' : '同步价格'}
+                  </button>
+                  <button
+                    onClick={() => setAddProviderOpen(true)}
+                    className="flex items-center gap-1 rounded-lg bg-primary text-white px-3 py-1.5 text-xs font-medium hover:bg-primary-dark transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    新增 Provider
+                  </button>
+                </div>
               </div>
               {providersLoading && !gatewayProviders && (
                 <div className="flex items-center justify-center py-12">
@@ -822,7 +880,7 @@ export function GatewayPage() {
                   <span className="ml-2 text-sm text-text-muted">加载 Provider...</span>
                 </div>
               )}
-              {configuredProviders(gatewayProviders).map((provider) => (
+              {(gatewayProviders?.providers ?? []).map((provider) => (
                 <ProviderCard key={provider.name} provider={provider}
                 isExpanded={expandedProvider === provider.name}
                 isActive={gatewayProviders?.active_provider === provider.name}
@@ -841,7 +899,7 @@ export function GatewayPage() {
                 onSetActive={handleSetActive}
                 onUpdateForm={updateConfigForm} />
               ))}
-              {configuredProviders(gatewayProviders).length === 0 && (
+              {(gatewayProviders?.providers ?? []).length === 0 && (
                 <div className="text-center py-12 text-sm text-text-muted">
                   <Server className="h-8 w-8 mx-auto mb-2" />
                   暂无 Provider 配置

@@ -480,6 +480,30 @@ export function getGatewayCost(): Promise<V6GatewayCost> {
   return apiFetch<V6GatewayCost>('/v6/gateway/cost');
 }
 
+// ═══ 价格目录同步（2026-08-17: LiteLLM 源）═══ #
+
+export interface V6GatewayPrices {
+  synced: boolean;
+  fetched_at: string | null;
+  source: string | null;
+  model_count: number;
+  stale: boolean;
+}
+
+export interface V6GatewaySyncPricesResult extends V6GatewayPrices {
+  enriched_models: number;
+  added_models: number;
+  note?: string;
+}
+
+export function getGatewayPrices(): Promise<V6GatewayPrices> {
+  return apiFetch<V6GatewayPrices>('/v6/gateway/prices');
+}
+
+export function syncGatewayPrices(force = true): Promise<V6GatewaySyncPricesResult> {
+  return apiFetch<V6GatewaySyncPricesResult>(`/v6/gateway/sync-prices?force=${force}`, { method: 'POST' });
+}
+
 export function getGatewayErrorCatalog(): Promise<string> {
   return apiFetch<string>('/v6/gateway/error-catalog');
 }

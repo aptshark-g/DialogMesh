@@ -751,16 +751,17 @@ export interface V6GatewayModel {
   capabilities?: string[];
 }
 
-export interface V6GatewayProvider {
-  name: string;
-  display_name: string;
-  configured: boolean;
-  healthy: boolean | null;
-  active?: boolean;
-  base_url: string;
-  models: V6GatewayModel[] | null;
-  api_key?: string;
-}
+  export interface V6GatewayProvider {
+    name: string;
+    display_name: string;
+    configured: boolean;
+    healthy: boolean | null;
+    active?: boolean;
+    circuit_state?: string | null;
+    base_url: string;
+    models: V6GatewayModel[] | null;
+    api_key?: string;
+  }
 
 export interface V6GatewayProvidersResponse {
   providers: V6GatewayProvider[];

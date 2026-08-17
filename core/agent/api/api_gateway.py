@@ -16,7 +16,8 @@ Endpoints:
   GET  /v6/gateway/stats           — proxy switch GET /v1/stats
   GET  /v6/gateway/health          — proxy switch GET /v1/health
 """
-import json, os, time, logging, urllib.request, urllib.error
+import json, os, time, logging, threading, urllib.request, urllib.error
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -35,6 +36,11 @@ _engine = None
 def init(engine):
     global _engine
     _engine = engine
+    # 2026-08-17: 启动即后台拉取 LiteLLM 价格目录（非阻塞, 失败仅告警回退内置定价）
+    try:
+        start_price_sync()
+    except Exception as e:
+        logger.warning("price sync start failed: %s", e)
 
 
 # ---- Helpers ----
@@ -126,6 +132,210 @@ BUILTIN_PROVIDERS = {
     },
 }
 
+# ---- Model price sync (LiteLLM catalog, 2026-08-17) ----
+# 来源: LiteLLM model_prices_and_context_window.json —— 社区维护、2500+ 模型、
+# 每日更新, 是网关成本追踪的事实标准源（参考 ferro-labs/model-catalog 等备选）。
+# 设计: 启动后台拉取 + 手动 POST /v6/gateway/sync-prices; 缓存到本地 JSON;
+# 网络失败回退缓存/内置定价, 永不阻断启动; 本地已保存的 base_url 覆盖优先。
+PRICE_CACHE_PATH = os.path.join(DATA_DIR, "models_prices.json")
+PRICE_CACHE_MAX_AGE_H = 24
+PRICE_SOURCES = [
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+    "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json",
+]
+# litellm_provider -> builtin provider name（含别名）
+LITELLM_TO_BUILTIN = {
+    "deepseek": "deepseek",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "gemini": "gemini", "google": "gemini",
+    "moonshot": "kimi",
+    "groq": "groq",
+    "openrouter": "openrouter",
+    "ollama": "ollama",
+    "lm_studio": "lmstudio", "lmstudio": "lmstudio",
+}
+PRICE_ENRICH_CAP = 25  # 每 provider 从目录补充新模型的上限（防模型列表爆炸）
+
+_PRICE_CATALOG: dict = None  # 内存缓存, sync 后刷新
+
+
+def _load_price_cache() -> dict:
+    try:
+        if os.path.exists(PRICE_CACHE_PATH):
+            with open(PRICE_CACHE_PATH, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning("price cache read failed: %s", e)
+    return {}
+
+
+def _save_price_cache(catalog: dict, fetched_at: str, source: str):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(PRICE_CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump({"fetched_at": fetched_at, "source": source,
+                   "model_count": len(catalog), "catalog": catalog},
+                  f, ensure_ascii=False, indent=1)
+
+
+def _price_cache_stale(cache: dict) -> bool:
+    fetched = cache.get("fetched_at")
+    if not fetched:
+        return True
+    try:
+        t = datetime.fromisoformat(fetched)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() > PRICE_CACHE_MAX_AGE_H * 3600
+    except Exception:
+        return True
+
+
+def _fetch_price_catalog(timeout: int = 20):
+    """Fetch LiteLLM catalog. Returns (catalog_dict, source_url). Raises on total failure."""
+    last_err = None
+    for url in PRICE_SOURCES:
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "DialogMesh/1.0", "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            if isinstance(data, dict) and data:
+                return data, url
+            last_err = "empty catalog"
+        except Exception as e:
+            last_err = f"{e}"
+    raise RuntimeError(f"price catalog fetch failed: {last_err}")
+
+
+def _catalog_entry_for(model_id: str, provider: str, catalog: dict):
+    """Match a model id against LiteLLM catalog keys.
+    优先级: 精确 key > f"{provider}/{model_id}" > 任意 "/{model_id}" 后缀。
+    """
+    if not catalog or not model_id:
+        return None
+    if model_id in catalog:
+        return catalog[model_id]
+    prefixed = f"{provider}/{model_id}"
+    if prefixed in catalog:
+        return catalog[prefixed]
+    for key, entry in catalog.items():
+        if key.endswith("/" + model_id):
+            return entry
+    return None
+
+
+def _enrich_model(model: dict, entry: dict) -> dict:
+    """Apply LiteLLM catalog entry to a model dict (cost 换算为每 1M tokens)。"""
+    out = dict(model)
+    out["capabilities"] = list(model.get("capabilities") or [])
+    if entry.get("input_cost_per_token"):
+        out["cost_in"] = round(float(entry["input_cost_per_token"]) * 1e6, 4)
+    if entry.get("output_cost_per_token"):
+        out["cost_out"] = round(float(entry["output_cost_per_token"]) * 1e6, 4)
+    ctx = entry.get("max_input_tokens")
+    if ctx:
+        out["context"] = int(ctx)
+    mout = entry.get("max_output_tokens") or entry.get("max_tokens")
+    if mout:
+        out["max_output"] = int(mout)
+    if entry.get("supports_function_calling") and "function" not in out["capabilities"]:
+        out["capabilities"].append("function")
+    return out
+
+
+def _apply_catalog_to_builtins(catalog: dict) -> tuple:
+    """富化 BUILTIN_PROVIDERS.default_models（就地, 幂等）:
+    1) 已有模型按目录补全定价/上下文; 2) 空列表 provider 从目录发现新模型（封顶）。"""
+    enriched = added = 0
+    if not catalog:
+        return enriched, added
+    for provider_name, builtin in BUILTIN_PROVIDERS.items():
+        for m in builtin["default_models"]:
+            entry = _catalog_entry_for(m["id"], provider_name, catalog)
+            if entry:
+                m.update(_enrich_model(m, entry))
+                enriched += 1
+        if builtin["default_models"] or provider_name in ("lmstudio", "ollama"):
+            continue
+        for key, entry in catalog.items():
+            mapped = LITELLM_TO_BUILTIN.get(entry.get("litellm_provider"))
+            if mapped != provider_name and not key.startswith(provider_name + "/"):
+                continue
+            if entry.get("mode") not in (None, "chat"):
+                continue
+            short = key.split("/", 1)[-1]
+            m = {"id": short, "display": short, "context": 0, "max_output": 0,
+                 "cost_in": 0, "cost_out": 0, "capabilities": ["chat"]}
+            builtin["default_models"].append(_enrich_model(m, entry))
+            added += 1
+            if len(builtin["default_models"]) >= PRICE_ENRICH_CAP:
+                break
+    return enriched, added
+
+
+def sync_model_prices(force: bool = False, timeout: int = 20) -> dict:
+    """拉取 LiteLLM 价格目录 → 本地缓存 → 富化内置模型。
+    返回摘要; 任何失败不阻断（回退缓存/内置定价）。"""
+    global _PRICE_CATALOG
+    cache = _load_price_cache()
+    catalog, fetched_at, source = None, None, None
+    if force or not cache.get("catalog") or _price_cache_stale(cache):
+        try:
+            catalog, source = _fetch_price_catalog(timeout)
+            fetched_at = datetime.now(timezone.utc).isoformat()
+            _save_price_cache(catalog, fetched_at, source)
+        except Exception as e:
+            logger.warning("price sync fetch failed (use cache/builtin): %s", e)
+    if catalog is None:
+        catalog = cache.get("catalog") or {}
+        fetched_at = cache.get("fetched_at")
+        source = cache.get("source", "cache")
+    _PRICE_CATALOG = catalog
+    enriched, added = _apply_catalog_to_builtins(catalog)
+    return {
+        "synced": bool(catalog),
+        "fetched_at": fetched_at,
+        "source": source,
+        "model_count": len(catalog),
+        "enriched_models": enriched,
+        "added_models": added,
+        "note": "prices per 1M tokens; local overrides preserved",
+    }
+
+
+def _get_catalog() -> dict:
+    """内存缓存的目录（惰性从磁盘加载一次, sync 后刷新）。"""
+    global _PRICE_CATALOG
+    if _PRICE_CATALOG is None:
+        _PRICE_CATALOG = _load_price_cache().get("catalog") or {}
+    return _PRICE_CATALOG
+
+
+def _enrich_model_list(models: list, provider: str) -> list:
+    catalog = _get_catalog()
+    if not catalog:
+        return models
+    out = []
+    for m in models:
+        entry = _catalog_entry_for(m.get("id", ""), provider, catalog)
+        out.append(_enrich_model(m, entry) if entry else m)
+    return out
+
+
+def start_price_sync():
+    """后台（非阻塞）启动时拉取价格目录; 失败仅告警, 不影响启动。"""
+    def _run():
+        try:
+            summary = sync_model_prices()
+            logger.info("price sync done: synced=%s models=%s added=%s",
+                        summary.get("synced"), summary.get("model_count"),
+                        summary.get("added_models"))
+        except Exception as e:
+            logger.warning("price sync skipped: %s", e)
+    threading.Thread(target=_run, daemon=True, name="price-sync").start()
+
+
 # ---- Endpoints ----
 
 @router.get("/providers")
@@ -142,11 +352,14 @@ async def list_providers():
         """Adapt switch /v1/providers item to the GUI contract."""
         name = sw.get("name", "")
         builtin = BUILTIN_PROVIDERS.get(name, {})
-        models = [
-            {"id": m, "display": m, "context": 0, "max_output": 0,
-             "cost_in": 0, "cost_out": 0, "capabilities": ["chat"]}
-            for m in (sw.get("models") or [])
-        ]
+        # 2026-08-17: switch 模型列表为纯字符串, 用价格目录富化定价/上下文
+        catalog = _get_catalog()
+        models = []
+        for m in (sw.get("models") or []):
+            md = {"id": m, "display": m, "context": 0, "max_output": 0,
+                  "cost_in": 0, "cost_out": 0, "capabilities": ["chat"]}
+            entry = _catalog_entry_for(m, name, catalog)
+            models.append(_enrich_model(md, entry) if entry else md)
         return {
             "name": name,
             "display_name": builtin.get("display_name", name),
@@ -193,6 +406,7 @@ async def list_providers():
                 models = json.load(f)
         else:
             models = builtin["default_models"]
+        models = _enrich_model_list(models, name)
 
         result.append({
             "name": name,
@@ -490,10 +704,16 @@ async def gateway_usage():
         except: pass
 
     cfg = _load_gateway_config()
+    # 2026-08-17: 费率从内置/富化定价动态取, 不再硬编码
+    ds_models = BUILTIN_PROVIDERS.get("deepseek", {}).get("default_models", [])
+    if ds_models and ds_models[0].get("cost_in"):
+        rates = {f"{ds_models[0]['id']}": f"${ds_models[0]['cost_in']}/M in + ${ds_models[0]['cost_out']}/M out"}
+    else:
+        rates = {"deepseek": "$0.14/M in + $0.28/M out"}
     return {
         "current_session": {**cur, "provider": cfg.get("active_provider"), "model": cfg.get("active_model")},
         "all_sessions": {"sessions": len(files), "total_tokens": int(all_chars * 3.5)},
-        "rates": {"deepseek": "$0.14/M in + $0.28/M out"}
+        "rates": rates,
     }
 
 
@@ -502,6 +722,28 @@ async def gateway_cost():
     """网关计费（2026-08-13 接线）: 转发 switch /v1/usage 的 cost 数据 —
     total（token/请求/费用）+ by_key + by_model（精细化分摊）。"""
     return _switch_get("/v1/usage")
+
+
+@router.get("/prices")
+async def gateway_prices():
+    """价格目录同步状态（2026-08-17）: 供前端展示最近同步时间/覆盖模型数。"""
+    cache = _load_price_cache()
+    return {
+        "synced": bool(cache.get("catalog")),
+        "fetched_at": cache.get("fetched_at"),
+        "source": cache.get("source"),
+        "model_count": cache.get("model_count", len(cache.get("catalog") or {})),
+        "stale": _price_cache_stale(cache),
+    }
+
+
+@router.post("/sync-prices")
+async def gateway_sync_prices(force: bool = True):
+    """手动触发价格同步（默认强制拉新）: 更新价格/上下文并富化内置模型。"""
+    try:
+        return sync_model_prices(force=force)
+    except Exception as e:
+        raise HTTPException(502, f"price sync failed: {e}")
 
 
 @router.get("/error-catalog")

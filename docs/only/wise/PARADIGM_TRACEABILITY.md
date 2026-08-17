@@ -47,6 +47,7 @@
 | P21 参数自适应 | DM_* 变体 + weights | ✅ | 本表变体即参数 |
 | P22 白盒 | CLI + 追踪矩阵 | 🟡 | 本矩阵补 |
 | P28 召回可追源 | path + parent_context | ✅ | eval 验证 |
+| A14/A19 网关白盒（2026-08-17） | LiteLLM 价格目录同步（启动后台 + POST /v6/gateway/sync-prices, 缓存 models_prices.json, 本地覆盖优先）+ 网关页 Provider 五态（未配置/无网络/未启用/可使用/待检测） | ✅ | test_gateway_price_sync 4 + tsc/build 绿 + 实测 3040 模型 / 115 富化（deepseek/kimi 定价生效） | 价格每 1M tokens; base_url 仍以内置预设+用户配置为准（LiteLLM 目录不含地址） |
 
 ## 使用说明
 
