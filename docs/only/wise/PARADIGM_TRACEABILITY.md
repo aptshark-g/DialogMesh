@@ -48,6 +48,7 @@
 | P22 白盒 | CLI + 追踪矩阵 | 🟡 | 本矩阵补 |
 | P28 召回可追源 | path + parent_context | ✅ | eval 验证 |
 | A14/A19 网关白盒（2026-08-17） | LiteLLM 价格目录同步（启动后台 + POST /v6/gateway/sync-prices, 缓存 models_prices.json, 本地覆盖优先）+ 网关页 Provider 五态（未配置/无网络/未启用/可使用/待检测） | ✅ | test_gateway_price_sync 4 + tsc/build 绿 + 实测 3040 模型 / 115 富化（deepseek/kimi 定价生效） | 价格每 1M tokens; base_url 仍以内置预设+用户配置为准（LiteLLM 目录不含地址） |
+| A19 前端白盒（2026-08-17 续） | 总览/会话页搜索+滚动增量加载（电商式懒加载, 防全量渲染卡死）+ v6.0 品牌移除 + 顶部 5 状态卡可读化 + 项目=工作区 P0（path 字段 + /v6/projects/browse 只读目录浏览 + 创建后选文件夹） | ✅ | test_projects_api 13 + tsc/build 绿 + 端点实测（建目录/browse 可见） | 项目方向: 子对话/fork/分支/git 式管理 = 待办（PROJECT_WORKSPACE_20260817.md）; 目录浏览仅读不建（A21） |
 
 ## 使用说明
 

@@ -6,12 +6,13 @@ sessionProject）; 本模块提供服务端持久化, 上线迁移时以前端�
 初始导入。数据结构对齐前端 Project{id,name,color,createdAt} +
 sessionProject{session_id: project_id}（字段 snake_case, 前端切换时映射）。
 
-端点:
+  端点:
   GET    /v6/projects                    → {projects, session_project}
-  POST   /v6/projects {name, color?}     → 建项目
-  PATCH  /v6/projects/{id} {name?, color?} → 改名/改色
+  POST   /v6/projects {name, color?, path?, create_dir?} → 建项目
+  PATCH  /v6/projects/{id} {name?, color?, path?} → 改名/改色/改路径
   DELETE /v6/projects/{id}               → 删项目（归属自动清除）
   PUT    /v6/sessions/{session_id}/project {project_id|null} → 会话归属写
+  GET    /v6/projects/browse?path=       → 只读列出子目录（项目文件夹选择）
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ router = APIRouter(prefix="/v6", tags=["v6-projects"])
 _PROJECTS_FILE = os.path.join(_DATA_DIR, "projects.json")
 _PROJECTS_LOCK = threading.RLock()   # 可重入: _save 在调用方持锁时二次获取
 _PROJECTS_CACHE: Optional[Dict[str, Any]] = None
+_UNSET = object()  # 哨兵: 区分「未提供」vs「显式置 None（清除）」
 
 
 def _load() -> Dict[str, Any]:
@@ -99,7 +101,9 @@ def set_session_project(session_id: str, project_id: Optional[str]) -> bool:
         return True
 
 
-def create_project(name: str, color: Optional[str] = None) -> dict:
+def create_project(name: str, color: Optional[str] = None,
+                   path: Optional[str] = None,
+                   create_dir: bool = False) -> dict:
     with _PROJECTS_LOCK:
         data = _load()
         project = {
@@ -108,13 +112,23 @@ def create_project(name: str, color: Optional[str] = None) -> dict:
             "color": color or "#F59E0B",
             "created_at": time.time(),
         }
+        if path:
+            project["path"] = path.strip()
+            if create_dir:
+                try:
+                    os.makedirs(path.strip(), exist_ok=True)
+                except Exception as e:
+                    raise HTTPException(status_code=400,
+                                        detail=f"create dir failed: {e}")
         data.setdefault("projects", []).append(project)
         _save()
         return project
 
 
 def update_project(project_id: str, name: Optional[str] = None,
-                   color: Optional[str] = None) -> Optional[dict]:
+                   color: Optional[str] = None,
+                   path=_UNSET,
+                   create_dir: bool = False) -> Optional[dict]:
     with _PROJECTS_LOCK:
         for p in _projects():
             if p["id"] == project_id:
@@ -122,6 +136,15 @@ def update_project(project_id: str, name: Optional[str] = None,
                     p["name"] = (name or "").strip() or p["name"]
                 if color is not None:
                     p["color"] = color
+                if path is not _UNSET:
+                    p["path"] = (path or "").strip() or None
+                    if create_dir and p.get("path"):
+                        try:
+                            os.makedirs(p["path"], exist_ok=True)
+                        except Exception as e:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"create dir failed: {e}")
                 _save()
                 return p
         return None
@@ -147,11 +170,15 @@ def delete_project(project_id: str) -> bool:
 class CreateProjectRequest(BaseModel):
     name: str
     color: Optional[str] = None
+    path: Optional[str] = None
+    create_dir: bool = False
 
 
 class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    path: Optional[str] = None
+    create_dir: bool = False
 
 
 class SessionProjectRequest(BaseModel):
@@ -169,15 +196,52 @@ async def get_projects():
 
 @router.post("/projects")
 async def post_project(req: CreateProjectRequest):
-    return create_project(req.name, req.color)
+    return create_project(req.name, req.color, req.path, req.create_dir)
 
 
 @router.patch("/projects/{project_id}")
 async def patch_project(project_id: str, req: UpdateProjectRequest):
-    updated = update_project(project_id, req.name, req.color)
+    fields = req.model_fields_set
+    updated = update_project(
+        project_id,
+        req.name,
+        req.color,
+        req.path if "path" in fields else _UNSET,
+        req.create_dir)
     if updated is None:
         raise HTTPException(status_code=404, detail="project not found")
     return updated
+
+
+@router.get("/projects/browse")
+async def browse_project_dirs(path: str = ""):
+    """只读目录浏览（2026-08-17, 项目文件夹选择用）:
+    列出 path 下的直接子目录; path 为空 → 默认项目工作区 data/projects。
+    仅读目录, 不创建不删除（A21 权限只减不增）。"""
+    root = path.strip() or os.path.join(_DATA_DIR, "projects")
+    return _browse_dirs(root)
+
+
+def _browse_dirs(root: str) -> dict:
+    """只读列出 root 的直接子目录（供端点与测试复用）。"""
+    import errno
+    try:
+        entries = sorted(
+            (e for e in os.scandir(root) if e.is_dir()),
+            key=lambda e: e.name.lower(),
+        )
+        return {
+            "path": os.path.abspath(root),
+            "entries": [
+                {"name": e.name, "path": os.path.abspath(e.path)}
+                for e in entries[:200]
+            ],
+        }
+    except OSError as e:
+        if e.errno == errno.ENOENT:
+            # 目录不存在不是错误: 返回空列表（首次使用 data/projects 尚未创建）
+            return {"path": os.path.abspath(root), "entries": []}
+        raise HTTPException(status_code=400, detail=f"browse failed: {e}")
 
 
 @router.delete("/projects/{project_id}")

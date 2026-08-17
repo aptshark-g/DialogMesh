@@ -342,6 +342,7 @@ export interface V6Project {
   name: string;
   color: string;
   created_at: number;
+  path?: string | null;
 }
 
 export interface V6ProjectsResponse {
@@ -353,18 +354,34 @@ export function getProjects(): Promise<V6ProjectsResponse> {
   return apiFetch<V6ProjectsResponse>('/v6/projects');
 }
 
-export function createProjectApi(name: string, color?: string): Promise<V6Project> {
+export function createProjectApi(
+  name: string,
+  color?: string,
+  path?: string,
+  createDir = false
+): Promise<V6Project> {
   return apiFetch<V6Project>('/v6/projects', {
     method: 'POST',
-    body: JSON.stringify({ name, color }),
+    body: JSON.stringify({ name, color, path, create_dir: createDir }),
   });
 }
 
-export function patchProjectApi(id: string, patch: { name?: string; color?: string }): Promise<V6Project> {
+export function patchProjectApi(id: string, patch: { name?: string; color?: string; path?: string | null; create_dir?: boolean }): Promise<V6Project> {
   return apiFetch<V6Project>(`/v6/projects/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   });
+}
+
+/** 只读目录浏览（2026-08-17, 项目文件夹选择）: path 为空 → data/projects 根 */
+export interface V6ProjectBrowseEntry {
+  name: string;
+  path: string;
+}
+
+export async function browseProjectDirs(path?: string): Promise<{ path: string; entries: V6ProjectBrowseEntry[] }> {
+  const q = path ? `?path=${encodeURIComponent(path)}` : '';
+  return apiFetch<{ path: string; entries: V6ProjectBrowseEntry[] }>(`/v6/projects/browse${q}`);
 }
 
 export function deleteProjectApi(id: string): Promise<{ deleted: boolean }> {

@@ -135,3 +135,36 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 - B15 前端切换（projectStore 从 localStorage → /v6/projects）下一轮做;
   B1 的 task/graph-node 挂 project 未做（先 session 层闭环）。
 - 上线迁移: 前端本地 dm_projects 数据 → 初始导入后端。
+
+## 六、前端基础治理 + 项目工作区 P0（2026-08-17 续, 已提交本地）
+
+### 本轮完成（全部验证）
+- **总览页动态加载**: DashboardPage 会话列表加关键词搜索 + IntersectionObserver
+  滚动增量加载（20/批）; 移除无上限逐项动画延迟（防大列表卡死, 电商式懒加载）。
+- **会话页同款**: SessionsPage 会话列表搜索 + 增量加载（30/批, 按项目过滤生效）。
+- **v6.0 品牌移除**（未发正式版, 研发代号不再外显）: `frontend/index.html`
+  title → DialogMesh; Sidebar 徽标删除; DashboardPage 副标题去掉版本前缀。
+- **顶部 5 状态卡可读化**: PersistenceOverview 改为中文标签 + 一句用途说明
+  （记忆批注/统一记忆/用户画像/规则库/知识图谱）, 去掉 status/records 原始字段。
+- **项目=工作区 P0**（方向见 PROJECT_WORKSPACE_20260817.md）:
+  项目模型加 `path`; 创建后弹「选择工作区文件夹」（新建自动建 data/projects/{slug} /
+  已有浏览选择或手动路径）; `GET /v6/projects/browse` 只读目录浏览（A21: 仅读不创建,
+  目录不存在返回空列表非 404）; projectStore 加 setProjectPath。
+- **任务页大工程立项**: TASK_EXECUTION_VIEW_20260817.md（完成度/执行轨迹/回放 +
+  GitHub 调研清单: flyte/prefect/n8n/langgraph studio）。
+
+### 验证
+- `test_projects_api` 13 绿（含 path/create_dir/browse 只读/空目录）;
+  `test_gateway_price_sync` 4 绿; tsc 零错误; build 成功（4173 已服务新构建）。
+- 实测: POST /v6/projects {path, create_dir:true} 落盘目录 + browse 可见（已清理测试数据）。
+
+### 待办（下一轮）
+- 项目页视图（点项目 → 该项目会话/任务/图, 而非全局过滤）; 项目内新建会话（B16 已有）。
+- 元认知项目级经验总结（/v6/projects/{id}/digest）。
+- 会话 fork/分支 + git 式版本回滚（PROJECT_WORKSPACE 设计稿）。
+- 任务完成度: ExecutionTree → 只读聚合端点 + 画布状态着色（TASK_EXECUTION_VIEW P0）。
+- B5 会话标题摘要 / 画像健康度（B4+B6）等 B 类未动。
+
+### 环境（现状）
+- 8000 API（PID 12652, 含本轮 projects/browse + 价格同步）/ 8080 网关 / 4173 前端均在跑。
+- 全量 pytest 前需停服务防 OOM（约 4.6GB 占用）。

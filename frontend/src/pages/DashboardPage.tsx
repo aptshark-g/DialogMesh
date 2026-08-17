@@ -1,6 +1,6 @@
 // FILE: frontend/src/pages/DashboardPage.tsx
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -13,6 +13,7 @@ import {
   ArrowRight,
   RefreshCw,
   BarChart3,
+  Search,
 } from 'lucide-react';
 import {
   TrendChart,
@@ -25,6 +26,36 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { sessions, loading, error, refresh } = useV6Sessions();
   const [health, setHealth] = useState<{ ok: boolean; status?: string } | null>(null);
+  // 2026-08-17: 会话列表关键词搜索 + 滚动增量加载（电商式懒加载, 防全量渲染卡死）
+  const [query, setQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(20);
+  const PAGE_STEP = 20;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const filteredSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter((s) => s.name.toLowerCase().includes(q));
+  }, [sessions, query]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_STEP);
+  }, [query]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || filteredSessions.length <= visibleCount) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((c) => Math.min(c + PAGE_STEP, filteredSessions.length));
+        }
+      },
+      { rootMargin: '240px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [filteredSessions.length, visibleCount]);
 
   const computeAnalytics = useAnalyticsStore((s) => s.computeAnalytics);
   const trendData = useAnalyticsStore((s) => s.trendData);
@@ -60,7 +91,7 @@ export function DashboardPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-text-primary">DialogMesh</h1>
-              <p className="text-xs text-text-muted">v6.0 多层 LLM 认知架构</p>
+              <p className="text-xs text-text-muted">多层 LLM 认知架构</p>
             </div>
           </div>
 
@@ -155,16 +186,35 @@ export function DashboardPage() {
 
         {/* Sessions */}
         <div className="card-liquid shadow-card rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-primary">会话列表</h2>
-            <button
-              onClick={refresh}
-              disabled={loading}
-              className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-primary transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-              刷新
-            </button>
+          <div className="px-5 py-4 border-b border-gray-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-text-primary">
+                会话列表
+                {!loading && (
+                  <span className="ml-2 text-xs font-normal text-text-muted">
+                    共 {filteredSessions.length} 个{query && `（匹配 "${query.trim()}"）`}
+                  </span>
+                )}
+              </h2>
+              <button
+                onClick={refresh}
+                disabled={loading}
+                className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-primary transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+                刷新
+              </button>
+            </div>
+            <div className="relative">
+              <Search className="h-3.5 w-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索会话关键词…"
+                aria-label="搜索会话"
+                className="w-full bg-wash rounded-lg pl-8 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
           </div>
 
           {error && (
@@ -179,14 +229,19 @@ export function DashboardPage() {
               <p className="text-sm text-text-secondary">暂无会话</p>
               <p className="text-xs text-text-muted mt-1">点击右上角"新建会话"开始对话</p>
             </div>
+          ) : filteredSessions.length === 0 ? (
+            <div className="px-5 py-16 text-center">
+              <Search className="h-10 w-10 text-text-muted mx-auto mb-3" />
+              <p className="text-sm text-text-secondary">未找到匹配「{query.trim()}」的会话</p>
+            </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {sessions.map((session, idx) => (
+              {filteredSessions.slice(0, visibleCount).map((session, idx) => (
                 <motion.div
                   key={session.name}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: idx * 0.05 }}
+                  transition={{ duration: 0.25, delay: Math.min(idx * 0.02, 0.3) }}
                   className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50/50 transition-colors group"
                 >
                   <div className="h-9 w-9 rounded-lg bg-surface-sidebar flex items-center justify-center shrink-0">
@@ -215,6 +270,14 @@ export function DashboardPage() {
                   </div>
                 </motion.div>
               ))}
+              {filteredSessions.length > visibleCount && (
+                <div
+                  ref={loadMoreRef}
+                  className="flex items-center justify-center py-4 text-xs text-text-muted"
+                >
+                  滚动加载更多…（{visibleCount}/{filteredSessions.length}）
+                </div>
+              )}
             </div>
           )}
         </div>

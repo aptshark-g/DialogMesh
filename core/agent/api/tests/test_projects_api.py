@@ -46,6 +46,36 @@ class TestProjectCrud:
         assert projects_api.delete_project(p["id"])
         assert not projects_api.delete_project(p["id"])
 
+    def test_create_with_path_and_create_dir(self, tmp_path):
+        target = tmp_path / "ws" / "p1"
+        p = projects_api.create_project("带目录", path=str(target),
+                                        create_dir=True)
+        assert p["path"] == str(target)
+        assert target.is_dir()
+
+    def test_update_path(self):
+        p = projects_api.create_project("P")
+        updated = projects_api.update_project(p["id"], path="data/projects/x")
+        assert updated["path"] == "data/projects/x"
+        # path=None 清除
+        updated2 = projects_api.update_project(p["id"], path=None)
+        assert "path" not in updated2 or updated2["path"] is None
+
+    def test_browse_readonly_lists_dirs(self, tmp_path):
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "nested").mkdir()
+        (tmp_path / "file.txt").write_text("x", encoding="utf-8")
+        result = projects_api._browse_dirs(str(tmp_path))
+        names = [e["name"] for e in result["entries"]]
+        assert "a" in names and "b" in names
+        assert "file.txt" not in names
+        assert "nested" not in names  # 只列直接子目录
+
+    def test_browse_missing_returns_empty(self, tmp_path):
+        result = projects_api._browse_dirs(str(tmp_path / "missing"))
+        assert result["entries"] == []
+
     def test_update_missing_returns_none(self):
         assert projects_api.update_project("nope", name="x") is None
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ComponentType } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,10 +23,15 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  FolderPlus,
+  FolderOpen,
+  ChevronRight,
 } from 'lucide-react';
 import { useHealth } from '../hooks/useHealth.ts';
 import { useProjectStore, PROJECT_PALETTE } from '../stores/projectStore.ts';
 import { useUIStore } from '../stores/uiStore.ts';
+import { browseProjectDirs, type V6ProjectBrowseEntry } from '../api/v6';
+import { Modal } from './ui/Modal';
 
 interface NavItem {
   to: string;
@@ -96,6 +101,7 @@ export function Sidebar() {
   const renameProject = useProjectStore((s) => s.renameProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
   const recolorProject = useProjectStore((s) => s.recolorProject);
+  const setProjectPath = useProjectStore((s) => s.setProjectPath);
   // P1-H: 侧栏可拖拽宽度(持久化) + 拖拽中禁过渡
   const sidebarWidth = useUIStore((s) => s.sidebarWidth);
   const [resizing, setResizing] = useState(false);
@@ -104,6 +110,14 @@ export function Sidebar() {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  // 2026-08-17: 创建项目后选择工作区文件夹（新建/已有）
+  const [folderFor, setFolderFor] = useState<string | null>(null);
+  const [folderForName, setFolderForName] = useState('');
+  const [folderMode, setFolderMode] = useState<'new' | 'existing'>('new');
+  const [folderPath, setFolderPath] = useState('');
+  const [browsePath, setBrowsePath] = useState('');
+  const [browseEntries, setBrowseEntries] = useState<V6ProjectBrowseEntry[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { health, error } = useHealth();
@@ -115,6 +129,45 @@ export function Sidebar() {
     // Special handling for chat routes with dynamic session IDs
     if (to === '/chat' && location.pathname.startsWith('/chat')) return true;
     return false;
+  };
+
+  const slug = (name: string, id: string) => {
+    const safe = name.trim().toLowerCase().replace(/[^\w\u4e00-\u9fa5-]+/g, '-').replace(/^-+|-+$/g, '');
+    return `${safe || 'project'}-${id.slice(0, 6)}`;
+  };
+
+  const loadBrowse = useCallback(async (dir: string) => {
+    setBrowseLoading(true);
+    try {
+      const r = await browseProjectDirs(dir || undefined);
+      setBrowsePath(r.path);
+      setBrowseEntries(r.entries);
+    } catch {
+      setBrowseEntries([]);
+    } finally {
+      setBrowseLoading(false);
+    }
+  }, []);
+
+  const openFolderPicker = (p: { id: string; name: string }) => {
+    setFolderFor(p.id);
+    setFolderForName(p.name);
+    setFolderMode('new');
+    setFolderPath(`data/projects/${slug(p.name, p.id)}`);
+    loadBrowse('');
+  };
+
+  const confirmFolder = () => {
+    if (folderFor && folderPath.trim()) {
+      setProjectPath(folderFor, folderPath.trim(), folderMode === 'new');
+    }
+    setFolderFor(null);
+    navigate('/sessions');
+  };
+
+  const skipFolder = () => {
+    setFolderFor(null);
+    navigate('/sessions');
   };
 
   // P1-H: 指针镜面高光(liquid glass specular) — 指针位置写入 CSS 变量
@@ -209,7 +262,6 @@ export function Sidebar() {
                 <span className="font-semibold text-primary text-[14px] truncate">
                   DialogMesh
                 </span>
-                <span className="text-[10px] text-text-muted">v6.0</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -271,7 +323,9 @@ export function Sidebar() {
                             if (name) {
                               const p = createProject(name);
                               setActiveProject(p.id);
-                              navigate('/sessions');
+                              // 2026-08-17: 创建后先选工作区文件夹（新建/已有）,
+                              // 确认或跳过后再进入会话页
+                              openFolderPicker(p);
                             }
                             setDraft('');
                             setCreating(false);
@@ -537,6 +591,142 @@ export function Sidebar() {
           </div>
         )}
       </motion.aside>
+
+      {/* 2026-08-17: 创建项目后选择工作区文件夹（新建/已有） */}
+      <Modal
+        isOpen={folderFor !== null}
+        onClose={skipFolder}
+        title={`选择项目文件夹「${folderForName}」`}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={skipFolder}
+              className="px-3 py-1.5 rounded-lg border border-subtle text-xs text-text-secondary hover:text-text-primary transition-colors"
+            >
+              暂不关联
+            </button>
+            <button
+              type="button"
+              onClick={confirmFolder}
+              disabled={!folderPath.trim()}
+              className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-40"
+            >
+              确认关联
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            {(
+              [
+                ['new', '新建文件夹', FolderPlus],
+                ['existing', '已有文件夹', FolderOpen],
+              ] as const
+            ).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setFolderMode(mode);
+                  if (mode === 'new' && folderFor) {
+                    const p = projects.find((x) => x.id === folderFor);
+                    setFolderPath(`data/projects/${slug(p?.name || folderForName, folderFor)}`);
+                  } else {
+                    loadBrowse(browsePath || '');
+                  }
+                }}
+                className={[
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                  folderMode === mode
+                    ? 'border-primary bg-primary/5 text-primary'
+                    : 'border-subtle text-text-secondary hover:text-primary',
+                ].join(' ')}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {folderMode === 'new' ? (
+            <div className="rounded-lg border border-subtle p-3 space-y-2">
+              <p className="text-xs text-text-secondary">
+                将自动在项目工作区 <span className="font-mono text-text-primary">data/projects/</span>
+                下创建目录（可修改路径）。
+              </p>
+              <input
+                value={folderPath}
+                onChange={(e) => setFolderPath(e.target.value)}
+                aria-label="新建文件夹路径"
+                className="w-full bg-wash rounded-lg px-3 py-2 text-xs font-mono text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+          ) : (
+            <div className="rounded-lg border border-subtle overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-wash text-xs">
+                <span className="font-mono text-text-secondary truncate">{browsePath || '加载中…'}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parent = browsePath.replace(/[\\/]+$/, '').split(/[\\/]/).slice(0, -1).join('\\');
+                    if (parent) loadBrowse(parent);
+                  }}
+                  className="text-text-secondary hover:text-primary shrink-0 ml-2"
+                >
+                  上一级
+                </button>
+              </div>
+              <div className="max-h-44 overflow-y-auto divide-y divide-border-subtle">
+                {browseLoading ? (
+                  <div className="px-3 py-4 text-xs text-text-muted text-center">加载目录…</div>
+                ) : browseEntries.length === 0 ? (
+                  <div className="px-3 py-4 text-xs text-text-muted text-center">此目录下暂无子文件夹</div>
+                ) : (
+                  browseEntries.map((e) => (
+                    <div
+                      key={e.path}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setFolderPath(e.path)}
+                      onKeyDown={(ev) => { if (ev.key === 'Enter') setFolderPath(e.path); }}
+                      className={[
+                        'flex items-center gap-2 px-3 py-2 text-xs transition-colors cursor-pointer',
+                        folderPath === e.path ? 'bg-primary/5 text-primary' : 'text-text-secondary hover:bg-surface-card-hover',
+                      ].join(' ')}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate flex-1">{e.name}</span>
+                      <button
+                        type="button"
+                        onClick={(ev) => { ev.stopPropagation(); loadBrowse(e.path); }}
+                        aria-label={`进入 ${e.name}`}
+                        className="p-0.5 rounded hover:text-primary shrink-0"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="px-3 py-2 border-t border-border-subtle">
+                <input
+                  value={folderPath}
+                  onChange={(e) => setFolderPath(e.target.value)}
+                  placeholder="或手动输入文件夹路径…"
+                  aria-label="已有文件夹路径"
+                  className="w-full bg-wash rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                />
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] text-text-muted">
+            项目=工作区: 该项目下的会话将归入此文件夹, 便于后续以项目为单位做经验总结与分支管理。
+          </p>
+        </div>
+      </Modal>
     </>
   );
 }

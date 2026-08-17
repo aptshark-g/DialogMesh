@@ -1,7 +1,7 @@
 // FILE: frontend/src/pages/SessionsPage.tsx
 // Session 管理 — 持久化概览 + 会话列表 + 详情抽屉 + 文档导入
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { specMove } from '@/lib/spec';
 import { motion } from 'framer-motion';
@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Plus,
   RefreshCw,
+  Search,
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -54,6 +55,37 @@ export function SessionsPage() {
   const visibleSessions = activeProject
     ? sessions.filter((s) => sessionProject[s.name] === activeProject.id)
     : sessions;
+
+  // 2026-08-17: 会话列表关键词搜索 + 滚动增量加载（电商式懒加载）
+  const [sessionQuery, setSessionQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(30);
+  const PAGE_STEP = 30;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const filteredSessions = useMemo(() => {
+    const q = sessionQuery.trim().toLowerCase();
+    if (!q) return visibleSessions;
+    return visibleSessions.filter((s) => s.name.toLowerCase().includes(q));
+  }, [visibleSessions, sessionQuery]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_STEP);
+  }, [sessionQuery, activeProjectId]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || filteredSessions.length <= visibleCount) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((c) => Math.min(c + PAGE_STEP, filteredSessions.length));
+        }
+      },
+      { rootMargin: '240px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [filteredSessions.length, visibleCount]);
 
   const fetchGraphs = useCallback(async () => {
     setGraphsLoading(true);
@@ -146,33 +178,45 @@ export function SessionsPage() {
 
       {/* 会话列表 */}
       <div className="card-liquid shadow-card rounded-xl">
-        <div className="px-5 py-4 border-b border-subtle flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-text-primary flex items-center">会话列表
-            {!loading && (<span className="ml-2 text-xs font-normal text-text-muted">共 {visibleSessions.length} 个</span>)}
-            {activeProject && (
-              <span className="ml-2 flex items-center gap-1.5 text-[11px] font-normal text-text-secondary bg-wash rounded-full pl-2 pr-1 py-0.5">
-                <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: activeProject.color }} />
-                {activeProject.name}
-                <button
-                  type="button"
-                  onClick={() => setActiveProject(null)}
-                  aria-label="清除项目过滤"
-                  className="p-0.5 rounded-full text-text-muted hover:text-text-primary transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-          </h2>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-primary transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-            刷新
-          </button>
+        <div className="px-5 py-4 border-b border-subtle space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-primary flex items-center">会话列表
+              {!loading && (<span className="ml-2 text-xs font-normal text-text-muted">共 {filteredSessions.length} 个{sessionQuery.trim() && `（匹配 "${sessionQuery.trim()}"）`}</span>)}
+              {activeProject && (
+                <span className="ml-2 flex items-center gap-1.5 text-[11px] font-normal text-text-secondary bg-wash rounded-full pl-2 pr-1 py-0.5">
+                  <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: activeProject.color }} />
+                  {activeProject.name}
+                  <button
+                    type="button"
+                    onClick={() => setActiveProject(null)}
+                    aria-label="清除项目过滤"
+                    className="p-0.5 rounded-full text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </h2>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-primary transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              刷新
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="h-3.5 w-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={sessionQuery}
+              onChange={(e) => setSessionQuery(e.target.value)}
+              placeholder="搜索会话关键词…"
+              aria-label="搜索会话"
+              className="w-full bg-wash rounded-lg pl-8 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+          </div>
         </div>
 
         {error && (
@@ -202,9 +246,14 @@ export function SessionsPage() {
             <p className="text-sm text-text-secondary">「{activeProject?.name}」下暂无会话</p>
             <p className="text-xs text-text-muted mt-1">在会话行上点归入按钮,可把会话放进该项目</p>
           </div>
+        ) : filteredSessions.length === 0 ? (
+          <div className="px-5 py-16 text-center">
+            <Search className="h-10 w-10 text-text-muted mx-auto mb-3" />
+            <p className="text-sm text-text-secondary">未找到匹配「{sessionQuery.trim()}」的会话</p>
+          </div>
         ) : (
           <div className="divide-y divide-border-subtle">
-            {visibleSessions.map((session, idx) => {
+            {filteredSessions.slice(0, visibleCount).map((session, idx) => {
               const active = selected === session.name;
               return (
                 <motion.div
@@ -299,6 +348,14 @@ export function SessionsPage() {
                 </motion.div>
               );
             })}
+            {filteredSessions.length > visibleCount && (
+              <div
+                ref={loadMoreRef}
+                className="flex items-center justify-center py-4 text-xs text-text-muted"
+              >
+                滚动加载更多…（{visibleCount}/{filteredSessions.length}）
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,5 +1,7 @@
 // FILE: frontend/src/components/sessions/PersistenceOverview.tsx
 // 持久化状态卡 — 存储后端概览 + 图数据清单
+// 2026-08-17: 改为用户可读的五格状态（中文标签 + 一句用途说明）,
+// 不再直接展示 status/records 这类内部字段。
 
 import {
   Brain,
@@ -22,35 +24,16 @@ interface PersistenceOverviewProps {
   graphsLoading: boolean;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-/** 从 store stats 中提取前几个标量字段展示 */
-function storeMetrics(store: unknown): [string, string][] {
-  if (!isRecord(store)) return [];
-  return Object.entries(store)
-    .filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v))
-    .slice(0, 3)
-    .map(([k, v]) => [k, String(v)]);
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString('zh-CN', { hour12: false });
-}
-
 interface TileProps {
   icon: React.ReactNode;
   label: string;
+  hint: string;
   value: string;
   ok: boolean | null;
-  metrics?: [string, string][];
+  sub?: string;
 }
 
-function Tile({ icon, label, value, ok, metrics }: TileProps) {
+function Tile({ icon, label, hint, value, ok, sub }: TileProps) {
   return (
     <div className="bg-surface-card rounded-xl border border-subtle p-4 shadow-card">
       <div className="flex items-center justify-between mb-2">
@@ -67,6 +50,7 @@ function Tile({ icon, label, value, ok, metrics }: TileProps) {
           />
         )}
       </div>
+      <p className="text-[11px] text-text-muted leading-snug mb-2">{hint}</p>
       <p
         className={cn(
           'text-base font-semibold',
@@ -75,21 +59,16 @@ function Tile({ icon, label, value, ok, metrics }: TileProps) {
       >
         {value}
       </p>
-      {metrics && metrics.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {metrics.map(([k, v]) => (
-            <span
-              key={k}
-              className="px-1.5 py-0.5 rounded font-mono text-[11px]"
-              style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)' }}
-            >
-              {k}: {v}
-            </span>
-          ))}
-        </div>
-      )}
+      {sub && <p className="text-xs text-text-secondary mt-1">{sub}</p>}
     </div>
   );
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('zh-CN', { hour12: false });
 }
 
 export function PersistenceOverview({
@@ -119,43 +98,39 @@ export function PersistenceOverview({
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Tile
           icon={<Database className="h-3.5 w-3.5" />}
-          label="Annotation Store"
+          label="记忆批注"
+          hint="对话与反馈的结构化批注存储"
           value={annotationOn ? '运行中' : '未启用'}
           ok={annotationOn}
-          metrics={storeMetrics(persistence?.annotation_store)}
         />
         <Tile
           icon={<Layers className="h-3.5 w-3.5" />}
-          label="Unified Store"
+          label="统一记忆"
+          hint="多树记忆的统一落盘层"
           value={unifiedOn ? '运行中' : '未启用'}
           ok={unifiedOn}
-          metrics={storeMetrics(persistence?.unified_store)}
         />
         <Tile
           icon={<Brain className="h-3.5 w-3.5" />}
-          label="OCEAN 画像"
+          label="用户画像"
+          hint="OCEAN 五维人格画像"
           value={persistence?.oceAN_saved ? '已保存' : '未保存'}
           ok={persistence?.oceAN_saved ?? null}
         />
         <Tile
           icon={<ShieldCheck className="h-3.5 w-3.5" />}
           label="规则库"
+          hint="用户约束规则（可编辑）"
           value={persistence?.rules_saved ? '已保存' : '未保存'}
           ok={persistence?.rules_saved ?? null}
         />
         <Tile
           icon={<GitFork className="h-3.5 w-3.5" />}
-          label="图数据"
+          label="知识图谱"
+          hint="记忆与知识的图谱表示"
           value={graphsLoading ? '加载中…' : `${graphList.length} 个图`}
           ok={graphList.length > 0 ? true : graphs ? false : null}
-          metrics={
-            graphList.length > 0
-              ? [
-                  ['节点', String(totalNodes)],
-                  ['边', String(totalEdges)],
-                ]
-              : undefined
-          }
+          sub={graphList.length > 0 ? `${totalNodes} 节点 · ${totalEdges} 边` : undefined}
         />
       </div>
 

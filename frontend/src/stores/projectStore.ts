@@ -20,6 +20,7 @@ export interface Project {
   name: string;
   color: string;
   createdAt: number;
+  path?: string | null;
 }
 
 /** 徽章色板(按创建顺序循环取用;侧栏改色菜单也用它) */
@@ -30,6 +31,7 @@ const toProject = (p: V6Project): Project => ({
   name: p.name,
   color: p.color,
   createdAt: p.created_at,
+  path: p.path ?? null,
 });
 
 interface ProjectState {
@@ -44,9 +46,10 @@ interface ProjectState {
 
 interface ProjectActions {
   loadFromServer: () => Promise<void>;
-  createProject: (name: string) => Project;
+  createProject: (name: string, path?: string, createDir?: boolean) => Project;
   renameProject: (id: string, name: string) => void;
   recolorProject: (id: string, color: string) => void;
+  setProjectPath: (id: string, path: string | null, createDir?: boolean) => void;
   deleteProject: (id: string) => void;
   assignSession: (sessionName: string, projectId: string | null) => void;
   setActiveProject: (id: string | null) => void;
@@ -78,16 +81,17 @@ export const useProjectStore = create<ProjectStore>()(
         }
       },
 
-      createProject: (name) => {
+      createProject: (name, path?, createDir?) => {
         const project: Project = {
           id: `p_${Date.now().toString(36)}`,
           name: name.trim(),
           color: PROJECT_PALETTE[get().projects.length % PROJECT_PALETTE.length],
           createdAt: Date.now(),
+          path: path || null,
         };
         set((s) => ({ projects: [...s.projects, project] }));
         // 服务端建（失败不回滚本地 — 乐观更新, 白盒可查差异）
-        createProjectApi(project.name, project.color)
+        createProjectApi(project.name, project.color, path || undefined, createDir)
           .then((p) => {
             set((s) => ({
               projects: s.projects.map((x) =>
@@ -115,6 +119,20 @@ export const useProjectStore = create<ProjectStore>()(
         // 服务端改色
         patchProjectApi(id, { color }).catch((e) =>
           console.warn('[projectStore] recolor failed:', e));
+      },
+
+      /** 2026-08-17: 项目关联工作区文件夹（创建后选择 / 后续修改） */
+      setProjectPath: (id, path, createDir = false) => {
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? { ...p, path: path || null } : p)),
+        }));
+        patchProjectApi(id, { path, create_dir: createDir })
+          .then((p) => {
+            set((s) => ({
+              projects: s.projects.map((x) => (x.id === id ? toProject(p) : x)),
+            }));
+          })
+          .catch((e) => console.warn('[projectStore] set path failed:', e));
       },
 
       deleteProject: (id) => {
