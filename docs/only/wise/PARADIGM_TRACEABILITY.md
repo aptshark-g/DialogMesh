@@ -50,6 +50,7 @@
 | A14/A19 网关白盒（2026-08-17） | LiteLLM 价格目录同步（启动后台 + POST /v6/gateway/sync-prices, 缓存 models_prices.json, 本地覆盖优先）+ 网关页 Provider 五态（未配置/无网络/未启用/可使用/待检测） | ✅ | test_gateway_price_sync 4 + tsc/build 绿 + 实测 3040 模型 / 115 富化（deepseek/kimi 定价生效） | 价格每 1M tokens; base_url 仍以内置预设+用户配置为准（LiteLLM 目录不含地址） |
 | A19 前端白盒（2026-08-17 续） | 总览/会话页搜索+滚动增量加载（电商式懒加载, 防全量渲染卡死）+ v6.0 品牌移除 + 顶部 5 状态卡可读化 + 项目=工作区 P0（path 字段 + /v6/projects/browse 只读目录浏览 + 创建后选文件夹） | ✅ | test_projects_api 13 + tsc/build 绿 + 端点实测（建目录/browse 可见） | 项目方向: 子对话/fork/分支/git 式管理 = 待办（PROJECT_WORKSPACE_20260817.md）; 目录浏览仅读不建（A21） |
 | A1/A24 项目设计元信息（2026-08-17） | 项目页视图 `/projects/:id` + design 元信息（理念/公理/目标, 二阶抽象）: GET/PUT + POST digest（LLM 从项目会话凝练, 失败模板兜底） | ✅ | test_projects_api 17 + tsc/build 绿 + 实测 llm_digest 真实产出 | 二阶抽象工程化: 项目即认知边界, 约束从会话实践长出来; 子对话/分支待办 |
+| A19 环境信息面板（2026-08-17） | 工程链副屏 → 环境信息: git 只读端点（/v6/git/status, 分支/远端/变更/提交, 全只读 A21）+ skills + 项目关系约束 + 图关系; 项目页新建会话（B16）+ 创建时间修复 | ✅ | test_git_api 2 + test_projects_api 17 + tsc/build 绿 + 实测 git 状态正确 | 内置 git 可视化/VS 联动 = 待办（GIT_VISUALIZATION_20260817.md, 先文件系统桥） |
 
 ## 使用说明
 

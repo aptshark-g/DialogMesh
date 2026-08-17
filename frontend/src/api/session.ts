@@ -27,8 +27,12 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function createSession(): Promise<CreateSessionResponse> {
-  return apiFetch<CreateSessionResponse>('/v3/session', { method: 'POST' });
+export function createSession(projectId?: string): Promise<CreateSessionResponse> {
+  const body = projectId ? JSON.stringify({ project_id: projectId }) : undefined;
+  return apiFetch<CreateSessionResponse>('/v3/session', {
+    method: 'POST',
+    ...(body ? { body } : {}),
+  });
 }
 
 export function sendMessage(sessionId: string, content: string, provider?: string, model?: string): Promise<SendMessageResponse> {

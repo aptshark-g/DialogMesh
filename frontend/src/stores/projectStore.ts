@@ -30,7 +30,8 @@ const toProject = (p: V6Project): Project => ({
   id: p.id,
   name: p.name,
   color: p.color,
-  createdAt: p.created_at,
+  // 后端 created_at 为 epoch 秒, 统一转毫秒（前端 Date 用）
+  createdAt: p.created_at > 1e12 ? p.created_at : p.created_at * 1000,
   path: p.path ?? null,
 });
 

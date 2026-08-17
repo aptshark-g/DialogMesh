@@ -189,3 +189,27 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 ### 待办（下一轮）
 - 项目页补任务/图数据聚合; 元认知项目级经验总结（P1）; 会话 fork/分支（P2）。
 - B 类后端续（B5 会话标题 / B4+B6 画像健康度）。
+
+## 八、项目页小修 + 环境信息面板 + git 只读端点（2026-08-17 续, 已提交本地）
+
+### 完成（全部实测）
+- **项目页「新建会话」**: 概览卡右侧加按钮, `createSession(projectId)`
+  （B16 创建即归属本项目）→ 直接进入该会话, 无需建后归档。
+- **创建时间 bug 修复**: `created_at` 为 epoch 秒而前端按毫秒 `new Date` →
+  1970/1/22 假象; store `toProject` 统一转毫秒 + 页面防御转换（>1e12 视为 ms）。
+- **工程链副屏 → 环境信息**（DockContents `EnvironmentDockContent`, 原
+  raw dump 占位替换）: Git 工作区卡（分支/领先落后/变更数/远端/最近提交/
+  变更文件清单）+ 已启动 Skills + 项目关系约束（chapter2 案例引用）+
+  项目图关系（节点/边/子图锚点）+ 刷新。
+- **git 只读端点** `GET /v6/git/status`（`git_api.py`, 只读无写, A21）;
+  工程页模块点击 → 副屏切「节点详情」摘要（默认副屏=环境信息）。
+- **文档**: `GIT_VISUALIZATION_20260817.md`（内置 git 可视化 + VS 联动
+  方案: 建议先做文件系统/CLI 桥, 再做 VSIX）。
+
+### 验证
+- test_git_api 2 + test_projects_api 17 = 19 绿; tsc 零错误; build 成功;
+  4173 服务新构建; `/v6/git/status` 实测（main / 11 变更文件 / 最近提交正确）。
+
+### 待办
+- 内置 git 可视化（/v6/git/log 提交图 + diff 摘要）; VS 联动（先文件系统桥）。
+- 项目页补任务/图聚合; 元认知项目经验总结 P1; 会话 fork/分支 P2; B 类续。

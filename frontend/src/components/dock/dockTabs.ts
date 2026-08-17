@@ -7,7 +7,7 @@ export const DOCK_TABS: { key: DockContentKey; label: string; icon: typeof User 
   { key: 'profile', label: '画像', icon: User },
   { key: 'chat', label: '对话', icon: MessageSquare },
   { key: 'context', label: '上下文', icon: Braces },
-  { key: 'engineering', label: '工程链', icon: GitBranch },
+  { key: 'engineering', label: '环境信息', icon: GitBranch },
   { key: 'tasks', label: '任务', icon: ListChecks },
   { key: 'legend', label: '图例', icon: Palette },
   { key: 'thinking', label: '思考流', icon: BrainCircuit },

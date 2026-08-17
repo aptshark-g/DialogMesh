@@ -1,16 +1,26 @@
 /** RightDock 候选内容 — 三屏结构中右栏可切换的各类上下文面板。 */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { FC, ReactNode } from 'react';
-import { RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2, Network, SlidersHorizontal } from 'lucide-react';
+import {
+  RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2, Network,
+  SlidersHorizontal, GitBranch, GitCommitHorizontal, CircleDot, Wrench, Sparkles, Share2,
+} from 'lucide-react';
 import { CognitiveRadarChart } from '../CognitiveRadarChart';
 import { MetricCards } from '../MetricCards';
 import { useV6Profile } from '../../hooks/useV6Profile';
-import { getContext, getEngineering, submitCompressionFeedback, getHeuristics, getChangelog, interveneChangelog } from '../../api/v6';
+import {
+  getContext, getEngineering, submitCompressionFeedback, getHeuristics,
+  getChangelog, interveneChangelog, getGitStatus, getSkills, getGraph,
+  type V6GitStatus,
+} from '../../api/v6';
 import { useTaskGraphStore } from '../../stores/taskStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useContextWorkbench, entryKey } from '../../stores/contextWorkbenchStore';
 import { cn } from '../../lib/utils';
-import type { V6HeuristicsResponse, V6ChangelogResponse, V6ChangelogEvent } from '../../types/api';
+import type {
+  V6HeuristicsResponse, V6ChangelogResponse, V6ChangelogEvent,
+  V6SkillsResponse, V6GraphResponse,
+} from '../../types/api';
 
 /* ── 通用面板骨架 ─────────────────────────────────────────── */
 
@@ -521,44 +531,198 @@ export function ContextDockContent() {
   );
 }
 
-/* ── Engineering（工程链视图, /v6/engineering） ────────────── */
+/* ── Environment（环境信息, 2026-08-17）: git 状态 / skills / 约束 / 图关系 ── */
 
-export function EngineeringDockContent() {
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
+const SectionTitle: FC<{ icon: FC<{ className?: string }>; text: string; extra?: ReactNode }> =
+  ({ icon: Icon, text, extra }) => (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
+        <Icon className="w-3.5 h-3.5 text-text-muted" />
+        {text}
+      </div>
+      {extra}
+    </div>
+  );
+
+const Chip: FC<{ label: string; value: string | number; tone?: 'ok' | 'warn' | 'muted' }> =
+  ({ label, value, tone = 'muted' }) => (
+    <div className="bg-wash rounded-card px-2.5 py-2 text-center">
+      <div className={cn(
+        'text-base font-semibold leading-tight',
+        tone === 'ok' ? 'text-status-success' : tone === 'warn' ? 'text-status-warning' : 'text-text-primary'
+      )}>
+        {value}
+      </div>
+      <div className="text-[10px] text-text-muted mt-0.5">{label}</div>
+    </div>
+  );
+
+export function EnvironmentDockContent() {
+  const [git, setGit] = useState<V6GitStatus | null>(null);
+  const [skills, setSkills] = useState<V6SkillsResponse | null>(null);
+  const [graph, setGraph] = useState<V6GraphResponse | null>(null);
+  const [engineering, setEngineering] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    getEngineering()
-      .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
-  };
+    Promise.allSettled([
+      getGitStatus(),
+      getSkills(),
+      getGraph(),
+      getEngineering(),
+    ]).then(([g, s, gr, e]) => {
+      setGit(g.status === 'fulfilled' ? g.value : null);
+      setSkills(s.status === 'fulfilled' ? s.value : null);
+      setGraph(gr.status === 'fulfilled' ? gr.value : null);
+      setEngineering(e.status === 'fulfilled' ? e.value : null);
+      setLoading(false);
+    });
+  }, []);
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  if (loading) return <DockPanel title="工程链"><div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div></DockPanel>;
-  if (error) return <DockPanel title="工程链"><DockError text={error} /></DockPanel>;
+  if (loading && !git) {
+    return (
+      <DockPanel title="环境信息">
+        <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-text-muted" /></div>
+      </DockPanel>
+    );
+  }
 
-  const rows = Object.entries(data ?? {}).slice(0, 14);
+  const graphNodes = graph?.nodes?.length ?? 0;
+  const graphEdges = graph?.edges?.length ?? 0;
+  const constraintCount = (() => {
+    const raw = engineering as Record<string, unknown> | null;
+    if (raw && typeof raw === 'object') {
+      const c = (raw as Record<string, unknown>).constraints;
+      if (Array.isArray(c)) return c.length;
+      const cnt = (raw as Record<string, unknown>).constraint_count;
+      if (typeof cnt === 'number') return cnt;
+      const modules = (raw as Record<string, unknown>).modules;
+      if (Array.isArray(modules)) return modules.length;
+    }
+    return 0;
+  })();
 
   return (
-    <DockPanel title="工程链">
-      <div className="space-y-1.5">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-start justify-between gap-2 text-xs bg-wash rounded-card px-2.5 py-2">
-            <span className="text-text-secondary break-all">{k}</span>
-            <span className="text-text-muted text-[10px] shrink-0 max-w-[45%] truncate">
-              {typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)}
-            </span>
+    <DockPanel title="环境信息">
+      {/* 刷新 */}
+      <button
+        type="button"
+        onClick={load}
+        className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-primary transition-colors"
+      >
+        <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
+        刷新环境信息
+      </button>
+
+      {/* Git 状态 */}
+      <div className="space-y-2">
+        <SectionTitle
+          icon={GitBranch}
+          text="Git 工作区"
+          extra={git?.dirty ? <span className="text-[10px] text-status-warning">有未提交变更</span> : <span className="text-[10px] text-status-success">干净</span>}
+        />
+        <div className="grid grid-cols-3 gap-2">
+          <Chip label="分支" value={git?.branch || '—'} />
+          <Chip label="领先/落后" value={git ? `${git.ahead}/${git.behind}` : '—'} />
+          <Chip label="变更" value={git ? git.staged + git.unstaged + git.untracked : '—'} tone={(git?.dirty ?? false) ? 'warn' : 'ok'} />
+        </div>
+        <div className="space-y-1 text-xs">
+          {git?.remote && (
+            <div className="flex items-center gap-1.5 text-text-muted">
+              <Share2 className="w-3 h-3 shrink-0" />
+              <span className="truncate">{git.remote}</span>
+            </div>
+          )}
+          {git?.last_commit?.hash && (
+            <div className="flex items-start gap-1.5 text-text-secondary">
+              <GitCommitHorizontal className="w-3 h-3 shrink-0 mt-0.5 text-text-muted" />
+              <div className="min-w-0">
+                <div className="truncate">{git.last_commit.message || '—'}</div>
+                <div className="text-[10px] text-text-muted">
+                  {git.last_commit.hash} · {git.last_commit.author} · {git.last_commit.date?.slice(0, 16)}
+                </div>
+              </div>
+            </div>
+          )}
+          {git && (git.staged > 0 || git.unstaged > 0 || git.untracked > 0) && (
+            <div className="mt-1 space-y-0.5 max-h-28 overflow-y-auto">
+              <div className="text-[10px] text-text-muted">本轮变更文件（{git.changed_files.length} 显示）:</div>
+              {git.changed_files.map((f, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+                  <span className={cn(
+                    'px-1 rounded font-mono shrink-0',
+                    f.status === '??' ? 'bg-wash text-text-muted' : 'bg-primary/10 text-primary'
+                  )}>{f.status}</span>
+                  <span className="truncate font-mono">{f.path}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-[10px] text-text-muted leading-relaxed">
+          内置 git 可视化（提交图/分支视图）与 VS Code 联动为待办 —— 当前为只读状态面板。
+        </p>
+      </div>
+
+      {/* Skills */}
+      <div className="space-y-2">
+        <SectionTitle icon={Wrench} text="已启动 Skills" extra={skills ? <span className="text-[10px] text-text-muted">{skills.total}</span> : undefined} />
+        {skills && skills.skills.length > 0 ? (
+          <div className="space-y-1.5">
+            {skills.skills.slice(0, 8).map((sk) => (
+              <div key={sk.name} className="bg-wash rounded-card px-2.5 py-2">
+                <div className="text-xs font-medium text-text-primary flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                  <span className="truncate">{sk.name}</span>
+                </div>
+                {sk.strategies?.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {sk.strategies.slice(0, 4).map((st, i) => (
+                      <span key={i} className="px-1.5 py-0.5 rounded bg-primary/5 text-primary text-[10px]">{st}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-        {rows.length === 0 && <DockEmpty text="暂无工程链数据" />}
+        ) : (
+          <p className="text-xs text-text-muted">暂无 skill 数据</p>
+        )}
+      </div>
+
+      {/* 项目关系约束 */}
+      <div className="space-y-2">
+        <SectionTitle icon={CircleDot} text="项目关系约束" />
+        <div className="bg-wash rounded-card px-2.5 py-2 text-xs text-text-secondary">
+          {constraintCount > 0
+            ? `工程约束/模块共 ${constraintCount} 项 — 见「工程」页编辑`
+            : '暂无约束数据'}
+        </div>
+        <p className="text-[10px] text-text-muted leading-relaxed">
+          关系约束案例见博客 chapter2（关系 &gt; 提示词）—— 项目级约束将逐步挂到会话/图节点。
+        </p>
+      </div>
+
+      {/* 图关系 */}
+      <div className="space-y-2">
+        <SectionTitle icon={Network} text="项目图关系" />
+        <div className="grid grid-cols-3 gap-2">
+          <Chip label="节点" value={graphNodes} />
+          <Chip label="边" value={graphEdges} />
+          <Chip label="子图锚点" value={graph?.subgraph_nodes?.length ?? 0} />
+        </div>
       </div>
     </DockPanel>
   );
 }
+
+/** 兼容旧引用（surfaceRegistry 将改用 EnvironmentDockContent） */
+export const EngineeringDockContent = EnvironmentDockContent;
 
 /* ── Tasks（任务概览, taskStore 状态） ─────────────────────── */
 

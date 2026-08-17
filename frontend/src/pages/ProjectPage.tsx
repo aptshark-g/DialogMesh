@@ -21,6 +21,7 @@ import {
 import { cn } from '../lib/utils';
 import { useV6Sessions } from '../hooks/useV6Sessions';
 import { useProjectStore } from '../stores/projectStore';
+import { createSession } from '../api/session';
 import {
   getProjectDesign,
   saveProjectDesign,
@@ -112,6 +113,17 @@ export function ProjectPage() {
     }
   };
 
+  const handleNewSession = async () => {
+    if (!projectId) return;
+    try {
+      const r = await createSession(projectId);
+      // 新建即归属本项目（B16: POST /v3/session 携带 project_id）
+      navigate(`/chat/${r.session_id}`);
+    } catch (e) {
+      setToast({ type: 'error', message: `新建会话失败: ${e instanceof Error ? e.message : e}` });
+    }
+  };
+
   const setAxiom = (i: number, v: string) => {
     setDesign((d) => {
       const axioms = [...d.axioms];
@@ -174,34 +186,47 @@ export function ProjectPage() {
 
       {/* 项目概览 */}
       <div className="card-liquid shadow-card rounded-xl p-5 mb-4">
-        <div className="flex items-start gap-4">
-          <div
-            className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold"
-            style={{ background: project.color }}
-          >
-            {project.name.slice(0, 1).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-text-primary flex items-center gap-2">
-              {project.name}
-              {project.path && (
-                <span className="text-[11px] font-normal text-text-muted bg-wash rounded-full px-2 py-0.5 flex items-center gap-1">
-                  <FolderOpen className="w-3 h-3" />
-                  <span className="font-mono">{project.path}</span>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div
+              className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold"
+              style={{ background: project.color }}
+            >
+              {project.name.slice(0, 1).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                {project.name}
+                {project.path && (
+                  <span className="text-[11px] font-normal text-text-muted bg-wash rounded-full px-2 py-0.5 flex items-center gap-1">
+                    <FolderOpen className="w-3 h-3" />
+                    <span className="font-mono">{project.path}</span>
+                  </span>
+                )}
+              </h1>
+              <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
+                <span className="flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" />
+                  {projectSessions.length} 个会话
                 </span>
-              )}
-            </h1>
-            <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
-              <span className="flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" />
-                {projectSessions.length} 个会话
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                创建于 {new Date(project.createdAt).toLocaleString('zh-CN', { hour12: false })}
-              </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {/* createdAt 统一毫秒（兼容旧秒值: >1e12 视为 ms） */}
+                  创建于 {new Date(
+                    project.createdAt > 1e12 ? project.createdAt : project.createdAt * 1000
+                  ).toLocaleString('zh-CN', { hour12: false })}
+                </span>
+              </div>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleNewSession}
+            className="flex items-center gap-1.5 rounded-lg bg-primary text-white px-3 py-2 text-xs font-medium hover:bg-primary-dark transition-colors shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            新建会话
+          </button>
         </div>
       </div>
 

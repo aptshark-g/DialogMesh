@@ -76,6 +76,7 @@ export function EngineeringPage() {
   const [skills, setSkills] = useState<V6SkillsResponse | null>(null);
   const openSidePanel = useUIStore((s) => s.openSidePanel);
   const setInspectNode = useUIStore((s) => s.setInspectNode);
+  const setDockContent = useUIStore((s) => s.setDockContent);
 
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -182,7 +183,9 @@ export function EngineeringPage() {
       },
     });
     openSidePanel();
-  }, [openSidePanel, setInspectNode]);
+    // 2026-08-17: 点击模块 → 副屏切到「节点详情」摘要（默认副屏已是环境信息）
+    setDockContent('node_detail');
+  }, [openSidePanel, setInspectNode, setDockContent]);
 
   const handleSubmit = useCallback(async () => {
     const name = formName.trim();

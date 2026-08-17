@@ -415,6 +415,26 @@ export function digestProjectDesign(projectId: string, useLlm = true): Promise<V
   );
 }
 
+// ═══ Git 只读状态（环境信息面板, 2026-08-17）═══ #
+
+export interface V6GitStatus {
+  repo_root: string;
+  branch: string;
+  remote: string;
+  ahead: number;
+  behind: number;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  last_commit: { hash: string; message: string; date: string; author: string };
+  changed_files: { path: string; status: string }[];
+  dirty: boolean;
+}
+
+export function getGitStatus(): Promise<V6GitStatus> {
+  return apiFetch<V6GitStatus>('/v6/git/status');
+}
+
 export function deleteProjectApi(id: string): Promise<{ deleted: boolean }> {
   return apiFetch<{ deleted: boolean }>(`/v6/projects/${encodeURIComponent(id)}`, {
     method: 'DELETE',
