@@ -81,6 +81,7 @@ _try_include("core.agent.api.api_mind","router")  # /v6/mind
 _try_include("core.agent.api.api_versions","router")  # /v6/versions
 _try_include("core.agent.api.api_subgraph","router")  # /v6/subgraph
 _try_include("core.agent.api.api_viz_edit","router")  # /v6/edit/* (FE-1/G4 白盒编辑)
+_try_include("core.agent.api.prefs_api","router")  # /v6/prefs/* (B8 用户偏好持久化)
 
 # Legacy health endpoints (frontend probes)
 @app.get("/v4/health")

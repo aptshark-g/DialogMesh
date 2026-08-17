@@ -335,6 +335,51 @@ export function getSessionData(filename: string): Promise<V6SessionData> {
   return apiFetch<V6SessionData>(`/v6/session/${encodeURIComponent(filename)}`);
 }
 
+// ═══ B15/B16（2026-08-17）: 项目 CRUD + 会话归属（服务端持久化）═══ #
+
+export interface V6Project {
+  id: string;
+  name: string;
+  color: string;
+  created_at: number;
+}
+
+export interface V6ProjectsResponse {
+  projects: V6Project[];
+  session_project: Record<string, string>;
+}
+
+export function getProjects(): Promise<V6ProjectsResponse> {
+  return apiFetch<V6ProjectsResponse>('/v6/projects');
+}
+
+export function createProjectApi(name: string, color?: string): Promise<V6Project> {
+  return apiFetch<V6Project>('/v6/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name, color }),
+  });
+}
+
+export function patchProjectApi(id: string, patch: { name?: string; color?: string }): Promise<V6Project> {
+  return apiFetch<V6Project>(`/v6/projects/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteProjectApi(id: string): Promise<{ deleted: boolean }> {
+  return apiFetch<{ deleted: boolean }>(`/v6/projects/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function assignSessionProjectApi(sessionId: string, projectId: string | null): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/v6/sessions/${encodeURIComponent(sessionId)}/project`, {
+    method: 'PUT',
+    body: JSON.stringify({ project_id: projectId }),
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 网关 (Gateway) — switch 代理
 // ═══════════════════════════════════════════════════════════════════════════

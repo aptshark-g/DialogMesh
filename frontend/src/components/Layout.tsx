@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -11,9 +11,15 @@ import { MobileBottomNav } from './MobileBottomNav.tsx';
 import { SidePanel } from './ui/SidePanel.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { OmniboxPalette } from './omnibox/OmniboxPalette';
+import { useProjectStore } from '@/stores/projectStore';
 
 export function Layout() {
   const location = useLocation();
+  // B15（2026-08-17）: 项目数据服务端驱动 — 进 app 拉一次最新
+  const loadFromServer = useProjectStore((s) => s.loadFromServer);
+  useEffect(() => {
+    loadFromServer();
+  }, [loadFromServer]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface">

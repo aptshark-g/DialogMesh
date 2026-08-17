@@ -604,6 +604,13 @@ async def get_sessions():
             for s in res.get("sessions", [])]
 
 
+@router.get("/search")
+async def global_search(q: str = "", limit: int = 20):
+    """B13（2026-08-17）: 全局内容搜索 — 会话历史/上下文/图谱节点。"""
+    from core.agent.kernel import kernel_search
+    return kernel_search(q, limit=limit)
+
+
 @router.get("/versions")
 async def get_versions():
     return kernel_versions("all")
@@ -760,6 +767,55 @@ async def set_context_mark(req: ContextMarkReq):
 async def reset_context_marks():
     from core.agent.kernel import kernel_context_marks_reset
     return kernel_context_marks_reset()
+
+
+class GraphSelectReq(BaseModel):
+    node_ids: list = []
+    mode: str = "replace"  # replace | add
+
+
+@router.get("/context/graph-map")
+async def get_context_graph_map():
+    """B11: 上下文条目 ↔ 图谱节点映射 + 图结构选择视图。"""
+    from core.agent.kernel import kernel_context_graph_map
+    return kernel_context_graph_map()
+
+
+@router.put("/context/graph-select")
+async def select_context_graph(req: GraphSelectReq):
+    """B11: 图结构圈选 → 批量钉住节点（作用于下轮编译）。"""
+    from core.agent.kernel import kernel_context_graph_select
+    return kernel_context_graph_select(req.node_ids, req.mode)
+
+
+class SnapshotWriteReq(BaseModel):
+    id: str
+    content: str = ""
+
+
+@router.get("/context/snapshot")
+async def get_context_snapshot():
+    """B12: 最终注入 LLM 的编译快照（分段级视图, 含覆写状态）。"""
+    from core.agent.kernel import kernel_context_snapshot
+    return kernel_context_snapshot()
+
+
+@router.put("/context/snapshot")
+async def write_context_snapshot(req: SnapshotWriteReq):
+    """B12: 分段级覆写 — 覆盖某段最终注入内容（下轮编译生效）。"""
+    from fastapi import HTTPException
+    from core.agent.kernel import kernel_context_snapshot_write
+    try:
+        return kernel_context_snapshot_write(req.id, req.content)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.delete("/context/snapshot")
+async def reset_context_snapshot():
+    """B12: 清空全部分段覆写（恢复原编译）。"""
+    from core.agent.kernel import kernel_context_snapshot_reset
+    return kernel_context_snapshot_reset()
 
 
 @router.get("/heuristics")

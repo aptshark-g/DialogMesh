@@ -129,6 +129,55 @@ class TestKernelReal:
             _dispatch_mod._context_marks_cache = None
             os.remove(_tmp[1])
 
+    def test_search_b13(self, engine):
+        """B13: 全局搜索 — 会话历史命中（跨 sources 统一检索）。"""
+        from core.agent.kernel import kernel_search
+        r = kernel_search("python")
+        assert "sessions" in r and "context" in r and "graph" in r
+        assert r["total"] >= 0
+        assert isinstance(r["sessions"], list)
+
+    def test_snapshot_b12(self, engine):
+        """B12: 编译快照分段 + 覆写下轮生效。"""
+        import tempfile
+        from core.agent.kernel import dispatch as _d
+        from core.agent.kernel import kernel_context_snapshot, kernel_context
+        _tmp = tempfile.mkstemp(prefix="dm_ovr_", suffix=".json")
+        os.close(_tmp[0])
+        _of = _d._CONTEXT_OVERRIDES_FILE
+        _d._CONTEXT_OVERRIDES_FILE = _tmp[1]
+        _d._context_overrides_cache = None
+        try:
+            snap = kernel_context_snapshot()
+            assert "segments" in snap and "budget" in snap
+            segs = snap.get("segments", [])
+            if segs:
+                sid = segs[0]["id"]
+                kernel_context_snapshot_write(sid, "覆写后的最终内容")
+                ctx = kernel_context()
+                found = [e for e in ctx.get("entries", []) if e.get("id") == sid]
+                assert found and found[0]["content"] == "覆写后的最终内容"
+                kernel_context_snapshot_reset()
+        finally:
+            _d._CONTEXT_OVERRIDES_FILE = _of
+            _d._context_overrides_cache = None
+            os.remove(_tmp[1])
+
+    def test_graph_map_b11(self, engine):
+        """B11: 条目↔节点映射视图 + 图圈选（空安全）。"""
+        from core.agent.kernel import kernel_context_graph_map, kernel_context_graph_select
+        m = kernel_context_graph_map()
+        assert "nodes" in m and "entry_nodes" in m and "selected" in m
+        r = kernel_context_graph_select([], mode="replace")
+        assert r["selected"] == []
+
+    def test_context_project_b2(self, engine):
+        """B2: /v6/context 支持 project_id 参数（返回 project_id 字段）。"""
+        from core.agent.kernel import kernel_context
+        c = kernel_context(project_id="p_test")
+        assert c.get("project_id") == "p_test"
+        assert "entries" in c
+
     def test_engine_status(self, engine):
         from core.agent.kernel import kernel_engine_status
         st = kernel_engine_status()

@@ -800,7 +800,7 @@ def kernel_parameters() -> dict:
         return {"parameters": [], "total": 0}
 
 
-def kernel_context() -> dict:
+def kernel_context(project_id: Optional[str] = None) -> dict:
     engine = get_engine()
     if engine is None:
         return {"intent_category": None, "entries": [], "total_tokens": 0,
@@ -809,24 +809,38 @@ def kernel_context() -> dict:
     if last is not None:
         entries = getattr(last, "entries", None)
         marks = _context_marks()
+        overrides = _context_snapshot_overrides()  # B12: 分段级覆写下轮生效
+        # B2（2026-08-17）: project 范围 — 项目 = 认知边界。
+        # 归因条目（source_events 含会话 id）按项目过滤; 全局条目
+        # （画像/图谱等无会话归属）保留（它们是跨项目的公共知识）。
+        project_sessions = _project_session_ids(project_id) if project_id else None
         out = []
         if isinstance(entries, list):
             for idx, e in enumerate(entries):
                 content = str(getattr(e, "content", ""))
+                src_events = list(getattr(e, "source_events", None) or [])
+                if project_sessions is not None:
+                    session_hits = [s for s in src_events if s in project_sessions]
+                    if src_events and not session_hits:
+                        continue  # 有会话归属但不属于本项目 → 边界外剔除
                 eid = _stable_id(f"{getattr(e, 'domain', '')}|{getattr(e, 'type', '')}|{idx}|{content}")
                 mark = marks.get(eid, "")
                 if mark == "removed":
                     continue  # B3: 移除的片段不进下轮编译
+                final_content = content
+                if eid in overrides:
+                    final_content = overrides[eid]  # B12: 覆写优先
                 out.append({
                     # B10（2026-08-17）: 稳定 ID — 确定性 hash, 跨请求稳定,
                     # 供工作台钉住/移除做记忆片段级锚点（B3）。
                     "id": eid,
                     "domain": getattr(e, "domain", ""),
                     "type": getattr(e, "type", ""),
-                    "content": content[:200],
+                    "content": final_content[:200],
                     "confidence": getattr(e, "confidence", 0.5),
-                    "estimated_tokens": len(content) // 4,
+                    "estimated_tokens": len(final_content) // 4,
                     "mark": mark or None,
+                    "project_id": project_id,
                 })
         # B3: pinned 置顶（同域内保持原相对顺序）
         out.sort(key=lambda x: (0 if x.get("mark") == "pinned" else 1,))
@@ -834,9 +848,204 @@ def kernel_context() -> dict:
         return {"intent_category": getattr(last, "intent_category", None),
                 "entries": out,
                 "total_tokens": total,
-                "budget": _context_budget()}
+                "budget": _context_budget(),
+                "project_id": project_id}
     return {"intent_category": None, "entries": [], "total_tokens": 0,
-            "budget": _context_budget()}
+            "budget": _context_budget(), "project_id": project_id}
+
+
+def _project_session_ids(project_id: Optional[str]) -> Optional[set]:
+    """B2: 项目 → 会话 id 集合（session_project 反向映射）。"""
+    if not project_id:
+        return None
+    try:
+        from core.agent.api.projects_api import session_project_map
+        sp = session_project_map()
+        return {sid for sid, pid in sp.items() if pid == project_id} or None
+    except Exception:
+        return None
+
+
+def _graph_node_map() -> Dict[str, dict]:
+    """B11: 图谱节点 id → 节点信息（label/raw_text/summary），供条目↔节点映射。"""
+    try:
+        g = kernel_graph()
+        return {str(n.get("id", "")): n for n in g.get("nodes", [])}
+    except Exception:
+        return {}
+
+
+def kernel_context_graph_map() -> dict:
+    """B11（2026-08-17）: 上下文条目 ↔ 图谱节点映射 + 图结构选择视图。
+
+    返回:
+      nodes:        图谱节点（含 label/type/temperature）
+      entry_nodes:  条目 id → node_id（内容前缀匹配, 容错短文本）
+      node_entries: node_id → [entry_id...]
+      selected:     当前选中（pinned）的节点集合
+    """
+    nodes = _graph_node_map()
+    entry_nodes: Dict[str, str] = {}
+    node_entries: Dict[str, List[str]] = {}
+    ctx = kernel_context()
+    for e in ctx.get("entries", []):
+        content = str(e.get("content", ""))[:60].strip()
+        if not content:
+            continue
+        best = None
+        for nid, n in nodes.items():
+            for field in ("raw_text", "summary", "label"):
+                txt = str(n.get(field, "")).strip()
+                if txt and (txt[:60] == content or (len(txt) >= 10 and txt[:30] == content[:30])):
+                    best = nid
+                    break
+            if best:
+                break
+        if best:
+            entry_nodes[e.get("id", "")] = best
+            node_entries.setdefault(best, []).append(e.get("id", ""))
+    marks = _load_context_marks()
+    selected = sorted({nid for nid, v in marks.items() if v == "pinned"
+                       and nid in nodes})
+    return {
+        "nodes": [{k: n.get(k) for k in ("id", "label", "type", "temperature")}
+                  for n in nodes.values()],
+        "entry_nodes": entry_nodes,
+        "node_entries": node_entries,
+        "selected": selected,
+    }
+
+
+def kernel_context_graph_select(node_ids: List[str], mode: str = "replace") -> dict:
+    """B11: 图结构圈选 → 批量钉住节点（作用于下轮编译）。
+
+    mode=replace 先清空再钉住给定节点（图圈选语义）;
+    mode=add 追加。空列表 + replace = 清空选择。
+    """
+    nodes = _graph_node_map()
+    marks = _load_context_marks()
+    with _CONTEXT_MARKS_LOCK:
+        if mode == "replace":
+            for k in list(marks.keys()):
+                if k in nodes:
+                    marks.pop(k, None)
+        valid = [nid for nid in node_ids if nid in nodes]
+        for nid in valid:
+            marks[nid] = "pinned"
+        _context_marks_cache = marks
+        _save_context_marks()
+    return {"selected": sorted(nid for nid, v in marks.items()
+                               if v == "pinned" and nid in nodes),
+            "applied": valid, "mode": mode}
+
+
+def _context_snapshot_segments(entries: List[dict], budget: int) -> List[dict]:
+    """B12: 编译快照分段 — 每段 = 一个待注入条目 + 编译元信息。
+
+    段 id = 条目稳定 id（与 B3/B10 同锚点）。budget 用于前端水位显示。
+    """
+    segs = []
+    for e in entries:
+        eid = e.get("id") or ""
+        if not eid:
+            continue
+        segs.append({
+            "id": eid,
+            "kind": e.get("type") or e.get("domain") or "memory",
+            "domain": e.get("domain", ""),
+            "content": str(e.get("content", "")),
+            "tokens": int(e.get("estimated_tokens", 0)),
+            "mark": e.get("mark"),
+            "project_id": e.get("project_id"),
+        })
+    return segs
+
+
+def kernel_context_snapshot() -> dict:
+    """B12（2026-08-17）: 最终注入 LLM 的编译快照（分段级视图）。
+
+    供精调模式查看"实际送入 LLM 的上下文分段"，并支持逐段覆写
+    （写接口 kernel_context_snapshot_write → 下轮编译应用 override）。
+    快照 = 当前 kernel_context 的 entries 分段化 + 分段级覆写表。
+    """
+    ctx = kernel_context()
+    entries = ctx.get("entries", [])
+    segments = _context_snapshot_segments(entries, ctx.get("budget", 0))
+    overrides = _context_snapshot_overrides()
+    for seg in segments:
+        ov = overrides.get(seg["id"])
+        if ov is not None:
+            seg["content"] = ov
+            seg["overridden"] = True
+    return {
+        "segments": segments,
+        "segment_count": len(segments),
+        "total_tokens": sum(s["tokens"] for s in segments),
+        "budget": ctx.get("budget", 0),
+        "project_id": ctx.get("project_id"),
+    }
+
+
+def kernel_context_snapshot_write(segment_id: str, content: str) -> dict:
+    """B12: 分段级覆写 — 覆盖某段的最终注入内容（下轮编译生效）。
+
+    content="" 清除该段覆写。持久化 data/context_overrides.json。
+    """
+    if not segment_id:
+        raise ValueError("segment_id required")
+    overrides = _context_snapshot_overrides()
+    with _CONTEXT_OVERRIDES_LOCK:
+        if content:
+            overrides[segment_id] = content
+        else:
+            overrides.pop(segment_id, None)
+        _context_overrides_cache = overrides
+        _save_context_overrides()
+    return {"id": segment_id, "overridden": bool(content),
+            "segment_count": len(overrides)}
+
+
+def kernel_context_snapshot_reset() -> dict:
+    """B12: 清空全部分段覆写（恢复原编译）。"""
+    global _context_overrides_cache
+    with _CONTEXT_OVERRIDES_LOCK:
+        _context_overrides_cache = {}
+        _save_context_overrides()
+    return {"overrides": {}, "total": 0}
+
+
+_CONTEXT_OVERRIDES_FILE = os.path.join("data", "context_overrides.json")
+_CONTEXT_OVERRIDES_LOCK = __import__("threading").RLock()
+_context_overrides_cache: Optional[Dict[str, str]] = None
+
+
+def _context_snapshot_overrides() -> Dict[str, str]:
+    global _context_overrides_cache
+    if _context_overrides_cache is not None:
+        return _context_overrides_cache
+    try:
+        if os.path.exists(_CONTEXT_OVERRIDES_FILE):
+            with open(_CONTEXT_OVERRIDES_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                _context_overrides_cache = {k: str(v) for k, v in data.items()}
+                return _context_overrides_cache
+    except Exception:
+        pass
+    _context_overrides_cache = {}
+    return _context_overrides_cache
+
+
+def _save_context_overrides() -> None:
+    with _CONTEXT_OVERRIDES_LOCK:
+        try:
+            os.makedirs(os.path.dirname(_CONTEXT_OVERRIDES_FILE) or ".", exist_ok=True)
+            tmp = _CONTEXT_OVERRIDES_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(_context_overrides_cache or {}, f, ensure_ascii=False)
+            os.replace(tmp, _CONTEXT_OVERRIDES_FILE)
+        except Exception:
+            pass
 
 
 def _context_budget() -> int:
@@ -1156,6 +1365,90 @@ def kernel_sessions() -> dict:
                         "updated_at": s.get("updated_at", s.get("created_at", 0)),
                         "created_at": s.get("created_at", 0)})
     return {"sessions": out, "total": len(out)}
+
+
+def kernel_search(q: str, limit: int = 20) -> dict:
+    """B13（2026-08-17）: 全局内容搜索 — 跨会话历史 / 上下文条目 / 图谱节点。
+
+    统一检索（关键词 + 子串, 零新依赖; 向量检索由 recall 体系承担, 此处
+    服务万能搜索栏的"找之前内容/找对话"场景）。返回按来源分组:
+    sessions / context / graph。limit 为每类上限。
+    """
+    q = (q or "").strip()
+    if not q:
+        return {"query": q, "total": 0, "sessions": [], "context": [], "graph": []}
+    ql = q.lower()
+
+    def _hit(*texts: Optional[str]) -> bool:
+        for t in texts:
+            if t and (ql in str(t).lower()):
+                return True
+        return False
+
+    # 1) 会话历史
+    sessions_out: List[dict] = []
+    data = _disk_json("v3_sessions.json", {}) or {}
+    if isinstance(data, dict):
+        for sid, s in data.items():
+            if not isinstance(s, dict):
+                continue
+            msgs = s.get("messages", [])
+            hits = []
+            for m in msgs:
+                if isinstance(m, dict) and _hit(m.get("content", "")):
+                    hits.append({
+                        "role": m.get("role", "?"),
+                        "content": str(m.get("content", ""))[:300],
+                    })
+            if hits:
+                sessions_out.append({
+                    "session_id": sid,
+                    "title": _session_title(s),
+                    "hits": hits[:5],
+                    "match_count": len(hits),
+                })
+    sessions_out = sessions_out[:limit]
+
+    # 2) 上下文条目
+    ctx_out: List[dict] = []
+    try:
+        ctx = kernel_context()
+        for e in ctx.get("entries", []):
+            if _hit(e.get("content", ""), e.get("domain", "")):
+                ctx_out.append({
+                    "id": e.get("id", ""),
+                    "domain": e.get("domain", ""),
+                    "content": str(e.get("content", ""))[:300],
+                    "mark": e.get("mark"),
+                })
+    except Exception:
+        pass
+    ctx_out = ctx_out[:limit]
+
+    # 3) 图谱节点（会话树 blocks + 白盒子图）
+    graph_out: List[dict] = []
+    try:
+        g = kernel_graph()
+        for n in g.get("nodes", []):
+            if _hit(n.get("label", ""), n.get("raw_text", ""), n.get("summary", "")):
+                graph_out.append({
+                    "node_id": n.get("id", ""),
+                    "label": str(n.get("label", ""))[:80],
+                    "raw_text": str(n.get("raw_text", ""))[:300],
+                    "type": n.get("type", ""),
+                })
+    except Exception:
+        pass
+    graph_out = graph_out[:limit]
+
+    total = len(sessions_out) + len(ctx_out) + len(graph_out)
+    return {
+        "query": q,
+        "total": total,
+        "sessions": sessions_out,
+        "context": ctx_out,
+        "graph": graph_out,
+    }
 
 
 def _session_title(s: dict) -> str:

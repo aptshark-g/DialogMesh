@@ -47,7 +47,9 @@ async def switch_strategy(req: StrategySwitch):
 
 
 @router.get("/v6/context")
-async def get_context_config():
-    """B4-5: 转发命令内核（消假数据 — 原硬编码 assembler 状态）。"""
+async def get_context_config(project_id: Optional[str] = None):
+    """B4-5: 转发命令内核（消假数据 — 原硬编码 assembler 状态）。
+    B2（2026-08-17）: 支持 project_id 查询参数 — 项目 = 认知边界,
+    检索结果按会话归属过滤（全局条目保留）。"""
     from core.agent.kernel import kernel_context
-    return kernel_context()
+    return kernel_context(project_id=project_id)
