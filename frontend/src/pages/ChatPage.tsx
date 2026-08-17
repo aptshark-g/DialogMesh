@@ -9,6 +9,7 @@ export function ChatPage() {
   const messages = useChatStore(s => s.messages);
   const sessionId = useChatStore(s => s.sessionId);
   const isThinking = useChatStore(s => s.isThinking);
+  const thinkingText = useChatStore(s => s.thinkingText);
   const activeProvider = useChatStore(s => s.activeProvider);
   const setSessionId = useChatStore(s => s.setSessionId);
   const clearChat = useChatStore(s => s.clear);
@@ -50,7 +51,10 @@ export function ChatPage() {
   return (
     <div className="h-full flex flex-col">
       <ChatPanel
-        messages={messages} isThinking={isThinking} thinkingSteps={[]}
+        messages={messages} isThinking={isThinking}
+        thinkingSteps={thinkingText
+          ? [{ step: 1, description: thinkingText.slice(0, 300), timestamp: Date.now() }]
+          : []}
         error={null} connectionState={{status:'open',latencyMs:null,lastError:null}}
         onSendMessage={handleSend} onClearError={() => {}}
         onReconnect={() => window.location.reload()}

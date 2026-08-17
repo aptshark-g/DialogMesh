@@ -1186,6 +1186,148 @@ async def send_message(session_id: str, req: SendMessageRequest):
     )
 
 
+@router.post("/{session_id}/message/stream")
+async def send_message_stream(session_id: str, req: SendMessageRequest):
+    """流式消息端点（2026-08-17）: SSE 输出思考过程 + 内容逐块填充。
+
+    Events:
+      reasoning: {delta}   — 推理过程片段（deepseek reasoning_content）
+      content:   {delta}   — 正文片段
+      task_graph:{nodes}   — 回复完成后的任务规划（LLM JSON 解析）
+      done:      {content, latency_ms, intent} — 最终完整回复
+      error:     {message} — 失败
+
+    上下文构建与 send_message 同源（画像 + 认知 + 历史），但 LLM 走网关
+    stream=true + thinking enabled（此前全链 thinking 关闭, 用户看不到
+    思考过程 — B 类接线核心诉求）。
+    """
+    from fastapi.responses import StreamingResponse
+
+    if session_id not in _sessions:
+        _sessions[session_id] = {"created_at": time.time(), "messages": [],
+                                 "updated_at": time.time(), "project_id": None}
+    session = _sessions[session_id]
+    session["messages"].append({"role": "user", "content": req.content})
+    session["updated_at"] = time.time()
+    _save_sessions()
+    t0 = time.time()
+    msg_id = str(uuid.uuid4())[:8]
+
+    # ── 与 send_message 同源的上下文（画像 + 认知）──
+    profile_text = ""
+    cognitive_ctx = {}
+    intent = "通用对话"
+    try:
+        resp = await _fetch_json("http://127.0.0.1:8000/v6/profile")
+        p = resp.get("profile", resp)
+        oceAN = p.get("oceAN_dims", {})
+        mbti = p.get("mbti", "N/A")
+        profile_text = (
+            f"## 用户画像\n"
+            f"MBTI: {mbti}\n"
+            f"OCEAN: O={oceAN.get('O',0):.2f} C={oceAN.get('C',0):.2f} E={oceAN.get('E',0):.2f} "
+            f"A={oceAN.get('A',0):.2f} N={oceAN.get('N',0):.2f}\n"
+        )
+    except Exception:
+        pass
+    try:
+        from core.agent.cli.engine import get_engine
+        eng = get_engine()
+        parser = getattr(eng, "_intent_parser", None)
+        if parser is not None:
+            pr = parser.parse(user_input=req.content)
+            it = getattr(pr, "intent", None)
+            if it is not None:
+                intent = str(getattr(it, "category", "通用对话"))
+                cognitive_ctx = {"intents": {
+                    "segments": (getattr(it, "segments", None) or [req.content[:30]]),
+                    "confidence": getattr(it, "confidence", 0.5),
+                    "category": intent,
+                }}
+    except Exception:
+        pass
+
+    system_prompt = _build_system_prompt(profile_text, cognitive_ctx)
+    history = [{"role": m.get("role", "user"), "content": str(m.get("content", ""))}
+               for m in (session.get("messages") or [])[-8:-1]]
+    all_messages = ([{"role": "system", "content": system_prompt}] + history
+                    + [{"role": "user", "content": req.content}])
+
+    async def _sse_stream():
+        body = {
+            "provider": req.provider or "deepseek",
+            "model": req.model or "deepseek-v4-flash",
+            "messages": all_messages,
+            "stream": True,
+            # 2026-08-17: 开启 thinking — 网关已透传 reasoning_content
+            "thinking": {"type": "enabled"},
+        }
+        content_parts = []
+        reasoning_parts = []
+        try:
+            import urllib.request
+            http_req = urllib.request.Request(
+                "http://127.0.0.1:8080/v1/chat/completions",
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Authorization": "Bearer dm-client",
+                         "Content-Type": "application/json"})
+            with urllib.request.urlopen(http_req, timeout=150) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except Exception:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    r_delta = delta.get("reasoning_content")
+                    c_delta = delta.get("content")
+                    if r_delta:
+                        reasoning_parts.append(r_delta)
+                        yield f"data: {json.dumps({'event': 'reasoning', 'delta': r_delta}, ensure_ascii=False)}\n\n"
+                    if c_delta:
+                        content_parts.append(c_delta)
+                        yield f"data: {json.dumps({'event': 'content', 'delta': c_delta}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)[:300]}, ensure_ascii=False)}\n\n"
+            return
+
+        content = "".join(content_parts)
+        # 任务规划解析（与 send_message 同源）
+        task_graph = None
+        try:
+            parsed = _parse_plan_json(content)
+            if parsed:
+                task_graph = parsed
+                _seed_task_graph(session_id, parsed)
+        except Exception:
+            pass
+        # 落会话 + 记录
+        session["messages"].append({"role": "assistant", "content": content})
+        session["updated_at"] = time.time()
+        _save_sessions()
+        from core.agent.llm.call_recorder import record_llm_call
+        record_llm_call(
+            stage="llm_reply_stream",
+            latency_ms=(time.time() - t0) * 1000,
+            ok=bool(content), empty=not content)
+        if task_graph:
+            yield (f"data: {json.dumps({'event': 'task_graph', 'nodes': task_graph}, ensure_ascii=False)}\n\n")
+        yield (f"data: {json.dumps({'event': 'done', 'content': content, 'latency_ms': int((time.time()-t0)*1000), 'intent': intent}, ensure_ascii=False)}\n\n")
+
+    return StreamingResponse(_sse_stream(),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
+
+
 class DAGEditRequest(BaseModel):
     """LLM-driven DAG editing via natural language."""
     instruction: str          # "把上下文那步移到子图之后"

@@ -6,9 +6,16 @@ interface ChatStore {
   messages: ChatMessage[];
   sessionId: string | null;
   isThinking: boolean;
+  /** 当前流式回复的思考过程（实时累积） */
+  thinkingText: string;
   activeProvider: ProviderInfo | null;
   addUserMessage: (content: string) => void;
   addAIMessage: (content: string, extra?: Partial<ChatMessage>) => void;
+  /** 流式：创建/追加 AI 消息内容（边收边填充） */
+  streamStart: (id: string) => void;
+  streamAppend: (id: string, delta: string) => void;
+  streamFinish: (id: string, extra?: Partial<ChatMessage>) => void;
+  setThinkingText: (t: string) => void;
   setThinking: (v: boolean) => void;
   setSessionId: (id: string) => void;
   loadSession: (id: string, msgs: ChatMessage[]) => void;
@@ -29,6 +36,7 @@ export const useChatStore = create<ChatStore>((set, _get) => {
     messages: saved.messages || [],
     sessionId: saved.sessionId || null,
     isThinking: false,
+    thinkingText: '',
     activeProvider: null,
     addUserMessage: (content) => set(s => {
       const msg: ChatMessage = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
@@ -41,11 +49,29 @@ export const useChatStore = create<ChatStore>((set, _get) => {
       };
       return { messages: [...s.messages, msg] };
     }),
+    streamStart: (id) => set(s => ({
+      isThinking: true,
+      thinkingText: '',
+      messages: [...s.messages, {
+        id, role: 'assistant', content: '', timestamp: Date.now(),
+        status: 'streaming',
+      }],
+    })),
+    streamAppend: (id, delta) => set(s => ({
+      messages: s.messages.map(m =>
+        m.id === id ? { ...m, content: m.content + delta } : m),
+    })),
+    streamFinish: (id, extra) => set(s => ({
+      isThinking: false,
+      messages: s.messages.map(m =>
+        m.id === id ? { ...m, status: 'sent', ...(extra || {}) } : m),
+    })),
+    setThinkingText: (t) => set({ thinkingText: t }),
     setThinking: (v) => set({ isThinking: v }),
     setSessionId: (id) => set({ sessionId: id }),
-    loadSession: (id, msgs) => set({ sessionId: id, messages: msgs, isThinking: false }),
+    loadSession: (id, msgs) => set({ sessionId: id, messages: msgs, isThinking: false, thinkingText: '' }),
     setActiveProvider: (p) => set({ activeProvider: p }),
-    clear: () => set({ messages: [], sessionId: null }),
+    clear: () => set({ messages: [], sessionId: null, thinkingText: '' }),
   };
 });
 
