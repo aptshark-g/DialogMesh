@@ -100,7 +100,8 @@ export function ConversationGraphPage() {
       id: node.id,
       label: node.label || node.id,
       type: (node.type || 'session') as string,
-      intent: node.type || 'session',
+      // 2026-08-18: 意图用后端现行分类（task/query/...）; type 仅兜底
+      intent: node.intent || node.type || 'unknown',
     }));
     const apiEdges: GraphEdge[] = graph.edges.map((edge) => ({
       id: `${edge.source}-${edge.target}`,

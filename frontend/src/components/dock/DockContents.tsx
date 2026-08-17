@@ -30,7 +30,7 @@ import type {
 /* P0-C: 内层标题头移除 — RightDock 外壳头部已统一渲染标题（原先双头并列是右栏凌乱的主因）。
    title 保留在 props 类型中，避免改动全部调用点。 */
 export const DockPanel: FC<{ title: string; children: ReactNode }> = ({ children }) => (
-  <div className="flex-1 flex flex-col overflow-hidden">
+  <div className="flex-1 flex flex-col overflow-hidden min-h-0">
     <div className="flex-1 overflow-y-auto px-3.5 pt-0.5 pb-3 space-y-4 scrollbar-hide">{children}</div>
   </div>
 );

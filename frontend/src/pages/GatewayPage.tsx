@@ -1,7 +1,7 @@
 // FILE: src/pages/GatewayPage.tsx
 // Gateway — 服务检测 + Provider 管理 + 配置 + 用量 + 运维
 
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield,
@@ -44,8 +44,19 @@ import {
   getGatewayCost,
   getGatewayPrices,
   syncGatewayPrices,
+  setRouterModes,
   type V6GatewayPrices,
 } from '../api/v6';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as ChartTooltip,
+  Legend,
+  CartesianGrid,
+} from 'recharts';
 import { getStatus, triggerCheckpoint, inspectSystem } from '../api/v4';
 import { cn } from '../lib/utils';
 import type {
@@ -343,9 +354,23 @@ export function GatewayPage() {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
+  // 2026-08-18: Token 用量图表数据（按模型, 输入/输出）
+  const modelTokenData = useMemo(() => {
+    const byModel = gatewayCost?.cost?.by_model;
+    if (!byModel) return [];
+    return Object.values(byModel)
+      .map((m) => ({
+        model: String(m.model || '').split('/').pop()?.slice(0, 18) || '?',
+        prompt: m.prompt_tokens ?? 0,
+        completion: m.completion_tokens ?? 0,
+      }))
+      .slice(0, 12);
+  }, [gatewayCost]);
+
   // ─── 价格目录同步（2026-08-17: LiteLLM 源, 启动自动 + 手动刷新）───
   const [priceSync, setPriceSync] = useState<V6GatewayPrices | null>(null);
   const [priceSyncLoading, setPriceSyncLoading] = useState(false);
+  const [routerBusy, setRouterBusy] = useState(false);
   useEffect(() => {
     let alive = true;
     getGatewayPrices()
@@ -364,6 +389,19 @@ export function GatewayPage() {
       setPriceSyncLoading(false);
     }
   }, []);
+
+  const handleRouterMode = useCallback(async (mode: string) => {
+    setRouterBusy(true);
+    try {
+      await setRouterModes({ mode });
+      refresh();
+      setToast({ type: 'success', message: `已切换路由模式: ${mode}` });
+    } catch (e) {
+      setToast({ type: 'error', message: `路由切换失败: ${e instanceof Error ? e.message : e}` });
+    } finally {
+      setRouterBusy(false);
+    }
+  }, [refresh]);
 
   // ─── 系统运维状态 (引擎 / Provider 切换 / 上下文配置) ───
   const [engineStatus, setEngineStatus] = useState<StatusResponse | null>(null);
@@ -828,19 +866,36 @@ export function GatewayPage() {
                   {router.modes?.map((mode) => {
                     const isActiveMode = router.active === mode.name;
                     return (
-                      <div
+                      <button
                         key={mode.name}
+                        onClick={() => handleRouterMode(mode.name)}
+                        disabled={routerBusy || isActiveMode}
+                        title={isActiveMode ? '当前模式' : '点击切换'}
                         className={cn(
-                          'rounded-lg border px-3 py-2 text-xs',
-                          isActiveMode ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 text-text-secondary'
+                          'rounded-lg border px-3 py-2 text-xs transition-colors',
+                          isActiveMode
+                            ? 'border-primary bg-primary/5 text-primary cursor-default'
+                            : 'border-gray-200 text-text-secondary hover:text-primary hover:border-primary/30 cursor-pointer'
                         )}
                       >
                         <span className="font-medium">{mode.name}</span>
                         <span className="ml-2 text-text-muted">{mode.complexity} · {mode.cost}</span>
-                      </div>
+                        {!isActiveMode && (
+                          <span className="ml-1.5 text-[10px] text-primary/70">切换</span>
+                        )}
+                      </button>
                     );
                   })}
                 </div>
+                {router.route_stats && Object.keys(router.route_stats).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {Object.entries(router.route_stats).map(([k, v]) => (
+                      <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sidebar text-text-muted">
+                        {k}: {v}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -961,6 +1016,41 @@ export function GatewayPage() {
                 </div>
               ) : (
                 <div className="text-sm text-text-secondary py-4">暂无数据</div>
+              )}
+            </div>
+
+            {/* Token 用量图表（2026-08-18: 按模型 输入/输出） */}
+            <div className="card-liquid shadow-card rounded-xl p-5 md:col-span-2">
+              <div className="flex items-center gap-2 text-text-muted mb-4">
+                <BarChart3 className="h-4 w-4" />
+                <span className="text-xs font-semibold">Token 用量（按模型）</span>
+                <span className="ml-auto text-[10px] text-text-muted">
+                  日期范围选择 · 命中率统计待接入
+                </span>
+              </div>
+              {modelTokenData.length > 0 ? (
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={modelTokenData} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                      <XAxis dataKey="model" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} interval={0} angle={-20} textAnchor="end" height={44} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                      <ChartTooltip
+                        contentStyle={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 8,
+                          fontSize: 11,
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="prompt" name="输入 Tokens" fill="#0D9488" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="completion" name="输出 Tokens" fill="#8B5CF6" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="text-sm text-text-secondary py-8 text-center">暂无 Token 用量数据（需先产生网关调用）</div>
               )}
             </div>
 

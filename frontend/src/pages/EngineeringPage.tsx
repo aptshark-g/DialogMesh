@@ -1,7 +1,7 @@
 // FILE: src/pages/EngineeringPage.tsx
 // 工程链工作台: 递归地图 + 工程模块 + 约束编辑
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Workflow,
@@ -74,9 +74,28 @@ export function EngineeringPage() {
   // 2026-08-17: 工具/技能白盒视图（含下载渠道状态）
   const [tools, setTools] = useState<V6ToolsResponse | null>(null);
   const [skills, setSkills] = useState<V6SkillsResponse | null>(null);
+  // 2026-08-18: 工程模块滚动增量加载（不一次性渲染全部）
+  const [visibleModules, setVisibleModules] = useState(10);
+  const MODULE_STEP = 10;
+  const moduleLoadMoreRef = useRef<HTMLDivElement>(null);
   const openSidePanel = useUIStore((s) => s.openSidePanel);
   const setInspectNode = useUIStore((s) => s.setInspectNode);
   const setDockContent = useUIStore((s) => s.setDockContent);
+
+  useEffect(() => {
+    const el = moduleLoadMoreRef.current;
+    if (!el || modules.length <= visibleModules) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleModules((c) => Math.min(c + MODULE_STEP, modules.length));
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [modules.length, visibleModules]);
 
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -354,151 +373,8 @@ export function EngineeringPage() {
           )}
         </motion.section>
 
-        {/* 工程模块 */}
+        {/* 工具与技能（2026-08-18 上移: 递归地图下方） */}
         <motion.section {...fadeIn(0.1)} className="card-liquid shadow-card rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-text-muted">
-              <Boxes className="h-4 w-4" />
-              <span className="text-xs font-semibold">工程模块</span>
-            </div>
-            <span className="text-xs text-text-muted">共 {modules.length} 个模块</span>
-          </div>
-
-          {modules.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 text-left">
-                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">模块名</th>
-                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">类型</th>
-                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">约束数</th>
-                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">状态</th>
-                    <th className="py-2 text-xs font-medium text-text-muted text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {modules.map((m) => {
-                    const constraintCount = getModuleConstraintCount(m);
-                    const status = getModuleStatus(m);
-                    const selected = formName === m.name;
-                    return (
-                      <tr
-                        key={m.name}
-                        className={cn(
-                          'border-b border-gray-50 transition-colors',
-                          selected ? 'bg-primary/3' : 'hover:bg-surface-sidebar/50'
-                        )}
-                      >
-                        <td className="py-2.5 pr-4">
-                          <button
-                            type="button"
-                            onClick={() => handleInspectModule(m)}
-                            className="font-medium text-text-primary hover:text-primary transition-colors text-left"
-                            title="点击在右屏查看摘要"
-                          >
-                            {m.name}
-                          </button>
-                        </td>
-                        <td className="py-2.5 pr-4">
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-surface-sidebar text-text-secondary">
-                            {m.type}
-                          </span>
-                        </td>
-                        <td className="py-2.5 pr-4">
-                          <span className="font-mono text-text-primary">
-                            {constraintCount !== null ? constraintCount : '—'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 pr-4">
-                          <span className="flex items-center gap-1 text-xs text-status-success">
-                            <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
-                            {status}
-                          </span>
-                        </td>
-                        <td className="py-2.5 text-right">
-                          <button
-                            onClick={() => handleSelectModule(m.name)}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                              selected
-                                ? 'bg-primary text-white'
-                                : 'border border-gray-200 text-text-secondary hover:text-primary hover:border-primary/30'
-                            )}
-                          >
-                            <Pencil className="h-3 w-3" />
-                            {selected ? '编辑中' : '编辑约束'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-10">
-              <Boxes className="h-8 w-8 text-text-muted mx-auto mb-2" />
-              <p className="text-sm text-text-secondary">暂无工程模块</p>
-              <p className="text-xs text-text-muted mt-1">后端可能尚未实现此端点</p>
-            </div>
-          )}
-        </motion.section>
-
-        {/* 约束编辑 */}
-        <motion.section {...fadeIn(0.15)} className="card-liquid shadow-card rounded-xl p-5">
-          <div className="flex items-center gap-2 text-text-muted mb-4">
-            <Pencil className="h-4 w-4" />
-            <span className="text-xs font-semibold">约束编辑</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-muted mb-1.5">模块名称</label>
-              <input
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="选择上方模块或手动输入"
-                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-text-muted mb-1.5">动作</label>
-              <select
-                value={formAction}
-                onChange={(e) => setFormAction(e.target.value as V6EngineeringConstraintEditRequest['action'])}
-                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
-              >
-                <option value="add_constraint">添加约束 (add_constraint)</option>
-                <option value="remove_constraint">移除约束 (remove_constraint)</option>
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-text-muted mb-1.5">约束内容</label>
-              <textarea
-                value={formConstraint}
-                onChange={(e) => setFormConstraint(e.target.value)}
-                placeholder="例如: 耦合度不得超过 0.8"
-                rows={3}
-                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary resize-y"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end mt-3">
-            <button
-              onClick={handleSubmit}
-              disabled={submitting || !formName.trim() || !formConstraint.trim()}
-              className="flex items-center gap-1.5 rounded-lg bg-primary text-white px-4 py-2 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {submitting ? '提交中...' : '提交约束'}
-            </button>
-          </div>
-        </motion.section>
-
-        {/* 工具与技能（2026-08-17: 白盒视图 + 下载渠道状态） */}
-        <motion.section {...fadeIn(0.18)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center gap-2 text-text-muted mb-4">
             <Boxes className="h-4 w-4" />
             <span className="text-xs font-semibold">工具与技能</span>
@@ -569,8 +445,61 @@ export function EngineeringPage() {
           </div>
         </motion.section>
 
+        {/* 约束编辑（2026-08-18 上移: 摘要/添加在工程模块上方） */}
+        <motion.section {...fadeIn(0.15)} className="card-liquid shadow-card rounded-xl p-5">
+          <div className="flex items-center gap-2 text-text-muted mb-4">
+            <Pencil className="h-4 w-4" />
+            <span className="text-xs font-semibold">约束编辑</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1.5">模块名称</label>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="选择下方模块或手动输入"
+                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1.5">动作</label>
+              <select
+                value={formAction}
+                onChange={(e) => setFormAction(e.target.value as V6EngineeringConstraintEditRequest['action'])}
+                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+              >
+                <option value="add_constraint">添加约束 (add_constraint)</option>
+                <option value="remove_constraint">移除约束 (remove_constraint)</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-text-muted mb-1.5">约束内容</label>
+              <textarea
+                value={formConstraint}
+                onChange={(e) => setFormConstraint(e.target.value)}
+                placeholder="例如: 耦合度不得超过 0.8"
+                rows={3}
+                className="w-full rounded-lg border border-gray-200 bg-surface-sidebar px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary resize-y"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end mt-3">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !formName.trim() || !formConstraint.trim()}
+              className="flex items-center gap-1.5 rounded-lg bg-primary text-white px-4 py-2 text-xs font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {submitting ? '提交中...' : '提交约束'}
+            </button>
+          </div>
+        </motion.section>
+
         {/* 工程约束数据摘要 */}
-        <motion.section {...fadeIn(0.2)} className="card-liquid shadow-card rounded-xl p-5">
+        <motion.section {...fadeIn(0.18)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center gap-2 text-text-muted mb-4">
             <Activity className="h-4 w-4" />
             <span className="text-xs font-semibold">工程约束数据摘要</span>
@@ -597,6 +526,105 @@ export function EngineeringPage() {
             <div className="text-center py-10">
               <Activity className="h-8 w-8 text-text-muted mx-auto mb-2" />
               <p className="text-sm text-text-secondary">暂无工程约束数据</p>
+              <p className="text-xs text-text-muted mt-1">后端可能尚未实现此端点</p>
+            </div>
+          )}
+        </motion.section>
+
+        {/* 工程模块（2026-08-18 移至最底, 滚动增量加载） */}
+        <motion.section {...fadeIn(0.2)} className="card-liquid shadow-card rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-text-muted">
+              <Boxes className="h-4 w-4" />
+              <span className="text-xs font-semibold">工程模块</span>
+              <span className="text-[10px] text-text-muted">内部模块 · 可编辑约束（再开发）</span>
+            </div>
+            <span className="text-xs text-text-muted">共 {modules.length} 个模块</span>
+          </div>
+
+          {modules.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left">
+                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">模块名</th>
+                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">类型</th>
+                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">约束数</th>
+                    <th className="py-2 pr-4 text-xs font-medium text-text-muted">状态</th>
+                    <th className="py-2 text-xs font-medium text-text-muted text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modules.slice(0, visibleModules).map((m) => {
+                    const constraintCount = getModuleConstraintCount(m);
+                    const status = getModuleStatus(m);
+                    const selected = formName === m.name;
+                    return (
+                      <tr
+                        key={m.name}
+                        className={cn(
+                          'border-b border-gray-50 transition-colors',
+                          selected ? 'bg-primary/3' : 'hover:bg-surface-sidebar/50'
+                        )}
+                      >
+                        <td className="py-2.5 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => handleInspectModule(m)}
+                            className="font-medium text-text-primary hover:text-primary transition-colors text-left"
+                            title="点击在右屏查看摘要"
+                          >
+                            {m.name}
+                          </button>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-sidebar text-text-secondary">
+                            {m.type}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <span className="font-mono text-text-primary">
+                            {constraintCount !== null ? constraintCount : '—'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <span className="flex items-center gap-1 text-xs text-status-success">
+                            <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
+                            {status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <button
+                            onClick={() => handleSelectModule(m.name)}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                              selected
+                                ? 'bg-primary text-white'
+                                : 'border border-gray-200 text-text-secondary hover:text-primary hover:border-primary/30'
+                            )}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            {selected ? '编辑中' : '编辑约束'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {modules.length > visibleModules && (
+                <div
+                  ref={moduleLoadMoreRef}
+                  className="flex items-center justify-center py-3 text-xs text-text-muted"
+                >
+                  滚动加载更多…（{visibleModules}/{modules.length}）
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-10">
+              <Boxes className="h-8 w-8 text-text-muted mx-auto mb-2" />
+              <p className="text-sm text-text-secondary">暂无工程模块</p>
               <p className="text-xs text-text-muted mt-1">后端可能尚未实现此端点</p>
             </div>
           )}

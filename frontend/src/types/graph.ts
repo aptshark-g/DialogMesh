@@ -57,12 +57,12 @@ export interface ClusterNode {
 // ==================== 意图颜色映射 ====================
 
 export type IntentColorKey =
-  | 'scan-memory'
-  | 'read-memory'
-  | 'write-memory'
-  | 'hack-value'
-  | 'explain'
-  | 'provide-code'
+  | 'task'
+  | 'query'
+  | 'correction'
+  | 'discussion'
+  | 'casual'
+  | 'topic_switch'
   | 'unknown';
 
 export interface IntentColor {
@@ -73,55 +73,57 @@ export interface IntentColor {
   textClass: string;
 }
 
+// 2026-08-18: 图谱意图过滤换用现行分类（cross_domain_ir.IntentCategory）,
+// 移除 v3 遗留意图（scan/read/write memory 等）。旧值由后端归一化。
 export const INTENT_COLOR_MAP: Record<string, IntentColor> = {
-  'SCAN_MEMORY': {
-    key: 'scan-memory',
-    label: '扫描记忆',
+  'task': {
+    key: 'task',
+    label: '任务',
     hex: '#D97706',
-    bgClass: 'bg-intent-scan-memory/10',
-    textClass: 'text-intent-scan-memory',
+    bgClass: 'bg-[#D97706]/10',
+    textClass: 'text-[#D97706]',
   },
-  'READ_MEMORY': {
-    key: 'read-memory',
-    label: '读取记忆',
+  'query': {
+    key: 'query',
+    label: '查询',
     hex: '#0D9488',
-    bgClass: 'bg-intent-read-memory/10',
-    textClass: 'text-intent-read-memory',
+    bgClass: 'bg-[#0D9488]/10',
+    textClass: 'text-[#0D9488]',
   },
-  'WRITE_MEMORY': {
-    key: 'write-memory',
-    label: '写入记忆',
-    hex: '#8B5CF6',
-    bgClass: 'bg-intent-write-memory/10',
-    textClass: 'text-intent-write-memory',
-  },
-  'HACK_VALUE': {
-    key: 'hack-value',
-    label: '修改值',
+  'correction': {
+    key: 'correction',
+    label: '修正',
     hex: '#E11D48',
-    bgClass: 'bg-intent-hack-value/10',
-    textClass: 'text-intent-hack-value',
+    bgClass: 'bg-[#E11D48]/10',
+    textClass: 'text-[#E11D48]',
   },
-  'EXPLAIN': {
-    key: 'explain',
-    label: '解释',
+  'discussion': {
+    key: 'discussion',
+    label: '讨论',
     hex: '#3B82F6',
-    bgClass: 'bg-intent-explain/10',
-    textClass: 'text-intent-explain',
+    bgClass: 'bg-[#3B82F6]/10',
+    textClass: 'text-[#3B82F6]',
   },
-  'PROVIDE_CODE': {
-    key: 'provide-code',
-    label: '提供代码',
+  'casual': {
+    key: 'casual',
+    label: '闲聊',
+    hex: '#8B5CF6',
+    bgClass: 'bg-[#8B5CF6]/10',
+    textClass: 'text-[#8B5CF6]',
+  },
+  'topic_switch': {
+    key: 'topic_switch',
+    label: '话题切换',
     hex: '#10B981',
-    bgClass: 'bg-intent-provide-code/10',
-    textClass: 'text-intent-provide-code',
+    bgClass: 'bg-[#10B981]/10',
+    textClass: 'text-[#10B981]',
   },
-  'UNKNOWN': {
+  'unknown': {
     key: 'unknown',
     label: '未知',
     hex: '#6B6680',
-    bgClass: 'bg-intent-unknown/10',
-    textClass: 'text-intent-unknown',
+    bgClass: 'bg-[#6B6680]/10',
+    textClass: 'text-[#6B6680]',
   },
 };
 

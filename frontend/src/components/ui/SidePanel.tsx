@@ -87,7 +87,7 @@ export function SidePanel({ children, className }: SidePanelProps) {
               <div className="ml-auto h-full w-1 rounded-full group-hover:bg-primary/30 group-active:bg-primary/40 transition-colors" />
             </div>
             {/* P0-C: 浮动卡片外壳 — 发色/圆角/裁剪在内层, aside 仅作定位壳（移动端仍为全尺寸抽屉） */}
-            <div className="h-full flex flex-col glass-panel-strong lg:rounded-dock overflow-hidden" style={{ width }}>
+            <div className="h-full flex flex-col glass-panel-strong lg:rounded-2xl overflow-hidden" style={{ width }}>
               {children}
             </div>
           </motion.aside>

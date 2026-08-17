@@ -55,6 +55,19 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]['key'];
 
+// 2026-08-18: OCEAN 维度代号 → 用户可读中文（o/c/e/a/n 为内部称呼）
+const OCEAN_LABELS: Record<string, string> = {
+  openness: '开放性',
+  conscientiousness: '尽责性',
+  extraversion: '外向性',
+  agreeableness: '宜人性',
+  neuroticism: '神经质',
+};
+
+function oceanLabel(key: string): string {
+  return OCEAN_LABELS[key.toLowerCase()] ?? key;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function CognitiveProfilePage() {
@@ -81,7 +94,7 @@ export function CognitiveProfilePage() {
   const radarData = useMemo(() => {
     if (!profile) return undefined;
     return Object.entries(profile?.oceAN_dims ?? {}).map(([dimension, value]) => ({
-      dimension,
+      dimension: oceanLabel(dimension),
       value: Math.round(value * 100),
       fullMark: 100,
     }));
@@ -94,7 +107,7 @@ export function CognitiveProfilePage() {
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([label, value]) => ({
-        label,
+        label: oceanLabel(label),
         value: Math.round(value * 100),
         trend: 0,
       }));
@@ -105,7 +118,7 @@ export function CognitiveProfilePage() {
     if (!profile) return [];
     return Object.entries(profile?.oceAN_dims ?? {}).map(([key, value]) => ({
       key,
-      label: key,
+      label: oceanLabel(key),
       value: Math.round(value * 100),
       max: 100,
       description: undefined,

@@ -73,7 +73,7 @@ export function RightDock() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full h-full flex flex-col min-h-0">
       {/* 头部: 切换器 + 交换 + 联动/固定 + 转悬浮 + 收起 */}
       <div className="flex items-center gap-1 px-3 pt-3.5 pb-2 shrink-0">
         {/* 表面切换器 */}

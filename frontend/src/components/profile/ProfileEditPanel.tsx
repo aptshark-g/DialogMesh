@@ -1,6 +1,16 @@
 // FILE: src/components/profile/ProfileEditPanel.tsx
 // 画像纠正 Tab —— OCEAN 维度滑杆编辑 + MBTI 修改 + 画像→参数自动映射
 
+const OCEAN_LABELS: Record<string, string> = {
+  openness: '开放性',
+  conscientiousness: '尽责性',
+  extraversion: '外向性',
+  agreeableness: '宜人性',
+  neuroticism: '神经质',
+};
+
+const oceanLabel = (key: string) => OCEAN_LABELS[key.toLowerCase()] ?? key;
+
 import { useEffect, useMemo, useState } from 'react';
 import type { FC } from 'react';
 import { Loader2, Save, Wand2 } from 'lucide-react';
@@ -152,7 +162,7 @@ export const ProfileEditPanel: FC<ProfileEditPanelProps> = ({ profile, onSaved }
               <div key={key} className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-text-primary">{key}</span>
+                    <span className="text-sm font-medium text-text-primary">{oceanLabel(key)}</span>
                     {changed && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-status-warning/10 text-status-warning">
                         已修改

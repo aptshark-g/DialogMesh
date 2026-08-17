@@ -52,6 +52,7 @@
 | A1/A24 项目设计元信息（2026-08-17） | 项目页视图 `/projects/:id` + design 元信息（理念/公理/目标, 二阶抽象）: GET/PUT + POST digest（LLM 从项目会话凝练, 失败模板兜底） | ✅ | test_projects_api 17 + tsc/build 绿 + 实测 llm_digest 真实产出 | 二阶抽象工程化: 项目即认知边界, 约束从会话实践长出来; 子对话/分支待办 |
 | A19 环境信息面板（2026-08-17） | 工程链副屏 → 环境信息: git 只读端点（/v6/git/status, 分支/远端/变更/提交, 全只读 A21）+ skills + 项目关系约束 + 图关系; 项目页新建会话（B16）+ 创建时间修复 | ✅ | test_git_api 2 + test_projects_api 17 + tsc/build 绿 + 实测 git 状态正确 | 内置 git 可视化/VS 联动 = 待办（GIT_VISUALIZATION_20260817.md, 先文件系统桥） |
 | A19/A21 工程链多模块副屏（2026-08-18） | 工程链分区折叠: 环境信息（Codex 式变更+N/-N/提交/推送）+ Git 分支可切换（switch/-c）+ 后台进程（/v6/system/processes）+ 连接占位 + Skills 搜索/滚动/下载占位; git 写操作显式触发且限仓库根 | ✅ | test_git_api 3（临时仓库写操作）+ test_system_api 2 + 22 绿 + tsc/build 绿 + 端点实测 | 写操作经 A21 护栏: 仅显式动作; 提交图/VS 联动/远程连接 = 待办 |
+| A19 前端反人类治理（2026-08-18） | 副屏滚动/圆角修复; 图谱意图过滤换现行分类（后端归一化+前端新映射）; OCEAN 中文标签; 工程链重排+增量加载; 网关路由可点+Token 柱状图 | ✅ | 61 测绿 + tsc/build 绿 + /v6/graph 实测 | 管道/深层链/Mind/元认知内页等大改 = 待办（FRONTEND_OVERHAUL_20260818.md） |
 
 ## 使用说明
 

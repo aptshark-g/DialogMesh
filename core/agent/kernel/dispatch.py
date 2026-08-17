@@ -366,6 +366,23 @@ def kernel_graph(sid: Optional[str] = None) -> dict:
     2026-08-07 起删除 v3_sessions 会话链兜底（链 ≠ 树, 误导"没做树图化"）。
     """
     engine = get_engine()
+    # 2026-08-18: 意图归一化 — 旧分类（v3 工程意图）→ 现行分类
+    # （TASK/QUERY/CORRECTION/DISCUSSION/CASUAL/TOPIC_SWITCH）
+    _CURRENT_INTENTS = {"task", "query", "correction", "discussion",
+                        "casual", "topic_switch"}
+    _LEGACY_INTENT_MAP = {
+        "scan_memory": "query", "read_memory": "query", "write_memory": "task",
+        "hack_value": "task", "explain": "discussion", "provide_code": "task",
+        "chitchat": "casual", "ask_user": "discussion", "finish": "task",
+        "resolve_pointer": "task", "disassemble": "task", "decompile": "task",
+    }
+
+    def _norm_intent(v):
+        v = (v or "").strip().lower()
+        if v in _CURRENT_INTENTS:
+            return v
+        return _LEGACY_INTENT_MAP.get(v, "unknown")
+
     nodes: List[dict] = []
     edges: List[dict] = []
     sid = _resolve_sid(sid)
@@ -387,7 +404,7 @@ def kernel_graph(sid: Optional[str] = None) -> dict:
                 "size": binfo.get("edus", 1),
                 "temperature": binfo.get("temperature", "active"),
                 "entities": binfo.get("entities", [])[:3],
-                "intent": binfo.get("intent", "unknown"),
+                "intent": _norm_intent(binfo.get("intent", "unknown")),
                 "depth": binfo.get("depth", 0),
                 "raw_text": (binfo.get("raw_text") or "")[:400],
                 "summary": (binfo.get("summary") or "")[:200],
