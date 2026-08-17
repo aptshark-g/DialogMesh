@@ -419,6 +419,9 @@ class SendMessageRequest(BaseModel):
     content: str
     provider: Optional[str] = None
     model: Optional[str] = None
+    # 2026-08-17: 深度思考 / 联网开关（前端聊天输入区可切换）
+    thinking: Optional[bool] = None   # None → 默认开（流式端点）
+    web: Optional[bool] = False       # 联网搜索：搜索 → 注入上下文 → 回复
 
 
 class SendMessageResponse(BaseModel):
@@ -1252,6 +1255,26 @@ async def send_message_stream(session_id: str, req: SendMessageRequest):
                for m in (session.get("messages") or [])[-8:-1]]
     all_messages = ([{"role": "system", "content": system_prompt}] + history
                     + [{"role": "user", "content": req.content}])
+    # 2026-08-17: 联网开关 — web=true 时先搜索再注入上下文（回复末尾附来源）
+    web_results = []
+    if req.web:
+        try:
+            from core.agent.learning.source_registry import SourceRegistry
+            reg = SourceRegistry.get()
+            web_results = reg.search_all(req.content, max_per_source=3, max_total=8)
+            if web_results:
+                refs = []
+                for r in web_results[:5]:
+                    title = r.get("title", "")[:80]
+                    url = r.get("url", "")
+                    snippet = (r.get("snippet") or r.get("summary") or "")[:200]
+                    refs.append(f"- {title} ({url})\n  {snippet}")
+                web_ctx = ("\n\n## 联网搜索结果（供参考，非全部权威）\n"
+                           + "\n".join(refs)
+                           + "\n\n请基于搜索结果回答，并标注信息来源。若搜索未命中相关结果，请说明。")
+                all_messages.append({"role": "user", "content": web_ctx})
+        except Exception as _we:
+            logger.warning("web search failed: %s", _we)
 
     async def _sse_stream():
         body = {
@@ -1259,9 +1282,14 @@ async def send_message_stream(session_id: str, req: SendMessageRequest):
             "model": req.model or "deepseek-v4-flash",
             "messages": all_messages,
             "stream": True,
-            # 2026-08-17: 开启 thinking — 网关已透传 reasoning_content
-            "thinking": {"type": "enabled"},
+            # 2026-08-17: 深度思考开关（默认开, 前端可关）
+            "thinking": {"type": "enabled" if req.thinking is not False else "disabled"},
         }
+        if req.web and web_results:
+            yield (f"data: {json.dumps({'event': 'web_sources', 'sources': [
+                {'title': r.get('title',''), 'url': r.get('url',''),
+                 'snippet': (r.get('snippet') or '')[:160]} for r in web_results[:5]],
+                }, ensure_ascii=False)}\n\n")
         content_parts = []
         reasoning_parts = []
         try:

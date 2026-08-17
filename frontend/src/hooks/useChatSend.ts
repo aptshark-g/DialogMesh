@@ -6,6 +6,7 @@
  */
 import { createSession } from '../api/session';
 import { useChatStore } from '../stores/chatStore';
+import type { SendOptions } from '../components/ChatInput';
 
 const API = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -24,7 +25,7 @@ function parseSSELine(line: string): { event?: string; delta?: string; content?:
 export function useChatSend() {
   const isThinking = useChatStore((s) => s.isThinking);
 
-  const send = async (content: string) => {
+  const send = async (content: string, opts?: SendOptions) => {
     if (!content.trim() || useChatStore.getState().isThinking) return;
     let sid = useChatStore.getState().sessionId;
     if (!sid) {
@@ -46,7 +47,7 @@ export function useChatSend() {
       const resp = await fetch(`${API}/v3/session/${encodeURIComponent(sid)}/message/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, thinking: opts?.thinking ?? true, web: opts?.web ?? false }),
       });
       if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
       const reader = resp.body.getReader();

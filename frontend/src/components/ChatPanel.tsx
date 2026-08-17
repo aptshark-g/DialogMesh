@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+import type { SendOptions } from './ChatInput';
 import ThinkingIndicator from './ThinkingIndicator';
 import ConnectionStatus from './ConnectionStatus';
 import { ProviderSelector } from './ProviderSelector';
@@ -16,7 +17,7 @@ interface ChatPanelProps {
   thinkingSteps: ThinkingStep[];
   error: string | null;
   connectionState: ConnectionState;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, opts?: SendOptions) => void;
   onClearError: () => void;
   onClearMessages?: () => void;
   onSelectProvider?: (info: ProviderInfo) => void;

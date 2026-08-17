@@ -1,13 +1,21 @@
 import type { KeyboardEvent, ChangeEvent } from 'react';
 import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Sparkles, Paperclip, Code, AtSign, Image, Grid } from 'lucide-react';
+import { Send, Sparkles, Paperclip, Code, AtSign, Image, Grid, Brain, Globe } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+export interface SendOptions {
+  thinking: boolean;
+  web: boolean;
+}
 
 export interface ChatInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, opts?: SendOptions) => void;
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
+  defaultThinking?: boolean;
+  defaultWeb?: boolean;
   onAttach?: () => void;
   onCodeBlock?: () => void;
   onMention?: () => void;
@@ -20,6 +28,8 @@ export default function ChatInput({
   disabled = false,
   placeholder = '输入消息... (Shift + Enter 换行, Enter 发送)',
   maxLength,
+  defaultThinking = true,
+  defaultWeb = false,
   onAttach,
   onCodeBlock,
   onMention,
@@ -27,17 +37,19 @@ export default function ChatInput({
   onGrid,
 }: ChatInputProps) {
   const [text, setText] = useState('');
+  const [thinking, setThinking] = useState(defaultThinking);
+  const [web, setWeb] = useState(defaultWeb);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed);
+    onSend(trimmed, { thinking, web });
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [text, disabled, onSend]);
+  }, [text, disabled, onSend, thinking, web]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -103,6 +115,37 @@ export default function ChatInput({
       {/* 底部工具栏 */}
       <div className="flex items-center justify-between mt-2 px-1">
         <div className="flex items-center gap-2 md:gap-3 overflow-x-auto scrollbar-hide">
+          {/* 2026-08-17: 深度思考 / 联网开关（B 类前端接线） */}
+          <button
+            type="button"
+            onClick={() => setThinking(v => !v)}
+            title={thinking ? '深度思考：已开启（显示推理过程）' : '深度思考：已关闭（快速回答）'}
+            aria-pressed={thinking}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded-full text-[11px] transition-colors border',
+              thinking
+                ? 'bg-primary/10 text-primary border-primary/25'
+                : 'text-text-muted border-transparent hover:text-text-secondary'
+            )}
+          >
+            <Brain size={13} />
+            深度思考
+          </button>
+          <button
+            type="button"
+            onClick={() => setWeb(v => !v)}
+            title={web ? '联网搜索：已开启（先搜索再回答）' : '联网搜索：已关闭'}
+            aria-pressed={web}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded-full text-[11px] transition-colors border',
+              web
+                ? 'bg-status-info/10 text-status-info border-status-info/25'
+                : 'text-text-muted border-transparent hover:text-text-secondary'
+            )}
+          >
+            <Globe size={13} />
+            联网
+          </button>
           {onAttach && (
             <button
               type="button"
