@@ -98,6 +98,45 @@ class TestSessionProject:
         assert not projects_api.set_session_project("s2", "nonexist")
         assert "s2" not in projects_api.session_project_map()
 
+
+class TestProjectDesign:
+    def test_get_default_empty(self):
+        p = projects_api.create_project("设计组")
+        d = projects_api.get_project_design(p["id"])
+        assert d["philosophy"] == ""
+        assert d["axioms"] == [] and d["goals"] == []
+
+    def test_save_manual(self):
+        p = projects_api.create_project("设计组")
+        saved = projects_api.save_project_design(
+            p["id"],
+            philosophy="约束长出来, 不是写出来",
+            axioms=["产出可逆推回设计意图"],
+            goals=["沉淀可复用公理"],
+            source="manual")
+        assert saved["philosophy"] == "约束长出来, 不是写出来"
+        assert saved["axioms"] == ["产出可逆推回设计意图"]
+        assert saved["updated_at"] > 0
+        # 读取一致
+        again = projects_api.get_project_design(p["id"])
+        assert again["philosophy"] == saved["philosophy"]
+
+    def test_digest_template_fallback(self, monkeypatch):
+        """LLM 失败 → 模板兜底, 且写回项目。"""
+        monkeypatch.setattr(projects_api, "_llm_design",
+                            lambda *a, **k: None)
+        monkeypatch.setattr(projects_api, "_collect_project_sessions",
+                            lambda *a, **k: [{"name": "s1", "sample": "x"}])
+        p = projects_api.create_project("凝练组")
+        d = projects_api.digest_project_design(p["id"], use_llm=True)
+        assert d["philosophy"]
+        assert d["axioms"] and d["goals"]
+        assert d["source"] == "template"
+
+    def test_design_missing_project(self):
+        assert projects_api.get_project_design("nope") is None
+        assert projects_api.digest_project_design("nope") is None
+
     def test_delete_project_clears_assignments(self):
         p = projects_api.create_project("P")
         projects_api.set_session_project("s1", p["id"])

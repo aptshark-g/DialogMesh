@@ -374,7 +374,7 @@ export function Sidebar() {
                             onClick={() => {
                               const next = activeProject === p.id ? null : p.id;
                               setActiveProject(next);
-                              if (next) navigate('/sessions');
+                              if (next) navigate(`/projects/${p.id}`);
                               setMobileOpen(false);
                             }}
                             onMouseEnter={() => setHoverKey(`proj:${p.id}`)}

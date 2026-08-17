@@ -384,6 +384,37 @@ export async function browseProjectDirs(path?: string): Promise<{ path: string; 
   return apiFetch<{ path: string; entries: V6ProjectBrowseEntry[] }>(`/v6/projects/browse${q}`);
 }
 
+// ═══ 项目设计元信息（二阶抽象, 2026-08-17）═══ #
+
+export interface V6ProjectDesign {
+  philosophy: string;
+  axioms: string[];
+  goals: string[];
+  updated_at: number;
+  source: string;
+}
+
+export function getProjectDesign(projectId: string): Promise<V6ProjectDesign> {
+  return apiFetch<V6ProjectDesign>(`/v6/projects/${encodeURIComponent(projectId)}/design`);
+}
+
+export function saveProjectDesign(
+  projectId: string,
+  req: { philosophy?: string; axioms?: string[]; goals?: string[]; source?: string }
+): Promise<V6ProjectDesign> {
+  return apiFetch<V6ProjectDesign>(`/v6/projects/${encodeURIComponent(projectId)}/design`, {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  });
+}
+
+export function digestProjectDesign(projectId: string, useLlm = true): Promise<V6ProjectDesign> {
+  return apiFetch<V6ProjectDesign>(
+    `/v6/projects/${encodeURIComponent(projectId)}/design/digest?use_llm=${useLlm}`,
+    { method: 'POST' }
+  );
+}
+
 export function deleteProjectApi(id: string): Promise<{ deleted: boolean }> {
   return apiFetch<{ deleted: boolean }>(`/v6/projects/${encodeURIComponent(id)}`, {
     method: 'DELETE',

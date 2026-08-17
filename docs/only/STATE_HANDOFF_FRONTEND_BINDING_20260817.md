@@ -168,3 +168,24 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 ### 环境（现状）
 - 8000 API（PID 12652, 含本轮 projects/browse + 价格同步）/ 8080 网关 / 4173 前端均在跑。
 - 全量 pytest 前需停服务防 OOM（约 4.6GB 占用）。
+
+## 七、项目页视图 + 设计元信息（2026-08-17 续, 已提交本地）
+
+### 完成（全部实测）
+- **项目页视图** `/projects/:id`（`ProjectPage.tsx`, 懒加载）: 侧栏点项目进入专属页
+  （不再只是全局会话过滤）; 概览（名称/颜色/文件夹/创建时间/会话数）+ 项目会话列表
+  （搜索+进入聊天）+ 设计元信息编辑与凝练。
+- **项目设计元信息（二阶抽象）**: 项目模型 `design{philosophy, axioms, goals, source,
+  updated_at}`; `GET/PUT /v6/projects/{id}/design` + `POST .../design/digest`
+  （LLM 从项目会话实践凝练, 失败降级模板; 开关 DM_PROJECT_DESIGN_LLM, 默认开）。
+  实测 digest 真实 LLM 凝练成功（source=llm_digest）。
+- **测试**: test_projects_api 17 绿（含 design CRUD + 模板兜底 + 缺项目 404）;
+  kernel_dispatch 回归 78 绿; tsc/build 绿; 4173 服务新构建; API 已重启。
+
+### 说明
+- digest 会覆盖手动编辑（本就是"再生成"语义）; 手动保存走 PUT source=manual。
+- 该轮对用户既有项目跑过一次 LLM 凝练（真实产出, 非垃圾数据）; 可手动编辑覆盖。
+
+### 待办（下一轮）
+- 项目页补任务/图数据聚合; 元认知项目级经验总结（P1）; 会话 fork/分支（P2）。
+- B 类后端续（B5 会话标题 / B4+B6 画像健康度）。

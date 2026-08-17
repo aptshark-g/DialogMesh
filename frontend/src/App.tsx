@@ -23,6 +23,7 @@ const DeepChainPage = lazy(() => import('./pages/DeepChainPage.tsx').then((m) =>
 const MetaCenterPage = lazy(() => import('./pages/MetaCenterPage.tsx').then((m) => ({ default: m.MetaCenterPage })));
 const BehaviorPage = lazy(() => import('./pages/BehaviorPage.tsx').then((m) => ({ default: m.BehaviorPage })));
 const EngineeringPage = lazy(() => import('./pages/EngineeringPage.tsx').then((m) => ({ default: m.EngineeringPage })));
+const ProjectPage = lazy(() => import('./pages/ProjectPage.tsx').then((m) => ({ default: m.ProjectPage })));
 
 export default function App() {
   return (
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="behavior" element={<BehaviorPage />} />
           <Route path="engineering" element={<EngineeringPage />} />
           <Route path="sessions" element={<SessionsPage />} />
+          <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
