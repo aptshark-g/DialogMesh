@@ -22,15 +22,20 @@ import {
   getEngineeringModules,
   editEngineeringConstraints,
   getEngineering,
+  getTools,
+  getSkills,
 } from '../api/v6';
 import type {
   V6RecursiveMapResponse,
   V6EngineeringModule,
   V6EngineeringConstraintEditRequest,
   V6EngineeringResponse,
+  V6ToolsResponse,
+  V6SkillsResponse,
 } from '../types/api';
 import { Toast } from '../components/ui/Toast';
 import { cn } from '../lib/utils';
+import { useUIStore } from '@/stores/uiStore';
 
 interface ToastState {
   type: 'success' | 'error';
@@ -66,6 +71,11 @@ export function EngineeringPage() {
   const [formAction, setFormAction] = useState<V6EngineeringConstraintEditRequest['action']>('add_constraint');
   const [formConstraint, setFormConstraint] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // 2026-08-17: 工具/技能白盒视图（含下载渠道状态）
+  const [tools, setTools] = useState<V6ToolsResponse | null>(null);
+  const [skills, setSkills] = useState<V6SkillsResponse | null>(null);
+  const openSidePanel = useUIStore((s) => s.openSidePanel);
+  const setInspectNode = useUIStore((s) => s.setInspectNode);
 
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -87,15 +97,19 @@ export function EngineeringPage() {
       setLoading(true);
       setError(null);
       try {
-        const [mapRes, modulesRes, engRes] = await Promise.all([
+        const [mapRes, modulesRes, engRes, toolsRes, skillsRes] = await Promise.all([
           getRecursiveMap().catch(() => null),
           getEngineeringModules().catch(() => null),
           getEngineering().catch(() => null),
+          getTools().catch(() => null),
+          getSkills().catch(() => null),
         ]);
         if (cancelled) return;
         setMap(mapRes);
         setModules(modulesRes?.modules ?? []);
         setEngineering(engRes);
+        setTools(toolsRes);
+        setSkills(skillsRes);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : '获取工程链数据失败');
       } finally {
@@ -111,14 +125,18 @@ export function EngineeringPage() {
     setLoading(true);
     setError(null);
     try {
-      const [mapRes, modulesRes, engRes] = await Promise.all([
+      const [mapRes, modulesRes, engRes, toolsRes, skillsRes] = await Promise.all([
         getRecursiveMap().catch(() => null),
         getEngineeringModules().catch(() => null),
         getEngineering().catch(() => null),
+        getTools().catch(() => null),
+        getSkills().catch(() => null),
       ]);
       setMap(mapRes);
       setModules(modulesRes?.modules ?? []);
       setEngineering(engRes);
+      setTools(toolsRes);
+      setSkills(skillsRes);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取工程链数据失败');
     } finally {
@@ -148,6 +166,23 @@ export function EngineeringPage() {
   const handleSelectModule = useCallback((name: string) => {
     setFormName(name);
   }, []);
+
+  // 2026-08-17: 点击模块 → 右屏摘要（拓扑对话: 工程约束在副屏展开）
+  const handleInspectModule = useCallback((m: V6EngineeringModule) => {
+    const raw = m as unknown as Record<string, unknown>;
+    setInspectNode({
+      id: m.name,
+      label: m.name,
+      type: String(m.type || 'module'),
+      summary: `工程模块 ${m.name} — 类型 ${m.type ?? '未知'}`,
+      state: {
+        constraints: raw.constraints ?? undefined,
+        constraint_count: raw.constraint_count ?? undefined,
+        status: raw.status ?? '已加载',
+      },
+    });
+    openSidePanel();
+  }, [openSidePanel, setInspectNode]);
 
   const handleSubmit = useCallback(async () => {
     const name = formName.trim();
@@ -352,7 +387,14 @@ export function EngineeringPage() {
                         )}
                       >
                         <td className="py-2.5 pr-4">
-                          <span className="font-medium text-text-primary">{m.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleInspectModule(m)}
+                            className="font-medium text-text-primary hover:text-primary transition-colors text-left"
+                            title="点击在右屏查看摘要"
+                          >
+                            {m.name}
+                          </button>
                         </td>
                         <td className="py-2.5 pr-4">
                           <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-surface-sidebar text-text-secondary">
@@ -449,6 +491,78 @@ export function EngineeringPage() {
               <Save className="h-3.5 w-3.5" />
               {submitting ? '提交中...' : '提交约束'}
             </button>
+          </div>
+        </motion.section>
+
+        {/* 工具与技能（2026-08-17: 白盒视图 + 下载渠道状态） */}
+        <motion.section {...fadeIn(0.18)} className="card-liquid shadow-card rounded-xl p-5">
+          <div className="flex items-center gap-2 text-text-muted mb-4">
+            <Boxes className="h-4 w-4" />
+            <span className="text-xs font-semibold">工具与技能</span>
+            <span className="text-[10px] text-text-muted ml-auto">白盒视图 · 下载渠道状态</span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 工具 */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-text-secondary">可用工具</span>
+                <span className="text-[10px] text-text-muted">{tools?.total ?? '—'} 个</span>
+              </div>
+              {tools && tools.tools.length > 0 ? (
+                <div className="max-h-56 overflow-y-auto space-y-1">
+                  {tools.tools.slice(0, 30).map((t) => (
+                    <div key={t.name} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5">
+                      <span className="text-xs font-mono text-text-primary shrink-0">{t.name}</span>
+                      <span className="text-[10px] text-text-muted truncate flex-1">{t.description}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sidebar text-text-muted shrink-0">{t.category}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted py-3">暂无工具数据{tools?.error ? `（${tools.error}）` : ''}</p>
+              )}
+            </div>
+
+            {/* 技能 + 渠道 */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-text-secondary">策略技能</span>
+                <span className="text-[10px] text-text-muted">{skills?.total ?? '—'} 个</span>
+              </div>
+              {skills && skills.skills.length > 0 ? (
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {skills.skills.slice(0, 20).map((s) => (
+                    <div key={s.name} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5">
+                      <span className="text-xs font-medium text-text-primary shrink-0">{s.name}</span>
+                      <span className="text-[10px] text-text-muted truncate flex-1">
+                        {s.strategies.join(' / ')}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sidebar text-text-muted shrink-0">{s.source}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted py-3">暂无技能数据{skills?.error ? `（${skills.error}）` : ''}</p>
+              )}
+
+              {/* 下载渠道状态 */}
+              <div className="mt-3">
+                <span className="text-xs font-medium text-text-secondary block mb-1.5">下载渠道</span>
+                <div className="space-y-1">
+                  {(skills?.channels ?? []).map((ch) => (
+                    <div key={ch.name} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2.5 py-1.5">
+                      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', ch.status === 'ok' ? 'bg-status-success' : 'bg-status-warning')} />
+                      <span className="text-xs font-medium text-text-primary shrink-0">{ch.source}</span>
+                      <span className="text-[10px] text-text-muted truncate flex-1">
+                        {ch.status === 'ok' ? `${ch.count} 项` : (ch.note ?? '待接入')}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sidebar text-text-muted shrink-0">{ch.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </motion.section>
 

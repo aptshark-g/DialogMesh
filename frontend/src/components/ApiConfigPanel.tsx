@@ -4,10 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getApiConfig, setApiConfig, resetApiConfig } from '../lib/config';
 
 const PROVIDERS = [
-  { id: 'custom', label: '自定义', restUrl: '', wsUrl: '' },
-  { id: 'lmstudio', label: 'LM Studio', restUrl: 'http://localhost:1234', wsUrl: 'ws://localhost:1234' },
-  { id: 'ollama', label: 'Ollama', restUrl: 'http://localhost:11434', wsUrl: 'ws://localhost:11434' },
-  { id: 'openai', label: 'OpenAI', restUrl: 'https://api.openai.com', wsUrl: 'wss://api.openai.com' },
+  { id: 'custom', label: '自定义', providerUrl: '' },
+  { id: 'lmstudio', label: 'LM Studio', providerUrl: 'http://localhost:1234' },
+  { id: 'ollama', label: 'Ollama', providerUrl: 'http://localhost:11434' },
+  { id: 'openai', label: 'OpenAI', providerUrl: 'https://api.openai.com' },
 ] as const;
 
 type ProviderId = (typeof PROVIDERS)[number]['id'];
@@ -36,9 +36,8 @@ export function ApiConfigPanel({ onSave }: ApiConfigPanelProps) {
     setProvider(pid);
     setProviderOpen(false);
     const p = PROVIDERS.find((x) => x.id === pid);
-    if (p && p.restUrl) {
-      setRestUrl(p.restUrl);
-      setWsUrl(p.wsUrl);
+    if (p && p.providerUrl) {
+      setApiConfig({ providerUrl: p.providerUrl });
     }
   }, []);
 
@@ -72,6 +71,7 @@ export function ApiConfigPanel({ onSave }: ApiConfigPanelProps) {
     setApiConfig({
       restBaseUrl: restUrl.trim().replace(/\/$/, ''),
       wsBaseUrl: wsUrl.trim().replace(/\/$/, ''),
+      providerUrl: PROVIDERS.find((x) => x.id === provider)?.providerUrl || '',
     });
 
     setSaved(true);

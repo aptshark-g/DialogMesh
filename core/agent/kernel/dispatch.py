@@ -1451,6 +1451,73 @@ def kernel_search(q: str, limit: int = 20) -> dict:
     }
 
 
+def kernel_tools() -> dict:
+    """工具注册表白盒视图（A19）: 当前可用的全部工具 + 渠道状态。"""
+    tools = []
+    try:
+        from core.agent.cli.engine import get_engine
+        eng = get_engine()
+        reg = getattr(eng, "_tool_registry", None) if eng else None
+        items = []
+        if reg is not None:
+            import asyncio
+            try:
+                items = asyncio.run(reg.list_all())
+            except Exception:
+                items = list(getattr(reg, "_tools", {}).values() or [])
+        for t in items:
+            if isinstance(t, dict):
+                tools.append({
+                    "name": t.get("name", ""),
+                    "description": str(t.get("description", ""))[:200],
+                    "category": t.get("category", t.get("kind", "tool")),
+                })
+            elif hasattr(t, "name"):
+                tools.append({
+                    "name": getattr(t, "name", ""),
+                    "description": str(getattr(t, "description", ""))[:200],
+                    "category": str(getattr(t, "category", getattr(t, "kind", "tool"))),
+                })
+    except Exception as e:
+        return {"tools": [], "total": 0, "error": str(e)[:120],
+                "channels": []}
+    return {"tools": tools, "total": len(tools), "channels": [
+        {"name": "builtin", "source": "内置注册表", "status": "ok", "count": len(tools)},
+        {"name": "github", "source": "GitHub 市场", "status": "planned",
+         "count": 0, "note": "外部 skill/工具下载渠道待接入（2026-08-17 登记）"},
+    ]}
+
+
+def kernel_skills() -> dict:
+    """技能（策略蓝图）白盒视图 + 下载渠道状态。"""
+    skills = []
+    try:
+        from core.agent.cli.engine import get_engine
+        eng = get_engine()
+        reg = None
+        if eng is not None:
+            reg = getattr(getattr(eng, "_learning_bridge", None),
+                          "registry", None)
+            if reg is None:
+                reg = getattr(eng, "_skill_registry", None)
+        if reg is not None:
+            weights = getattr(reg, "_strategy_weights", {}) or {}
+            for intent, ws in weights.items():
+                skills.append({
+                    "name": intent,
+                    "strategies": [str(w.strategy) for w in ws[:3]],
+                    "source": "learned" if getattr(reg, "_lifecycle", None) else "seed",
+                })
+    except Exception as e:
+        return {"skills": [], "total": 0, "error": str(e)[:120], "channels": []}
+    return {"skills": skills, "total": len(skills), "channels": [
+        {"name": "seed", "source": "内置策略种子", "status": "ok", "count": len(skills)},
+        {"name": "learned", "source": "经验学习（LEARNED_TEMPLATES）", "status": "ok", "count": 0},
+        {"name": "github", "source": "GitHub 技能市场", "status": "planned",
+         "count": 0, "note": "外部 skill 下载渠道待接入（2026-08-17 登记）"},
+    ]}
+
+
 def _session_title(s: dict) -> str:
     """B5（2026-08-17）: 会话标题摘要 — 首条 user 消息提炼。
 

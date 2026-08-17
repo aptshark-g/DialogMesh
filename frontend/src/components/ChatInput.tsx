@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Sparkles, Paperclip, Code, AtSign, Image, Grid, Brain, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { specMove } from '@/lib/spec';
 
 export interface SendOptions {
   thinking: boolean;
@@ -119,13 +120,16 @@ export default function ChatInput({
           <button
             type="button"
             onClick={() => setThinking(v => !v)}
+            onPointerMove={specMove}
             title={thinking ? '深度思考：已开启（显示推理过程）' : '深度思考：已关闭（快速回答）'}
             aria-pressed={thinking}
             className={cn(
-              'flex items-center gap-1 px-2 py-1 rounded-full text-[11px] transition-colors border',
+              'spec-item',
+              'relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors',
+              'border border-hairline shadow-card',
               thinking
-                ? 'bg-primary/10 text-primary border-primary/25'
-                : 'text-text-muted border-transparent hover:text-text-secondary'
+                ? 'text-primary bg-surface-card'
+                : 'text-text-muted hover:text-text-secondary bg-transparent'
             )}
           >
             <Brain size={13} />
@@ -134,13 +138,16 @@ export default function ChatInput({
           <button
             type="button"
             onClick={() => setWeb(v => !v)}
+            onPointerMove={specMove}
             title={web ? '联网搜索：已开启（先搜索再回答）' : '联网搜索：已关闭'}
             aria-pressed={web}
             className={cn(
-              'flex items-center gap-1 px-2 py-1 rounded-full text-[11px] transition-colors border',
+              'spec-item',
+              'relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors',
+              'border border-hairline shadow-card',
               web
-                ? 'bg-status-info/10 text-status-info border-status-info/25'
-                : 'text-text-muted border-transparent hover:text-text-secondary'
+                ? 'text-status-info bg-surface-card'
+                : 'text-text-muted hover:text-text-secondary bg-transparent'
             )}
           >
             <Globe size={13} />

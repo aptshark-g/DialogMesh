@@ -3,6 +3,10 @@ const STORAGE_KEY = 'dialogmesh_api_config';
 export interface ApiConfig {
   restBaseUrl: string;
   wsBaseUrl: string;
+  /** LLM provider URL (e.g. LM Studio on port 1234), used for backend proxy */
+  providerUrl?: string;
+  /** LLM provider API key */
+  providerApiKey?: string;
 }
 
 const DEFAULT_CONFIG: ApiConfig = {

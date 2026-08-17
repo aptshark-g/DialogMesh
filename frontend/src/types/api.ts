@@ -1154,6 +1154,41 @@ export interface V6EngineeringConstraintEditRequest {
   constraint: string;
 }
 
+// 工具 / 技能白盒视图（2026-08-17, 工程页）
+export interface V6ToolItem {
+  name: string;
+  description: string;
+  category: string;
+}
+
+export interface V6ChannelInfo {
+  name: string;
+  source: string;
+  status: 'ok' | 'planned';
+  count: number;
+  note?: string;
+}
+
+export interface V6ToolsResponse {
+  tools: V6ToolItem[];
+  total: number;
+  channels: V6ChannelInfo[];
+  error?: string;
+}
+
+export interface V6SkillItem {
+  name: string;
+  strategies: string[];
+  source: string;
+}
+
+export interface V6SkillsResponse {
+  skills: V6SkillItem[];
+  total: number;
+  channels: V6ChannelInfo[];
+  error?: string;
+}
+
 export interface V6EngineeringConstraintEditResponse {
   updated: string;
   constraint: string;

@@ -9,6 +9,7 @@ initDebug();
 enableBackendSync();
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { ContentScriptBridge } from './components/ContentScriptBridge.tsx';
+import { SelectionAsk } from './components/SelectionAsk';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage.tsx').then((m) => ({ default: m.DashboardPage })));
 const SessionsPage = lazy(() => import('./pages/SessionsPage.tsx').then((m) => ({ default: m.SessionsPage })));
@@ -28,6 +29,7 @@ export default function App() {
     <ErrorBoundary>
     <BrowserRouter>
       <ContentScriptBridge />
+      <SelectionAsk />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />

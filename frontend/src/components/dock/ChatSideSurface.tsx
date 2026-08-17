@@ -18,6 +18,16 @@ export function ChatSideSurface() {
   const [text, setText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // 2026-08-17: 消费「选中文字 → 侧边提问」预填（拓扑对话）
+  useEffect(() => {
+    const ask = useChatStore.getState().consumeAsk();
+    if (ask) {
+      setText(ask);
+      // 稍后让输入框挂载后自动发送（不打断用户手动编辑——仅当有预填时）
+      // 这里只预填, 由用户确认发送; 若需自动发送可在此调 send(ask)。
+    }
+  }, []);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

@@ -37,6 +37,7 @@ from core.agent.v3_0.cognitive_compiler.lifecycle import NodeLifecycleManager
 from core.agent.v3_0.cognitive_compiler.querier import Querier
 from core.agent.v3_0.cognitive_compiler.profile_updater import ProfileUpdater
 from core.agent.v3_0.cognitive_compiler.pcr_feedback import PcrFeedbackLoop
+from core.agent.v3_0.cognitive_compiler.pcr_feedback_gp import PcrFeedbackLoopGP
 from core.agent.v3_0.cognitive_compiler.rule_conflict import RuleConflictDetector
 from core.agent.v3_0.cognitive_compiler.expertise_probe_v3 import ColdStartProbe
 from core.agent.v3_0.cognitive_compiler.tree_health import TreeHealthAnalyzer
@@ -56,6 +57,7 @@ __all__ = [
     "ProfileUpdater",
     "ColdStartProbe",
     "PcrFeedbackLoop",
+    "PcrFeedbackLoopGP",
     "RuleConflictDetector",
     "TreeHealthAnalyzer",
     "MetaCognitiveValidator",

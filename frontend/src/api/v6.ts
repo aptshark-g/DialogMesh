@@ -380,6 +380,50 @@ export function assignSessionProjectApi(sessionId: string, projectId: string | n
   });
 }
 
+// ═══ 工具 / 技能白盒视图（2026-08-17, 工程页）═══ #
+
+export interface V6ToolItem {
+  name: string;
+  description: string;
+  category: string;
+}
+
+export interface V6ChannelInfo {
+  name: string;
+  source: string;
+  status: 'ok' | 'planned';
+  count: number;
+  note?: string;
+}
+
+export interface V6ToolsResponse {
+  tools: V6ToolItem[];
+  total: number;
+  channels: V6ChannelInfo[];
+  error?: string;
+}
+
+export interface V6SkillItem {
+  name: string;
+  strategies: string[];
+  source: string;
+}
+
+export interface V6SkillsResponse {
+  skills: V6SkillItem[];
+  total: number;
+  channels: V6ChannelInfo[];
+  error?: string;
+}
+
+export function getTools(): Promise<V6ToolsResponse> {
+  return apiFetch<V6ToolsResponse>('/v6/tools');
+}
+
+export function getSkills(): Promise<V6SkillsResponse> {
+  return apiFetch<V6SkillsResponse>('/v6/skills');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 网关 (Gateway) — switch 代理
 // ═══════════════════════════════════════════════════════════════════════════

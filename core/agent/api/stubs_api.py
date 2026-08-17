@@ -611,6 +611,20 @@ async def global_search(q: str = "", limit: int = 20):
     return kernel_search(q, limit=limit)
 
 
+@router.get("/tools")
+async def get_tools():
+    """工具注册表白盒视图 + 下载渠道状态（工程页 skill/工具展示）。"""
+    from core.agent.kernel import kernel_tools
+    return kernel_tools()
+
+
+@router.get("/skills")
+async def get_skills():
+    """技能（策略蓝图）白盒视图 + 下载渠道状态（工程页）。"""
+    from core.agent.kernel import kernel_skills
+    return kernel_skills()
+
+
 @router.get("/versions")
 async def get_versions():
     return kernel_versions("all")

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { getGatewayProviders, setGatewayActive } from '../api/v6';
+import { specMove } from '@/lib/spec';
 
 export interface ProviderInfo {
   name: string;
@@ -75,7 +76,8 @@ export function ProviderSelector({ onSelect, active }: Props) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-card border border-subtle text-sm text-text-primary hover:border-primary/30 transition-colors"
+        onPointerMove={specMove}
+        className="spec-item relative flex items-center gap-2 px-3 py-1.5 rounded-full border border-hairline shadow-card text-sm text-text-primary bg-glass/60 backdrop-blur-xl transition-colors"
       >
         {loading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-text-muted" />
@@ -89,7 +91,8 @@ export function ProviderSelector({ onSelect, active }: Props) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-80 rounded-lg border border-subtle bg-surface-card shadow-card z-50">
+        <div onPointerMove={specMove}
+          className="spec-panel absolute top-full left-0 mt-1 w-80 rounded-xl glass-panel z-50 overflow-hidden">
           <div className="p-1 max-h-64 overflow-y-auto">
             {providers.length === 0 && (
               <p className="px-3 py-2 text-xs text-text-muted">
@@ -100,7 +103,8 @@ export function ProviderSelector({ onSelect, active }: Props) {
               <button
                 key={p.display}
                 onClick={() => handleSelect(p)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left hover:bg-surface-sidebar transition-colors"
+                onPointerMove={specMove}
+                className="spec-item w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left text-text-primary transition-colors hover:bg-wash"
               >
                 <span className={p.healthy ? 'text-status-success' : 'text-text-muted'}>
                   {p.healthy ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}

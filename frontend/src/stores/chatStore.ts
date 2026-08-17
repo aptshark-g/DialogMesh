@@ -8,6 +8,8 @@ interface ChatStore {
   isThinking: boolean;
   /** 当前流式回复的思考过程（实时累积） */
   thinkingText: string;
+  /** 选中文字 → 侧边提问的预填内容（SelectionAsk 写入, 副槽消费） */
+  pendingAsk: string;
   activeProvider: ProviderInfo | null;
   addUserMessage: (content: string) => void;
   addAIMessage: (content: string, extra?: Partial<ChatMessage>) => void;
@@ -16,6 +18,8 @@ interface ChatStore {
   streamAppend: (id: string, delta: string) => void;
   streamFinish: (id: string, extra?: Partial<ChatMessage>) => void;
   setThinkingText: (t: string) => void;
+  setPendingAsk: (t: string) => void;
+  consumeAsk: () => string;
   setThinking: (v: boolean) => void;
   setSessionId: (id: string) => void;
   loadSession: (id: string, msgs: ChatMessage[]) => void;
@@ -37,6 +41,7 @@ export const useChatStore = create<ChatStore>((set, _get) => {
     sessionId: saved.sessionId || null,
     isThinking: false,
     thinkingText: '',
+    pendingAsk: '',
     activeProvider: null,
     addUserMessage: (content) => set(s => {
       const msg: ChatMessage = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
@@ -67,6 +72,12 @@ export const useChatStore = create<ChatStore>((set, _get) => {
         m.id === id ? { ...m, status: 'sent', ...(extra || {}) } : m),
     })),
     setThinkingText: (t) => set({ thinkingText: t }),
+    setPendingAsk: (t) => set({ pendingAsk: t }),
+    consumeAsk: () => {
+      const t = useChatStore.getState().pendingAsk;
+      if (t) set({ pendingAsk: '' });
+      return t;
+    },
     setThinking: (v) => set({ isThinking: v }),
     setSessionId: (id) => set({ sessionId: id }),
     loadSession: (id, msgs) => set({ sessionId: id, messages: msgs, isThinking: false, thinkingText: '' }),
