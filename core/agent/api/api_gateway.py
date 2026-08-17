@@ -724,6 +724,61 @@ async def gateway_cost():
     return _switch_get("/v1/usage")
 
 
+@router.get("/usage/series")
+async def gateway_usage_series(days: int = 14):
+    """用量时间序列（2026-08-18, 时间轴图表）: 聚合 switch usage_log.jsonl
+    按日期输出 输入/输出 Tokens 与费用。无日志 → 空序列（诚实空态）。"""
+    log_path = os.environ.get("DM_GATEWAY_USAGE_LOG", "")
+    candidates = [log_path] if log_path else []
+    _root = os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    candidates += [
+        os.path.join(_root, "gateway", "usage_log.jsonl"),
+        os.path.join(os.path.dirname(_root), "switch", "usage_log.jsonl"),
+        "usage_log.jsonl",
+    ]
+    rows = []
+    for p in candidates:
+        if p and os.path.exists(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            r = json.loads(line)
+                            rows.append(r)
+                        except Exception:
+                            continue
+            except Exception as e:
+                logger.warning("usage log read failed %s: %s", p, e)
+            break
+
+    by_date: dict = {}
+    for r in rows:
+        ts = r.get("TS") or r.get("ts") or ""
+        date = str(ts)[:10]
+        if not date:
+            continue
+        d = by_date.setdefault(date, {"prompt": 0, "completion": 0, "cost": 0.0})
+        d["prompt"] += int(r.get("Prompt", r.get("prompt_tokens", 0)) or 0)
+        d["completion"] += int(r.get("Complete", r.get("completion_tokens", 0)) or 0)
+        d["cost"] += float(r.get("CostUSD", r.get("cost_usd", 0)) or 0)
+
+    series = [
+        {"date": date, "prompt": v["prompt"], "completion": v["completion"],
+         "cost": round(v["cost"], 6)}
+        for date, v in sorted(by_date.items())[-days:]
+    ]
+    return {
+        "series": series,
+        "total": {"prompt": sum(s["prompt"] for s in series),
+                  "completion": sum(s["completion"] for s in series)},
+        "log_path": next((p for p in candidates if p and os.path.exists(p)), None),
+    }
+
+
 @router.get("/prices")
 async def gateway_prices():
     """价格目录同步状态（2026-08-17）: 供前端展示最近同步时间/覆盖模型数。"""

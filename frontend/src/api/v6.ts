@@ -587,6 +587,16 @@ export function getGatewayCost(): Promise<V6GatewayCost> {
   return apiFetch<V6GatewayCost>('/v6/gateway/cost');
 }
 
+export interface V6GatewayUsageSeries {
+  series: { date: string; prompt: number; completion: number; cost: number }[];
+  total: { prompt: number; completion: number };
+  log_path: string | null;
+}
+
+export function getGatewayUsageSeries(days = 14): Promise<V6GatewayUsageSeries> {
+  return apiFetch<V6GatewayUsageSeries>(`/v6/gateway/usage/series?days=${days}`);
+}
+
 // ═══ 价格目录同步（2026-08-17: LiteLLM 源）═══ #
 
 export interface V6GatewayPrices {

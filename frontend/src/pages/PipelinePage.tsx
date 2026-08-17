@@ -67,6 +67,13 @@ export function PipelinePage() {
 
   const [paramValues, setParamValues] = useState<Record<string, number | string | boolean>>({});
   const [editingParams, setEditingParams] = useState<Set<string>>(new Set());
+  // 2026-08-18: 参数变更记录（本地会话内, 让调参可追踪）
+  const [paramChanges, setParamChanges] = useState<{
+    name: string; from: string; to: string; ts: number;
+  }[]>([]);
+  // 运行模式: 自适应 / 固定（自适应步长本地偏好）
+  const [runMode, setRunMode] = useState<'adaptive' | 'fixed'>('adaptive');
+  const [adaptiveStep, setAdaptiveStep] = useState(5);
 
   // ─── 调度与降级 (v10) ───
   const [degradation, setDegradation] = useState<V6DegradationResponse | null>(null);
@@ -151,7 +158,15 @@ export function PipelinePage() {
   const handleParamChange = useCallback((name: string, value: number | string | boolean) => {
     setParamValues(prev => ({ ...prev, [name]: value }));
     setEditingParams(prev => new Set(prev).add(name));
-  }, []);
+    // 记录变更（旧值取自初始参数, 失败则记 '?'）
+    setParamChanges(prev => {
+      const base = parameters?.parameters ?? [];
+      const found = base.find((p) => p.name === name);
+      const from = found ? String(found.value) : '?';
+      const next = [...prev, { name, from, to: String(value), ts: Date.now() }];
+      return next.slice(-30);
+    });
+  }, [parameters]);
 
   const handleSaveParams = useCallback(() => {
     if (editingParams.size === 0) return;
@@ -225,6 +240,68 @@ export function PipelinePage() {
             {saveError}
           </div>
         )}
+
+        {/* 2026-08-18: 本页说明 — 让用户看得懂 */}
+        <motion.section {...fadeIn(0.02)} className="card-liquid shadow-card rounded-xl p-5">
+          <div className="flex items-center gap-2 text-text-muted mb-3">
+            <Workflow className="h-4 w-4" />
+            <span className="text-xs font-semibold">这个页面是做什么的</span>
+          </div>
+          <p className="text-xs text-text-secondary leading-relaxed">
+            DialogMesh 把一次对话按<b>认知流水线</b>加工:
+            <span className="font-mono text-primary">Event → Observation → Hypothesis → Knowledge → Skill</span>
+            （事实 → 候选解释 → 竞争中的信念 → 稳定认知 → 可复用能力）。
+            本页控制这条流水线的<b>运行参数</b>（各阶段可调参数、降级级别、强一致读、
+            温度迁移、子图缓存）与<b>上下文组装</b>。改参数后立即生效, 调整了什么可在
+            「参数变更记录」里看到。
+          </p>
+        </motion.section>
+
+        {/* 运行模式（自适应/固定） */}
+        <motion.section {...fadeIn(0.04)} className="card-liquid shadow-card rounded-xl p-5">
+          <div className="flex items-center gap-2 text-text-muted mb-3">
+            <Gauge className="h-4 w-4" />
+            <span className="text-xs font-semibold">运行模式</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {(['adaptive', 'fixed'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setRunMode(m)}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                  runMode === m
+                    ? 'border-primary bg-primary/5 text-primary'
+                    : 'border-gray-200 text-text-secondary hover:text-primary'
+                )}
+              >
+                {m === 'adaptive' ? '自适应' : '固定'}
+              </button>
+            ))}
+          </div>
+          {runMode === 'adaptive' && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
+                <span>自适应步长（复杂度分档粒度）</span>
+                <span className="font-mono text-text-primary">{adaptiveStep}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={adaptiveStep}
+                onChange={(e) => setAdaptiveStep(Number(e.target.value))}
+                className="w-full h-1.5 rounded-lg appearance-none bg-gray-200 accent-primary cursor-pointer"
+              />
+              <p className="text-[11px] text-text-muted mt-1.5">
+                自适应 = 按查询复杂度自动选择 rule / small_model / remote_llm;
+                步长越小分档越细（当前为本地偏好, 与网关路由模式联动开发中）。
+              </p>
+            </div>
+          )}
+        </motion.section>
 
         {/* Pipeline Stats */}
         <motion.section {...fadeIn(0.05)} className="bg-surface-card rounded-xl border border-gray-200 p-5">
@@ -325,6 +402,30 @@ export function PipelinePage() {
           )}
           {parameters && (
             <div className="mt-3 text-xs text-text-muted">总计: {parameters.total} 个参数</div>
+          )}
+
+          {/* 2026-08-18: 参数变更记录 */}
+          {paramChanges.length > 0 && (
+            <div className="mt-4 rounded-lg border border-gray-100 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-text-primary mb-2">
+                <CheckCheck className="w-3.5 h-3.5 text-text-muted" />
+                参数变更记录
+                <span className="font-normal text-text-muted">（本次会话内）</span>
+              </div>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {[...paramChanges].reverse().map((c, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-text-muted shrink-0">
+                      {new Date(c.ts).toLocaleTimeString('zh-CN', { hour12: false })}
+                    </span>
+                    <span className="font-mono text-text-primary shrink-0">{c.name}</span>
+                    <span className="text-text-muted truncate">
+                      {c.from} → <span className="text-primary">{c.to}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </motion.section>
 

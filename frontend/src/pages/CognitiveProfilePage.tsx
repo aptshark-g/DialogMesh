@@ -55,8 +55,19 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]['key'];
 
-// 2026-08-18: OCEAN 维度代号 → 用户可读中文（o/c/e/a/n 为内部称呼）
+// 2026-08-18: 10 维画像代号 → 用户可读中文（O/C/E/A/N + 认知维为内部称呼）
 const OCEAN_LABELS: Record<string, string> = {
+  o: '开放性',
+  c: '尽责性',
+  e: '外向性',
+  a: '宜人性',
+  n: '神经质',
+  nc: '认知需求',
+  cs: '沟通风格',
+  dk: '领域知识',
+  ms: '元认知',
+  cl: '好奇心',
+  // 全名兜底
   openness: '开放性',
   conscientiousness: '尽责性',
   extraversion: '外向性',

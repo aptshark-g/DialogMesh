@@ -45,7 +45,9 @@ import {
   getGatewayPrices,
   syncGatewayPrices,
   setRouterModes,
+  getGatewayUsageSeries,
   type V6GatewayPrices,
+  type V6GatewayUsageSeries,
 } from '../api/v6';
 import {
   ResponsiveContainer,
@@ -342,12 +344,16 @@ export function GatewayPage() {
 
   // ─── 网关计费（2026-08-13 接线: switch /v1/usage 真实 cost）───
   const [gatewayCost, setGatewayCost] = useState<V6GatewayCost | null>(null);
+  const [usageSeries, setUsageSeries] = useState<V6GatewayUsageSeries | null>(null);
   useEffect(() => {
     let alive = true;
     const load = () => {
       getGatewayCost()
         .then((d) => { if (alive) setGatewayCost(d); })
         .catch(() => { /* 网关未启动时静默 */ });
+      getGatewayUsageSeries(14)
+        .then((d) => { if (alive) setUsageSeries(d); })
+        .catch(() => {});
     };
     load();
     const timer = setInterval(load, 15000);
@@ -1019,21 +1025,21 @@ export function GatewayPage() {
               )}
             </div>
 
-            {/* Token 用量图表（2026-08-18: 按模型 输入/输出） */}
+            {/* Token 用量时间轴（2026-08-18: 输入+输出, X=日期） */}
             <div className="card-liquid shadow-card rounded-xl p-5 md:col-span-2">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <BarChart3 className="h-4 w-4" />
-                <span className="text-xs font-semibold">Token 用量（按模型）</span>
+                <span className="text-xs font-semibold">Token 用量（按日期）</span>
                 <span className="ml-auto text-[10px] text-text-muted">
-                  日期范围选择 · 命中率统计待接入
+                  近 14 天 · 命中率统计待接入
                 </span>
               </div>
-              {modelTokenData.length > 0 ? (
+              {usageSeries && usageSeries.series.length > 0 ? (
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={modelTokenData} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
+                    <BarChart data={usageSeries.series} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                      <XAxis dataKey="model" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} interval={0} angle={-20} textAnchor="end" height={44} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
                       <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
                       <ChartTooltip
                         contentStyle={{
@@ -1044,13 +1050,24 @@ export function GatewayPage() {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="prompt" name="输入 Tokens" fill="#0D9488" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="completion" name="输出 Tokens" fill="#8B5CF6" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="prompt" name="输入 Tokens" fill="#0D9488" stackId="t" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="completion" name="输出 Tokens" fill="#8B5CF6" stackId="t" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
-                <div className="text-sm text-text-secondary py-8 text-center">暂无 Token 用量数据（需先产生网关调用）</div>
+                <div className="text-sm text-text-secondary py-8 text-center">
+                  暂无 Token 用量数据（需先产生网关 LLM 调用, 数据来自 switch usage_log.jsonl）
+                </div>
+              )}
+              {modelTokenData.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {modelTokenData.slice(0, 6).map((m) => (
+                    <span key={m.model} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sidebar text-text-muted">
+                      {m.model}: {m.prompt + m.completion}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
 

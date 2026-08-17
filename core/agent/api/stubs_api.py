@@ -51,6 +51,7 @@ from core.agent.kernel import (
     kernel_versions,
     kernel_versions_profile,
     kernel_router_modes,
+    kernel_set_router_mode,
     kernel_providers,
     kernel_providers_tokens,
     kernel_session_detail,
@@ -640,6 +641,16 @@ async def get_versions_profile():
 @router.get("/router/modes")
 async def get_router_modes():
     return kernel_router_modes()
+
+
+@router.put("/router/modes")
+async def put_router_modes(req: dict):
+    """2026-08-18: 路由模式切换（持久化 + router_v4 force_mode 同步）。"""
+    try:
+        return kernel_set_router_mode(str(req.get("mode", "")))
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e)[:200])
 
 
 @router.get("/providers")

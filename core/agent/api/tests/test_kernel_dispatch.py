@@ -368,6 +368,33 @@ class TestRestAligned:
         assert "providers" in data
         assert isinstance(data["providers"], list)
 
+    def test_router_mode_set_persists(self, monkeypatch, tmp_path):
+        import core.agent.kernel.dispatch as d
+        monkeypatch.setattr(d, "DATA_DIR", str(tmp_path))
+        d.kernel_set_router_mode("rule")
+        assert d.kernel_router_modes()["active"] == "rule"
+        d.kernel_set_router_mode("hybrid")
+        assert d.kernel_router_modes()["active"] == "hybrid"
+        with pytest.raises(ValueError):
+            d.kernel_set_router_mode("nope")
+
+    def test_gateway_usage_series_from_log(self, monkeypatch, tmp_path, client):
+        log = tmp_path / "usage_log.jsonl"
+        log.write_text(
+            '{"TS":"2026-08-18T10:00:00+08:00","Provider":"deepseek",'
+            '"Model":"m","Prompt":100,"Complete":50,"CostUSD":0.001}\n'
+            '{"TS":"2026-08-18T11:00:00+08:00","Provider":"deepseek",'
+            '"Model":"m","Prompt":30,"Complete":20,"CostUSD":0.0002}\n',
+            encoding="utf-8")
+        monkeypatch.setenv("DM_GATEWAY_USAGE_LOG", str(log))
+        r = client.get("/v6/gateway/usage/series")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["series"]) == 1
+        assert data["series"][0]["date"] == "2026-08-18"
+        assert data["series"][0]["prompt"] == 130
+        assert data["series"][0]["completion"] == 70
+
     # ── B4-5-P2 缺口补齐端点 ──────────────────────────────── #
 
     def test_behavior_feedback_endpoint(self, client, engine):

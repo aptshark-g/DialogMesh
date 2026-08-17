@@ -1921,11 +1921,11 @@ def kernel_versions_profile() -> dict:
 def kernel_router_modes() -> dict:
     engine = get_engine()
     router = getattr(engine, "_router_v4", None) if engine else None
-    active = "hybrid"
-    if router is not None:
-        mode = getattr(router, "mode", None) or getattr(router, "_mode", None)
-        if mode:
-            active = mode if isinstance(mode, str) else getattr(mode, "value", "hybrid")
+    # 2026-08-18: 路由模式持久化（router_v4 未实例化时为存根, 模式先落盘生效）
+    persisted = _disk_json("router_mode.json", {}) or {}
+    active = persisted.get("mode", "hybrid")
+    if active not in ("hybrid", "rule", "llm"):
+        active = "hybrid"
     return {
         "available": True,
         "modes": [
@@ -1934,9 +1934,36 @@ def kernel_router_modes() -> dict:
             {"name": "llm", "complexity": "full", "cost": "high", "latency": "slow"},
         ],
         "active": active,
-        "force_mode": None,
+        "force_mode": persisted.get("mode", None),
         "disabled": {"remote": False, "small_model": False},
+        "route_stats": persisted.get("route_stats", {}),
+        "degradation_chain": ["remote_llm", "small_model", "rule"],
     }
+
+
+def kernel_set_router_mode(mode: str) -> dict:
+    """持久化路由模式（hybrid/rule/llm）。router_v4 存在时同步 force_mode。"""
+    mode = (mode or "").strip().lower()
+    if mode not in ("hybrid", "rule", "llm"):
+        raise ValueError(f"unsupported router mode: {mode}")
+    path = os.path.join(DATA_DIR, "router_mode.json")
+    data = _disk_json("router_mode.json", {}) or {}
+    data["mode"] = mode
+    data["updated_at"] = time.time()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        logger.warning("router mode persist failed: %s", e)
+    engine = get_engine()
+    router = getattr(engine, "_router_v4", None) if engine else None
+    if router is not None and hasattr(router, "force_mode"):
+        try:
+            router.force_mode = mode
+        except Exception:
+            pass
+    return kernel_router_modes()
 
 
 def kernel_providers() -> dict:

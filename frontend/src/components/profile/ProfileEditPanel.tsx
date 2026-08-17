@@ -2,6 +2,16 @@
 // 画像纠正 Tab —— OCEAN 维度滑杆编辑 + MBTI 修改 + 画像→参数自动映射
 
 const OCEAN_LABELS: Record<string, string> = {
+  o: '开放性',
+  c: '尽责性',
+  e: '外向性',
+  a: '宜人性',
+  n: '神经质',
+  nc: '认知需求',
+  cs: '沟通风格',
+  dk: '领域知识',
+  ms: '元认知',
+  cl: '好奇心',
   openness: '开放性',
   conscientiousness: '尽责性',
   extraversion: '外向性',
