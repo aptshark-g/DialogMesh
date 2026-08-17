@@ -30,6 +30,7 @@ import type {
   V6SubgraphResponse,
 } from '../types/api';
 import { cn } from '../lib/utils';
+import { AboutPopover } from '../components/ui/AboutPopover';
 
 type TabKey = 'relations' | 'causal' | 'behavior' | 'engineering' | 'belief' | 'subgraph';
 type Perspective = 'dialogue' | 'meta';
@@ -271,14 +272,29 @@ export function DeepChainPage() {
               <p className="text-xs text-text-muted">关系底物 · 因果链 · 行为图 · 工程约束 · 信念状态 · 编译子图</p>
             </div>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={panelLoading}
-            className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', panelLoading && 'animate-spin')} />
-            刷新
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={panelLoading}
+              className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', panelLoading && 'animate-spin')} />
+              刷新
+            </button>
+            <AboutPopover>
+              <div className="font-semibold text-text-primary mb-1">这个页面是做什么的</div>
+              深层链是<b>认知流水线的白盒视图</b>——把对话加工过程中产生的内部知识结构
+              摊开给你看。各 tab 含义:
+              <ul className="mt-1.5 space-y-1">
+                <li>· <b>关系底物</b>: 抽取的实体与关系（关系是第一公民）</li>
+                <li>· <b>因果链</b>: 因果推理链（为什么 → 所以）</li>
+                <li>· <b>行为图</b>: 行为模式学习（做什么、何时做、结果如何）</li>
+                <li>· <b>工程约束</b>: 工程模块与其约束（内部可编辑）</li>
+                <li>· <b>信念状态</b>: 7 维信念（支持/冲突/稳定/覆盖/新颖/新近/熵）</li>
+                <li>· <b>编译子图</b>: 上下文编译的局部知识快照（给 LLM 看的）</li>
+              </ul>
+            </AboutPopover>
+          </div>
         </div>
       </header>
 
@@ -288,34 +304,6 @@ export function DeepChainPage() {
             {panelError}
           </div>
         )}
-
-        {/* 2026-08-18: 说明卡 — 让用户看得懂每个 tab 是干什么的 */}
-        <motion.section {...fadeIn(0.02)} className="card-liquid shadow-card rounded-xl p-5">
-          <div className="flex items-center gap-2 text-text-muted mb-3">
-            <Brain className="h-4 w-4" />
-            <span className="text-xs font-semibold">这个页面是做什么的</span>
-          </div>
-          <p className="text-xs text-text-secondary leading-relaxed mb-3">
-            深层链是<b>认知流水线的白盒视图</b>——把对话加工过程中产生的内部知识结构
-            摊开给你看（关系 / 信念 / 子图等）。各 tab 的含义:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {[
-              ['关系底物', '从对话中抽取的实体与关系 —— 关系是第一公民'],
-              ['因果链', '因果推理链（为什么 → 所以）'],
-              ['行为图', '行为模式学习（做什么、何时做、结果如何）'],
-              ['工程约束', '工程模块与其约束（内部可编辑）'],
-              ['信念状态', '7 维信念: 支持/冲突/稳定/覆盖/新颖/新近/熵'],
-              ['编译子图', '上下文编译出的局部知识快照（给 LLM 看的）'],
-            ].map(([t, d]) => (
-              <div key={t} className="flex items-start gap-2 text-[11px]">
-                <ChevronRight className="w-3 h-3 mt-0.5 text-primary shrink-0" />
-                <span className="text-text-primary shrink-0">{t}</span>
-                <span className="text-text-muted">{d}</span>
-              </div>
-            ))}
-          </div>
-        </motion.section>
 
         {/* Tabs */}
         <motion.div {...fadeIn(0.05)} className="flex gap-1 overflow-x-auto pb-1">

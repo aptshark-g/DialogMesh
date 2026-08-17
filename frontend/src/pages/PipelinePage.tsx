@@ -40,6 +40,7 @@ import type {
   V6SubgraphCacheResponse,
 } from '../types/api';
 import { cn } from '../lib/utils';
+import { AboutPopover } from '../components/ui/AboutPopover';
 
 // 降级级别分级配色与说明
 const DEGRADATION_META: Record<string, { desc: string; cls: string }> = {
@@ -218,14 +219,25 @@ export function PipelinePage() {
               <p className="text-xs text-text-muted">Pipeline 层级 · 参数调整 · 上下文组装</p>
             </div>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-            刷新
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-lg bg-surface-sidebar border border-subtle px-3 py-2 text-xs font-medium text-text-secondary hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+              刷新
+            </button>
+            <AboutPopover>
+              <div className="font-semibold text-text-primary mb-1">这个页面是做什么的</div>
+              DialogMesh 把一次对话按<b>认知流水线</b>加工:
+              <span className="font-mono text-primary">Event → Observation → Hypothesis → Knowledge → Skill</span>
+              （事实 → 候选解释 → 竞争中的信念 → 稳定认知 → 可复用能力）。
+              本页控制这条流水线的<b>运行参数</b>（各阶段可调参数、降级级别、强一致读、
+              温度迁移、子图缓存）与<b>上下文组装</b>。改参数后立即生效, 调整了什么可在
+              「参数变更记录」里看到。
+            </AboutPopover>
+          </div>
         </div>
       </header>
 
@@ -240,22 +252,6 @@ export function PipelinePage() {
             {saveError}
           </div>
         )}
-
-        {/* 2026-08-18: 本页说明 — 让用户看得懂 */}
-        <motion.section {...fadeIn(0.02)} className="card-liquid shadow-card rounded-xl p-5">
-          <div className="flex items-center gap-2 text-text-muted mb-3">
-            <Workflow className="h-4 w-4" />
-            <span className="text-xs font-semibold">这个页面是做什么的</span>
-          </div>
-          <p className="text-xs text-text-secondary leading-relaxed">
-            DialogMesh 把一次对话按<b>认知流水线</b>加工:
-            <span className="font-mono text-primary">Event → Observation → Hypothesis → Knowledge → Skill</span>
-            （事实 → 候选解释 → 竞争中的信念 → 稳定认知 → 可复用能力）。
-            本页控制这条流水线的<b>运行参数</b>（各阶段可调参数、降级级别、强一致读、
-            温度迁移、子图缓存）与<b>上下文组装</b>。改参数后立即生效, 调整了什么可在
-            「参数变更记录」里看到。
-          </p>
-        </motion.section>
 
         {/* 运行模式（自适应/固定） */}
         <motion.section {...fadeIn(0.04)} className="card-liquid shadow-card rounded-xl p-5">
