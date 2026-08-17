@@ -133,4 +133,6 @@ tools/
 # --- 模型与缓存（本地产物, 不入库） ---
 models/
 scripts/.recall_vec_cache*.json
+recall_rs/target/
+recall_rs/Cargo.lock
 gateway/gateway.exe
