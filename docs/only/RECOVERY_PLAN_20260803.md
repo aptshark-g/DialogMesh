@@ -1,6 +1,16 @@
 ﻿# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
+> ****2026-08-17 前端治理绑定完成 + B 类后端待开工（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_FRONTEND_BINDING_20260817.md`。
+> 完成: 治理白盒 8 端点前端绑定（GovernancePanel + MetaCenter「治理」tab,
+> tsc/build 绿 + 后端 200 验证）+ 用户并行 UI 重构 P1-E~P1-O/P2/P3 一起
+> 提交（8aeb070, 108 文件, 均未推）。召回/HyDE 收尾结论见交接 §二
+> （融合局部最优; HyDE 默认关; 评测语料自污染）。下一轮主线: B 类后端
+> 需求（UI_REFACTOR_PLAN §2 登记表 B1-B16）, 建议顺序 B15+B1+B16 →
+> B5 → B4+B6 → B10 → B3。环境: 8000 API 在跑（治理端点可用）; 网关/前端
+> 未起。工作区剩 4 个临时 py 未提交。
+> （新施工前必读: AGENTS.md + 追踪矩阵 + UI_REFACTOR_PLAN §2）
 > ****2026-08-17 HyDE 方向收尾（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_RECALL_ABLATION_20260816.md`
 > （延续）。完成: 域门控（_hot_is_doc query 级, 会话域完全禁用 HyDE）+
