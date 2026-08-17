@@ -683,7 +683,7 @@ export function ConversationGraphPage() {
               {/* Node Data Table */}
               {nodes.length > 0 && (
               <div className="px-4 pb-4">
-                <details className="bg-surface-card rounded-lg border border-subtle">
+                <details className="card-liquid shadow-card rounded-lg">
                   <summary className="px-4 py-2 text-xs font-medium text-text-secondary cursor-pointer hover:text-text-primary">
                     📋 节点数据 ({nodes.length})
                   </summary>

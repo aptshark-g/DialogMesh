@@ -67,7 +67,7 @@ import { useUIStore } from '../stores/uiStore';
 const ProviderCard = memo(({ provider, isExpanded, isActive, testResult, isTesting, isFetchingModels, form, activeModel, onToggle, onTest, onFetchModels, onSaveConfig, onRemove, saveLoading, removingProvider, onSetActive, onUpdateForm }:
     { provider: V6GatewayProvider; isExpanded: boolean; isActive: boolean; testResult: any; isTesting: boolean; isFetchingModels: boolean; form: {apiKey:string;baseUrl:string}; activeModel: string|undefined; onToggle: (n:string)=>void; onTest: (n:string)=>void; onFetchModels: (n:string)=>void; onSaveConfig: (n:string)=>void; onRemove: (n:string)=>void; saveLoading: boolean; removingProvider: string|null; onSetActive: (p:string,m:string)=>void; onUpdateForm: (p:string,f:string,v:string)=>void }) => (
       <div className={cn(
-        'bg-surface-card rounded-xl border transition-colors',
+        'card-liquid shadow-card rounded-xl transition-colors',
         isActive ? 'border-primary ring-1 ring-primary/20' : 'border-gray-200'
       )}>
         <button
@@ -606,7 +606,7 @@ export function GatewayPage() {
     const isHealthy = status?.healthy ?? false;
     const isLoading = statusLoading;
     return (
-      <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+      <div className="card-liquid shadow-card rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4 text-text-muted" />
@@ -757,7 +757,7 @@ export function GatewayPage() {
           >
             {/* Legacy Router Modes */}
             {router && (
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-3">
                   <Zap className="h-4 w-4" />
                   <span className="text-xs font-semibold">路由模式</span>
@@ -839,7 +839,7 @@ export function GatewayPage() {
             className="grid grid-cols-1 md:grid-cols-2 gap-4"
           >
             {/* Current Session */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <Coins className="h-4 w-4" />
                 <span className="text-xs font-semibold">当前会话</span>
@@ -860,7 +860,7 @@ export function GatewayPage() {
             </div>
 
             {/* All Sessions */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <BarChart3 className="h-4 w-4" />
                 <span className="text-xs font-semibold">累计用量</span>
@@ -886,7 +886,7 @@ export function GatewayPage() {
 
             {/* Legacy Tokens */}
             {tokens && (
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5 md:col-span-2">
+              <div className="card-liquid shadow-card rounded-xl p-5 md:col-span-2">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <Activity className="h-4 w-4" />
                   <span className="text-xs font-semibold">引擎 Token (Legacy)</span>
@@ -913,7 +913,7 @@ export function GatewayPage() {
             )}
 
             {/* 网关真实统计与计费（2026-08-13: switch /v1/stats + /v1/usage）*/}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5 md:col-span-2">
+            <div className="card-liquid shadow-card rounded-xl p-5 md:col-span-2">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <Zap className="h-4 w-4" />
                 <span className="text-xs font-semibold">网关真实统计与计费</span>
@@ -994,7 +994,7 @@ export function GatewayPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+            className="card-liquid shadow-card rounded-xl p-5"
           >
             <div className="flex items-center gap-2 text-text-muted mb-4">
               <Settings className="h-4 w-4" />
@@ -1080,7 +1080,7 @@ export function GatewayPage() {
             className="space-y-4"
           >
             {/* Health */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <Activity className="h-4 w-4" />
                 <span className="text-xs font-semibold">健康状态</span>
@@ -1125,7 +1125,7 @@ export function GatewayPage() {
             </div>
 
             {/* Stats */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <BarChart3 className="h-4 w-4" />
                 <span className="text-xs font-semibold">代理统计</span>
@@ -1182,7 +1182,7 @@ export function GatewayPage() {
 
             {/* Legacy Metrics */}
             {metrics && Object.keys(metrics).length > 0 && (
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <Activity className="h-4 w-4" />
                   <span className="text-xs font-semibold">系统指标 (Legacy)</span>
@@ -1206,7 +1206,7 @@ export function GatewayPage() {
             </div>
 
             {/* 引擎状态 (v4/status) */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-text-muted">
                   <Cpu className="h-4 w-4" />
@@ -1254,7 +1254,7 @@ export function GatewayPage() {
 
             {/* 运维操作: 深度分析 + 模块检查 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <FlaskConical className="h-4 w-4" />
                   <span className="text-xs font-semibold">深度分析 (Slow Path Checkpoint)</span>
@@ -1292,7 +1292,7 @@ export function GatewayPage() {
                 )}
               </div>
 
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <Search className="h-4 w-4" />
                   <span className="text-xs font-semibold">模块检查 (v4/inspect)</span>
@@ -1324,7 +1324,7 @@ export function GatewayPage() {
             </div>
 
             {/* Provider 切换 (引擎) */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <ArrowLeftRight className="h-4 w-4" />
                 <span className="text-xs font-semibold">Provider 切换 (引擎)</span>
@@ -1385,7 +1385,7 @@ export function GatewayPage() {
             </div>
 
             {/* 上下文配置 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-text-muted">
                   <SlidersHorizontal className="h-4 w-4" />

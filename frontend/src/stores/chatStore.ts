@@ -11,6 +11,7 @@ interface ChatStore {
   addAIMessage: (content: string, extra?: Partial<ChatMessage>) => void;
   setThinking: (v: boolean) => void;
   setSessionId: (id: string) => void;
+  loadSession: (id: string, msgs: ChatMessage[]) => void;
   setActiveProvider: (p: ProviderInfo | null) => void;
   clear: () => void;
 }
@@ -42,6 +43,7 @@ export const useChatStore = create<ChatStore>((set, _get) => {
     }),
     setThinking: (v) => set({ isThinking: v }),
     setSessionId: (id) => set({ sessionId: id }),
+    loadSession: (id, msgs) => set({ sessionId: id, messages: msgs, isThinking: false }),
     setActiveProvider: (p) => set({ activeProvider: p }),
     clear: () => set({ messages: [], sessionId: null }),
   };

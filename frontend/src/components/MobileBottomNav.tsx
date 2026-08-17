@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/chat/default', label: '聊天', icon: MessageSquare },
+  { to: '/chat', label: '聊天', icon: MessageSquare },
   { to: '/sessions', label: '会话', icon: History },
   { to: '/meta', label: '元认知', icon: Brain },
   { to: '/behavior', label: '行为', icon: Radar },

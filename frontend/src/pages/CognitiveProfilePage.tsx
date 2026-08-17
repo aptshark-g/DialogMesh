@@ -222,7 +222,7 @@ export function CognitiveProfilePage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="lg:col-span-3 bg-surface-card rounded-xl border border-border-subtle p-6 flex flex-col justify-between"
+            className="lg:col-span-3 card-liquid shadow-card rounded-xl p-6 flex flex-col justify-between"
           >
             <div>
               <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
@@ -268,7 +268,7 @@ export function CognitiveProfilePage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.05 }}
-            className="lg:col-span-5 bg-surface-card rounded-xl border border-border-subtle p-6 flex flex-col items-center justify-center"
+            className="lg:col-span-5 card-liquid shadow-card rounded-xl p-6 flex flex-col items-center justify-center"
           >
             <h3 className="text-sm font-semibold text-text-primary mb-4 self-start">
               认知维度雷达
@@ -283,7 +283,7 @@ export function CognitiveProfilePage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="lg:col-span-4 bg-surface-card rounded-xl border border-border-subtle p-6 flex flex-col justify-center"
+            className="lg:col-span-4 card-liquid shadow-card rounded-xl p-6 flex flex-col justify-center"
           >
             <h3 className="text-sm font-semibold text-text-primary mb-4">核心指标</h3>
             <MetricCards metrics={metricCards.length > 0 ? metricCards : undefined} />

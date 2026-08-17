@@ -10,6 +10,7 @@ import { CenterDock } from './dock/CenterDock';
 import { MobileBottomNav } from './MobileBottomNav.tsx';
 import { SidePanel } from './ui/SidePanel.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
+import { OmniboxPalette } from './omnibox/OmniboxPalette';
 
 export function Layout() {
   const location = useLocation();
@@ -21,11 +22,6 @@ export function Layout() {
 
       {/* Main area — middle + toolbar */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <Toolbar
-          sessionTitle="DialogMesh"
-          onSearch={(query) => console.log('Search:', query)}
-        />
-
         <div className="flex-1 flex overflow-hidden relative">
           {/* Main content */}
           <main className="flex-1 overflow-hidden relative pb-16 lg:pb-0">
@@ -36,7 +32,7 @@ export function Layout() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
-                className="h-full w-full overflow-y-auto"
+                className="h-full w-full overflow-y-auto pt-[52px]"
               >
                 <Suspense fallback={<PageLoader />}>
                   <ErrorBoundary>
@@ -45,6 +41,10 @@ export function Layout() {
                 </Suspense>
               </motion.div>
             </AnimatePresence>
+            {/* P1-G: 顶栏玻璃浮层 — 浮于滚动内容之上(macOS 式), 仅覆中栏, 右坞保持全高浮卡 */}
+            <div className="absolute top-0 inset-x-0 z-30">
+              <Toolbar sessionTitle="DialogMesh" />
+            </div>
           </main>
 
           {/* Right Panel */}
@@ -62,6 +62,8 @@ export function Layout() {
 
       {/* Global Popup / Confirm Dialog */}
       <ConfirmDialog />
+      {/* 万能搜索栏面板(P1-C, ⌘K 全局开合) */}
+      <OmniboxPalette />
     </div>
   );
 }

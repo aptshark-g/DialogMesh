@@ -40,6 +40,9 @@ const SIDEPANEL_MIN = 280;
 const SIDEPANEL_MAX = 560;
 const CENTERPANEL_MIN = 360;
 const CENTERPANEL_MAX = 720;
+const SIDEBAR_WIDTH_KEY = 'dm_sidebar_width';
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 320;
 
 function loadInitialWidth(): number {
   try {
@@ -56,6 +59,14 @@ function loadInitialCenterWidth(): number {
     if (v >= CENTERPANEL_MIN && v <= CENTERPANEL_MAX) return v;
   } catch {}
   return 480;
+}
+
+function loadInitialSidebarWidth(): number {
+  try {
+    const v = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '', 10);
+    if (v >= SIDEBAR_MIN && v <= SIDEBAR_MAX) return v;
+  } catch {}
+  return 228;
 }
 
 interface SidePanelState {
@@ -101,6 +112,9 @@ export interface UIStore {
   openCenterPanel: () => void;
   closeCenterPanel: () => void;
   setCenterPanelWidth: (width: number) => void;
+  /** P1-H: 左侧栏可拖拽宽度 */
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
   setInspectNode: (node: InspectNodeData | null) => void;
 
   openModal: (opts: Partial<Omit<ModalState, 'isOpen'>>) => void;
@@ -128,6 +142,7 @@ export const useUIStore = create<UIStore>((set) => ({
     isOpen: false,
     width: loadInitialCenterWidth(),
   },
+  sidebarWidth: loadInitialSidebarWidth(),
   inspectNode: null,
   modal: {
     isOpen: false,
@@ -197,6 +212,11 @@ export const useUIStore = create<UIStore>((set) => ({
     set((s) => ({
       centerPanel: { ...s.centerPanel, width: w },
     }));
+  },
+  setSidebarWidth: (width) => {
+    const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(width)));
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch {}
+    set({ sidebarWidth: w });
   },
   setInspectNode: (node) =>
     set({ inspectNode: node }),

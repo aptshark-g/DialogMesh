@@ -319,7 +319,7 @@ export function DeepChainPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+            className="card-liquid shadow-card rounded-xl p-5"
           >
             <div className="flex items-center gap-2 text-text-muted mb-4">
               {(() => {
@@ -348,7 +348,7 @@ export function DeepChainPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5 space-y-4"
+            className="card-liquid shadow-card rounded-xl p-5 space-y-4"
           >
             <div className="flex items-center gap-2 text-text-muted">
               <Brain className="h-4 w-4" />
@@ -454,7 +454,7 @@ export function DeepChainPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5 space-y-4"
+            className="card-liquid shadow-card rounded-xl p-5 space-y-4"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-text-muted">
@@ -560,19 +560,19 @@ export function DeepChainPage() {
         {/* 树形 Tab 统计摘要 */}
         {isTreeTab && treeData && !treeEmpty && (
           <motion.div {...fadeIn(0.15)} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="bg-surface-card rounded-lg border border-gray-200 p-3">
+            <div className="card-liquid shadow-card rounded-lg p-3">
               <span className="text-xs text-text-muted">顶层键</span>
               <p className="text-lg font-semibold text-text-primary">{Object.keys(treeData).length}</p>
             </div>
-            <div className="bg-surface-card rounded-lg border border-gray-200 p-3">
+            <div className="card-liquid shadow-card rounded-lg p-3">
               <span className="text-xs text-text-muted">嵌套层数</span>
               <p className="text-lg font-semibold text-text-primary">{getDepth(treeData)}</p>
             </div>
-            <div className="bg-surface-card rounded-lg border border-gray-200 p-3">
+            <div className="card-liquid shadow-card rounded-lg p-3">
               <span className="text-xs text-text-muted">总节点数</span>
               <p className="text-lg font-semibold text-text-primary">{getNodeCount(treeData)}</p>
             </div>
-            <div className="bg-surface-card rounded-lg border border-gray-200 p-3">
+            <div className="card-liquid shadow-card rounded-lg p-3">
               <span className="text-xs text-text-muted">数组项</span>
               <p className="text-lg font-semibold text-text-primary">{getArrayCount(treeData)}</p>
             </div>

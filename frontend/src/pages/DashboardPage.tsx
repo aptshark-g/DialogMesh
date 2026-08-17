@@ -75,7 +75,7 @@ export function DashboardPage() {
               </div>
             )}
             <button
-              onClick={() => navigate('/chat')}
+              onClick={() => navigate('/chat/new')}
               className="flex items-center gap-2 rounded-lg bg-primary text-white px-4 py-2.5 text-sm font-medium hover:bg-primary-dark transition-colors"
             >
               <Plus className="h-4 w-4" />
@@ -92,7 +92,7 @@ export function DashboardPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+            className="card-liquid shadow-card rounded-xl p-5"
           >
             <div className="flex items-center gap-2 text-text-muted mb-2">
               <MessageSquare className="h-4 w-4" />
@@ -104,7 +104,7 @@ export function DashboardPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.2 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5"
+            className="card-liquid shadow-card rounded-xl p-5"
           >
             <div className="flex items-center gap-2 text-text-muted mb-2">
               <Server className="h-4 w-4" />
@@ -128,7 +128,7 @@ export function DashboardPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.15 }}
-              className="lg:col-span-2 bg-surface-card rounded-xl border border-gray-200 p-5"
+              className="lg:col-span-2 card-liquid shadow-card rounded-xl p-5"
             >
               <TrendChart data={trendData} className="h-full" />
             </motion.div>
@@ -137,7 +137,7 @@ export function DashboardPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.25 }}
-              className="bg-surface-card rounded-xl border border-gray-200 p-5"
+              className="card-liquid shadow-card rounded-xl p-5"
             >
               <IntentDistribution data={intentDistribution} className="h-full" />
             </motion.div>
@@ -146,7 +146,7 @@ export function DashboardPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.35 }}
-              className="lg:col-span-3 bg-surface-card rounded-xl border border-gray-200 p-5"
+              className="lg:col-span-3 card-liquid shadow-card rounded-xl p-5"
             >
               <WordCloud data={wordCloud} className="h-full" />
             </motion.div>
@@ -154,7 +154,7 @@ export function DashboardPage() {
         </div>
 
         {/* Sessions */}
-        <div className="bg-surface-card rounded-xl border border-gray-200 overflow-hidden">
+        <div className="card-liquid shadow-card rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-primary">会话列表</h2>
             <button

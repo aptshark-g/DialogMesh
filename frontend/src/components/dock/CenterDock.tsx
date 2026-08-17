@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, PanelRight } from 'lucide-react';
 import { useUIStore, useDockContent } from '@/stores/uiStore';
 import { SURFACE_MAP } from '@/lib/surfaceRegistry';
 
@@ -14,6 +14,7 @@ export function CenterDock() {
   const width = useUIStore((s) => s.centerPanel.width);
   const dockContent = useDockContent();
   const closeCenterPanel = useUIStore((s) => s.closeCenterPanel);
+  const openSidePanel = useUIStore((s) => s.openSidePanel);
   const setCenterPanelWidth = useUIStore((s) => s.setCenterPanelWidth);
   const resizingRef = useRef(false);
 
@@ -54,7 +55,7 @@ export function CenterDock() {
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 40, opacity: 0 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="absolute inset-y-0 right-0 z-30 flex flex-col bg-surface-sidebar border-l border-subtle shadow-2xl overflow-hidden"
+          className="absolute inset-y-0 right-0 z-30 flex flex-col glass-panel overflow-hidden border-l border-hairline"
           style={{ width }}
           aria-label="悬浮内容坞"
         >
@@ -69,6 +70,15 @@ export function CenterDock() {
               {SURFACE_MAP[dockContent].title}
             </h2>
             <span className="text-[10px] text-text-muted">悬浮显示</span>
+            <button
+              type="button"
+              onClick={() => { openSidePanel(); closeCenterPanel(); }}
+              title="转为嵌入显示(右侧副槽)"
+              aria-label="转为嵌入显示"
+              className="p-1.5 rounded-md hover:bg-surface-card-hover text-text-muted hover:text-text-primary transition-colors"
+            >
+              <PanelRight className="w-4 h-4" />
+            </button>
             <button
               type="button"
               onClick={closeCenterPanel}

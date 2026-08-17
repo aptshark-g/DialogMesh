@@ -58,7 +58,11 @@ class TestExperienceStore(unittest.TestCase):
 
 
 class CharBigramVectorizer:
-    """字符二元组 one-hot（归一化）——语义近似模拟, 不加载真实模型。"""
+    """基于语义字的稀疏向量（模拟 BGE 尺度: 相关 1.0 / 无关 0.0）。
+
+    与真实模型解耦——测试验证"语义命中 + 噪声过滤"的行为, 不依赖具体
+    相似度尺度（BGE-M3 真实阈值 0.45 由 production 常量决定）。
+    """
 
     def __init__(self):
         self.calls = 0
@@ -67,12 +71,15 @@ class CharBigramVectorizer:
         self.calls += 1
         texts = [texts] if isinstance(texts, str) else texts
         out = []
-        for t in texts:
-            v = np.zeros(1024)
-            for i in range(len(t) - 1):
-                v[hash(t[i:i + 2]) % 1024] += 1
-            n = np.linalg.norm(v)
-            out.append(v / n if n else v)
+        for t in [str(x) for x in texts]:
+            if "网关" in t or "连" in t:
+                out.append([1.0, 0.0, 0.0])      # 网关/连接类
+            elif "空" in t or "deepseek" in t:
+                out.append([0.0, 1.0, 0.0])      # 空返回类
+            elif "解析" in t or "LLM" in t:
+                out.append([0.0, 0.0, 1.0])      # 解析类
+            else:
+                out.append([0.0, 0.0, 0.0])      # 无关 → 全零 → sim=0
         return np.array(out)
 
 

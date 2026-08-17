@@ -3,19 +3,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { specMove } from '@/lib/spec';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
   ChevronRight,
   FileUp,
+  FolderPlus,
   MessageSquare,
   Plus,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { getPersistenceGraphs } from '../api/v6';
 import type { V6PersistenceGraphsResponse } from '../types/api';
 import { useV6Sessions } from '../hooks/useV6Sessions';
+import { useProjectStore } from '../stores/projectStore';
 import { Toast } from '../components/ui/Toast';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PersistenceOverview } from '../components/sessions/PersistenceOverview';
@@ -37,6 +41,19 @@ export function SessionsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+
+  // P2 项目组:激活项目过滤 + 会话归属(localStorage, 后端落地见 B15/B16)
+  const projects = useProjectStore((s) => s.projects);
+  const sessionProject = useProjectStore((s) => s.sessionProject);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const assignSession = useProjectStore((s) => s.assignSession);
+  const [assignFor, setAssignFor] = useState<string | null>(null);
+
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
+  const visibleSessions = activeProject
+    ? sessions.filter((s) => sessionProject[s.name] === activeProject.id)
+    : sessions;
 
   const fetchGraphs = useCallback(async () => {
     setGraphsLoading(true);
@@ -69,7 +86,10 @@ export function SessionsPage() {
   );
 
   return (
-    <div className="min-h-full flex flex-col max-w-5xl mx-auto overflow-y-auto">
+    <div className="min-h-full flex flex-col max-w-5xl mx-auto px-6 lg:px-10 pt-6 pb-10 overflow-y-auto">
+      {assignFor && (
+        <div className="fixed inset-0 z-10" onClick={() => setAssignFor(null)} aria-hidden="true" />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -91,7 +111,7 @@ export function SessionsPage() {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/chat')}
+            onClick={() => navigate('/chat/new')}
             className={[
               'px-4 py-2 rounded-lg border border-primary text-primary',
               'text-sm font-medium hover:bg-primary/10',
@@ -125,10 +145,24 @@ export function SessionsPage() {
       />
 
       {/* 会话列表 */}
-      <div className="bg-surface-card rounded-xl border border-subtle shadow-card">
+      <div className="card-liquid shadow-card rounded-xl">
         <div className="px-5 py-4 border-b border-subtle flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-text-primary">会话列表
-            {!loading && (<span className="ml-2 text-xs font-normal text-text-muted">共 {sessions.length} 个</span>)}
+          <h2 className="text-sm font-semibold text-text-primary flex items-center">会话列表
+            {!loading && (<span className="ml-2 text-xs font-normal text-text-muted">共 {visibleSessions.length} 个</span>)}
+            {activeProject && (
+              <span className="ml-2 flex items-center gap-1.5 text-[11px] font-normal text-text-secondary bg-wash rounded-full pl-2 pr-1 py-0.5">
+                <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: activeProject.color }} />
+                {activeProject.name}
+                <button
+                  type="button"
+                  onClick={() => setActiveProject(null)}
+                  aria-label="清除项目过滤"
+                  className="p-0.5 rounded-full text-text-muted hover:text-text-primary transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
           </h2>
           <button
             type="button"
@@ -162,14 +196,21 @@ export function SessionsPage() {
               点击"新建 Session"开始对话,或"导入文档"写入外部知识
             </p>
           </div>
+        ) : visibleSessions.length === 0 ? (
+          <div className="px-5 py-16 text-center">
+            <MessageSquare className="h-10 w-10 text-text-muted mx-auto mb-3" />
+            <p className="text-sm text-text-secondary">「{activeProject?.name}」下暂无会话</p>
+            <p className="text-xs text-text-muted mt-1">在会话行上点归入按钮,可把会话放进该项目</p>
+          </div>
         ) : (
           <div className="divide-y divide-border-subtle">
-            {sessions.map((session, idx) => {
+            {visibleSessions.map((session, idx) => {
               const active = selected === session.name;
               return (
-                <motion.button
+                <motion.div
                   key={session.name}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.3, delay: Math.min(idx * 0.05, 0.5) }}
@@ -191,9 +232,61 @@ export function SessionsPage() {
                     <p className="text-sm font-medium text-text-primary truncate">
                       {session.name}
                     </p>
-                    <p className="text-xs text-text-muted mt-0.5">
+                    <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
+                      {sessionProject[session.name] && projects.find((p) => p.id === sessionProject[session.name]) && (
+                        <span
+                          className="w-2 h-2 rounded-[3px] shrink-0"
+                          style={{ background: projects.find((p) => p.id === sessionProject[session.name])!.color }}
+                        />
+                      )}
                       {(session.size / 1024).toFixed(1)} KB
                     </p>
+                  </div>
+                  {/* P2: 归入项目 */}
+                  <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setAssignFor(assignFor === session.name ? null : session.name)}
+                      aria-label={`把 ${session.name} 归入项目`}
+                      title="归入项目"
+                      className={cn(
+                        'p-1.5 rounded-md transition-colors hover:bg-wash',
+                        sessionProject[session.name]
+                          ? 'text-primary'
+                          : 'text-text-muted hover:text-primary'
+                      )}
+                    >
+                      <FolderPlus className="h-4 w-4" />
+                    </button>
+                    {assignFor === session.name && (
+                      <div onPointerMove={specMove}
+                      className="spec-panel absolute right-0 top-8 z-dropdown w-44 rounded-xl glass-panel overflow-hidden">
+                        {projects.length === 0 && (
+                          <div className="px-3 py-2.5 text-[11px] text-text-muted">暂无项目,请先在侧栏新建</div>
+                        )}
+                        {projects.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => { assignSession(session.name, p.id); setAssignFor(null); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-text-secondary hover:bg-wash hover:text-text-primary transition-colors"
+                          >
+                            <span className="w-2.5 h-2.5 rounded-[4px] shrink-0" style={{ background: p.color }} />
+                            <span className="truncate">{p.name}</span>
+                            {sessionProject[session.name] === p.id && <span className="ml-auto text-primary">✓</span>}
+                          </button>
+                        ))}
+                        {sessionProject[session.name] && (
+                          <button
+                            type="button"
+                            onClick={() => { assignSession(session.name, null); setAssignFor(null); }}
+                            className="w-full px-3 py-2 text-left text-xs text-text-muted hover:bg-wash hover:text-text-primary transition-colors border-t border-hairline"
+                          >
+                            移出项目
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <ChevronRight
                     className={cn(
@@ -203,7 +296,7 @@ export function SessionsPage() {
                         : 'text-text-muted group-hover:text-primary'
                     )}
                   />
-                </motion.button>
+                </motion.div>
               );
             })}
           </div>

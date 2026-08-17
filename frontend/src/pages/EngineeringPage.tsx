@@ -228,7 +228,7 @@ export function EngineeringPage() {
         )}
 
         {/* 递归地图 */}
-        <motion.section {...fadeIn(0.05)} className="bg-surface-card rounded-xl border border-gray-200 p-5">
+        <motion.section {...fadeIn(0.05)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center gap-2 text-text-muted mb-4">
             <FolderTree className="h-4 w-4" />
             <span className="text-xs font-semibold">递归地图</span>
@@ -317,7 +317,7 @@ export function EngineeringPage() {
         </motion.section>
 
         {/* 工程模块 */}
-        <motion.section {...fadeIn(0.1)} className="bg-surface-card rounded-xl border border-gray-200 p-5">
+        <motion.section {...fadeIn(0.1)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-text-muted">
               <Boxes className="h-4 w-4" />
@@ -400,7 +400,7 @@ export function EngineeringPage() {
         </motion.section>
 
         {/* 约束编辑 */}
-        <motion.section {...fadeIn(0.15)} className="bg-surface-card rounded-xl border border-gray-200 p-5">
+        <motion.section {...fadeIn(0.15)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center gap-2 text-text-muted mb-4">
             <Pencil className="h-4 w-4" />
             <span className="text-xs font-semibold">约束编辑</span>
@@ -453,7 +453,7 @@ export function EngineeringPage() {
         </motion.section>
 
         {/* 工程约束数据摘要 */}
-        <motion.section {...fadeIn(0.2)} className="bg-surface-card rounded-xl border border-gray-200 p-5">
+        <motion.section {...fadeIn(0.2)} className="card-liquid shadow-card rounded-xl p-5">
           <div className="flex items-center gap-2 text-text-muted mb-4">
             <Activity className="h-4 w-4" />
             <span className="text-xs font-semibold">工程约束数据摘要</span>

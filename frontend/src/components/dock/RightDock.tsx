@@ -8,8 +8,9 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Settings2, ChevronRight, ChevronDown, ArrowLeftRight, Check } from 'lucide-react';
+import { Settings2, ChevronRight, ChevronDown, ArrowLeftRight, Check, Maximize2 } from 'lucide-react';
 import { useUIStore, useDockContent, useSidePanelMode } from '@/stores/uiStore';
+import { specMove } from '@/lib/spec';
 import { useLayoutStore } from '@/lib/layoutStore';
 import {
   SURFACES,
@@ -30,10 +31,12 @@ export function RightDock() {
   const setSidePanelMode = useUIStore((s) => s.setSidePanelMode);
   const setSidePanelTitle = useUIStore((s) => s.setSidePanelTitle);
   const closeSidePanel = useUIStore((s) => s.closeSidePanel);
+  const openCenterPanel = useUIStore((s) => s.openCenterPanel);
   const isOpen = useUIStore((s) => s.sidePanel.isOpen);
   const pairing = useLayoutStore((s) => s.pairing);
   const rememberPairing = useLayoutStore((s) => s.rememberPairing);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherHover, setSwitcherHover] = useState<string | null>(null);
 
   // auto(联动): 路由变化 → 用户记忆优先, 其次注册表默认配对
   useEffect(() => {
@@ -71,18 +74,18 @@ export function RightDock() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      {/* 头部: 切换器 + 交换 + 联动/固定 + 收起 */}
-      <div className="flex items-center gap-1 px-2.5 pt-3 pb-1.5 shrink-0">
+      {/* 头部: 切换器 + 交换 + 联动/固定 + 转悬浮 + 收起 */}
+      <div className="flex items-center gap-1 px-3 pt-3.5 pb-2 shrink-0">
         {/* 表面切换器 */}
         <div className="relative flex-1 min-w-0">
           <button
             type="button"
             onClick={() => setSwitcherOpen((v) => !v)}
             aria-label="切换副槽内容"
-            className="flex items-center gap-1.5 max-w-full px-1.5 py-1 -ml-1.5 rounded-md hover:bg-surface-card-hover transition-colors"
+            className="flex items-center gap-1.5 max-w-full px-2.5 py-[5px] rounded-full bg-wash hover:bg-wash-strong transition-colors"
           >
             <ActiveIcon className="w-3.5 h-3.5 text-text-muted shrink-0" />
-            <span className="text-sm font-semibold text-text-primary truncate">
+            <span className="text-xs font-medium text-text-primary truncate">
               {active.title}
             </span>
             <ChevronDown className="w-3 h-3 text-text-muted shrink-0" />
@@ -98,9 +101,10 @@ export function RightDock() {
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.12 }}
-                className="absolute left-0 top-full mt-1 z-50 w-44 rounded-xl border border-subtle bg-surface-card shadow-modal overflow-hidden"
+                onPointerMove={specMove}
+                className="spec-panel absolute left-0 top-full mt-1 z-50 w-44 rounded-xl glass-panel overflow-hidden"
               >
-                <div className="py-1">
+                <div className="py-1" onMouseLeave={() => setSwitcherHover(null)}>
                   {SURFACES.map((s) => {
                     const Icon = s.icon;
                     const isActive = s.key === dockContent;
@@ -109,13 +113,21 @@ export function RightDock() {
                         key={s.key}
                         type="button"
                         onClick={() => chooseSurface(s.key)}
+                        onMouseEnter={() => setSwitcherHover(s.key)}
                         className={cn(
-                          'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
+                          'relative w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
                           isActive
                             ? 'text-primary font-medium'
-                            : 'text-text-secondary hover:bg-surface-card-hover hover:text-text-primary'
+                            : 'text-text-secondary hover:text-text-primary'
                         )}
                       >
+                        {!isActive && switcherHover === s.key && (
+                          <motion.span
+                            layoutId="dock-switcher-pill"
+                            className="absolute inset-0 rounded-md bg-wash pointer-events-none"
+                            transition={{ type: 'spring', stiffness: 700, damping: 45 }}
+                          />
+                        )}
                         <Icon className="w-3.5 h-3.5 shrink-0" />
                         <span className="flex-1 truncate">{s.label}</span>
                         {isActive && <Check className="w-3 h-3 shrink-0" />}
@@ -158,6 +170,17 @@ export function RightDock() {
         >
           <Settings2 className="w-3 h-3" />
           <span className="hidden lg:inline">{mode === 'auto' ? '联动' : '固定'}</span>
+        </button>
+
+        {/* 转悬浮: 副槽 → 中间浮层(P1-C placement 归坞头, DockPicker 退出侧栏) */}
+        <button
+          type="button"
+          onClick={() => { openCenterPanel(); closeSidePanel(); }}
+          title="转为悬浮显示(中间浮层)"
+          aria-label="转为悬浮显示"
+          className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-surface-card-hover transition-colors"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
         </button>
 
         {/* 收起 */}

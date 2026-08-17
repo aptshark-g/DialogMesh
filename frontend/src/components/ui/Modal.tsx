@@ -58,7 +58,7 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-scrim backdrop-blur-sm"
           onClick={handleOverlayClick}
           role="dialog"
           aria-modal="true"

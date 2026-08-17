@@ -1,7 +1,7 @@
 /** RightDock 候选内容 — 三屏结构中右栏可切换的各类上下文面板。 */
 import { useState, useEffect } from 'react';
 import type { FC, ReactNode } from 'react';
-import { RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2 } from 'lucide-react';
+import { RefreshCw, Loader2, AlertTriangle, Radar, Pin, X, Undo2, Network, SlidersHorizontal } from 'lucide-react';
 import { CognitiveRadarChart } from '../CognitiveRadarChart';
 import { MetricCards } from '../MetricCards';
 import { useV6Profile } from '../../hooks/useV6Profile';
@@ -18,7 +18,7 @@ import type { V6HeuristicsResponse, V6ChangelogResponse, V6ChangelogEvent } from
    title 保留在 props 类型中，避免改动全部调用点。 */
 export const DockPanel: FC<{ title: string; children: ReactNode }> = ({ children }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    <div className="flex-1 overflow-y-auto px-4 pt-2 pb-4 space-y-4 scrollbar-hide">{children}</div>
+    <div className="flex-1 overflow-y-auto px-3.5 pt-0.5 pb-3 space-y-4 scrollbar-hide">{children}</div>
   </div>
 );
 
@@ -30,6 +30,26 @@ export const DockError: FC<{ text: string }> = ({ text }) => (
   <div className="flex items-center gap-2 text-xs text-status-error px-4 py-6">
     <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
     {text}
+  </div>
+);
+
+/** 模式未就绪占位(P1-C) — 诚实说明该模式要做什么、缺哪个后端接口, 不放假数据 */
+const ModePending: FC<{
+  icon: FC<{ className?: string }>;
+  title: string;
+  need: string;
+  desc: string;
+  missing: string;
+}> = ({ icon: Icon, title, need, desc, missing }) => (
+  <div className="flex flex-col items-center text-center px-3 py-8">
+    <div className="w-10 h-10 rounded-full bg-wash flex items-center justify-center mb-3">
+      <Icon className="w-4 h-4 text-text-muted" />
+    </div>
+    <p className="text-xs font-semibold text-text-primary">{title}</p>
+    <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">{desc}</p>
+    <p className="text-[10px] text-text-muted mt-3 px-2 py-1 rounded bg-wash">
+      待后端接口 {need}: {missing}
+    </p>
   </div>
 );
 
@@ -126,7 +146,7 @@ export function NodeDetailDockContent() {
       <button
         type="button"
         onClick={closeDock}
-        className="w-full px-3 py-1.5 rounded-md bg-surface-card border border-subtle text-xs text-text-secondary hover:text-text-primary hover:bg-surface-card-hover transition-colors"
+        className="w-full px-3 py-1.5 rounded-md bg-wash text-xs text-text-secondary hover:text-text-primary hover:bg-surface-card-hover transition-colors"
       >
         关闭
       </button>
@@ -177,7 +197,7 @@ export function ProfileDockContent() {
       ) : !hasDims ? (
         /* 去示范数据:第一次使用/后端未连接 — 诚实空态, 不放假数值 */
         <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div className="w-10 h-10 rounded-full bg-surface-card border border-subtle flex items-center justify-center mb-3">
+          <div className="w-10 h-10 rounded-full bg-wash flex items-center justify-center mb-3">
             <Radar className="w-4 h-4 text-text-muted" />
           </div>
           <p className="text-xs text-text-muted">暂无画像数据</p>
@@ -244,6 +264,8 @@ export function ContextDockContent() {
   const togglePin = useContextWorkbench((s) => s.togglePin);
   const toggleRemove = useContextWorkbench((s) => s.toggleRemove);
   const resetMarks = useContextWorkbench((s) => s.resetMarks);
+  const mode = useContextWorkbench((s) => s.mode);
+  const setMode = useContextWorkbench((s) => s.setMode);
 
   const load = (silent = false) => {
     if (!silent) setLoading(true);
@@ -284,8 +306,29 @@ export function ContextDockContent() {
 
   return (
     <DockPanel title="上下文工作台">
+      {/* 模式切换: 列表(线性挑选) / 图结构(按图谱圈选, B11) / 精调(最终注入分段级, B12) */}
+      <div className="flex items-center gap-0.5 p-0.5 rounded-card bg-wash">
+        {(['list', 'graph', 'finetune'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            aria-label={`工作台模式:${m === 'list' ? '列表' : m === 'graph' ? '图结构' : '精调'}`}
+            className={cn(
+              'flex-1 px-2 py-1 rounded-md text-[11px] transition-colors',
+              mode === m
+                ? 'bg-primary/10 text-primary font-medium'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            {m === 'list' ? '列表' : m === 'graph' ? '图结构' : '精调'}
+          </button>
+        ))}
+      </div>
+      {mode === 'list' && (
+      <>
       {/* 本轮注入条: 域分布 + token 占比 */}
-      <div className="bg-surface-card rounded-lg border border-subtle p-3 space-y-2">
+      <div className="bg-wash rounded-card py-2.5 px-3 space-y-2">
         <div className="flex items-baseline justify-between">
           <span className="text-xs font-semibold text-text-primary">本轮注入</span>
           <span className="text-[11px] text-text-muted">
@@ -352,8 +395,8 @@ export function ContextDockContent() {
             <div
               key={key}
               className={cn(
-                'bg-surface-card rounded-lg border p-2.5 transition-opacity',
-                mark === 'pinned' ? 'border-primary/60' : 'border-subtle',
+                'bg-wash rounded-card p-2.5 transition-opacity',
+                mark === 'pinned' && 'shadow-[inset_2px_0_0_#D97706]',
                 mark === 'removed' && 'opacity-45'
               )}
             >
@@ -404,6 +447,26 @@ export function ContextDockContent() {
           <DockEmpty text="暂无上下文条目 — 发送消息后,这里展示本轮编译注入的记忆片段" />
         )}
       </div>
+      </>
+      )}
+      {mode === 'graph' && (
+        <ModePending
+          icon={Network}
+          title="图结构选择"
+          need="B11"
+          desc="按图谱结构圈选注入范围: 节点即记忆, 沿边扩散选择, 选中的子图作为下轮编译的注入边界。"
+          missing="条目 ↔ 图谱节点映射 + 选中子图写接口"
+        />
+      )}
+      {mode === 'finetune' && (
+        <ModePending
+          icon={SlidersHorizontal}
+          title="最终注入精调"
+          need="B12"
+          desc="查看送入 LLM 的最终上下文实际分段(system / 记忆 / 工具结果), 逐段增删改, 确认后作用于当轮。"
+          missing="编译快照读接口 + 分段级覆写写接口"
+        />
+      )}
       {/* GAP-4: 压缩质量反馈闭环 */}
       <div className="border-t border-hairline pt-3">
         <div className="text-xs text-text-muted mb-2">压缩质量反馈</div>
@@ -484,7 +547,7 @@ export function EngineeringDockContent() {
     <DockPanel title="工程链">
       <div className="space-y-1.5">
         {rows.map(([k, v]) => (
-          <div key={k} className="flex items-start justify-between gap-2 text-xs bg-surface-card rounded-lg border border-subtle px-2.5 py-2">
+          <div key={k} className="flex items-start justify-between gap-2 text-xs bg-wash rounded-card px-2.5 py-2">
             <span className="text-text-secondary break-all">{k}</span>
             <span className="text-text-muted text-[10px] shrink-0 max-w-[45%] truncate">
               {typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)}
@@ -508,11 +571,11 @@ export function TasksDockContent() {
   return (
     <DockPanel title="任务">
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-surface-card rounded-lg border border-subtle p-3 text-center">
+        <div className="bg-wash rounded-card p-3 text-center">
           <div className="text-lg font-semibold text-text-primary">{nodes}</div>
           <div className="text-text-muted mt-0.5">节点</div>
         </div>
-        <div className="bg-surface-card rounded-lg border border-subtle p-3 text-center">
+        <div className="bg-wash rounded-card p-3 text-center">
           <div className="text-lg font-semibold text-text-primary">{edges}</div>
           <div className="text-text-muted mt-0.5">连线</div>
         </div>
@@ -613,11 +676,11 @@ export function HeuristicsDockContent() {
   return (
     <DockPanel title="启发">
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-surface-card rounded-lg border border-subtle p-2.5 text-center">
+        <div className="bg-wash rounded-card p-2.5 text-center">
           <div className="text-base font-semibold text-text-primary">{stats?.total ?? 0}</div>
           <div className="text-text-muted mt-0.5">库存（活跃 {stats?.active ?? 0}）</div>
         </div>
-        <div className="bg-surface-card rounded-lg border border-subtle p-2.5 text-center">
+        <div className="bg-wash rounded-card p-2.5 text-center">
           <div className="text-base font-semibold text-text-primary">
             {stats?.avg_coverage != null ? `${Math.round(stats.avg_coverage * 100)}%` : '—'}
           </div>
@@ -626,7 +689,7 @@ export function HeuristicsDockContent() {
       </div>
       <div className="space-y-2">
         {items.map((h) => (
-          <details key={h.heuristic_id} className="bg-surface-card rounded-lg border border-subtle">
+          <details key={h.heuristic_id} className="bg-wash rounded-card">
             <summary className="px-2.5 py-2 text-xs text-text-primary cursor-pointer hover:text-primary">
               {h.pattern_desc}
               <span className="ml-2 text-[10px] text-text-muted">
@@ -733,7 +796,7 @@ export function ChangelogDockContent() {
         {events.map((ev, i) => {
           const status = ev.status ?? 'applied';
           return (
-            <div key={`${ev.ts}-${i}`} className="bg-surface-card rounded-lg border border-subtle p-2.5 space-y-1">
+            <div key={`${ev.ts}-${i}`} className="bg-wash rounded-card p-2.5 space-y-1">
               <div className="flex items-center gap-2 text-[11px]">
                 <span className={cn('px-1.5 py-0.5 rounded border font-medium',
                                     STATUS_STYLE[status] ?? STATUS_STYLE.applied)}>

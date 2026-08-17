@@ -7,7 +7,6 @@ import { initDebug, enableBackendSync } from './lib/debug';
 
 initDebug();
 enableBackendSync();
-import { FloatingActionButton } from './components/FloatingActionButton.tsx';
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { ContentScriptBridge } from './components/ContentScriptBridge.tsx';
 
@@ -32,7 +31,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
-          <Route path="chat" element={<ChatPage />} />
+          <Route path="chat/:sessionId?" element={<ChatPage />} />
           <Route path="graph" element={<ConversationGraphPage />} />
           <Route path="profile" element={<CognitiveProfilePage />} />
           <Route path="tasks" element={<TaskPlanningPage />} />
@@ -47,7 +46,6 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
-      <FloatingActionButton />
     </BrowserRouter>
     </ErrorBoundary>
   );

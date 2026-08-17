@@ -61,6 +61,9 @@ import type {
   V6TtlResponse, V6TtlTickResponse, V6SubgraphCacheResponse,
   V6HeuristicsResponse,
   V6ChangelogResponse, V6InterveneRequest,
+  V6GovernorStats, V6DiagnosisStats, V6SystemProfile,
+  V6RepairsResponse, V6ProbeStats, V6WarmupStats,
+  V6BlueprintSuggestions, V6LlmCallsResponse,
 } from '../types/api';
 
 // B5（2026-08-07）: 默认相对路径 → 同源代理（dev server / nginx），
@@ -801,4 +804,77 @@ export function respondCheckpoint(req: CheckpointRespondRequest): Promise<Checkp
     body: JSON.stringify(req),
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 运行治理白盒 (Governance, 2026-08-17 前端绑定)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** ExecutionGovernor 熔断/幂等/治理动作（A10 小环白盒）。 */
+export function getGovernorStats(): Promise<V6GovernorStats> {
+  return apiFetch<V6GovernorStats>('/v6/governor');
+}
+
+/** 元认知异步诊断队列 + 报告（A10 大环白盒）。 */
+export function getDiagnosisStats(): Promise<V6DiagnosisStats> {
+  return apiFetch<V6DiagnosisStats>('/v6/diagnosis');
+}
+
+/** 系统自画像（元认知读自己的模块地图/覆盖/薄弱点）。 */
+export function getSystemProfile(force = false): Promise<V6SystemProfile> {
+  return apiFetch<V6SystemProfile>(`/v6/system-profile${force ? '?force=true' : ''}`);
+}
+
+/** 自修复待审队列。 */
+export function getRepairs(): Promise<V6RepairsResponse> {
+  return apiFetch<V6RepairsResponse>('/v6/repairs');
+}
+
+/** 审批 gate: 确认修复包 → 真实应用（git apply + 验证 + 失败回滚）。 */
+export function applyRepair(repairId: string): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/v6/repairs/${encodeURIComponent(repairId)}/apply`, {
+    method: 'POST',
+  });
+}
+
+/** 验证结果回写（passed → applied / failed → 建议回滚）。 */
+export function confirmRepair(repairId: string, passed: boolean): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/v6/repairs/${encodeURIComponent(repairId)}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ passed }),
+  });
+}
+
+/** 主动体检状态 + 历史（无触发也定期自检）。 */
+export function getProbeStats(): Promise<V6ProbeStats> {
+  return apiFetch<V6ProbeStats>('/v6/probe');
+}
+
+/** 立即执行一轮主动体检（异步入诊断器队列）。 */
+export function runProbe(): Promise<{ ok: boolean; run?: unknown; error?: string }> {
+  return apiFetch<{ ok: boolean; run?: unknown; error?: string }>('/v6/probe/run', {
+    method: 'POST',
+  });
+}
+
+/** 启动期预热状态 + 历史。 */
+export function getWarmupStats(): Promise<V6WarmupStats> {
+  return apiFetch<V6WarmupStats>('/v6/warmup');
+}
+
+/** 手动触发一轮预热（同步, 预算截断）。 */
+export function runWarmup(): Promise<{ ok: boolean; run?: unknown; error?: string }> {
+  return apiFetch<{ ok: boolean; run?: unknown; error?: string }>('/v6/warmup/run', {
+    method: 'POST',
+  });
+}
+
+/** 蓝图自增长建议（高频意图 → 建议模板）。 */
+export function getBlueprintSuggestions(): Promise<V6BlueprintSuggestions> {
+  return apiFetch<V6BlueprintSuggestions>('/v6/blueprint/suggestions');
+}
+
+/** LLM 调用观测（各阶段延迟/空返回/错误 + 明细, trace_id 可展）。 */
+export function getLlmCalls(recent = 20): Promise<V6LlmCallsResponse> {
+  return apiFetch<V6LlmCallsResponse>(`/v6/llm-calls?recent=${recent}`);
 }

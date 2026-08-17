@@ -276,7 +276,7 @@ export function BehaviorPage() {
             </div>
 
             {/* 模式表格 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <ListChecks className="h-4 w-4" />
                 <span className="text-xs font-semibold">行为模式(Trigger → Predicted)</span>
@@ -373,7 +373,7 @@ export function BehaviorPage() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="bg-surface-card rounded-xl border border-gray-200 p-5 space-y-5"
+            className="card-liquid shadow-card rounded-xl p-5 space-y-5"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-text-muted">
@@ -488,7 +488,7 @@ export function BehaviorPage() {
             </div>
 
             {/* 权重条形图 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <Scale className="h-4 w-4" />
                 <span className="text-xs font-semibold">惯性权重分布(by_weight)</span>
@@ -523,7 +523,7 @@ export function BehaviorPage() {
             </div>
 
             {/* 设计约束 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <ShieldAlert className="h-4 w-4" />
                 <span className="text-xs font-semibold">设计约束(constraints)</span>
@@ -551,7 +551,7 @@ export function BehaviorPage() {
 
 function StatCard({ label, value, accent }: { label: string; value: number | string; accent?: string }) {
   return (
-    <div className="bg-surface-card rounded-lg border border-gray-200 p-3">
+    <div className="card-liquid shadow-card rounded-lg p-3">
       <span className="text-xs text-text-muted">{label}</span>
       <p className={cn('text-lg font-semibold', accent ?? 'text-text-primary')}>{value}</p>
     </div>

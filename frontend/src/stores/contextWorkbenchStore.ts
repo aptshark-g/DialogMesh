@@ -10,9 +10,14 @@ import { create } from 'zustand';
 
 export type EntryMark = 'pinned' | 'removed';
 
+/** 工作台模式: 列表(线性挑选, 已实现) / 图结构(按图谱圈选, 待 B11) / 精调(最终注入分段级, 待 B12) */
+export type WorkbenchMode = 'list' | 'graph' | 'finetune';
+
 interface ContextWorkbenchState {
   /** 指纹 → 标记; 无键 = 正常态 */
   marks: Record<string, EntryMark>;
+  mode: WorkbenchMode;
+  setMode: (mode: WorkbenchMode) => void;
   togglePin: (key: string) => void;
   toggleRemove: (key: string) => void;
   resetMarks: () => void;
@@ -20,6 +25,8 @@ interface ContextWorkbenchState {
 
 export const useContextWorkbench = create<ContextWorkbenchState>((set) => ({
   marks: {},
+  mode: 'list',
+  setMode: (mode) => set({ mode }),
   togglePin: (key) =>
     set((s) => {
       const marks = { ...s.marks };

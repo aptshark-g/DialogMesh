@@ -65,10 +65,10 @@ export default function ChatInput({
   const isOverLimit = maxLength !== undefined && charCount > maxLength;
 
   return (
-    <div className="px-3 pt-1 pb-3 md:px-4">
-      {/* 主输入容器 — 浮动圆角条, 与消息列同宽居中(max-w-3xl) */}
-      <div className="w-full max-w-3xl mx-auto">
-      <div className="flex items-end gap-2 rounded-2xl border border-border-subtle bg-surface-card shadow-card p-2 md:p-3 focus-within:border-border-strong transition-colors">
+    <div className="px-3 pt-1 pb-4 md:px-4">
+      {/* 主输入容器 — 浮动药丸条, 与消息列同宽居中(720px 对齐 mockup v2) */}
+      <div className="w-full max-w-[720px] mx-auto">
+      <div className="flex items-end gap-2 rounded-full border border-border-subtle bg-surface-card shadow-card py-1.5 pl-4 pr-1.5 focus-within:border-border-strong transition-colors">
         <div className="flex-1 relative flex flex-col">
           <textarea
             ref={textareaRef}
@@ -77,7 +77,7 @@ export default function ChatInput({
             onKeyDown={handleKeyDown}
             disabled={disabled}
             rows={1}
-            className="w-full resize-none bg-transparent border-none px-0 py-0 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full resize-none bg-transparent border-none px-0 py-0 text-[13.5px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder={disabled ? 'AI 思考中...' : placeholder}
           />
           {showCharCount && (
@@ -93,10 +93,10 @@ export default function ChatInput({
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-          className="flex-shrink-0 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-white hover:shadow-amber transition-shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+          className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary text-white hover:shadow-amber transition-shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           aria-label="发送"
         >
-          {disabled ? <Sparkles size={16} className="md:w-[18px] md:h-[18px]" /> : <Send size={16} className="md:w-[18px] md:h-[18px]" />}
+          {disabled ? <Sparkles size={14} /> : <Send size={14} />}
         </motion.button>
       </div>
 

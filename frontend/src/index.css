@@ -37,6 +37,29 @@ html.light body {
     --border-strong: #4A4560;
     --border-hairline: rgba(255, 255, 255, 0.06);
     --bg-dock: #1F1B2C;
+    /* P1-D: wash 浅色薄纱(mockup v2 --wash/--track), 切换器药丸/次级填充用 */
+    --bg-wash: rgba(255, 255, 255, 0.05);
+    --bg-wash-strong: rgba(255, 255, 255, 0.09);
+    /* P1-E: 浮层玻璃 + 柔和投影(苹果式: 基底平直, 质感只给浮层) */
+    --bg-glass: rgba(26, 23, 36, 0.72);
+    /* P1-G: 面板级玻璃(侧栏/右坞) — 更高不透明度保文字可读 */
+    --bg-glass-strong: rgba(23, 19, 33, 0.86);
+    /* P1-H: 遮罩(独立 token, 绕开 light.css 的 [class*=bg-surface] 通配) */
+    --bg-scrim: rgba(6, 5, 10, 0.55);
+    /* P1-H: 液体玻璃(Liquid Glass 近似) — 边缘光/顶部内高光/底部内阴影 */
+    --glass-rim-top: rgba(255, 255, 255, 0.22);
+    --glass-rim-mid: rgba(255, 255, 255, 0.05);
+    --glass-rim-bot: rgba(0, 0, 0, 0.25);
+    --glass-hi: rgba(255, 255, 255, 0.14);
+    --glass-losh: rgba(0, 0, 0, 0.28);
+    /* P1-H: 结构条软投影 + 侧栏指针镜面高光 */
+    --shadow-bar-color: rgba(0, 0, 0, 0.30);
+    --spec-color: rgba(255, 255, 255, 0.10);
+    --spec-panel-color: rgba(255, 255, 255, 0.05);
+    --bg-card-liquid: rgba(26, 23, 36, 0.62);
+    --card-spec-color: rgba(255, 255, 255, 0.04);
+    --card-rim-glow: rgba(255, 255, 255, 0.50);
+    --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.22);
 
     --r-card: 10px;
     --r-pill: 999px;
@@ -82,6 +105,24 @@ html.light body {
     --border-strong: #9CA3AF;
     --border-hairline: rgba(28, 28, 26, 0.08);
     --bg-dock: #FFFFFF;
+    --bg-wash: rgba(28, 28, 26, 0.045);
+    --bg-wash-strong: rgba(28, 28, 26, 0.09);
+    --bg-glass: rgba(255, 255, 255, 0.72);
+    --bg-glass-strong: rgba(248, 246, 241, 0.86);
+    --bg-scrim: rgba(28, 28, 26, 0.18);
+    --glass-rim-top: rgba(255, 255, 255, 0.85);
+    --glass-rim-mid: rgba(28, 28, 26, 0.06);
+    --glass-rim-bot: rgba(28, 28, 26, 0.14);
+    --glass-hi: rgba(255, 255, 255, 0.65);
+    --glass-losh: rgba(60, 50, 30, 0.10);
+    --shadow-bar-color: rgba(60, 50, 30, 0.12);
+    /* 浅色底上白光无对比 → 品牌琥珀色调光斑(研究: 亮色的质感靠色彩/边缘近白 rim/柔和阴影) */
+    --spec-color: rgba(217, 119, 6, 0.14);
+    --spec-panel-color: rgba(217, 119, 6, 0.08);
+    --bg-card-liquid: rgba(255, 255, 255, 0.78);
+    --card-spec-color: rgba(217, 119, 6, 0.07);
+    --card-rim-glow: rgba(217, 119, 6, 0.45);
+    --shadow-float: 0 12px 32px rgba(60, 50, 30, 0.12), 0 2px 8px rgba(60, 50, 30, 0.08);
   }
 
   html {
@@ -272,4 +313,123 @@ html.light body {
     display: none;
   }
 
+}
+
+/* P1-F 命名缺口修复:tailwind.config 的 colors.border.* 嵌套结构只生成 border-border-* 工具类,
+   全站 60 文件 201 处使用的 border-subtle / border-medium / border-hairline 从未被生成,
+   边框色一直回落 preflight 默认 #E5E7EB(暗色下呈现为"白线")。
+   这里在 utilities 层补真工具类,颜色走双主题 CSS 变量;
+   同层内 hover:/focus: 变体带伪类、特异性更高,交互描边不受影响。 */
+@layer utilities {
+  .border-subtle { border-color: var(--border-subtle); }
+  .border-medium { border-color: var(--border-medium); }
+  .border-hairline { border-color: var(--border-hairline); }
+}
+
+/* ═══ P1-H: 液体玻璃浮层材质(Liquid Glass 近似) ═══
+   渐变边缘光(padding-box/border-box 双背景层)+ 顶部内高光 + 底部内阴影(厚度感)。
+   真折射需 SVG filter/shader, 代价高且脆, 不做。 */
+@layer components {
+  .glass-panel {
+    background: linear-gradient(var(--bg-glass), var(--bg-glass)) padding-box,
+                linear-gradient(165deg, var(--glass-rim-top), var(--glass-rim-mid) 38%, var(--glass-rim-bot)) border-box;
+    border: 1px solid transparent;
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    box-shadow: inset 0 1px 0 var(--glass-hi),
+                inset 0 -10px 18px -10px var(--glass-losh),
+                var(--shadow-float);
+  }
+  /* 页面级液体卡片(P1-J 试点) — 克制的 rim + 半透明基底透出环境光;
+     无 backdrop-filter(页面卡随内容滚动, 背后是静态底, 省了模糊开销) */
+  .card-liquid {
+    position: relative;
+    background: linear-gradient(var(--bg-card-liquid), var(--bg-card-liquid)) padding-box,
+                linear-gradient(165deg, var(--glass-rim-top), var(--glass-rim-mid) 30%, transparent 62%) border-box;
+    border: 1px solid transparent;
+  }
+  /* 卡片指针追光(P1-M) — ellipse 百分比半径随卡片尺寸自适应(大卡大光晕/小卡收敛);
+     ::before 叠于内容之下, 半透明基底透光不遮字; 全局 pointermove 委托写 --mx/--my */
+  .card-liquid::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), var(--card-spec-color), transparent 70%);
+    opacity: 0; transition: opacity 0.35s ease;
+  }
+  .card-liquid:hover::before { opacity: 1; }
+  /* 边缘 rim 追光(P1-N, 业界 border-glow 共识: Win10 Fluent 照亮边框 / Cruip spotlight card / antd BorderBeam 同款) —
+     mask-composite 差集裁出 1.5px 边缘环带, 光只落在边框上: 鼠标近哪段边缘哪段亮,
+     物理对应"光透过玻璃照亮磨砂倒角"; 与 ::before 表面微光叠乘出材质感 */
+  .card-liquid::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    padding: 1.5px;
+    background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), var(--card-rim-glow), transparent 70%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+    opacity: 0; transition: opacity 0.3s ease;
+  }
+  .card-liquid:hover::after { opacity: 1; }
+  /* 面板级液体玻璃(更高不透明度基底, 右坞浮卡等) */
+  .glass-panel-strong {
+    background: linear-gradient(var(--bg-glass-strong), var(--bg-glass-strong)) padding-box,
+                linear-gradient(165deg, var(--glass-rim-top), var(--glass-rim-mid) 38%, var(--glass-rim-bot)) border-box;
+    border: 1px solid transparent;
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    box-shadow: inset 0 1px 0 var(--glass-hi),
+                inset 0 -10px 18px -10px var(--glass-losh),
+                var(--shadow-float);
+  }
+}
+
+@layer utilities {
+  /* 结构条软投影 — 分隔立体感来自光影而非更粗的线 */
+  .shadow-bar-b { box-shadow: inset 0 1px 0 var(--glass-hi), 0 10px 28px -10px var(--shadow-bar-color); }
+  .shadow-bar-t { box-shadow: inset 0 1px 0 var(--glass-hi), 0 -10px 28px -10px var(--shadow-bar-color); }
+  /* 右缘渐变发丝线 — 顶部受光强, 向下渐隐(宿主需已定位) */
+  .edge-fade-r::after {
+    content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
+    background: linear-gradient(to bottom, var(--glass-rim-top), var(--glass-rim-mid) 45%, transparent);
+    pointer-events: none;
+  }
+  /* 逐按钮镜面高光(spotlight card 式, Linear/Vercel 同款做法) — 约束在按钮范围内,
+     overflow 裁剪圆角; 只写 2 个 CSS 变量, 仅小面积重绘, 无布局抖动 */
+  .spec-item::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(110px circle at var(--mx, 50%) var(--my, 50%), var(--spec-color), transparent 70%);
+    opacity: 0; transition: opacity 0.25s ease;
+  }
+  .spec-item:hover::before { opacity: 1; }
+  /* 按钮 rim 边缘追光(P1-O 风格统一, 同 card-liquid::after 原理) — 小尺寸下边缘几乎全程被点亮 */
+  .spec-item::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    padding: 1.5px;
+    background: radial-gradient(130px circle at var(--mx, 50%) var(--my, 50%), var(--card-rim-glow), transparent 70%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+    opacity: 0; transition: opacity 0.25s ease;
+  }
+  .spec-item:hover::after { opacity: 1; }
+  /* 浮层追光(liquid glass sheen) — 320px 大半径低透明度, 光在玻璃表面流过 */
+  .spec-panel::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, -30%), var(--spec-panel-color), transparent 70%);
+    opacity: 0; transition: opacity 0.3s ease;
+  }
+  .spec-panel:hover::before { opacity: 1; }
+  /* 浮层 rim 边缘追光(P1-O 风格统一) — omnibox/切换器下拉边缘随鼠标流光 */
+  .spec-panel::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    padding: 1.5px;
+    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), var(--card-rim-glow), transparent 70%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+    opacity: 0; transition: opacity 0.3s ease;
+  }
+  .spec-panel:hover::after { opacity: 1; }
 }

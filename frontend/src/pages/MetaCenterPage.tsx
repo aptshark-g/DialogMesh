@@ -44,6 +44,7 @@ import { useUIStore } from '../stores/uiStore';
 import { Toast } from '../components/ui/Toast';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
+import { GovernancePanel } from '../components/meta/GovernancePanel';
 import { cn } from '../lib/utils';
 
 // ─── 8 类可版本化数据 ───
@@ -58,7 +59,7 @@ const VERSION_CATEGORIES = [
   'config',
 ] as const;
 
-type MetaTab = 'overview' | 'queue' | 'versions' | 'trees';
+type MetaTab = 'overview' | 'queue' | 'versions' | 'trees' | 'governance';
 
 interface ToastState {
   id: number;
@@ -106,7 +107,7 @@ const fadeIn = (delay: number) => ({
 
 // ─── 统计小卡 ───
 const StatTile = ({ label, value, accent }: { label: string; value: string | number; accent?: string }) => (
-  <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+  <div className="card-liquid shadow-card rounded-xl p-5">
     <span className="text-xs text-text-muted">{label}</span>
     <p className={cn('mt-2 text-2xl font-semibold', accent ?? 'text-text-primary')}>{value}</p>
   </div>
@@ -368,6 +369,7 @@ export function MetaCenterPage() {
             { key: 'queue' as const, label: '审核队列', icon: ListChecks },
             { key: 'versions' as const, label: '版本控制', icon: GitBranch },
             { key: 'trees' as const, label: '七树', icon: Trees },
+            { key: 'governance' as const, label: '治理', icon: ShieldCheck },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -432,7 +434,7 @@ export function MetaCenterPage() {
             )}
 
             {/* Verdict 分布 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center gap-2 text-text-muted mb-4">
                 <Gavel className="h-4 w-4" />
                 <span className="text-xs font-semibold">自审 Verdict 分布</span>
@@ -473,7 +475,7 @@ export function MetaCenterPage() {
 
             {/* 动作: 主动扫描 + 复盘报告 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <ScanSearch className="h-4 w-4" />
                   <span className="text-xs font-semibold">主动扫描</span>
@@ -491,7 +493,7 @@ export function MetaCenterPage() {
                 </button>
               </div>
 
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <div className="flex items-center gap-2 text-text-muted mb-4">
                   <FileText className="h-4 w-4" />
                   <span className="text-xs font-semibold">复盘报告</span>
@@ -534,7 +536,7 @@ export function MetaCenterPage() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.25 }}
-                className="bg-surface-card rounded-xl border border-gray-200 p-5"
+                className="card-liquid shadow-card rounded-xl p-5"
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2 text-text-muted">
@@ -605,7 +607,7 @@ export function MetaCenterPage() {
                 {queueScalars.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {queueScalars.map(([k, v]) => (
-                      <div key={k} className="bg-surface-card rounded-xl border border-gray-200 p-3">
+                      <div key={k} className="card-liquid shadow-card rounded-xl p-3">
                         <span className="text-xs text-text-muted">{k}</span>
                         <p className="text-lg font-semibold text-text-primary">{fmtValue(v)}</p>
                       </div>
@@ -620,7 +622,7 @@ export function MetaCenterPage() {
                     return (
                       <div
                         key={itemId ?? idx}
-                        className="bg-surface-card rounded-xl border border-gray-200 p-5"
+                        className="card-liquid shadow-card rounded-xl p-5"
                       >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -644,7 +646,7 @@ export function MetaCenterPage() {
                 </div>
               </>
             ) : queue && Object.keys(queue).length > 0 ? (
-              <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+              <div className="card-liquid shadow-card rounded-xl p-5">
                 <KvRows data={queue} />
               </div>
             ) : (
@@ -666,7 +668,7 @@ export function MetaCenterPage() {
             className="space-y-4"
           >
             {/* Category 选择器 + Target 过滤 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5 space-y-3">
+            <div className="card-liquid shadow-card rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2 text-text-muted">
                 <GitBranch className="h-4 w-4" />
                 <span className="text-xs font-semibold">数据类别</span>
@@ -733,7 +735,7 @@ export function MetaCenterPage() {
                 {versions.commits.map((commit) => (
                   <div
                     key={commit.id}
-                    className="bg-surface-card rounded-xl border border-gray-200 p-5"
+                    className="card-liquid shadow-card rounded-xl p-5"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2 min-w-0">
@@ -787,7 +789,7 @@ export function MetaCenterPage() {
         {activeTab === 'trees' && (
           <motion.section key="trees" {...fadeIn(0.05)} className="space-y-6">
             {/* 联邦查询 */}
-            <div className="bg-surface-card rounded-xl border border-gray-200 p-5">
+            <div className="card-liquid shadow-card rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   <Search className="h-4 w-4 text-text-muted" />
@@ -863,13 +865,13 @@ export function MetaCenterPage() {
             ) : trees?.sessions ? (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-surface-card rounded-xl border border-gray-200 p-4">
+                  <div className="card-liquid shadow-card rounded-xl p-4">
                     <div className="text-xs text-text-muted">会话树</div>
                     <div className="mt-1 text-2xl font-semibold text-text-primary">
                       {trees.session_count ?? trees.sessions.length}
                     </div>
                   </div>
-                  <div className="bg-surface-card rounded-xl border border-gray-200 p-4">
+                  <div className="card-liquid shadow-card rounded-xl p-4">
                     <div className="text-xs text-text-muted">节点总数</div>
                     <div className="mt-1 text-2xl font-semibold text-text-primary">
                       {trees.total_nodes ?? 0}
@@ -877,14 +879,14 @@ export function MetaCenterPage() {
                   </div>
                 </div>
                 {trees.sessions.length === 0 ? (
-                  <div className="bg-surface-card rounded-xl border border-gray-200 p-10 text-center text-sm text-text-muted">
+                  <div className="card-liquid shadow-card rounded-xl p-10 text-center text-sm text-text-muted">
                     <Trees className="h-8 w-8 mx-auto mb-2" />
                     暂无七树数据 —— 执行过任务后这里会显示执行/行为/元认知等树
                   </div>
                 ) : (
                   trees.sessions.map((sess) => (
                     <div key={sess.session_id}
-                      className="bg-surface-card rounded-xl border border-gray-200 p-5">
+                      className="card-liquid shadow-card rounded-xl p-5">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-mono text-text-primary break-all">
                           {sess.session_id}
@@ -912,6 +914,18 @@ export function MetaCenterPage() {
                 )}
               </>
             ) : null}
+          </motion.section>
+        )}
+
+        {/* ─── 治理 Tab（2026-08-17 前端绑定: 高可用/自修/体检/观测）─── */}
+        {activeTab === 'governance' && (
+          <motion.section
+            key="governance"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <GovernancePanel />
           </motion.section>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import ChatPanel from '../components/ChatPanel';
-import { createSession } from '../api/session';
+import { createSession, getHistory } from '../api/session';
 import { useChatStore } from '../stores/chatStore';
 import { useChatSend } from '../hooks/useChatSend';
 
@@ -12,11 +13,37 @@ export function ChatPage() {
   const setSessionId = useChatStore(s => s.setSessionId);
   const clearChat = useChatStore(s => s.clear);
 
-  // Init session once — survives remount because store persists sessionId
+  // P3 路由驱动会话:/chat=恢复或新建; /chat/new=强制新会话; /chat/:id=切换并载入历史
+  const { sessionId: routeId } = useParams();
+  const navigate = useNavigate();
+  const loadSession = useChatStore(s => s.loadSession);
+
   useEffect(() => {
-    if (sessionId) return;
-    createSession().then(r => setSessionId(r.session_id)).catch(() => {});
-  }, []);
+    if (!routeId) {
+      if (!sessionId) createSession().then(r => setSessionId(r.session_id)).catch(() => {});
+      return;
+    }
+    if (routeId === 'new') {
+      clearChat();
+      createSession()
+        .then(r => { setSessionId(r.session_id); navigate('/chat', { replace: true }); })
+        .catch(() => {});
+      return;
+    }
+    if (routeId === sessionId) { navigate('/chat', { replace: true }); return; }
+    getHistory(routeId)
+      .then((h) => {
+        loadSession(routeId, h.messages.map((r) => ({
+          id: r.message_id,
+          role: r.role,
+          content: r.content,
+          timestamp: Date.parse(r.timestamp) || Date.now(),
+          intent: r.intent,
+        })));
+      })
+      // 历史读不到也允许进入(会话文件可能无 v3 历史),首发消息失败会显式报错
+      .catch(() => loadSession(routeId, []));
+  }, [routeId]);
 
   const { send: handleSend } = useChatSend();
 

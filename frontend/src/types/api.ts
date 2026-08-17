@@ -1388,3 +1388,134 @@ export interface V6SubgraphCacheResponse {
   stale?: number;
   error?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 运行治理白盒（2026-08-17 前端绑定, 后端 stubs_api /v6/*）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** GET /v6/governor — ExecutionGovernor 各 scope 熔断状态 + 最近治理动作 */
+export interface V6GovernorBreaker {
+  scope: string;
+  state: string;                 // closed | open | half_open
+  consecutive_failures: number;
+  total_calls: number;
+  total_failures: number;
+  window_seconds: number;
+}
+
+export interface V6GovernorAction {
+  ts?: number;
+  action?: string;
+  scope?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+export interface V6GovernorStats {
+  breakers: V6GovernorBreaker[];
+  in_flight: number;
+  recent_actions: V6GovernorAction[];
+  error?: string;
+}
+
+/** GET /v6/diagnosis — 元认知异步诊断队列 + 报告 */
+export interface V6DiagnosisReport {
+  id?: string;
+  ts?: number;
+  trigger?: string;
+  root_cause?: string;
+  confidence?: number;
+  suggestions?: string[];
+  self_adjusted?: boolean;
+  [key: string]: unknown;
+}
+
+export interface V6DiagnosisStats {
+  pending: number;
+  repairs: V6RepairItem[];
+  last_trigger: Record<string, number>;
+  reports: V6DiagnosisReport[];
+  error?: string;
+}
+
+/** 自修复包（repairs 列表 / apply / confirm） */
+export interface V6RepairItem {
+  id: string;
+  status: 'pending' | 'verifying' | 'applied' | 'failed' | string;
+  source?: string;
+  summary?: string;
+  reason?: string;
+  patch?: string;
+  apply_result?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface V6RepairsResponse {
+  repairs: V6RepairItem[];
+  error?: string;
+}
+
+/** GET /v6/system-profile — 系统自画像（元认知读自己） */
+export interface V6SystemProfile {
+  [key: string]: unknown;
+  modules?: unknown[];
+  weak_points?: unknown[];
+  error?: string;
+}
+
+/** GET /v6/probe — 主动体检状态 + 历史 */
+export interface V6ProbeHistoryEntry {
+  ts?: number;
+  triggered?: boolean;
+  skipped?: boolean;
+  findings?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface V6ProbeStats {
+  running: boolean;
+  interval_s: number;
+  startup_delay_s: number;
+  last_run?: number | null;
+  next_due_ts?: number | null;
+  next_due_in_s?: number;
+  runs: number;
+  history: V6ProbeHistoryEntry[];
+  error?: string;
+}
+
+/** GET /v6/warmup — 启动期预热状态 + 历史 */
+export interface V6WarmupStats {
+  running: boolean;
+  budget_s: number;
+  last?: Record<string, unknown> | null;
+  runs: number;
+  history: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+/** GET /v6/blueprint/suggestions — 蓝图自增长建议 */
+export interface V6BlueprintSuggestions {
+  suggestions: Array<Record<string, unknown>>;
+  note?: string;
+  ok?: boolean;
+  error?: string;
+}
+
+/** GET /v6/llm-calls — LLM 调用观测（延迟/空返回/错误 + 明细） */
+export interface V6LlmCallEntry {
+  ts?: number;
+  stage?: string;
+  latency_ms?: number;
+  ok?: boolean;
+  empty?: boolean;
+  error?: string;
+  trace_id?: string;
+  [key: string]: unknown;
+}
+
+export interface V6LlmCallsResponse {
+  stats: Record<string, unknown>;
+  recent: V6LlmCallEntry[];
+  error?: string;
+}

@@ -30,10 +30,10 @@ export function FloatingActionButton() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           className={cn(
-            'w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-colors',
+            'w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-colors border',
             isOpen
-              ? 'bg-rose hover:bg-[#BE123C] text-white'
-              : 'bg-primary hover:bg-primary-dark text-white'
+              ? 'bg-rose hover:bg-[#BE123C] text-white border-transparent'
+              : 'bg-surface-card border-subtle text-text-secondary hover:text-primary hover:bg-surface-card-hover'
           )}
           aria-label={isOpen ? '关闭聊天' : '打开聊天'}
         >
@@ -46,7 +46,7 @@ export function FloatingActionButton() {
                 exit={{ rotate: 90, opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <X className="w-6 h-6" />
+                <X className="w-4 h-4" />
               </motion.div>
             ) : (
               <motion.div
@@ -56,7 +56,7 @@ export function FloatingActionButton() {
                 exit={{ rotate: -90, opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <MessageSquare className="w-6 h-6" />
+                <MessageSquare className="w-4 h-4" />
               </motion.div>
             )}
           </AnimatePresence>

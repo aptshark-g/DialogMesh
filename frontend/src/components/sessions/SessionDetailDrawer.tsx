@@ -174,7 +174,7 @@ export function SessionDetailDrawer({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-surface-overlay z-drawer"
+            className="fixed inset-0 bg-scrim z-drawer"
             onClick={onClose}
             role="presentation"
           />

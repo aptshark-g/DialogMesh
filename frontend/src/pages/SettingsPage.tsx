@@ -123,7 +123,7 @@ export function SettingsPage() {
       {toast && (
         <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />
       )}
-      <div className="min-h-full flex flex-col max-w-5xl mx-auto">
+      <div className="min-h-full flex flex-col max-w-5xl mx-auto px-6 lg:px-10 pt-6 pb-10">
         <div className="mb-4">
           <h1 className="text-2xl font-bold text-text-primary">设置</h1>
           <p className="text-sm text-text-secondary mt-1">
@@ -136,28 +136,28 @@ export function SettingsPage() {
 
           {/* System Info Cards */}
           <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-surface-card rounded-xl border p-4">
+            <div className="card-liquid shadow-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
                 <Globe className="w-3.5 h-3.5" /> 引擎状态
               </div>
               <p className="text-lg font-bold text-text-primary">{health?.status ?? '—'}</p>
               <p className="text-xs text-text-muted">v{health?.version ?? '—'}</p>
             </div>
-            <div className="bg-surface-card rounded-xl border p-4">
+            <div className="card-liquid shadow-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
                 <Database className="w-3.5 h-3.5" /> 子系统
               </div>
               <p className="text-lg font-bold text-text-primary">{metrics?.subsystems_loaded ?? '—'}</p>
               <p className="text-xs text-text-muted">已加载 / {metrics?.subsystems_total ?? '—'}</p>
             </div>
-            <div className="bg-surface-card rounded-xl border p-4">
+            <div className="card-liquid shadow-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
                 <ScrollText className="w-3.5 h-3.5" /> 总会话数
               </div>
               <p className="text-lg font-bold text-text-primary">{metrics?.total_turn_count ?? '—'}</p>
               <p className="text-xs text-text-muted">turns</p>
             </div>
-            <div className="bg-surface-card rounded-xl border p-4">
+            <div className="card-liquid shadow-card rounded-xl p-4">
               <div className="flex items-center gap-2 text-text-muted text-xs mb-2">
                 <RefreshCw className={cn('w-3.5 h-3.5', sysLoading && 'animate-spin')} /> Provider
               </div>
@@ -168,7 +168,7 @@ export function SettingsPage() {
 
           {/* Data Persistence */}
           {persistence && (
-            <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="bg-surface-card rounded-xl border p-5">
+            <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="card-liquid shadow-card rounded-xl p-5">
               <h2 className="text-sm font-semibold text-text-primary mb-3">数据持久化</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 {Object.entries(persistence).map(([k,v]) => (
@@ -186,7 +186,7 @@ export function SettingsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
-            className="bg-surface-card rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6"
+            className="card-liquid shadow-card rounded-xl dark:border-gray-700 shadow-sm p-6"
           >
             <div className="flex items-center gap-3 mb-4">
               <Globe className="w-5 h-5 text-primary" />
@@ -201,7 +201,7 @@ export function SettingsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.3 }}
-            className="bg-surface-card rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6"
+            className="card-liquid shadow-card rounded-xl dark:border-gray-700 shadow-sm p-6"
           >
             <div className="flex items-center gap-3 mb-4">
               <Database className="w-5 h-5 text-primary" />
@@ -224,7 +224,7 @@ export function SettingsPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.4 }}
-            className="bg-surface-card rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6"
+            className="card-liquid shadow-card rounded-xl dark:border-gray-700 shadow-sm p-6"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">

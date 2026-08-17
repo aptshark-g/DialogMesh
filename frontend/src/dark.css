@@ -1,0 +1,37 @@
+/* ═══ Dark mode — static gray remap (light.css 的暗色镜像) ═══
+   P1-E: Tailwind 静态 gray 阶在暗色下保持亮灰(#E5E7EB 等),
+   渲染为"白线分隔"。统一重映射到主题 token,
+   让模块靠灰度阶梯(bg/sidebar/card/wash)分离, 而不是靠亮线。
+   选择器与 light.css 同级, html.light 时整块自动失效。 */
+
+/* === 静态 gray 描边 → 发丝线(保留 :focus 的焦点描边) === */
+html:not(.light) .border-gray-50:not(:focus),
+html:not(.light) .border-gray-100:not(:focus),
+html:not(.light) .border-gray-200:not(:focus),
+html:not(.light) .border-gray-300:not(:focus),
+html:not(.light) .border-gray-700:not(:focus),
+html:not(.light) .border-gray-800:not(:focus) { border-color: var(--border-hairline) !important; }
+
+/* hover 提亮描边(hover:border-gray-200)→ border-medium, 避免闪白 */
+html:not(.light) .hover\:border-gray-200:hover { border-color: #3A3548 !important; }
+
+/* === divide-y 分隔线 === */
+html:not(.light) .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+html:not(.light) .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-hairline) !important; }
+
+/* === 静态 gray 底色 → wash 阶梯(徽章/状态点/滑轨/竖分隔条) === */
+html:not(.light) .bg-gray-50,
+html:not(.light) .bg-gray-100 { background-color: var(--bg-wash) !important; }
+html:not(.light) .bg-gray-200 { background-color: var(--bg-wash-strong) !important; }
+
+/* === hover 底色 → wash === */
+html:not(.light) .hover\:bg-gray-50:hover,
+html:not(.light) .hover\:bg-gray-50\/50:hover { background-color: var(--bg-wash) !important; }
+html:not(.light) .hover\:bg-gray-800:hover { background-color: var(--bg-wash-strong) !important; }
+
+/* === P1-F 立体感: 卡片"上方打光"内高光 + 页面顶部环境光 === */
+html:not(.light) .shadow-card,
+html:not(.light) [class*="shadow-card"] { box-shadow: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.045) !important; }
+html:not(.light) body {
+  background: radial-gradient(1100px 520px at 50% -8%, rgba(255,255,255,0.028), transparent 62%), #0C0A0F;
+}
