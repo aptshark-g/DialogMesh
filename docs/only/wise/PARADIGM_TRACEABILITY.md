@@ -55,6 +55,7 @@
 | A19 前端反人类治理（2026-08-18） | 副屏滚动/圆角修复; 图谱意图过滤换现行分类（后端归一化+前端新映射）; OCEAN 中文标签; 工程链重排+增量加载; 网关路由可点+Token 柱状图 | ✅ | 61 测绿 + tsc/build 绿 + /v6/graph 实测 | 管道/深层链/Mind/元认知内页等大改 = 待办（FRONTEND_OVERHAUL_20260818.md） |
 | A19/A18 前端治理第二轮（2026-08-18） | 画像单字母维度中文映射（10 维）; 路由切换后端补 PUT（持久化）; 网关用量时间轴（usage_log.jsonl 按日期聚合 + X=日期堆叠图）; 管道/深层链可读化（说明卡+运行模式+参数变更记录） | ✅ | 83 测绿（含 router/series 新测）+ tsc/build 绿 + 实测 6 天真实用量 | 管道副屏参数详情模块（含图表）/ 命中率 = 待办 |
 | A18 可上手性（2026-08-19） | 一键安装 scripts/setup_env.py（venv/依赖/前端/网关二进制/配置复制, 仅标准库）+ docs/SETUP.md 依赖清单表 + setup.bat/sh + README 快速开始改造 | ✅ | --check 实测 + 语法编译通过 | 网关 release URL 待发布（当前走 Go 源码构建）; BGE-M3 可选预下载 |
+| A21/A18 网关完整度（2026-08-19） | switch 功能盘点（非 demo: 认证/熔断/计费/配额/SSE/热更新/压测）+ 缓存隔离真 bug 修复（provider\|model\|api_key 命名空间）+ stats 补 cache_hit_rate + CI release 工作流 | ✅ | go build 通过 + 缓存键修复 + hit_rate 字段 | 语义缓存/内容过滤/多实例共享 = 增强待办; 推送待网络 |
 
 ## 使用说明
 

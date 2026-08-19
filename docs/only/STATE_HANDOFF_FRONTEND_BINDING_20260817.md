@@ -303,3 +303,24 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 - **setup.bat / setup.sh** 薄包装。
 - **README 快速开始** 改为 `python scripts/setup_env.py` 一键。
 - 验证: `--check` 实测（venv 3.13 识别、缺失项正确列出）; 语法编译通过。
+
+## 十四、网关完整度核查 + 缓存隔离修复（2026-08-19, 本地已提交待推）
+
+### 核查
+- switch 不是 demo 级: 认证/三层保护/自适应并发/加权路由/请求合并/SSE 聚合/
+  计费/配额/错误码/admin/热更新/可观测/压测 3.4K-22.8K req/s 全有。
+- 密钥: switch + DialogMesh 均 0 泄漏（provider.yaml 未入库、示例为空）。
+- 待推: switch 本地领先 origin **11 个提交**（含流式修复/计费/CI/本轮）。
+
+### 修复（本轮）
+- **缓存隔离真 bug**: 缓存键此前 model 传空串 → 跨模型/跨 Provider/跨租户
+  误命中; 修为 `provider|model|api_key` 三重命名空间。
+- stats 补 `cache_hit_rate`（DialogMesh 网关页「缓存命中率」卡由恒 0 变真实）。
+- switch 补 CI release 工作流 + README 新功能表/压测/下载说明。
+- 清单文档: docs/only/gateway/GATEWAY_FEATURE_INVENTORY_20260819.md。
+
+### 阻塞
+- GitHub 推送需网络: 直连被重置, clash 7877 未开。开 clash 后执行
+  `git -C C:\Users\APTShark\PycharmProjects\switch push origin main`。
+- 推送后打 `v0.1.0` tag 触发 CI 出三平台二进制 → DialogMesh 一键安装改走
+  release 下载。
