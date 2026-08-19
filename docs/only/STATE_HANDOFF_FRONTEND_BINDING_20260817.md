@@ -342,3 +342,14 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
 - **DialogMesh 侧接线**: v3_session_api 主回复调用给网关发
   `X-Context-Hash`（编译上下文 all_messages 的 sha256[:32]）→ 网关精确
   响应缓存可按编译上下文命中。
+
+## 十六、网关推送 + 量化压测（2026-08-19）
+
+- **switch 已推 GitHub**: 全部 13+1 提交已推送（远端 a286356）; `v0.1.0`
+  tag 已指向最新 HEAD（CI release 工作流触发中, 三平台产物）。
+- **量化压测（新二进制实测）**:
+  - 热缓存吞吐 **4210 req/s**（5000 请求 / 1.19s, p50 11.3ms / p99 49.4ms）
+  - 响应缓存命中率 **99.5%**（6968 hits / 32 misses）
+  - 缓存命中响应 ~**2ms** vs 未命中真实上游 ~**1.08s**
+  - 隔离验证: 同 body 命中 2ms / 不同 body 走真实上游 1.08s
+- 上述数据已写入 switch README（性能 + 缓存与隔离）。
