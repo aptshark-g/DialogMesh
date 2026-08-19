@@ -1014,10 +1014,21 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 # 推理吃光预算空返回（与 tool_loop/call_switch 同因）。
                 "thinking": {"type": "disabled"},
             }
+            # 2026-08-19: 编译上下文稳定哈希 → 网关 X-Context-Hash 缓存键
+            # （相同编译上下文可命中网关精确响应缓存, 不受消息格式差异影响）
+            try:
+                import hashlib as _h
+                _ctx_hash = _h.sha256(
+                    _json.dumps(all_messages, ensure_ascii=False).encode("utf-8")
+                ).hexdigest()[:32]
+            except Exception:
+                _ctx_hash = ""
             http_req = urllib.request.Request(
                 "http://127.0.0.1:8080/v1/chat/completions",
                 data=_json.dumps(body).encode(),
-                headers={"Authorization": "Bearer dm-client", "Content-Type": "application/json"},
+                headers={"Authorization": "Bearer dm-client",
+                         "Content-Type": "application/json",
+                         **({"X-Context-Hash": _ctx_hash} if _ctx_hash else {})},
             )
             content = ""
             data = {}

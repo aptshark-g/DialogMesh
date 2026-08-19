@@ -324,3 +324,21 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
   `git -C C:\Users\APTShark\PycharmProjects\switch push origin main`。
 - 推送后打 `v0.1.0` tag 触发 CI 出三平台二进制 → DialogMesh 一键安装改走
   release 下载。
+
+## 十五、网关缓存架构 + 上游缓存命中透传（2026-08-19, 本地已提交待推）
+
+### 架构判断（已落 docs/only/gateway/）
+- 上下文真正缓存在上游 Provider 的前缀缓存; 网关是透明代理 + 精确响应缓存。
+- 子图减枝/转 JSON/XML 归后端（记忆图只后端可见）, 网关不重复做。
+- 网关三层缓存: ①上游缓存命中透传统计（本轮）②X-Context-Hash 稳定缓存键
+  （本轮）③语义近重复缓存（下一步, 默认关）。
+
+### 实现（switch, 已 build/vet 通过, 13 提交待推）
+- `TokenUsage` 扩展捕获上游缓存命中/未命中（OpenAI/DeepSeek/Anthropic 三套
+  schema 统一归一）; 流式+非流式+降级三条路径全接。
+- metrics: `prompt_cache_hits/misses` + `prompt_cache_hit_rate`; admin 展示。
+- 响应缓存键支持 `X-Context-Hash`（后端编译上下文集成）。
+- gofmt 全量 + 修 gtui 2 处（未用变量/printf 参数）→ 全仓 vet/build 绿。
+- **DialogMesh 侧接线**: v3_session_api 主回复调用给网关发
+  `X-Context-Hash`（编译上下文 all_messages 的 sha256[:32]）→ 网关精确
+  响应缓存可按编译上下文命中。
