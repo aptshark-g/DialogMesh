@@ -1,6 +1,15 @@
 ﻿# 压缩恢复规划 — 2026-08-03（2026-08-03 更新）
 
 > 目的: 压缩后按此文档顺序恢复上下文，避免丢状态。
+> ****2026-08-19 仓库可上手性: 依赖清单 + 一键安装（最新）:
+> 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_FRONTEND_BINDING_20260817.md`
+> （§十三 本轮新增）。根因: gateway.exe / models 未入库, README 缺环境安装。
+> 完成: docs/SETUP.md 依赖清单表 + scripts/setup_env.py 一键安装（仅标准库,
+> venv/依赖/前端/网关二进制/配置复制, 支持分段） + setup.bat/sh + README
+> 快速开始改造。验证: --check 实测（venv 3.13 识别）+ 语法编译通过。
+> 提交 8040f5c 后新增本地提交（均未推）。待办: 网关 release 发布后填
+> DM_GATEWAY_BIN_URL; 继续 FRONTEND_OVERHAUL 清单。
+> ****2026-08-18 前端治理第二轮 + 管道/深层链可读化（最新）:
 > ****2026-08-18 前端治理第二轮 + 管道/深层链可读化（最新）:
 > 压缩恢复唯一入口 = `docs/only/STATE_HANDOFF_FRONTEND_BINDING_20260817.md`
 > （§十一 本轮新增）。完成: 画像单字母维度中文映射（10 维, 上轮未生效根因）;

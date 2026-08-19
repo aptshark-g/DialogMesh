@@ -282,3 +282,24 @@ e656f70 HyDE 方向收尾: 域门控（_hot_is_doc）+ DM_SPO_LLM_JUDGE 隔离 �
   悬停玻璃弹层, 不占页面空间）。
 - 管道页 / 深层链页: 移除固定说明卡, 头部刷新旁加「关于」悬浮介绍。
 - 验证: tsc 零错误 + build 成功 + 4173 服务新构建。
+
+## 十三、仓库可上手性: 依赖清单 + 一键安装（2026-08-19, 已提交本地）
+
+### 核查结论（GitHub 用户无法使用的根因）
+- `gateway/gateway.exe` **未入库**（.gitignore 只留 error_catalog.yaml +
+  provider.example.yaml）→ start.bat 第 1 步就挂。
+- `models/`（BGE 等嵌入模型）未入库 → 靠运行时自动下载（离线优先）。
+- README 快速开始缺环境安装步骤: Python 依赖 / 前端 npm install+build /
+  provider.yaml / .env 都没提。
+- `provider.yaml` 含密钥不入库 → 需从示例复制。
+
+### 完成
+- **docs/SETUP.md**: 依赖清单表（Python/Node/Py 依赖/前端/网关二进制/
+  provider.yaml/.env/BGE-small-zh/BGE-M3/Rust 内核, 各带版本/来源/一键标记）。
+- **scripts/setup_env.py**: 跨平台一键安装（仅标准库）——检查 Python/Node、
+  建 .venv 装 requirements、npm install+build、网关二进制（优先 release URL
+  下载, 有 Go 则克隆 switch 源码构建）、复制 provider.yaml/.env、可选
+  --models 预下载 BGE-small-zh; 支持 --check/--deps/--frontend/--gateway/--models。
+- **setup.bat / setup.sh** 薄包装。
+- **README 快速开始** 改为 `python scripts/setup_env.py` 一键。
+- 验证: `--check` 实测（venv 3.13 识别、缺失项正确列出）; 语法编译通过。

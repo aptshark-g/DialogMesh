@@ -117,15 +117,24 @@
 git clone https://github.com/aptshark-g/DialogMesh.git
 cd DialogMesh
 
-# 配置 provider 密钥
-# 编辑 gateway/provider.yaml → 填入 API Key
+# 一键检查 + 安装环境（Python 依赖较大, 首次约几分钟~十几分钟）
+# 依赖清单见 docs/SETUP.md
+python scripts/setup_env.py
 
-# Windows
+# 启动（Windows）
 start.bat
 
 # 或手动:
 python scripts/start_server.py
 ```
+
+> 一键脚本会自动: 建 .venv 装 Python 依赖 → 前端 npm install + build →
+> 补齐网关二进制（有 Go 时自动从 switch 源码构建）→ 复制 provider.yaml / .env
+> 示例。**记得在 gateway/provider.yaml 填入你的 API Key**（支持 DeepSeek /
+> OpenAI / Anthropic / Gemini / Kimi / Groq / OpenRouter / LM Studio / Ollama）。
+>
+> 也可先检查: `python scripts/setup_env.py --check`; 分段安装: `--deps` /
+> `--frontend` / `--gateway` / `--models`。
 
 - switch 网关: http://localhost:8080 (LLM 代理, 9+ 厂商)
 - API: http://localhost:8000/docs
