@@ -1023,12 +1023,21 @@ async def send_message(session_id: str, req: SendMessageRequest):
                 ).hexdigest()[:32]
             except Exception:
                 _ctx_hash = ""
+            # 2026-08-21: 智能路由信号 — 意图（LLM 分类结果）+ 复杂度
+            # （消息量启发式: <300 字符 simple, <1500 medium, 其余 complex;
+            # 网关 routing.rules 可据此分流模型档位/思考开关）。
+            _intent_hdr = _cat or ""
+            _total_len = sum(len(str(m.get("content", ""))) for m in all_messages)
+            _complex_hdr = ("simple" if _total_len < 300
+                            else "medium" if _total_len < 1500 else "complex")
             http_req = urllib.request.Request(
                 "http://127.0.0.1:8080/v1/chat/completions",
                 data=_json.dumps(body).encode(),
                 headers={"Authorization": "Bearer dm-client",
                          "Content-Type": "application/json",
-                         **({"X-Context-Hash": _ctx_hash} if _ctx_hash else {})},
+                         **({"X-Context-Hash": _ctx_hash} if _ctx_hash else {}),
+                         "X-Intent": _intent_hdr,
+                         "X-Complexity": _complex_hdr},
             )
             content = ""
             data = {}
