@@ -173,8 +173,12 @@ def _load_price_cache() -> dict:
 def _save_price_cache(catalog: dict, fetched_at: str, source: str):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(PRICE_CACHE_PATH, "w", encoding="utf-8") as f:
+        import hashlib as _h
+        source_sha = _h.sha256(
+            json.dumps(catalog, sort_keys=True).encode("utf-8")).hexdigest()[:16]
         json.dump({"fetched_at": fetched_at, "source": source,
-                   "model_count": len(catalog), "catalog": catalog},
+                   "source_sha": source_sha, "model_count": len(catalog),
+                   "catalog": catalog},
                   f, ensure_ascii=False, indent=1)
 
 
@@ -226,13 +230,24 @@ def _catalog_entry_for(model_id: str, provider: str, catalog: dict):
 
 
 def _enrich_model(model: dict, entry: dict) -> dict:
-    """Apply LiteLLM catalog entry to a model dict (cost 换算为每 1M tokens)。"""
+    """Apply LiteLLM catalog entry to a model dict (cost 换算为每 1M tokens)。
+
+    2026-08-21 补充: 提取 cache_read（命中输入）与 cache_creation（写缓存）
+    成本 —— LiteLLM 目录含这两个字段（如 deepseek-v4-flash cache_read
+    $0.0028/M = 50× 折扣; OpenAI GPT-5.6+ cache_creation 1.25× base）。
+    """
     out = dict(model)
     out["capabilities"] = list(model.get("capabilities") or [])
     if entry.get("input_cost_per_token"):
         out["cost_in"] = round(float(entry["input_cost_per_token"]) * 1e6, 4)
     if entry.get("output_cost_per_token"):
         out["cost_out"] = round(float(entry["output_cost_per_token"]) * 1e6, 4)
+    if entry.get("cache_read_input_token_cost"):
+        out["cost_cached_in"] = round(
+            float(entry["cache_read_input_token_cost"]) * 1e6, 4)
+    if entry.get("cache_creation_input_token_cost"):
+        out["cost_cache_write"] = round(
+            float(entry["cache_creation_input_token_cost"]) * 1e6, 4)
     ctx = entry.get("max_input_tokens")
     if ctx:
         out["context"] = int(ctx)
@@ -274,16 +289,41 @@ def _apply_catalog_to_builtins(catalog: dict) -> tuple:
     return enriched, added
 
 
+def _diff_price_catalog(new_catalog: dict, old_catalog: dict) -> dict:
+    """目录版本差异（"爬虫快速看一眼"输出）: 新增/移除/价格变更计数。"""
+    if not old_catalog:
+        return {"added": len(new_catalog), "removed": 0,
+                "price_changed": 0, "cache_price_changed": 0}
+    new_keys = set(new_catalog)
+    old_keys = set(old_catalog)
+    added_keys = new_keys - old_keys
+    removed_keys = old_keys - new_keys
+    price_changed = cache_price_changed = 0
+    price_fields = ("input_cost_per_token", "output_cost_per_token")
+    cache_fields = ("cache_read_input_token_cost", "cache_creation_input_token_cost")
+    for k in new_keys & old_keys:
+        n, o = new_catalog[k], old_catalog[k]
+        if any(n.get(f) != o.get(f) for f in price_fields):
+            price_changed += 1
+        if any(n.get(f) != o.get(f) for f in cache_fields):
+            cache_price_changed += 1
+    return {"added": len(added_keys), "removed": len(removed_keys),
+            "price_changed": price_changed,
+            "cache_price_changed": cache_price_changed}
+
+
 def sync_model_prices(force: bool = False, timeout: int = 20) -> dict:
     """拉取 LiteLLM 价格目录 → 本地缓存 → 富化内置模型。
     返回摘要; 任何失败不阻断（回退缓存/内置定价）。"""
     global _PRICE_CATALOG
     cache = _load_price_cache()
-    catalog, fetched_at, source = None, None, None
+    catalog, fetched_at, source, source_sha = None, None, None, None
+    diff = {}
     if force or not cache.get("catalog") or _price_cache_stale(cache):
         try:
             catalog, source = _fetch_price_catalog(timeout)
             fetched_at = datetime.now(timezone.utc).isoformat()
+            diff = _diff_price_catalog(catalog, cache.get("catalog") or {})
             _save_price_cache(catalog, fetched_at, source)
         except Exception as e:
             logger.warning("price sync fetch failed (use cache/builtin): %s", e)
@@ -291,15 +331,18 @@ def sync_model_prices(force: bool = False, timeout: int = 20) -> dict:
         catalog = cache.get("catalog") or {}
         fetched_at = cache.get("fetched_at")
         source = cache.get("source", "cache")
+        source_sha = cache.get("source_sha")
     _PRICE_CATALOG = catalog
     enriched, added = _apply_catalog_to_builtins(catalog)
     return {
         "synced": bool(catalog),
         "fetched_at": fetched_at,
         "source": source,
+        "source_sha": source_sha,
         "model_count": len(catalog),
         "enriched_models": enriched,
         "added_models": added,
+        "diff": diff,
         "note": "prices per 1M tokens; local overrides preserved",
     }
 
@@ -328,9 +371,11 @@ def start_price_sync():
     def _run():
         try:
             summary = sync_model_prices()
-            logger.info("price sync done: synced=%s models=%s added=%s",
+            diff = summary.get("diff") or {}
+            logger.info(
+                "price sync done: synced=%s models=%s added=%s diff=%s",
                         summary.get("synced"), summary.get("model_count"),
-                        summary.get("added_models"))
+                        summary.get("added_models"), diff)
         except Exception as e:
             logger.warning("price sync skipped: %s", e)
     threading.Thread(target=_run, daemon=True, name="price-sync").start()
