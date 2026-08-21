@@ -1006,6 +1006,16 @@ async def send_message(session_id: str, req: SendMessageRequest):
             tool_loop_used = False
         _mark("phase4_execute")
         if not tool_loop_used:
+            # B-3 固化前缀（2026-08-22）: DM_PREFIX_STABILIZE=1 时规范化
+            # P0-P3（system 置前 + 去噪时间戳/uuid/request_id）, 让网关
+            # X-Context-Hash 与上游前缀缓存对同逻辑上下文稳定命中。
+            if os.environ.get("DM_PREFIX_STABILIZE") == "1":
+                try:
+                    from core.agent.compiler.prefix_layout import (
+                        normalize_stable_prefix)
+                    all_messages = normalize_stable_prefix(all_messages)
+                except Exception as _pe:
+                    logger.debug("prefix stabilize skipped: %s", _pe)
             body = {
                 "provider": req.provider or "deepseek",
                 "model": req.model or "deepseek-v4-flash",
